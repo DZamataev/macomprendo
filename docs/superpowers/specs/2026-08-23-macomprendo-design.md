@@ -279,7 +279,13 @@ discovery, notarytool submit/staple/validate, zip + sha256), `configure-notariza
 Scripts are unit-tested with `node:test` in `scripts/__tests__/` (process spawning
 injected/mocked). CI: `npm run test:scripts`, `swift test`, unsigned `xcodebuild`,
 audit, symlink check.
-Bundle id `com.ravenvector.macomprendo` (placeholder until branding is decided).
+Identity: bundle id `com.dzamatav.macomprendo`, `DEVELOPMENT_TEAM 68QJJA7HK9`,
+copyright "© 2026 Denis Zamataev", MIT license. Placeholder app icon until final art
+is supplied. Release prerequisite (documented in `DISTRIBUTING.md`): a "Developer ID
+Application" certificate for team 68QJJA7HK9 must be installed — currently only an
+Apple Development certificate exists, which is sufficient for local dev builds.
+Default whisper model offered at onboarding: `large-v3-turbo`, with `base` as the
+lightweight alternative.
 
 ## 8. AI-driven development setup
 
