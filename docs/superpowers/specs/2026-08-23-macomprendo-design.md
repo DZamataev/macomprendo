@@ -279,7 +279,7 @@ discovery, notarytool submit/staple/validate, zip + sha256), `configure-notariza
 Scripts are unit-tested with `node:test` in `scripts/__tests__/` (process spawning
 injected/mocked). CI: `npm run test:scripts`, `swift test`, unsigned `xcodebuild`,
 audit, symlink check.
-Identity: bundle id `com.dzamatav.macomprendo`, `DEVELOPMENT_TEAM 68QJJA7HK9`,
+Identity: bundle id `com.dzamataev.macomprendo`, `DEVELOPMENT_TEAM 68QJJA7HK9`,
 copyright "© 2026 Denis Zamataev", MIT license. Placeholder app icon until final art
 is supplied. Release prerequisite (documented in `DISTRIBUTING.md`): a "Developer ID
 Application" certificate for team 68QJJA7HK9 must be installed — currently only an
