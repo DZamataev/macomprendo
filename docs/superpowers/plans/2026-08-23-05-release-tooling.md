@@ -52,7 +52,7 @@
 | `scripts/__tests__/helpers/fake-run.mjs` | `node:test` doubles for `run`, `fsOps`, `io`, `log` |
 | `scripts/__tests__/*.test.mjs` | One test file per tool |
 | `DISTRIBUTING.md` | Full signing/notarization/release runbook |
-| `docs/DECISIONS/ADR-0001..0006-*.md` | The six decisions from spec §9 |
+| `docs/DECISIONS/ADR-0001..0008-*.md` | The six decisions from spec §9, plus Plan 1's whisper-xcframework and vendored-icons decisions |
 | `.github/workflows/release.yml` | Tag-triggered (`v*`) test + unsigned artifact build |
 
 **Modified files**
@@ -93,7 +93,7 @@ export const listBundles      // (dir) => *.bundle directory names, sorted
 export const listFrameworks   // (dir) => *.framework directory names, sorted
 export async function move(from, to)          // added in Task 10
 export async function makeTempDir(prefix)     // added in Task 10
-export const realFsOps   // the six/eight operations above, as one injectable object
+export const realFsOps   // every operation above, bundled as one injectable object
 export const realIO      // { readFile, writeFile, exists }
 
 // scripts/lib/changelog.mjs  (NEW)
@@ -748,7 +748,7 @@ test('planBuild wipes the previous bundle and creates the skeleton', () => {
   assert.deepEqual(steps[4], { type: 'mkdir', path: '/out/Macomprendo.app/Contents/Resources' });
 });
 
-test('planBuild copies Info.plist, the icon, the licence and the SPM resource bundles', () => {
+test('planBuild copies Info.plist, the icon, the licence and the SwiftPM resource bundle', () => {
   const copies = planFixture().filter((s) => s.type === 'copy');
   const targets = copies.map((s) => s.to);
   assert.ok(targets.includes('/out/Macomprendo.app/Contents/Info.plist'));
@@ -2955,7 +2955,7 @@ tree and the git history.
 - Produces:
   - `UNSAFE_PATH_RULES: Array<{ name: string, test: (p: string) => boolean }>`
   - `findUnsafePaths(paths) -> Array<{ path: string, rule: string }>`
-  - `BINARY_EXTENSIONS: Set<string>` and `CONTENT_SCAN_EXCLUDES: Set<string>`
+  - `ASSET_EXTENSIONS: Set<string>` and `CONTENT_SCAN_EXCLUDES: Set<string>`
   - `shouldScanContent(relativePath) -> boolean`
   - `findHomePaths(text, { file, allow }) -> Array<{ file, line, column, match }>`
   - `main(argv, deps) -> Promise<number>`
@@ -3000,6 +3000,8 @@ test('findUnsafePaths allows the ordinary repository contents', () => {
   assert.deepEqual(findUnsafePaths([
     'README.md',
     '.env.example',
+    'macos/Sources/Macomprendo/Resources/Icons/microphone.svg',
+    'macos/Packages/WhisperBinary/Package.swift',
     'macos/project.yml',
     'macos/Macomprendo.xcodeproj/project.pbxproj',
     'macos/Sources/Macomprendo/Core/KeychainStore.swift',
@@ -3008,11 +3010,13 @@ test('findUnsafePaths allows the ordinary repository contents', () => {
   ]), []);
 });
 
-test('shouldScanContent skips binaries and the audit files themselves', () => {
+test('shouldScanContent skips assets and the audit files themselves', () => {
   assert.equal(shouldScanContent('README.md'), true);
   assert.equal(shouldScanContent('macos/Sources/Macomprendo/App/AppModel.swift'), true);
   assert.equal(shouldScanContent('macos/AppBundle/AppIcon.icns'), false);
   assert.equal(shouldScanContent('docs/images/panel.png'), false);
+  // Vendored Phosphor icons (ADR-0008) are third-party assets, not our source.
+  assert.equal(shouldScanContent('macos/Sources/Macomprendo/Resources/Icons/microphone.svg'), false);
   assert.equal(shouldScanContent('scripts/audit-public-repo.mjs'), false);
   assert.equal(shouldScanContent('scripts/__tests__/audit-public-repo.test.mjs'), false);
 });
@@ -3149,10 +3153,13 @@ export function findUnsafePaths(paths) {
   return hits;
 }
 
-export const BINARY_EXTENSIONS = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.icns', '.ico', '.pdf', '.zip', '.gz',
+// Asset formats. `.svg` is text, but the vendored Phosphor icons (see ADR-0008) are
+// third-party assets copied verbatim by scripts/sync-icons.mjs — they are not ours to edit,
+// and any path-like string inside them is upstream data, not a leak from this machine.
+export const ASSET_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.icns', '.ico', '.pdf', '.zip', '.gz',
   '.ttf', '.otf', '.woff', '.woff2', '.mp3', '.wav', '.aiff', '.bin',
-  '.metallib', '.dylib', '.a', '.o', '.xcuserstate',
+  '.metallib', '.dylib', '.a', '.o', '.xcframework', '.xcuserstate',
 ]);
 
 export const CONTENT_SCAN_EXCLUDES = new Set([
@@ -3162,7 +3169,7 @@ export const CONTENT_SCAN_EXCLUDES = new Set([
 
 export function shouldScanContent(relativePath) {
   if (CONTENT_SCAN_EXCLUDES.has(relativePath)) return false;
-  return !BINARY_EXTENSIONS.has(path.extname(relativePath).toLowerCase());
+  return !ASSET_EXTENSIONS.has(path.extname(relativePath).toLowerCase());
 }
 
 const HOME_PATH = /\/Users\/([A-Za-z0-9._-]+)/g;
@@ -3447,7 +3454,14 @@ export async function makeTempDir(prefix) {
 }
 ```
 
-Update: `export const realFsOps = { mkdirp, rmrf, copyPath, chmodExec, pathExists, listBundles, move, mkdtemp: makeTempDir };`
+Update it to:
+
+```js
+export const realFsOps = {
+  mkdirp, rmrf, copyPath, chmodExec, pathExists,
+  listBundles, listFrameworks, move, mkdtemp: makeTempDir,
+};
+```
 
 - [ ] **Step 4: Implement `scripts/install-app.mjs`**
 
@@ -3659,9 +3673,13 @@ git commit -m "feat(scripts): install the built app atomically with backup and r
 - Create: `docs/DECISIONS/ADR-0004-keyboardshortcuts-library.md`
 - Create: `docs/DECISIONS/ADR-0005-phosphor-icons.md`
 - Create: `docs/DECISIONS/ADR-0006-fixed-quick-panel-position.md`
+- Create: `docs/DECISIONS/ADR-0007-whisper-prebuilt-xcframework.md`
+- Create: `docs/DECISIONS/ADR-0008-vendored-phosphor-svgs.md`
 
 **Interfaces:**
-- Consumes: spec §9. Produces: documentation only; no code depends on these files.
+- Consumes: spec §9 for ADR-0001…0006, plus the two dependency decisions Plan 1 actually made
+  (whisper.cpp as a prebuilt xcframework, Phosphor icons as vendored SVGs) for ADR-0007…0008.
+  Produces: documentation only; no code depends on these files.
 
 Each ADR uses the same four-heading shape: `Status`, `Context`, `Decision`, `Consequences`.
 
@@ -3718,8 +3736,7 @@ Accepted — 2026-08-23
 
 Dictation must work offline, start instantly, and never send audio anywhere by default. Ollama has
 no speech-to-text API, so the "just reuse the LLM endpoint" approach is not available. whisper.cpp
-builds as a SwiftPM package with Metal acceleration and runs comfortably in-process on Apple
-silicon.
+provides Metal-accelerated inference and runs comfortably in-process on Apple silicon.
 
 ## Decision
 
@@ -3731,9 +3748,8 @@ by SHA-256. Users who prefer a server can instead select an `Endpoint` and
 
 ## Consequences
 
-- The app bundle must carry whisper.cpp's SwiftPM resource bundles (Metal shaders) inside
-  `Contents/Resources`; `scripts/build-app.mjs` copies every `*.bundle` emitted next to the
-  executable, and DISTRIBUTING.md records which ones those are.
+- whisper.cpp itself is consumed as a prebuilt xcframework, not compiled from source — see
+  ADR-0007 for why, and for what that means for bundle packaging.
 - First-run requires a model download (default `large-v3-turbo`, lightweight alternative `base`).
 - The C interop is hardware-bound and therefore thin, isolated behind `TranscriptionProvider`, and
   covered by `docs/SMOKE_TEST.md` rather than unit tests.
@@ -3846,6 +3862,8 @@ all in-app iconography. Use an SF Symbol template image for the `MenuBarExtra` s
   `AGENTS.md` so it is not eroded.
 - Phosphor adds a small binary size cost; it is MIT-licensed, so redistribution inside the app is
   unencumbered.
+- The *delivery mechanism* for Phosphor changed during implementation; see ADR-0008. This ADR's
+  choice of icon set and the SF-Symbol-only rule for the status item are unaffected.
 ```
 
 - [ ] **Step 6: Write ADR-0006**
@@ -3885,7 +3903,91 @@ Esc closes it; it stays open while streaming. The Recording HUD follows the same
   always available and the panel never steals keyboard focus until clicked.
 ```
 
-- [ ] **Step 7: Verify the ADRs are complete and audit-clean**
+- [ ] **Step 7: Write ADR-0007**
+
+Create `docs/DECISIONS/ADR-0007-whisper-prebuilt-xcframework.md`:
+
+```markdown
+# ADR-0007: whisper.cpp is consumed as a prebuilt xcframework
+
+## Status
+
+Accepted — 2026-08-23
+
+## Context
+
+The obvious approach — adding `https://github.com/ggml-org/whisper.cpp` as a SwiftPM dependency —
+does not work for this project. The upstream repository's `Package.swift` is oriented at Xcode
+builds and does not resolve cleanly under plain `swift build`, which is the command this project
+relies on for `swift test`, for the per-architecture release build, and for CI. Compiling ggml
+from source would also mean owning its build flags, Metal shader packaging, and compile times on
+every machine and every CI run.
+
+whisper.cpp publishes an official `whisper-v1.9.2-xcframework.zip` release artifact containing
+prebuilt slices for every Apple platform, with the Metal resources already packaged inside.
+
+## Decision
+
+whisper.cpp is vendored as that official xcframework and exposed through a local SwiftPM package
+at `macos/Packages/WhisperBinary`, declared as a `binaryTarget`. `WhisperCppTranscriber` links
+against it exactly as it would against a source build.
+
+## Consequences
+
+- `swift build`, `swift test`, and the release build all work with no Xcode-only steps.
+- There are **no ggml Metal resource bundles to copy** into the app; the Metal resources travel
+  inside the xcframework. `scripts/build-app.mjs` therefore discovers what SwiftPM actually emits
+  next to the executable (`*.bundle` for our own target's resources, `*.framework` only if the
+  slices are dynamic) rather than assuming a fixed list.
+- Upgrading whisper.cpp is a deliberate act: download the new release artifact, replace the
+  xcframework, re-run the discovery step in DISTRIBUTING.md, and verify transcription still works.
+- The binary is committed or fetched as a release artifact rather than built, so its provenance
+  must be recorded (version and checksum) alongside the package manifest.
+- If a future upstream release ships a `swift build`-compatible `Package.swift`, this decision can
+  be revisited; nothing above the `TranscriptionProvider` protocol would change.
+```
+
+- [ ] **Step 8: Write ADR-0008**
+
+Create `docs/DECISIONS/ADR-0008-vendored-phosphor-svgs.md`:
+
+```markdown
+# ADR-0008: Phosphor icons are vendored as SVGs, not consumed as a Swift package
+
+## Status
+
+Accepted — 2026-08-23 (supersedes the packaging half of ADR-0005)
+
+## Context
+
+ADR-0005 chose Phosphor Icons for in-app iconography. The natural delivery mechanism,
+`phosphor-icons/swift`, turned out to be unusable here: the package does not build under plain
+`swift build`, which this project depends on for tests, per-architecture release builds, and CI.
+Only the glyphs themselves are needed — a few dozen out of roughly 9,000 — so pulling in a whole
+Swift package was disproportionate anyway.
+
+## Decision
+
+The icon source is the upstream asset package `@phosphor-icons/core`, added as an npm
+**devDependency**. `scripts/sync-icons.mjs` copies the specific SVGs the UI uses into the app
+target's resources, where `UI/Components/Icon.swift` renders them. The vendored SVGs are committed,
+so neither a build nor CI ever needs npm to produce the app.
+
+## Consequences
+
+- `swift build` has no third-party icon dependency; the icon set is plain resource data.
+- The icons ship inside `Macomprendo_Macomprendo.bundle`, SwiftPM's resource bundle for the app
+  target, which `scripts/build-app.mjs` copies into `Contents/Resources`. If that bundle is missing
+  from a build, the icons are missing from the app — the build script warns when it finds none.
+- Adding a new icon is a two-step action: add its name to the sync list and run
+  `npm run sync-icons`, then commit the SVG. This is documented in `AGENTS.md`.
+- Vendored SVGs are committed assets, so `npm run audit` must not treat them as suspicious; they
+  are excluded from the machine-path content scan like other binary assets.
+- Only the delivery mechanism changes; ADR-0005's decisions — Phosphor for in-app icons, an SF
+  Symbol template image for the menubar status item — stand.
+```
+
+- [ ] **Step 9: Verify the ADRs are complete and audit-clean**
 
 Run:
 
@@ -3895,14 +3997,14 @@ grep -L '^## Consequences' docs/DECISIONS/ADR-*.md; echo "exit=$?"
 npm run audit
 ```
 
-Expected: six `ADR-000N-*.md` files; the `grep -L` prints nothing (every file has all four
-headings); the audit passes.
+Expected: eight `ADR-000N-*.md` files (0001 through 0008); the `grep -L` prints nothing (every
+file has all four headings); the audit passes.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add docs/DECISIONS
-git commit -m "docs: record ADR-0001..0006 from the design spec"
+git commit -m "docs: record ADR-0001..0008 covering the design spec and the dependency decisions"
 ```
 
 ---
@@ -3922,7 +4024,7 @@ git commit -m "docs: record ADR-0001..0006 from the design spec"
 
 - [ ] **Step 1: Write `DISTRIBUTING.md`**
 
-Replace `<resource bundle names from Task 4 Step 7>` with the actual `ls` output you recorded.
+Replace `<discovery output from Task 4 Step 7>` with the actual output you recorded.
 
 ````markdown
 # Distributing Macomprendo
@@ -4012,28 +4114,39 @@ An ad-hoc signature (`--sign -`, the default) is fine for local use. Passing a r
 switches on the hardened runtime (`--options runtime --timestamp`) and applies
 `macos/AppBundle/Macomprendo.entitlements`.
 
-### SPM resource bundles
+### What the build copies into the bundle
 
-whisper.cpp ships its Metal shaders as SwiftPM resources. `swift build` emits them as
-`*.bundle` directories next to the executable, and the build script copies **every** one of
-them into `Contents/Resources`, where SwiftPM's generated `Bundle.module` accessor finds them
-via `Bundle.main.resourceURL`.
+`swift build` leaves two kinds of sidecar next to the executable, and `scripts/build-app.mjs`
+discovers and copies both rather than assuming a fixed list:
 
-On this project the emitted bundles are:
+| Emitted | Goes to | Why |
+|---|---|---|
+| `Macomprendo_Macomprendo.bundle` | `Contents/Resources/` | Our own target's resources — the vendored Phosphor SVG icons (see `docs/DECISIONS/ADR-0008`). SwiftPM's generated `Bundle.module` accessor finds it via `Bundle.main.resourceURL`. |
+| `*.framework` | `Contents/Frameworks/` | Slices of a binary xcframework target, **only if they are dynamic**. An `@executable_path/../Frameworks` rpath is added and each framework is signed before the enclosing app. |
 
-```text
-<resource bundle names from Task 4 Step 7>
-```
+whisper.cpp is consumed as a **prebuilt xcframework**, not compiled from source
+(`docs/DECISIONS/ADR-0007`), so its Metal resources travel inside the xcframework — there are no
+ggml resource bundles to copy.
 
-Re-check after any whisper.cpp version bump:
+Re-run the discovery after any whisper xcframework bump or any change to the app target's
+resources:
 
 ```sh
 BIN=$(swift build --package-path macos -c release --triple arm64-apple-macosx14.0 --show-bin-path)
-ls -d "$BIN"/*.bundle
+ls -d "$BIN"/*.bundle 2>/dev/null || echo "(no .bundle)"
+ls -d "$BIN"/*.framework 2>/dev/null || echo "(no .framework)"
+otool -L "$BIN/Macomprendo" | grep -i whisper || echo "whisper is statically linked"
 ```
 
-If the list is empty the build warns; a shipped app without these bundles falls back to CPU
-inference or fails to load the model.
+Current result for this project:
+
+```text
+<discovery output from Task 4 Step 7>
+```
+
+A missing `.bundle` is a hard failure — the app would ship without its icons, and the build script
+warns about it. Missing `.framework` entries are only a problem when `otool -L` says the whisper
+slice is dynamic.
 
 ## 3. Notarize and package
 
@@ -4111,7 +4224,7 @@ installed, `gitleaks` over both the working tree and the git history.
 ## Verification the tooling performs
 
 - Developer ID signing with hardened runtime and a secure timestamp
-- Nested SPM resource bundles signed before the enclosing app
+- Nested frameworks and SwiftPM resource bundles signed before the enclosing app
 - Universal architecture report (`lipo -archs`) after assembly
 - Synchronous `notarytool` submission with an explicit `Accepted` check
 - Ticket stapling plus `stapler validate`
@@ -4299,8 +4412,10 @@ Every box must be ticked before `npm run release`.
 
 - [ ] `npm run build -- --arch arm64,x86_64` succeeds.
 - [ ] `lipo -archs dist/Macomprendo.app/Contents/MacOS/Macomprendo` prints `x86_64 arm64`.
-- [ ] `ls dist/Macomprendo.app/Contents/Resources` contains `AppIcon.icns`, `LICENSE`, and every
-      whisper SwiftPM resource bundle listed in DISTRIBUTING.md.
+- [ ] `ls dist/Macomprendo.app/Contents/Resources` contains `AppIcon.icns`, `LICENSE`, and
+      `Macomprendo_Macomprendo.bundle` (the vendored Phosphor icons).
+- [ ] `Contents/Frameworks` matches DISTRIBUTING.md: present with the dynamic xcframework slices,
+      or absent when the whisper slice is statically linked.
 - [ ] `codesign --verify --deep --strict --verbose=2 dist/Macomprendo.app` reports the bundle as
       valid on disk and satisfying its designated requirement.
 - [ ] `/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/Macomprendo.app/Contents/Info.plist`
@@ -4333,7 +4448,7 @@ Every box must be ticked before `npm run release`.
 
 - [ ] `CHANGELOG.md` has entries under `## [Unreleased]` describing everything in this release.
 - [ ] `README.md` install instructions match the artifact names actually produced.
-- [ ] `DISTRIBUTING.md` lists the resource bundle names currently emitted by `swift build`.
+- [ ] `DISTRIBUTING.md` lists the bundle and framework names currently emitted by `swift build`.
 ````
 
 - [ ] **Step 5: Verify the docs against the tooling**
@@ -4651,9 +4766,10 @@ npm run fetch-model-hashes                         # (from Plan 2) refresh whisp
 - Bundle id `com.dzamataev.macomprendo`, team `68QJJA7HK9`, notary profile `macomprendo-notary`.
 - Ad-hoc (`--sign -`) is the default and is fine locally. Notarization needs a **Developer ID
   Application** certificate; an *Apple Development* certificate cannot be notarized.
-- The build copies every `*.bundle` SwiftPM emits next to the executable into
-  `Contents/Resources` — that is where whisper's Metal shaders live. If the build warns "No
-  SwiftPM resource bundles found", stop and fix it before shipping.
+- The build copies every `*.bundle` SwiftPM emits into `Contents/Resources` (that is where the
+  vendored Phosphor icons live) and every dynamic `*.framework` into `Contents/Frameworks`.
+  whisper.cpp is a prebuilt xcframework, so there are no ggml Metal bundles to copy. If the build
+  warns "No SwiftPM resource bundle found", stop and fix it before shipping.
 - CI never notarizes: no Apple secrets are assumed to exist in the repository.
 
 ## When something fails
