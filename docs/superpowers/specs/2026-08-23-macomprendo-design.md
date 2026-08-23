@@ -41,8 +41,9 @@ macomprendo/
   .claude/settings.json     # allowlisted build/test commands
   .github/workflows/ci.yml  # swift test + unsigned xcodebuild + audits, SHA-pinned actions
   docs/ARCHITECTURE.md  docs/SMOKE_TEST.md  docs/DECISIONS/ADR-*.md  docs/superpowers/{specs,plans}/
-  scripts/build_macos_app.sh  notarize_macos_app.sh  configure_notarization.sh
-          release.py  audit_public_repo.sh  sync_agent_config.sh
+  scripts/build_app.py  notarize_app.py  configure_notarization.py
+          release.py  audit_public_repo.py  sync_agent_config.py  (Python 3.9+, stdlib only)
+  tests/  (Python unittest for the scripts)
   macos/
     project.yml             # XcodeGen source of truth; generated .xcodeproj committed
     Package.swift           # for `swift test` / `swift build`
@@ -263,11 +264,16 @@ kept thin and covered by `docs/SMOKE_TEST.md`, a manual checklist run before rel
 
 ## 7. Build, CI, release
 
-Scripts copied and adapted from mac-dev-clean: `build_macos_app.sh` (swift build per
-arch → lipo → assemble bundle → codesign), `notarize_macos_app.sh`,
-`configure_notarization.sh`, `release.py` (version bump in `project.yml`, pbxproj,
-`CHANGELOG.md`; tests; tag; `gh release`), `audit_public_repo.sh`, plus
-`sync_agent_config.sh`. CI: `swift test`, unsigned `xcodebuild`, audit, symlink check.
+All tooling scripts are **Python 3.9+ (stdlib only, `#!/usr/bin/env python3`)** —
+no shell scripts beyond one-line shims. Ported from mac-dev-clean's logic:
+`build_app.py` (swift build per arch → lipo → assemble bundle → PlistBuddy version →
+codesign), `notarize_app.py` (identity discovery, notarytool submit/staple/validate,
+zip + sha256), `configure_notarization.py`, `release.py` (version bump in
+`project.yml`, pbxproj, `CHANGELOG.md`; tests; tag; `gh release`),
+`audit_public_repo.py`, `sync_agent_config.py`. Shared helpers in `scripts/_lib.py`
+(run/log/version parsing). Scripts are unit-tested with `unittest` in `tests/`
+(subprocess calls mocked). CI: `python3 -m unittest`, `swift test`, unsigned
+`xcodebuild`, audit, symlink check.
 Bundle id `com.ravenvector.macomprendo` (placeholder until branding is decided).
 
 ## 8. AI-driven development setup
@@ -279,11 +285,11 @@ Bundle id `com.ravenvector.macomprendo` (placeholder until branding is decided).
   `docs/DECISIONS`).
 - Skills (single source `.agents/skills/`, symlinked into `.claude/skills/`):
   `macomprendo-architecture`, `macomprendo-build-test`, `macomprendo-add-provider`,
-  `macomprendo-add-hotkey-feature`, `macomprendo-release`.
+  `macomprendo-add-hotkey-feature`, `macomprendo-release`, `macomprendo-scripts` (Python script conventions).
 - Claude-specific: `.claude/agents/planner.md` (model: opus), `swift-implementer.md`,
   `reviewer.md` (model: opus); `.claude/settings.json` permission allowlist for
-  `swift build/test`, `xcodegen`, `xcodebuild`, scripts.
-- `scripts/sync_agent_config.sh` creates/validates symlinks; CI fails if they drift.
+  `swift build/test`, `xcodegen`, `xcodebuild`, `python3 scripts/*.py`.
+- `scripts/sync_agent_config.py` creates/validates symlinks; CI fails if they drift.
 
 ## 9. Decisions (to be recorded as ADRs)
 
