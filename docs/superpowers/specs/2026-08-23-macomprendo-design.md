@@ -41,7 +41,7 @@ macomprendo/
   .claude/settings.json     # allowlisted build/test commands
   .github/workflows/ci.yml  # swift test + unsigned xcodebuild + audits, SHA-pinned actions
   docs/ARCHITECTURE.md  docs/SMOKE_TEST.md  docs/DECISIONS/ADR-*.md  docs/superpowers/{specs,plans}/
-  package.json              # scripts runner only (node >= 20, zero npm deps)
+  package.json              # scripts runner (node >= 20); npm deps allowed when they earn their keep
   scripts/build-app.mjs  notarize-app.mjs  configure-notarization.mjs
           release.mjs  audit-public-repo.mjs  sync-agent-config.mjs  lib/ (shared helpers)
   scripts/__tests__/        # node:test unit tests for the scripts
@@ -265,8 +265,10 @@ kept thin and covered by `docs/SMOKE_TEST.md`, a manual checklist run before rel
 
 ## 7. Build, CI, release
 
-All tooling scripts are **Node.js ≥ 20 ES modules (`.mjs`), zero npm dependencies** —
-only `node:` built-ins (`child_process`, `fs/promises`, `path`, `crypto`, `util.parseArgs`).
+All tooling scripts are **Node.js ≥ 20 ES modules (`.mjs`)**. Prefer `node:` built-ins
+(`child_process`, `fs/promises`, `path`, `crypto`, `util.parseArgs`); add npm
+dependencies (e.g. `execa`, `yaml`, `picocolors`) when they clearly simplify the code —
+pinned in `package.json` with a committed `package-lock.json`, `npm ci` in CI.
 Ported from mac-dev-clean's shell/Python logic: `build-app.mjs` (swift build per arch →
 lipo → assemble bundle → PlistBuddy version → codesign), `notarize-app.mjs` (identity
 discovery, notarytool submit/staple/validate, zip + sha256), `configure-notarization.mjs`,
