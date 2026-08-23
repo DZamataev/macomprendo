@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship the complete Node.js release toolchain (build, notarize, release, audit, install, model hashes), the release/decision documentation, and the CI + tag-release workflows, so that `npm run release -- --dry-run patch` passes end to end.
+**Goal:** Ship the complete Node.js release toolchain (build, notarize, release, audit, install), the release/decision documentation, and the CI + tag-release workflows, so that `npm run release -- --dry-run patch` passes end to end.
 
 **Architecture:** Every tool is a Node ≥ 20 ES module in `scripts/` that exports pure helper functions plus an injectable `main(argv, deps)`. Side effects reach the outside world only through injected `run` (process spawning), `fsOps` (filesystem mutation), and `io` (file read/write) objects, so `node:test` can drive whole flows with fakes and never touch the machine. Long command sequences are produced by pure `plan*()` functions returning step arrays, which `--dry-run` prints and `executePlan()` performs.
 
@@ -22,7 +22,7 @@
 - npm dependencies must be pinned to exact versions (`--save-exact`) with `package-lock.json` committed; CI uses `npm ci`.
 - Node tests: `node --test scripts/__tests__/`. Swift tests: `swift test --package-path macos`.
 - App name `Macomprendo`, bundle `Macomprendo.app`, executable `Macomprendo`.
-- Bundle identifier `com.dzamatav.macomprendo`. Development team `68QJJA7HK9`.
+- Bundle identifier `com.dzamataev.macomprendo`. Development team `68QJJA7HK9`.
 - Copyright "© 2026 Denis Zamataev". Licence MIT.
 - Deployment target macOS `14.0`. Universal binary: `arm64` + `x86_64`.
 - Version source of truth: `MARKETING_VERSION` in `macos/project.yml`; mirrored into `macos/Macomprendo.xcodeproj/project.pbxproj`.
@@ -49,7 +49,6 @@
 | `scripts/release.mjs` | Preflight, version bump, changelog, tests, commit, tag, push, `gh release` |
 | `scripts/audit-public-repo.mjs` | Refuse to publish sensitive filenames, machine paths, whitespace errors |
 | `scripts/install-app.mjs` | Build + atomic install into `/Applications` with backup/restore |
-| `scripts/fetch-model-hashes.mjs` | Read Hugging Face LFS SHA-256 digests for the whisper model catalog |
 | `scripts/__tests__/helpers/fake-run.mjs` | `node:test` doubles for `run`, `fsOps`, `io`, `log` |
 | `scripts/__tests__/*.test.mjs` | One test file per tool |
 | `DISTRIBUTING.md` | Full signing/notarization/release runbook |
@@ -60,7 +59,7 @@
 
 | File | Change |
 |---|---|
-| `package.json` / `package-lock.json` | New deps + `build`, `notarize`, `configure-notary`, `release`, `audit`, `install-app`, `fetch-model-hashes` scripts |
+| `package.json` / `package-lock.json` | New deps + `build`, `notarize`, `configure-notary`, `release`, `audit`, `install-app` scripts |
 | `scripts/lib/fs.mjs` | Add filesystem-operation helpers + `realFsOps` / `realIO` bundles |
 | `README.md` | Final content: features, install, hotkeys, privacy |
 | `CHANGELOG.md` | 0.1.0 Unreleased entries |
@@ -89,8 +88,12 @@ export async function rmrf(target)
 export async function copyPath(from, to)
 export async function chmodExec(file)
 export async function pathExists(p)
-export async function listBundles(dir)
-export const realFsOps   // { mkdirp, rmrf, copyPath, chmodExec, pathExists, listBundles }
+export async function listDirsWithSuffix(dir, suffix)
+export const listBundles      // (dir) => *.bundle directory names, sorted
+export const listFrameworks   // (dir) => *.framework directory names, sorted
+export async function move(from, to)          // added in Task 10
+export async function makeTempDir(prefix)     // added in Task 10
+export const realFsOps   // the six/eight operations above, as one injectable object
 export const realIO      // { readFile, writeFile, exists }
 
 // scripts/lib/changelog.mjs  (NEW)
@@ -152,7 +155,7 @@ test('ROOT points at the repository checkout', () => {
 test('identity constants match the spec', () => {
   assert.equal(APP_NAME, 'Macomprendo.app');
   assert.equal(EXECUTABLE_NAME, 'Macomprendo');
-  assert.equal(BUNDLE_ID, 'com.dzamatav.macomprendo');
+  assert.equal(BUNDLE_ID, 'com.dzamataev.macomprendo');
   assert.equal(TEAM_ID, '68QJJA7HK9');
   assert.equal(NOTARY_PROFILE, 'macomprendo-notary');
   assert.equal(DEPLOYMENT_TARGET, '14.0');
@@ -199,7 +202,7 @@ export const DIST_DIR = path.join(ROOT, 'dist');
 
 export const APP_NAME = 'Macomprendo.app';
 export const EXECUTABLE_NAME = 'Macomprendo';
-export const BUNDLE_ID = 'com.dzamatav.macomprendo';
+export const BUNDLE_ID = 'com.dzamataev.macomprendo';
 export const TEAM_ID = '68QJJA7HK9';
 export const NOTARY_PROFILE = 'macomprendo-notary';
 export const DEPLOYMENT_TARGET = '14.0';
@@ -226,8 +229,9 @@ import { mkdtemp, writeFile, mkdir, stat, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { mkdirp, rmrf, copyPath, chmodExec, pathExists, listBundles, realFsOps, realIO }
-  from '../lib/fs.mjs';
+import {
+  mkdirp, rmrf, copyPath, chmodExec, pathExists, listBundles, listFrameworks, realFsOps, realIO,
+} from '../lib/fs.mjs';
 
 async function scratch() {
   return mkdtemp(path.join(tmpdir(), 'macomprendo-fs-'));
@@ -267,20 +271,29 @@ test('chmodExec makes a file executable', async () => {
 
 test('listBundles returns sorted *.bundle directory names only', async () => {
   const dir = await scratch();
-  await mkdirp(path.join(dir, 'whisper.cpp_whisper.bundle'));
+  await mkdirp(path.join(dir, 'Macomprendo_Macomprendo.bundle'));
   await mkdirp(path.join(dir, 'zeta_target.bundle'));
   await mkdirp(path.join(dir, 'Modules'));
+  await mkdirp(path.join(dir, 'whisper.framework'));
   await writeFile(path.join(dir, 'not-a-dir.bundle'), '');
   assert.deepEqual(await listBundles(dir),
-    ['whisper.cpp_whisper.bundle', 'zeta_target.bundle']);
+    ['Macomprendo_Macomprendo.bundle', 'zeta_target.bundle']);
 });
 
-test('listBundles returns an empty list for a missing directory', async () => {
+test('listFrameworks returns sorted *.framework directory names only', async () => {
+  const dir = await scratch();
+  await mkdirp(path.join(dir, 'whisper.framework'));
+  await mkdirp(path.join(dir, 'Macomprendo_Macomprendo.bundle'));
+  assert.deepEqual(await listFrameworks(dir), ['whisper.framework']);
+});
+
+test('listBundles and listFrameworks return an empty list for a missing directory', async () => {
   assert.deepEqual(await listBundles('/nope/does/not/exist'), []);
+  assert.deepEqual(await listFrameworks('/nope/does/not/exist'), []);
 });
 
 test('realFsOps and realIO expose the operation bundles', async () => {
-  for (const key of ['mkdirp', 'rmrf', 'copyPath', 'chmodExec', 'pathExists', 'listBundles']) {
+  for (const key of ['mkdirp', 'rmrf', 'copyPath', 'chmodExec', 'pathExists', 'listBundles', 'listFrameworks']) {
     assert.equal(typeof realFsOps[key], 'function', key);
   }
   for (const key of ['readFile', 'writeFile', 'exists']) {
@@ -333,7 +346,7 @@ export async function pathExists(p) {
   }
 }
 
-export async function listBundles(dir) {
+export async function listDirsWithSuffix(dir, suffix) {
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -341,12 +354,19 @@ export async function listBundles(dir) {
     return [];
   }
   return entries
-    .filter((entry) => entry.isDirectory() && entry.name.endsWith('.bundle'))
+    .filter((entry) => entry.isDirectory() && entry.name.endsWith(suffix))
     .map((entry) => entry.name)
     .sort();
 }
 
-export const realFsOps = { mkdirp, rmrf, copyPath, chmodExec, pathExists, listBundles };
+// SwiftPM emits our own target's resources as <Package>_<Target>.bundle next to the
+// executable, and binary xcframework slices as *.framework. Both must reach the app bundle.
+export const listBundles = (dir) => listDirsWithSuffix(dir, '.bundle');
+export const listFrameworks = (dir) => listDirsWithSuffix(dir, '.framework');
+
+export const realFsOps = {
+  mkdirp, rmrf, copyPath, chmodExec, pathExists, listBundles, listFrameworks,
+};
 
 export const realIO = {
   readFile: (p) => fsReadFile(p, 'utf8'),
@@ -360,7 +380,7 @@ If `scripts/lib/fs.mjs` already imports some of these from `node:fs/promises`, m
 - [ ] **Step 9: Run the test to verify it passes**
 
 Run: `node --test scripts/__tests__/fs-ops.test.mjs`
-Expected: PASS — `# pass 7`, `# fail 0`.
+Expected: PASS — `# pass 8`, `# fail 0`.
 
 - [ ] **Step 10: Create the shared test doubles**
 
@@ -408,7 +428,9 @@ export function makeFakeFsOps(existing = []) {
     async chmodExec(file) { events.push(['chmodExec', file]); },
     async pathExists(p) { return present.has(p); },
     async listBundles(dir) { events.push(['listBundles', dir]); return this.bundles ?? []; },
+    async listFrameworks(dir) { events.push(['listFrameworks', dir]); return this.frameworks ?? []; },
     bundles: [],
+    frameworks: [],
   };
 }
 
@@ -604,9 +626,9 @@ git commit -m "feat(scripts): add CHANGELOG release and notes-extraction helpers
     `BuildOptions = { archs: string[], sign: string, configuration: 'release'|'debug', deploymentTarget: string, entitlements: string, buildNumber: string|null, version: string|null, dist: string, dryRun: boolean, help: boolean }`
   - `tripleFor(arch, deploymentTarget) -> string`
   - `predictBinPath(root, triple, configuration) -> string`
-  - `bundleLayout(distDir) -> { app, contents, macosDir, resources, executable, infoPlist }`
+  - `bundleLayout(distDir) -> { app, contents, macosDir, resources, frameworks, executable, infoPlist }`
   - `planBuild(options, context) -> Step[]` where
-    `context = { version, buildNumber, binPaths: Record<arch,string>, resourceBundles: string[] }` and
+    `context = { version, buildNumber, binPaths: Record<arch,string>, resourceBundles: string[], frameworks?: string[] }` and
     `Step = { type: 'exec', cmd, args } | { type: 'rm'|'mkdir', path } | { type: 'copy', from, to } | { type: 'chmod', path }`
   - `describeStep(step) -> string`
 
@@ -675,6 +697,7 @@ test('bundleLayout describes the app bundle', () => {
   assert.equal(layout.contents, '/out/Macomprendo.app/Contents');
   assert.equal(layout.macosDir, '/out/Macomprendo.app/Contents/MacOS');
   assert.equal(layout.resources, '/out/Macomprendo.app/Contents/Resources');
+  assert.equal(layout.frameworks, '/out/Macomprendo.app/Contents/Frameworks');
   assert.equal(layout.executable, '/out/Macomprendo.app/Contents/MacOS/Macomprendo');
   assert.equal(layout.infoPlist, '/out/Macomprendo.app/Contents/Info.plist');
 });
@@ -685,7 +708,8 @@ function planFixture(overrides = {}) {
     version: '1.2.3',
     buildNumber: '1.2.3',
     binPaths: { arm64: '/b/arm64', x86_64: '/b/x86_64' },
-    resourceBundles: ['whisper.cpp_whisper.bundle'],
+    resourceBundles: ['Macomprendo_Macomprendo.bundle'],
+    frameworks: [],
     ...(overrides.context ?? {}),
   });
 }
@@ -731,8 +755,28 @@ test('planBuild copies Info.plist, the icon, the licence and the SPM resource bu
   assert.ok(targets.includes('/out/Macomprendo.app/Contents/Resources/AppIcon.icns'));
   assert.ok(targets.includes('/out/Macomprendo.app/Contents/Resources/LICENSE'));
   assert.ok(copies.some((s) =>
-    s.from === '/b/arm64/whisper.cpp_whisper.bundle'
-    && s.to === '/out/Macomprendo.app/Contents/Resources/whisper.cpp_whisper.bundle'));
+    s.from === '/b/arm64/Macomprendo_Macomprendo.bundle'
+    && s.to === '/out/Macomprendo.app/Contents/Resources/Macomprendo_Macomprendo.bundle'));
+});
+
+test('planBuild embeds discovered frameworks in Contents/Frameworks', () => {
+  const steps = planFixture({ context: { frameworks: ['whisper.framework'] } });
+  assert.ok(steps.some((s) =>
+    s.type === 'mkdir' && s.path === '/out/Macomprendo.app/Contents/Frameworks'));
+  assert.ok(steps.some((s) => s.type === 'copy'
+    && s.from === '/b/arm64/whisper.framework'
+    && s.to === '/out/Macomprendo.app/Contents/Frameworks/whisper.framework'));
+  const install = steps.find((s) => s.cmd === 'install_name_tool');
+  assert.deepEqual(install.args, [
+    '-add_rpath', '@executable_path/../Frameworks',
+    '/out/Macomprendo.app/Contents/MacOS/Macomprendo',
+  ]);
+});
+
+test('planBuild omits the Frameworks directory when nothing needs embedding', () => {
+  const steps = planFixture();
+  assert.equal(steps.some((s) => s.type === 'mkdir' && s.path.endsWith('/Frameworks')), false);
+  assert.equal(steps.some((s) => s.cmd === 'install_name_tool'), false);
 });
 
 test('planBuild stamps the version, build number and bundle identifier with PlistBuddy', () => {
@@ -753,21 +797,29 @@ test('planBuild ad-hoc signs by default', () => {
     ['--verify', '--deep', '--strict', '--verbose=2', '/out/Macomprendo.app']);
 });
 
-test('planBuild signs nested bundles then the app with hardened runtime for a real identity', () => {
-  const steps = planFixture({ argv: ['--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)'] });
+test('planBuild signs nested code then the app with hardened runtime for a real identity', () => {
+  const steps = planFixture({
+    argv: ['--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)'],
+    context: { frameworks: ['whisper.framework'] },
+  });
   const signs = steps.filter((s) => s.type === 'exec' && s.cmd === 'codesign');
   assert.deepEqual(signs[0].args, [
     '--force', '--options', 'runtime', '--timestamp',
     '--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)',
-    '/out/Macomprendo.app/Contents/Resources/whisper.cpp_whisper.bundle',
+    '/out/Macomprendo.app/Contents/Frameworks/whisper.framework',
   ]);
   assert.deepEqual(signs[1].args, [
+    '--force', '--options', 'runtime', '--timestamp',
+    '--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)',
+    '/out/Macomprendo.app/Contents/Resources/Macomprendo_Macomprendo.bundle',
+  ]);
+  assert.deepEqual(signs[2].args, [
     '--force', '--options', 'runtime', '--timestamp',
     '--entitlements', path.join(ROOT, 'macos/AppBundle/Macomprendo.entitlements'),
     '--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)',
     '/out/Macomprendo.app',
   ]);
-  assert.deepEqual(signs[2].args,
+  assert.deepEqual(signs[3].args,
     ['--verify', '--deep', '--strict', '--verbose=2', '/out/Macomprendo.app']);
 });
 
@@ -802,10 +854,17 @@ Create `scripts/build-app.mjs` with exactly this content for now (the executing 
 #!/usr/bin/env node
 // Build Macomprendo.app: swift build per architecture, lipo, assemble the bundle, codesign.
 //
-// SPM resource bundles: whisper.cpp ships Metal shaders as SwiftPM resources, which the
-// build emits as *.bundle directories next to the executable. They are copied verbatim
-// into Contents/Resources, where the generated `Bundle.module` accessor finds them via
-// Bundle.main.resourceURL. See DISTRIBUTING.md > "SPM resource bundles".
+// SwiftPM emits two kinds of sidecar next to the executable, and both must reach the app:
+//   *.bundle     our own target's resources (Macomprendo_Macomprendo.bundle: vendored
+//                Phosphor SVGs and other assets). Copied into Contents/Resources, where
+//                the generated `Bundle.module` accessor finds them via
+//                Bundle.main.resourceURL.
+//   *.framework  slices extracted from binary xcframework targets (whisper.cpp is consumed
+//                as a prebuilt xcframework, see docs/DECISIONS/ADR-0007). Copied into
+//                Contents/Frameworks, an @rpath is added, and each is signed before the
+//                enclosing app. If the slices are static, `swift build` emits none and this
+//                whole branch is skipped.
+// See DISTRIBUTING.md > "What the build copies into the bundle".
 import path from 'node:path';
 import os from 'node:os';
 import { parseArgs } from 'node:util';
@@ -879,13 +938,14 @@ export function bundleLayout(distDir) {
     contents,
     macosDir: path.join(contents, 'MacOS'),
     resources: path.join(contents, 'Resources'),
+    frameworks: path.join(contents, 'Frameworks'),
     executable: path.join(contents, 'MacOS', EXECUTABLE_NAME),
     infoPlist: path.join(contents, 'Info.plist'),
   };
 }
 
 export function planBuild(options, context) {
-  const { version, buildNumber, binPaths, resourceBundles } = context;
+  const { version, buildNumber, binPaths, resourceBundles, frameworks = [] } = context;
   const layout = bundleLayout(options.dist);
   const steps = [];
 
@@ -904,6 +964,7 @@ export function planBuild(options, context) {
   steps.push({ type: 'rm', path: layout.app });
   steps.push({ type: 'mkdir', path: layout.macosDir });
   steps.push({ type: 'mkdir', path: layout.resources });
+  if (frameworks.length > 0) steps.push({ type: 'mkdir', path: layout.frameworks });
 
   const slices = options.archs.map((arch) => path.join(binPaths[arch], EXECUTABLE_NAME));
   if (slices.length === 1) {
@@ -928,6 +989,20 @@ export function planBuild(options, context) {
       to: path.join(layout.resources, bundle),
     });
   }
+  for (const framework of frameworks) {
+    steps.push({
+      type: 'copy',
+      from: path.join(primaryBin, framework),
+      to: path.join(layout.frameworks, framework),
+    });
+  }
+  if (frameworks.length > 0) {
+    steps.push({
+      type: 'exec',
+      cmd: 'install_name_tool',
+      args: ['-add_rpath', '@executable_path/../Frameworks', layout.executable],
+    });
+  }
 
   const plist = (command) => ({
     type: 'exec',
@@ -943,6 +1018,18 @@ export function planBuild(options, context) {
   if (options.sign === '-') {
     steps.push({ type: 'exec', cmd: 'codesign', args: ['--force', '--sign', '-', layout.app] });
   } else {
+    // Nested code must be signed before the enclosing bundle, innermost first.
+    for (const framework of frameworks) {
+      steps.push({
+        type: 'exec',
+        cmd: 'codesign',
+        args: [
+          '--force', '--options', 'runtime', '--timestamp',
+          '--sign', options.sign,
+          path.join(layout.frameworks, framework),
+        ],
+      });
+    }
     for (const bundle of resourceBundles) {
       steps.push({
         type: 'exec',
@@ -996,7 +1083,7 @@ Note: `ROOT` is imported now and used by `main()` in Task 4; leave the import in
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `node --test scripts/__tests__/build-app.test.mjs`
-Expected: PASS — `# pass 16`, `# fail 0`.
+Expected: PASS — `# pass 19`, `# fail 0`.
 
 - [ ] **Step 5: Add the `build` script to `package.json`**
 
@@ -1026,7 +1113,7 @@ git commit -m "feat(scripts): plan the macOS app build as an inspectable step li
 - Consumes: everything from Task 3 plus `run`, `log`, `realFsOps`.
 - Produces:
   - `executePlan(steps, { run, fsOps, log, dryRun }) -> Promise<{ outputs: string[] }>` — `outputs` collects the stdout of `capture: true` exec steps in order.
-  - `resolveContext(options, { run, fsOps }) -> Promise<{ version, buildNumber, binPaths, resourceBundles }>` — reads `MARKETING_VERSION` from `macos/project.yml`, resolves each arch's bin path (predicted in dry-run, `swift build --show-bin-path` otherwise), and lists the emitted `*.bundle` directories.
+  - `resolveContext(options, { run, fsOps, io }) -> Promise<{ version, buildNumber, binPaths, resourceBundles, frameworks }>` — reads `MARKETING_VERSION` from `macos/project.yml`, resolves each arch's bin path (predicted in dry-run, `swift build --show-bin-path` otherwise), and lists the emitted `*.bundle` and `*.framework` directories.
   - `main(argv, deps = {}) -> Promise<number>` — exit code, `0` on success.
 
 - [ ] **Step 1: Write the failing tests for execution and `main`**
@@ -1086,7 +1173,8 @@ test('executePlan in dry-run mode touches nothing and logs every step', async ()
 test('resolveContext predicts bin paths and skips swift in dry-run mode', async () => {
   const run = makeFakeRun();
   const fsOps = makeFakeFsOps();
-  fsOps.bundles = ['whisper.cpp_whisper.bundle'];
+  fsOps.bundles = ['Macomprendo_Macomprendo.bundle'];
+  fsOps.frameworks = ['whisper.framework'];
   const io = makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT });
   const options = parseBuildArgs(['--arch', 'arm64,x86_64', '--dry-run']);
 
@@ -1096,7 +1184,8 @@ test('resolveContext predicts bin paths and skips swift in dry-run mode', async 
   assert.equal(context.buildNumber, '1.2.3');
   assert.deepEqual(run.calls, []);
   assert.ok(context.binPaths.arm64.endsWith('macos/.build/arm64-apple-macosx14.0/release'));
-  assert.deepEqual(context.resourceBundles, ['whisper.cpp_whisper.bundle']);
+  assert.deepEqual(context.resourceBundles, ['Macomprendo_Macomprendo.bundle']);
+  assert.deepEqual(context.frameworks, ['whisper.framework']);
 });
 
 test('resolveContext asks SwiftPM for the real bin path outside dry-run mode', async () => {
@@ -1131,7 +1220,8 @@ test('main --dry-run prints the plan and exits zero without running anything', a
 
   assert.equal(code, 0);
   assert.deepEqual(run.calls, []);
-  assert.deepEqual(fsOps.events.filter((e) => e[0] !== 'listBundles'), []);
+  assert.deepEqual(
+    fsOps.events.filter((e) => e[0] !== 'listBundles' && e[0] !== 'listFrameworks'), []);
   assert.ok(log.lines.some((l) => l.includes('--triple arm64-apple-macosx14.0')));
   assert.ok(log.lines.some((l) => l.includes('--triple x86_64-apple-macosx14.0')));
   assert.ok(log.lines.some((l) => l.includes('lipo -create')));
@@ -1216,8 +1306,10 @@ export async function resolveContext(options, { run, fsOps, io }) {
     }
   }
 
-  const resourceBundles = await fsOps.listBundles(binPaths[options.archs[0]]);
-  return { version, buildNumber, binPaths, resourceBundles };
+  const primaryBin = binPaths[options.archs[0]];
+  const resourceBundles = await fsOps.listBundles(primaryBin);
+  const frameworks = await fsOps.listFrameworks(primaryBin);
+  return { version, buildNumber, binPaths, resourceBundles, frameworks };
 }
 
 export async function main(argv, deps = {}) {
@@ -1254,8 +1346,9 @@ export async function main(argv, deps = {}) {
     const context = await resolveContext(options, { run, fsOps, io });
     const steps = planBuild(options, context);
     if (context.resourceBundles.length === 0) {
-      log.warn('No SwiftPM resource bundles found next to the executable; '
-        + 'whisper Metal shaders may be missing from the app.');
+      log.warn('No SwiftPM resource bundle found next to the executable. The app target '
+        + 'declares resources (vendored Phosphor SVGs), so this usually means the build '
+        + 'did not run or the resources were dropped from macos/Package.swift.');
     }
     const { outputs } = await executePlan(steps, { run, fsOps, log, dryRun: options.dryRun });
     if (options.dryRun) {
@@ -1284,7 +1377,7 @@ Also add `PROJECT_YML` to the `./lib/paths.mjs` import list at the top of the fi
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `node --test scripts/__tests__/build-app.test.mjs`
-Expected: PASS — `# pass 23`, `# fail 0`.
+Expected: PASS — `# pass 26`, `# fail 0`.
 
 - [ ] **Step 5: Verify `dist/` is git-ignored**
 
@@ -1296,25 +1389,42 @@ Expected: a line naming `.gitignore` and the `dist/` rule. If the command exits 
 Run: `npm run build -- --arch arm64,x86_64 --dry-run`
 Expected: a numbered list of steps starting with two `swift build ... --triple ...` lines and ending with `codesign --verify --deep --strict --verbose=2 .../dist/Macomprendo.app` and `lipo -archs ...`; exit code 0.
 
-- [ ] **Step 7: MANUAL VERIFICATION — discover which resource bundles SwiftPM emits**
+- [ ] **Step 7: MANUAL VERIFICATION — discover what SwiftPM emits next to the executable**
 
-Run, from the repository root:
+whisper.cpp is **not** built from source here. Plan 1 consumes it as a prebuilt xcframework
+through the local package `macos/Packages/WhisperBinary` (official
+`whisper-v1.9.2-xcframework.zip`), so there are no ggml Metal *resource bundles* to copy. What
+`swift build` does emit is our own target's resource bundle and, if the xcframework slices are
+dynamic, one or more `.framework` directories. Find out exactly which, empirically:
 
 ```bash
 swift build --package-path macos -c release --triple arm64-apple-macosx14.0
 BIN=$(swift build --package-path macos -c release --triple arm64-apple-macosx14.0 --show-bin-path)
 echo "$BIN"
-ls -d "$BIN"/*.bundle
-ls "$BIN"/*.bundle/Contents/Resources 2>/dev/null || ls "$BIN"/*.bundle
+ls -d "$BIN"/*.bundle 2>/dev/null || echo "(no .bundle)"
+ls -d "$BIN"/*.framework 2>/dev/null || echo "(no .framework)"
+ls "$BIN"/*.bundle/Contents/Resources 2>/dev/null | head -20
 ```
 
-Expected: at least one directory whose name follows SwiftPM's `<package-identity>_<target>.bundle`
-convention — for the whisper.cpp dependency this is `whisper.cpp_whisper.bundle` and it contains the
-Metal shader resources (`ggml-metal.metal` / `default.metallib` / `ggml-common.h`).
+Expected:
 
-**Write down the exact names you see.** They are needed in Task 13 (DISTRIBUTING.md). If the list is
-empty, stop and investigate: `swift build` may have failed, or the whisper.cpp version in
-`macos/Package.swift` may declare its Metal files differently. Do not proceed with an empty list.
+- **At least one `.bundle`** — `Macomprendo_Macomprendo.bundle`, holding the vendored Phosphor
+  SVG icons (SwiftPM names it `<PackageName>_<TargetName>.bundle`). An empty `.bundle` list is a
+  failure: stop and check that `macos/Package.swift` still declares the icon resources.
+- **`.framework` directories: possibly none.** Determine whether the whisper slices are static
+  or dynamic — that decides whether anything needs embedding:
+
+  ```bash
+  otool -L "$BIN/Macomprendo" | grep -i whisper || echo "whisper is statically linked"
+  ```
+
+  If `otool -L` shows a `@rpath/whisper.framework/...` entry, the slice is dynamic and **must**
+  be embedded — confirm the `.framework` appears in the `ls` above. If it prints
+  "whisper is statically linked", there is nothing to embed and `planBuild` correctly emits no
+  `Contents/Frameworks` steps.
+
+**Write down both lists and the static/dynamic answer.** They are needed in Task 12
+(DISTRIBUTING.md). Re-run this step after any whisper xcframework version bump.
 
 - [ ] **Step 8: MANUAL VERIFICATION — build and launch the real ad-hoc signed app**
 
@@ -1326,16 +1436,20 @@ ls dist/Macomprendo.app/Contents/Resources
 /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/Macomprendo.app/Contents/Info.plist
 /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/Macomprendo.app/Contents/Info.plist
 codesign --verify --deep --strict --verbose=2 dist/Macomprendo.app
+ls dist/Macomprendo.app/Contents/Frameworks 2>/dev/null || echo "(no embedded frameworks)"
 open dist/Macomprendo.app
 ```
 
 Expected:
-- `Contents/Resources` lists `AppIcon.icns`, `LICENSE`, and every bundle discovered in Step 7.
+- `Contents/Resources` lists `AppIcon.icns`, `LICENSE`, and every `.bundle` discovered in Step 7.
+- `Contents/Frameworks` exists **only if** Step 7 found dynamic `.framework` slices, and then
+  contains exactly those.
 - The bundle identifier prints `com.dzamataev.macomprendo` and the version matches `macos/project.yml`.
 - `codesign` prints `valid on disk` and `satisfies its Designated Requirement`.
-- The menubar icon appears; press the dictation hotkey once and confirm transcription works
-  (this proves the whisper Metal resources were found — check `log stream --predicate
-  'subsystem == "com.dzamataev.macomprendo"'` in another terminal if it fails).
+- The menubar icon appears (this proves `Macomprendo_Macomprendo.bundle` with the Phosphor SVGs
+  was found), and pressing the dictation hotkey once produces a transcript (this proves the
+  whisper xcframework loaded). If either fails, watch
+  `log stream --predicate 'subsystem == "com.dzamataev.macomprendo"'` in another terminal.
 
 Then quit the app.
 
@@ -1863,7 +1977,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 
-import { ROOT, DIST_DIR, APP_NAME, NOTARY_PROFILE, TEAM_ID, PROJECT_YML, appPath } from './lib/paths.mjs';
+import { ROOT, DIST_DIR, APP_NAME, NOTARY_PROFILE, TEAM_ID, PROJECT_YML } from './lib/paths.mjs';
 import { run as realRun } from './lib/run.mjs';
 import { log as realLog } from './lib/log.mjs';
 import { realFsOps, realIO, sha256 as realSha256 } from './lib/fs.mjs';
@@ -2075,9 +2189,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   process.exitCode = await main(process.argv.slice(2));
 }
 ```
-
-**Note:** `appPath` is imported but unused in this file — remove it from the import list if
-your linter objects; the tests do not depend on it.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -2784,7 +2895,7 @@ harmless real `mkdir -p dist`; pass `fsOps: makeFakeFsOps()` in a test if you wa
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `node --test scripts/__tests__/release.test.mjs`
-Expected: PASS — `# pass 25`, `# fail 0`.
+Expected: PASS — `# pass 26`, `# fail 0`.
 
 - [ ] **Step 5: Add the `release` script to `package.json`**
 
@@ -2792,17 +2903,32 @@ Expected: PASS — `# pass 25`, `# fail 0`.
 "release": "node scripts/release.mjs"
 ```
 
-- [ ] **Step 6: Verify the real dry run**
+- [ ] **Step 6: Confirm the remote actually is GitHub**
+
+Run: `git remote get-url origin`
+
+Expected: a `github.com` URL. The spec mandates `gh release create`, which only works against
+GitHub.
+
+**If the remote is GitLab or anything else, stop and ask the maintainer before continuing.**
+At the time this plan was written `origin` pointed at `gitlab.com/dzamataev/macomprendo`, so
+this is a live question, not a hypothetical. The three possible resolutions are: (a) add a
+GitHub remote and publish there, (b) keep GitLab and swap the last step of `planRelease` for
+`glab release create v<version> --notes-file <path>` plus `--assets-links`, or (c) drop the
+hosted-release step and publish tags only. Do **not** guess — the choice also decides the
+`README.md` Releases URL and the `gh auth status` preflight check.
+
+- [ ] **Step 7: Verify the real dry run**
 
 Run: `npm run release -- --dry-run patch`
 Expected: exit 0, printing `Current version: 0.1.0`, `Release version: 0.1.1`, the release notes
 extracted from the Unreleased section, and the ten planned commands ending with
 `gh release create v0.1.1 …`. Nothing in `git status` changes.
 
-If it reports `no entries under "## [Unreleased]"`, Task 13 has not run yet — that is expected at
-this point in the plan; re-run this step at the end of Task 13.
+If it reports `no entries under "## [Unreleased]"`, Task 12 has not run yet — that is expected at
+this point in the plan; re-run this step at the end of Task 12.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add scripts/release.mjs scripts/__tests__/release.test.mjs package.json
@@ -3249,7 +3375,8 @@ function installDeps({ running = false, existing = true } = {}) {
   fsOps.moves = [];
   fsOps.move = async (from, to) => { fsOps.moves.push([from, to]); fsOps.present.delete(from); fsOps.present.add(to); };
   fsOps.mkdtemp = async (prefix) => `${prefix}AB12`;
-  return { run, fsOps, log: makeFakeLog(), source: '/repo/dist/Macomprendo.app' };
+  // env: {} keeps MACOS_INSTALL_DIR from the developer's shell out of the test.
+  return { run, fsOps, log: makeFakeLog(), env: {}, source: '/repo/dist/Macomprendo.app' };
 }
 
 test('main installs over an existing copy and opens it', async () => {
@@ -3464,9 +3591,10 @@ export async function main(argv, deps = {}) {
     }
     return 1;
   } finally {
-    if (workDir !== null && installed) {
-      await fsOps.rmrf(workDir);
-    } else if (workDir !== null && backup === null) {
+    // Remove the staging directory whenever the destination is in place — either the new
+    // app was installed, or the backup was successfully restored. If the destination is
+    // missing, the backup is the only copy left and must survive for manual recovery.
+    if (workDir !== null && (await fsOps.pathExists(destination))) {
       await fsOps.rmrf(workDir);
     }
   }
@@ -3522,322 +3650,7 @@ git commit -m "feat(scripts): install the built app atomically with backup and r
 
 ---
 
-### Task 11: `fetch-model-hashes.mjs` (conditional)
-
-**Files:**
-- Create: `scripts/fetch-model-hashes.mjs`
-- Test: `scripts/__tests__/fetch-model-hashes.test.mjs`
-- Modify: `package.json` (add the `fetch-model-hashes` script)
-
-- [ ] **Step 1: Check whether Plan 2 already delivered this tool**
-
-Run:
-
-```bash
-ls scripts/fetch-model-hashes.mjs 2>/dev/null && echo EXISTS
-grep -c 'fetch-model-hashes' docs/superpowers/plans/2026-08-23-02-providers.md 2>/dev/null || echo 0
-```
-
-If the file exists **or** the grep count is greater than 0, **skip Task 11 entirely** and move to
-Task 12. Otherwise continue.
-
-**Why this exists:** `ModelCatalog.all` in `macos/Sources/Macomprendo/Services/ModelCatalog.swift`
-carries a `sha256` for every whisper ggml model so `WhisperModelManager.download` can verify what it
-fetched. Those digests must come from Hugging Face, not be typed by hand. The models live in the
-`ggerganov/whisper.cpp` repository and are Git-LFS objects, so
-`GET https://huggingface.co/api/models/ggerganov/whisper.cpp/tree/main` returns, for each file,
-`{ "type": "file", "path": "ggml-base.bin", "size": 147951465, "lfs": { "oid": "<64 hex chars>", "size": 147951465 } }`.
-The `lfs.oid` **is** the SHA-256 of the file contents (occasionally prefixed with `sha256:`), so no
-multi-gigabyte download is needed.
-
-**Interfaces:**
-- Consumes: `scripts/lib/log.mjs`.
-- Produces:
-  - `CATALOG_FILES: string[]` — the nine ggml file names the app offers.
-  - `TREE_URL: string`
-  - `parseTreeEntries(json) -> Array<{ file: string, sizeBytes: number, sha256: string }>`
-  - `selectCatalog(entries, files) -> Array<{ id, displayName, fileName, sizeBytes, sha256, downloadURL }>`
-  - `swiftCatalogLiteral(models) -> string`
-  - `main(argv, deps) -> Promise<number>`
-
-- [ ] **Step 2: Write the failing test**
-
-Create `scripts/__tests__/fetch-model-hashes.test.mjs`:
-
-```js
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-
-import {
-  CATALOG_FILES, parseTreeEntries, selectCatalog, swiftCatalogLiteral, main,
-} from '../fetch-model-hashes.mjs';
-import { makeFakeLog } from './helpers/fake-run.mjs';
-
-const TREE_JSON = JSON.stringify([
-  { type: 'file', path: 'README.md', size: 1234 },
-  { type: 'file', path: 'ggml-base.bin', size: 147951465, lfs: { oid: 'b'.repeat(64), size: 147951465 } },
-  { type: 'file', path: 'ggml-base.en.bin', size: 147964211, lfs: { oid: 'sha256:c'.padEnd(71, 'c'), size: 147964211 } },
-  { type: 'directory', path: 'ggml-model-something' },
-]);
-
-test('CATALOG_FILES covers every model the app offers', () => {
-  assert.deepEqual(CATALOG_FILES, [
-    'ggml-tiny.bin', 'ggml-tiny.en.bin',
-    'ggml-base.bin', 'ggml-base.en.bin',
-    'ggml-small.bin', 'ggml-small.en.bin',
-    'ggml-medium.bin', 'ggml-medium.en.bin',
-    'ggml-large-v3-turbo.bin',
-  ]);
-});
-
-test('parseTreeEntries keeps LFS files and strips the sha256: prefix', () => {
-  const entries = parseTreeEntries(TREE_JSON);
-  assert.deepEqual(entries[0], { file: 'ggml-base.bin', sizeBytes: 147951465, sha256: 'b'.repeat(64) });
-  assert.equal(entries[1].file, 'ggml-base.en.bin');
-  assert.equal(entries[1].sha256.startsWith('sha256:'), false);
-  assert.equal(entries[1].sha256.length, 64);
-  assert.equal(entries.some((e) => e.file === 'README.md'), false);
-});
-
-test('parseTreeEntries rejects malformed JSON with a clear message', () => {
-  assert.throws(() => parseTreeEntries('not json'), /Hugging Face returned invalid JSON/);
-  assert.throws(() => parseTreeEntries('{"error":"Repository not found"}'),
-    /Hugging Face returned an error: Repository not found/);
-});
-
-test('selectCatalog derives ids, display names and download URLs', () => {
-  const [base] = selectCatalog(parseTreeEntries(TREE_JSON), ['ggml-base.bin']);
-  assert.deepEqual(base, {
-    id: 'base',
-    displayName: 'Base (multilingual)',
-    fileName: 'ggml-base.bin',
-    sizeBytes: 147951465,
-    sha256: 'b'.repeat(64),
-    downloadURL: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
-  });
-  const [baseEN] = selectCatalog(parseTreeEntries(TREE_JSON), ['ggml-base.en.bin']);
-  assert.equal(baseEN.id, 'base.en');
-  assert.equal(baseEN.displayName, 'Base (English)');
-});
-
-test('selectCatalog reports a model the repository no longer publishes', () => {
-  assert.throws(() => selectCatalog(parseTreeEntries(TREE_JSON), ['ggml-nonexistent.bin']),
-    /ggml-nonexistent\.bin is not published/);
-});
-
-test('swiftCatalogLiteral emits a compilable WhisperModel array', () => {
-  const swift = swiftCatalogLiteral(selectCatalog(parseTreeEntries(TREE_JSON), ['ggml-base.bin']));
-  assert.equal(swift, [
-    'static let all: [WhisperModel] = [',
-    '    WhisperModel(',
-    '        id: "base",',
-    '        displayName: "Base (multilingual)",',
-    '        fileName: "ggml-base.bin",',
-    '        sizeBytes: 147_951_465,',
-    `        sha256: "${'b'.repeat(64)}",`,
-    '        downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin")!',
-    '    ),',
-    ']',
-  ].join('\n'));
-});
-
-test('main prints the Swift literal for every catalog model', async () => {
-  const log = makeFakeLog();
-  const fetchImpl = async (url) => {
-    assert.equal(url, 'https://huggingface.co/api/models/ggerganov/whisper.cpp/tree/main?recursive=false');
-    return { ok: true, status: 200, text: async () => TREE_JSON };
-  };
-  const code = await main(['--files', 'ggml-base.bin,ggml-base.en.bin'], { log, fetchImpl });
-  assert.equal(code, 0);
-  assert.ok(log.lines.join('\n').includes('static let all: [WhisperModel] = ['));
-  assert.ok(log.lines.join('\n').includes('id: "base.en"'));
-});
-
-test('main reports an HTTP failure', async () => {
-  const log = makeFakeLog();
-  const fetchImpl = async () => ({ ok: false, status: 503, text: async () => 'unavailable' });
-  const code = await main([], { log, fetchImpl });
-  assert.equal(code, 1);
-  assert.ok(log.lines.some((l) => l.includes('HTTP 503')));
-});
-```
-
-- [ ] **Step 3: Run the test to verify it fails**
-
-Run: `node --test scripts/__tests__/fetch-model-hashes.test.mjs`
-Expected: FAIL — `Cannot find module '.../scripts/fetch-model-hashes.mjs'`.
-
-- [ ] **Step 4: Implement `scripts/fetch-model-hashes.mjs`**
-
-```js
-#!/usr/bin/env node
-// Print the WhisperModel catalog literal (with verified SHA-256 digests) for
-// macos/Sources/Macomprendo/Services/ModelCatalog.swift.
-//
-// Hugging Face exposes each LFS object's SHA-256 as `lfs.oid` in the repository tree API,
-// so the digests are obtained without downloading gigabytes of weights.
-import { parseArgs } from 'node:util';
-import { pathToFileURL } from 'node:url';
-
-import { log as realLog } from './lib/log.mjs';
-
-const REPO = 'ggerganov/whisper.cpp';
-export const TREE_URL = `https://huggingface.co/api/models/${REPO}/tree/main?recursive=false`;
-const DOWNLOAD_BASE = `https://huggingface.co/${REPO}/resolve/main`;
-
-export const CATALOG_FILES = [
-  'ggml-tiny.bin', 'ggml-tiny.en.bin',
-  'ggml-base.bin', 'ggml-base.en.bin',
-  'ggml-small.bin', 'ggml-small.en.bin',
-  'ggml-medium.bin', 'ggml-medium.en.bin',
-  'ggml-large-v3-turbo.bin',
-];
-
-const SIZE_LABELS = {
-  tiny: 'Tiny', base: 'Base', small: 'Small', medium: 'Medium', 'large-v3-turbo': 'Large v3 Turbo',
-};
-
-export function parseTreeEntries(json) {
-  let parsed;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    throw new Error('Hugging Face returned invalid JSON for the model tree.');
-  }
-  if (!Array.isArray(parsed)) {
-    throw new Error(`Hugging Face returned an error: ${parsed?.error ?? JSON.stringify(parsed)}`);
-  }
-  return parsed
-    .filter((entry) => entry.type === 'file' && entry.lfs?.oid)
-    .map((entry) => ({
-      file: entry.path,
-      sizeBytes: entry.lfs.size ?? entry.size,
-      sha256: String(entry.lfs.oid).replace(/^sha256:/, ''),
-    }));
-}
-
-function idFor(fileName) {
-  return fileName.replace(/^ggml-/, '').replace(/\.bin$/, '');
-}
-
-function displayNameFor(id) {
-  const english = id.endsWith('.en');
-  const base = english ? id.slice(0, -3) : id;
-  const label = SIZE_LABELS[base] ?? base;
-  return `${label} (${english ? 'English' : 'multilingual'})`;
-}
-
-export function selectCatalog(entries, files) {
-  const byFile = new Map(entries.map((entry) => [entry.file, entry]));
-  return files.map((fileName) => {
-    const entry = byFile.get(fileName);
-    if (entry === undefined) {
-      throw new Error(`${fileName} is not published in ${REPO}; update CATALOG_FILES.`);
-    }
-    const id = idFor(fileName);
-    return {
-      id,
-      displayName: displayNameFor(id),
-      fileName,
-      sizeBytes: entry.sizeBytes,
-      sha256: entry.sha256,
-      downloadURL: `${DOWNLOAD_BASE}/${fileName}`,
-    };
-  });
-}
-
-function groupDigits(value) {
-  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, '_');
-}
-
-export function swiftCatalogLiteral(models) {
-  const lines = ['static let all: [WhisperModel] = ['];
-  for (const model of models) {
-    lines.push(
-      '    WhisperModel(',
-      `        id: "${model.id}",`,
-      `        displayName: "${model.displayName}",`,
-      `        fileName: "${model.fileName}",`,
-      `        sizeBytes: ${groupDigits(model.sizeBytes)},`,
-      `        sha256: "${model.sha256}",`,
-      `        downloadURL: URL(string: "${model.downloadURL}")!`,
-      '    ),',
-    );
-  }
-  lines.push(']');
-  return lines.join('\n');
-}
-
-export async function main(argv, deps = {}) {
-  const { log = realLog, fetchImpl = globalThis.fetch } = deps;
-  try {
-    const { values } = parseArgs({
-      args: argv,
-      allowPositionals: false,
-      options: { files: { type: 'string' }, json: { type: 'boolean', default: false } },
-    });
-    const files = values.files
-      ? values.files.split(',').map((f) => f.trim()).filter((f) => f !== '')
-      : CATALOG_FILES;
-
-    const response = await fetchImpl(TREE_URL);
-    if (!response.ok) {
-      throw new Error(`Could not read the model tree: HTTP ${response.status}`);
-    }
-    const models = selectCatalog(parseTreeEntries(await response.text()), files);
-    log.info(values.json ? JSON.stringify(models, null, 2) : swiftCatalogLiteral(models));
-    return 0;
-  } catch (error) {
-    log.error(error.message);
-    return 1;
-  }
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await main(process.argv.slice(2));
-}
-```
-
-- [ ] **Step 5: Run the test to verify it passes**
-
-Run: `node --test scripts/__tests__/fetch-model-hashes.test.mjs`
-Expected: PASS — `# pass 8`, `# fail 0`.
-
-- [ ] **Step 6: Add the `fetch-model-hashes` script to `package.json`**
-
-```json
-"fetch-model-hashes": "node scripts/fetch-model-hashes.mjs"
-```
-
-- [ ] **Step 7: Verify the digests against the checked-in catalog**
-
-Run: `npm run fetch-model-hashes`
-Expected: a `static let all: [WhisperModel] = [` literal with nine entries and 64-hex digests.
-
-Compare it with `macos/Sources/Macomprendo/Services/ModelCatalog.swift`:
-
-```bash
-npm run fetch-model-hashes > /tmp/macomprendo-catalog.swift
-grep -o 'sha256: "[0-9a-f]\{64\}"' /tmp/macomprendo-catalog.swift | sort > /tmp/fresh.txt
-grep -o 'sha256: "[0-9a-f]\{64\}"' macos/Sources/Macomprendo/Services/ModelCatalog.swift | sort > /tmp/committed.txt
-diff /tmp/fresh.txt /tmp/committed.txt && echo "catalog digests match"
-```
-
-Expected: `catalog digests match`. If they differ, paste the freshly generated array into
-`ModelCatalog.swift` (keeping `defaultID = "large-v3-turbo"` and `lightweightID = "base"`),
-run `swift test --package-path macos`, and include the change in this task's commit.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add scripts/fetch-model-hashes.mjs scripts/__tests__/fetch-model-hashes.test.mjs package.json \
-        macos/Sources/Macomprendo/Services/ModelCatalog.swift
-git commit -m "feat(scripts): derive whisper model SHA-256 digests from the Hugging Face LFS index"
-```
-
----
-
-### Task 12: Architecture Decision Records
+### Task 11: Architecture Decision Records
 
 **Files:**
 - Create: `docs/DECISIONS/ADR-0001-llm-through-endpoints.md`
@@ -4093,3 +3906,851 @@ git commit -m "docs: record ADR-0001..0006 from the design spec"
 ```
 
 ---
+
+### Task 12: Release documentation — DISTRIBUTING, README, CHANGELOG, smoke-test checklist
+
+**Files:**
+- Create: `DISTRIBUTING.md`
+- Modify: `README.md`
+- Modify: `CHANGELOG.md`
+- Modify: `docs/SMOKE_TEST.md`
+
+**Interfaces:**
+- Consumes: the exact command names added in Tasks 3–10 and the resource-bundle names discovered in
+  Task 4 Step 7. Produces: documentation; `scripts/release.mjs` reads `CHANGELOG.md`, so the
+  `## [Unreleased]` section written here is load-bearing.
+
+- [ ] **Step 1: Write `DISTRIBUTING.md`**
+
+Replace `<resource bundle names from Task 4 Step 7>` with the actual `ls` output you recorded.
+
+````markdown
+# Distributing Macomprendo
+
+Macomprendo is distributed outside the Mac App Store as a Developer ID signed, notarized,
+stapled ZIP. It is not sandboxed (see `docs/DECISIONS/ADR-0003-not-sandboxed.md`), so the
+Mac App Store is not an option.
+
+Everything below runs through Node scripts; there are no shell scripts in this repository.
+
+## Prerequisites
+
+- macOS 14 or newer with Xcode command-line tools (`xcode-select --install`).
+- Node.js 20 or newer, then `npm ci` in the repository root.
+- `xcodegen` (`brew install xcodegen`) if you change `macos/project.yml`.
+- `gh` (`brew install gh`) authenticated with `gh auth login`, for releases.
+- Optional: `gitleaks` (`brew install gitleaks`) so `npm run audit` also scans for secrets.
+
+### A "Developer ID Application" certificate for team 68QJJA7HK9
+
+**This is the one prerequisite that cannot be scripted.** At the time of writing, only an
+*Apple Development* certificate is installed on the build Mac; that is enough for local
+ad-hoc and development builds but **cannot be notarized**.
+
+To obtain the right certificate:
+
+1. Sign in to <https://developer.apple.com/account> with an account that has the Account
+   Holder or Admin role for team `68QJJA7HK9`.
+2. Open **Certificates, Identifiers & Profiles → Certificates → +**.
+3. Choose **Developer ID Application** (software distributed outside the Mac App Store).
+4. When asked for a Certificate Signing Request, create one locally: **Keychain Access →
+   Certificate Assistant → Request a Certificate From a Certificate Authority**, enter the
+   team email, choose *Saved to disk*, and upload the resulting `.certSigningRequest`.
+5. Download the issued `.cer` and double-click it. It must land in the **login** keychain,
+   paired with the private key created in step 4.
+6. Confirm:
+
+   ```sh
+   security find-identity -v -p codesigning
+   ```
+
+   The output must contain a line like
+   `"Developer ID Application: Denis Zamataev (68QJJA7HK9)"`.
+
+Never commit the `.cer`, the `.p12` export, or the private key. `npm run audit` refuses any
+commit that contains them.
+
+## 1. Store notarization credentials
+
+Create an app-specific password at <https://appleid.apple.com> → Sign-In and Security →
+App-Specific Passwords. Then:
+
+```sh
+NOTARY_APPLE_ID="you@example.com" npm run configure-notary
+```
+
+The prompt for the password is echo-muted and the value is piped to `notarytool` on stdin —
+it never appears in `ps` output, shell history, or this repository. The credential is stored
+in the login Keychain under the profile `macomprendo-notary`.
+
+Override the defaults with `APPLE_TEAM_ID` (default `68QJJA7HK9`) and `NOTARYTOOL_PROFILE`
+(default `macomprendo-notary`).
+
+Verify it worked:
+
+```sh
+xcrun notarytool history --keychain-profile macomprendo-notary --output-format json | head -5
+```
+
+## 2. Build
+
+```sh
+npm run build                                   # host architecture, ad-hoc signed
+npm run build -- --arch arm64,x86_64            # universal, ad-hoc signed
+npm run build -- --dry-run                      # print the plan, touch nothing
+npm run build -- --arch arm64,x86_64 \
+  --sign "Developer ID Application: Denis Zamataev (68QJJA7HK9)"
+```
+
+The build compiles each architecture with
+`swift build --package-path macos -c release --triple <arch>-apple-macosx14.0`, merges the
+slices with `lipo`, assembles `dist/Macomprendo.app`, stamps
+`CFBundleShortVersionString` / `CFBundleVersion` / `CFBundleIdentifier` with `PlistBuddy`,
+signs, and finishes with `codesign --verify --deep --strict`.
+
+An ad-hoc signature (`--sign -`, the default) is fine for local use. Passing a real identity
+switches on the hardened runtime (`--options runtime --timestamp`) and applies
+`macos/AppBundle/Macomprendo.entitlements`.
+
+### SPM resource bundles
+
+whisper.cpp ships its Metal shaders as SwiftPM resources. `swift build` emits them as
+`*.bundle` directories next to the executable, and the build script copies **every** one of
+them into `Contents/Resources`, where SwiftPM's generated `Bundle.module` accessor finds them
+via `Bundle.main.resourceURL`.
+
+On this project the emitted bundles are:
+
+```text
+<resource bundle names from Task 4 Step 7>
+```
+
+Re-check after any whisper.cpp version bump:
+
+```sh
+BIN=$(swift build --package-path macos -c release --triple arm64-apple-macosx14.0 --show-bin-path)
+ls -d "$BIN"/*.bundle
+```
+
+If the list is empty the build warns; a shipped app without these bundles falls back to CPU
+inference or fails to load the model.
+
+## 3. Notarize and package
+
+```sh
+npm run notarize
+```
+
+This discovers the Developer ID identity (`security find-identity -v -p codesigning`),
+rebuilds a universal signed app, archives it with
+`ditto -c -k --sequesterRsrc --keepParent`, submits it with
+`xcrun notarytool submit --wait --timeout 60m --output-format json`, and requires
+`"status": "Accepted"`. On any other status it downloads the notary log to
+`dist/notary-log-<submission-id>.json` and stops.
+
+On success it staples the ticket, validates it, re-verifies the signature, runs a Gatekeeper
+assessment (`spctl --assess --type execute`), and produces:
+
+```text
+dist/Macomprendo-<version>-macos.zip
+dist/Macomprendo-<version>-macos.zip.sha256
+```
+
+The ZIP is created *after* stapling, so a downloader gets an offline notarization ticket.
+
+Useful flags: `--dry-run` (print the plan), `--sign "<identity>"` (when several Developer ID
+identities are installed), `--profile <name>`, `--timeout 30m`.
+
+## 4. Release
+
+```sh
+npm run release -- --dry-run patch     # resolve version, validate changelog, print the plan
+npm run release -- patch               # the real thing, with a confirmation prompt
+npm run release -- 1.0.0 --yes         # explicit version, no prompt
+```
+
+The release script:
+
+1. Reads `MARKETING_VERSION` from `macos/project.yml` and resolves the next version.
+2. Validates that `CHANGELOG.md` has entries under `## [Unreleased]`.
+3. Preflight: clean working tree, branch `main`, `gh` authenticated, `HEAD == origin/main`,
+   tag `vX.Y.Z` absent on the remote.
+4. Writes the new version into `macos/project.yml`, `macos/Macomprendo.xcodeproj/project.pbxproj`
+   and `CHANGELOG.md` (`## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`).
+5. Runs `npm run test:scripts`, `swift test --package-path macos`, an unsigned
+   `xcodebuild … CODE_SIGNING_ALLOWED=NO build`, and `git diff --check`.
+6. Commits `Release X.Y.Z`, tags `vX.Y.Z`, pushes both.
+7. Creates the GitHub release with the changelog section as the notes and attaches
+   `dist/Macomprendo-X.Y.Z-macos.zip` when it exists.
+
+Run `npm run notarize` **before** `npm run release` if you want the notarized ZIP attached.
+
+## 5. Install locally
+
+```sh
+npm run install-app                                   # build + install into /Applications
+npm run install-app -- --no-open
+MACOS_INSTALL_DIR="$HOME/Applications" npm run install-app
+```
+
+The installer stages the new bundle inside the destination directory, quits any running copy,
+moves the old app to a backup, swaps in the new one, verifies the signature, and restores the
+backup if anything fails.
+
+## Before publishing anything
+
+```sh
+npm run audit
+```
+
+Refuses any tree containing Xcode user state, `.swiftpm`, `.xcuserstate`, archives, dSYMs,
+notary logs, `.p8`/`.p12`/`.pem`/`.cer`/`.key`/`.mobileprovision` files, non-example `.env`
+files, or a machine-specific `/Users/<name>` path. It also runs `git diff --check` and, when
+installed, `gitleaks` over both the working tree and the git history.
+
+## Verification the tooling performs
+
+- Developer ID signing with hardened runtime and a secure timestamp
+- Nested SPM resource bundles signed before the enclosing app
+- Universal architecture report (`lipo -archs`) after assembly
+- Synchronous `notarytool` submission with an explicit `Accepted` check
+- Ticket stapling plus `stapler validate`
+- `codesign --verify --deep --strict`
+- Gatekeeper assessment with `spctl`
+- SHA-256 sidecar for the published ZIP
+
+Apple's reference: [Customizing the notarization
+workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+````
+
+- [ ] **Step 2: Write the final `README.md`**
+
+Before pasting: run `git remote get-url origin` and use that host/owner/repo in both URLs
+below (the draft assumes `github.com/DZamataev/macomprendo`, matching the decision made in
+Task 8 Step 7).
+
+````markdown
+# Macomprendo
+
+A menubar-only macOS app that turns global hotkeys into dictation, speech, and LLM text
+actions. Transcription runs locally with whisper.cpp; refinement and summarization run through
+Ollama or any OpenAI-compatible endpoint you configure. No telemetry, no account, no network
+call you did not ask for.
+
+Requires macOS 14 or newer. Universal (Apple silicon and Intel). MIT licensed.
+
+## Features
+
+| Action | Default hotkey | What happens |
+|---|---|---|
+| **Dictate** | ⌥Space | Records while held (or toggles), transcribes locally, pastes into the frontmost app |
+| **Dictate & Refine** | ⌥⇧Space | Same capture, then a Quick Panel with the original and an LLM-refined version side by side |
+| **Speak selection** | ⌥S | Reads the selected text aloud with a voice you choose; press again to stop |
+| **Summarize selection** | ⌥M | Quick Panel with a streamed summary; Copy or Replace the selection |
+| **Refine selection** | unassigned | The refine Quick Panel, applied to the current selection |
+
+Other things it does:
+
+- **Local transcription** with whisper.cpp and Metal. Models (`tiny` … `large-v3-turbo`) are
+  downloaded on demand, SHA-256 verified, and stored in
+  `~/Library/Application Support/Macomprendo/models/`.
+- **Remote transcription** through any `/v1/audio/transcriptions` endpoint, if you prefer.
+- **Editable prompt presets** for both refine and summarize — Clean up, Formal, Casual,
+  Shorten, Expand, Fix grammar, Translate, Brief, Bullets, TL;DR, Key actions — all of which
+  you can rename, rewrite, reorder, delete, or add to.
+- **Multiple endpoints**: add as many Ollama or OpenAI-compatible providers as you like, test
+  the connection from Settings, and pick a different model per feature.
+
+## Install
+
+Download `Macomprendo-<version>-macos.zip` from the
+[Releases page](https://github.com/DZamataev/macomprendo/releases), expand it, and drag
+`Macomprendo.app` to `/Applications`. The build is signed with a Developer ID certificate and
+notarized by Apple, so it opens without a Gatekeeper warning.
+
+Verify the download if you like:
+
+```sh
+shasum -a 256 -c Macomprendo-<version>-macos.zip.sha256
+```
+
+### Build from source
+
+```sh
+git clone https://github.com/DZamataev/macomprendo.git
+cd macomprendo
+npm ci
+npm run install-app
+```
+
+`npm run install-app` builds an ad-hoc signed universal app and installs it into
+`/Applications`. See [DISTRIBUTING.md](DISTRIBUTING.md) for signed and notarized builds.
+
+## First run
+
+Onboarding asks for what it needs, and nothing else:
+
+1. **Microphone** — required for dictation.
+2. **Accessibility** — required to read the selected text and to paste into other apps. macOS
+   grants this in System Settings → Privacy & Security → Accessibility; the app deep-links you
+   there.
+3. **A whisper model** — `large-v3-turbo` is offered by default, `base` if you want something
+   small and fast.
+4. **Ollama** (optional) — if it is running on `http://localhost:11434` the app finds it and
+   offers to pull `qwen2.5:1.5b` for refine and summarize.
+
+All hotkeys are rebindable in Settings → Hotkeys.
+
+## Privacy
+
+- **No telemetry.** The app contains no analytics, crash reporting, or update pinging.
+- **Audio never leaves your Mac** unless you explicitly select a remote transcription endpoint.
+- **Text never leaves your Mac** unless you use Refine or Summarize, which send it to the
+  endpoint you configured — your local Ollama by default.
+- **API keys live in the Keychain only.** They are never written to settings, logs, or exports.
+- **Transcripts and LLM output are never logged** at the default log level.
+- **The clipboard is restored.** Copy/paste simulation snapshots the pasteboard and puts it
+  back 300 ms later, guarded by a change-count check so anything you copied meanwhile survives.
+
+See [PRIVACY.md](PRIVACY.md) for the full statement.
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layers, protocols, and how they fit together
+- [DISTRIBUTING.md](DISTRIBUTING.md) — signing, notarization, releasing
+- [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md) — the manual checklist run before every release
+- [docs/DECISIONS/](docs/DECISIONS/) — architecture decision records
+- [CHANGELOG.md](CHANGELOG.md)
+
+## License
+
+MIT — see [LICENSE](LICENSE). © 2026 Denis Zamataev.
+````
+
+- [ ] **Step 3: Write the `CHANGELOG.md` Unreleased section for 0.1.0**
+
+````markdown
+# Changelog
+
+All notable changes to Macomprendo are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
+project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- Menubar-only macOS app (`LSUIElement`) with a `MenuBarExtra` status menu, Settings scene, and
+  first-run onboarding.
+- Dictate (⌥Space): hold-to-talk or toggle recording, local transcription, automatic paste into
+  the frontmost application.
+- Dictate & Refine (⌥⇧Space): capture, then a Quick Panel showing the original and a streamed
+  LLM-refined version with per-side Copy and Insert.
+- Speak selection (⌥S): reads the selected text with a configurable `AVSpeechSynthesisVoice`,
+  rate, pitch and volume; press again to stop.
+- Summarize selection (⌥M): Quick Panel with a streamed summary, Copy and Replace selection.
+- Refine selection (unassigned by default): the refine Quick Panel applied to the selection.
+- Local transcription with whisper.cpp and Metal, plus an on-demand model manager for the ggml
+  catalog (`tiny` … `large-v3-turbo`) with resumable downloads and SHA-256 verification.
+- Remote transcription through any OpenAI-compatible `/v1/audio/transcriptions` endpoint.
+- LLM providers: Ollama (`/api/tags`, `/api/chat` NDJSON streaming, `/api/pull`) and any
+  OpenAI-compatible endpoint (`/v1/models`, `/v1/chat/completions` SSE streaming).
+- Editable prompt presets for refine and summarize, seeded with factory presets and restorable.
+- Endpoint management with API keys stored in the Keychain, never in settings or logs.
+- Recording HUD with a live level meter, elapsed time, and transient toasts.
+- Node release toolchain: `npm run build`, `notarize`, `configure-notary`, `release`, `audit` and
+  `install-app`, all unit-tested with `node:test`.
+- Documentation: README, DISTRIBUTING, ARCHITECTURE, SMOKE_TEST, PRIVACY, and ADR-0001…0008.
+
+### Security
+
+- Not sandboxed by necessity, but hardened runtime, Developer ID signed, notarized and stapled.
+- Pasteboard contents are snapshotted and restored after every simulated ⌘C/⌘V, guarded by a
+  change-count check.
+- `npm run audit` blocks publication of credentials, Xcode user state, notary logs, and
+  machine-specific paths.
+````
+
+- [ ] **Step 4: Add the release checklist to `docs/SMOKE_TEST.md`**
+
+Append this section to the existing `docs/SMOKE_TEST.md` (create the file with an
+`# Macomprendo Smoke Test` heading first if Plans 3–4 did not):
+
+````markdown
+## Release checklist
+
+Run this list on a Mac that has *not* been used to develop the current change, if possible.
+Every box must be ticked before `npm run release`.
+
+### Automated gates
+
+- [ ] `npm ci` succeeds from a clean `node_modules`.
+- [ ] `npm run test:scripts` — all Node tests pass.
+- [ ] `swift test --package-path macos` — all Swift tests pass.
+- [ ] `npm run gen && git diff --exit-code macos/Macomprendo.xcodeproj` — the committed Xcode
+      project matches `macos/project.yml`.
+- [ ] `npm run sync-agents -- --check` — the agent-config symlinks are intact.
+- [ ] `npm run audit` — the public repository audit passes.
+- [ ] `npm run build -- --dry-run` — the build plan prints without error.
+- [ ] `npm run release -- --dry-run patch` — the version resolves and the changelog validates.
+
+### Build artifact
+
+- [ ] `npm run build -- --arch arm64,x86_64` succeeds.
+- [ ] `lipo -archs dist/Macomprendo.app/Contents/MacOS/Macomprendo` prints `x86_64 arm64`.
+- [ ] `ls dist/Macomprendo.app/Contents/Resources` contains `AppIcon.icns`, `LICENSE`, and every
+      whisper SwiftPM resource bundle listed in DISTRIBUTING.md.
+- [ ] `codesign --verify --deep --strict --verbose=2 dist/Macomprendo.app` reports the bundle as
+      valid on disk and satisfying its designated requirement.
+- [ ] `/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/Macomprendo.app/Contents/Info.plist`
+      prints `com.dzamataev.macomprendo`.
+- [ ] `/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' …` matches
+      `MARKETING_VERSION` in `macos/project.yml`.
+
+### Notarized artifact (requires the Developer ID certificate)
+
+- [ ] `npm run notarize` finishes with `Notarized release: dist/Macomprendo-<version>-macos.zip`.
+- [ ] `xcrun stapler validate dist/Macomprendo.app` reports the ticket is valid.
+- [ ] `spctl --assess --type execute --verbose=4 dist/Macomprendo.app` prints `accepted` and
+      `source=Notarized Developer ID`.
+- [ ] `shasum -a 256 -c dist/Macomprendo-<version>-macos.zip.sha256` passes.
+- [ ] Expanding the ZIP on a Mac that has never seen the app opens it with no Gatekeeper warning.
+
+> If no Developer ID Application certificate is installed yet, record this whole block as
+> **blocked** and ship an ad-hoc build for internal use only. See DISTRIBUTING.md → "A
+> Developer ID Application certificate for team 68QJJA7HK9".
+
+### Install and first run
+
+- [ ] `npm run install-app` installs into `/Applications` and relaunches the app.
+- [ ] Running it a second time while the app is open quits the running copy and relaunches it.
+- [ ] No `.macomprendo-update.*` directory is left behind in the install directory.
+- [ ] On a fresh user account, onboarding asks for Microphone, then Accessibility, and the
+      System Settings deep links open the correct panes.
+
+### Documentation
+
+- [ ] `CHANGELOG.md` has entries under `## [Unreleased]` describing everything in this release.
+- [ ] `README.md` install instructions match the artifact names actually produced.
+- [ ] `DISTRIBUTING.md` lists the resource bundle names currently emitted by `swift build`.
+````
+
+- [ ] **Step 5: Verify the docs against the tooling**
+
+Run:
+
+```bash
+npm run audit
+npm run release -- --dry-run patch
+```
+
+Expected: the audit passes, and the release dry run now prints
+`Release version: 0.1.1` followed by the release notes extracted from the Unreleased section
+and the ten planned commands. This is the step that proves Task 8 Step 7 fully.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add DISTRIBUTING.md README.md CHANGELOG.md docs/SMOKE_TEST.md
+git commit -m "docs: add the distribution runbook, final README, changelog and release checklist"
+```
+
+---
+
+### Task 13: CI gates and the tag-triggered release workflow
+
+**Files:**
+- Modify: `.github/workflows/ci.yml`
+- Create: `.github/workflows/release.yml`
+
+**Interfaces:**
+- Consumes: the `audit`, `build`, `test:scripts`, `test:swift`, `gen`, `sync-agents` npm scripts.
+- Produces: CI enforcement; no code depends on these files.
+
+**Constraint reminder:** every GitHub Action must be pinned by commit SHA. This plan uses only
+`actions/checkout`; Node 20+, `swift`, `xcodebuild` and `gh` are all preinstalled on
+`macos-latest` runners, so no `setup-node` or `setup-swift` action is needed.
+
+- [ ] **Step 1: Recover the pinned `actions/checkout` SHA**
+
+Run:
+
+```bash
+grep -n 'actions/checkout@' .github/workflows/ci.yml
+```
+
+Expected: a line like `uses: actions/checkout@<40-hex> # v4`. Copy that whole `uses:` value —
+you will paste it verbatim into `release.yml` in Step 3.
+
+If `ci.yml` has no pinned checkout (Plan 1 deviated), obtain one now:
+
+```bash
+gh api repos/actions/checkout/git/ref/tags/v4 --jq .object.sha
+```
+
+and write it as `uses: actions/checkout@<sha> # v4` in both workflow files.
+
+- [ ] **Step 2: Add the new gates to `.github/workflows/ci.yml`**
+
+The file already checks out the repo, runs `swift test --package-path macos`, an unsigned
+`xcodebuild`, and `npm run test:scripts`. Add the four steps below to the job that has Node
+available (the same job that runs `npm run test:scripts`), immediately after the Node test step:
+
+```yaml
+      - name: Verify the generated Xcode project is up to date
+        run: |
+          brew install xcodegen
+          npm run gen
+          git diff --exit-code macos/Macomprendo.xcodeproj
+
+      - name: Verify agent-config symlinks
+        run: npm run sync-agents -- --check
+
+      - name: Audit public repository files
+        run: npm run audit
+
+      - name: Verify the app build plan
+        run: npm run build -- --arch arm64,x86_64 --dry-run
+```
+
+Make sure the job installs dependencies with `npm ci` (not `npm install`) before these steps;
+add the step if Plan 1 did not:
+
+```yaml
+      - name: Install Node dependencies
+        run: npm ci
+```
+
+- [ ] **Step 3: Create `.github/workflows/release.yml`**
+
+Replace `<checkout-sha>` with the SHA recovered in Step 1.
+
+```yaml
+name: Release
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  verify-and-build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@<checkout-sha> # v4
+
+      - name: Report toolchain versions
+        run: |
+          node --version
+          npm --version
+          swift --version
+          xcodebuild -version
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run Node script tests
+        run: npm run test:scripts
+
+      - name: Run Swift package tests
+        run: swift test --package-path macos
+
+      - name: Build the app without signing
+        run: >-
+          xcodebuild
+          -project macos/Macomprendo.xcodeproj
+          -scheme Macomprendo
+          -configuration Release
+          -destination 'generic/platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+      - name: Audit public repository files
+        run: npm run audit
+
+      - name: Build an unsigned universal app bundle
+        run: npm run build -- --arch arm64,x86_64
+
+      - name: Report the built artifact
+        run: |
+          lipo -archs dist/Macomprendo.app/Contents/MacOS/Macomprendo
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            dist/Macomprendo.app/Contents/Info.plist
+          ls dist/Macomprendo.app/Contents/Resources
+
+      - name: Archive the unsigned build
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            dist/Macomprendo.app/Contents/Info.plist)
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/Macomprendo.app "dist/Macomprendo-${VERSION}-macos-unsigned.zip"
+          shasum -a 256 "dist/Macomprendo-${VERSION}-macos-unsigned.zip"
+
+      - name: Upload the unsigned build
+        uses: actions/upload-artifact@<upload-artifact-sha> # v4
+        with:
+          name: macomprendo-unsigned
+          path: dist/Macomprendo-*-macos-unsigned.zip
+          if-no-files-found: error
+          retention-days: 14
+```
+
+Get the upload-artifact SHA the same way:
+
+```bash
+gh api repos/actions/upload-artifact/git/ref/tags/v4 --jq .object.sha
+```
+
+and paste it in place of `<upload-artifact-sha>`.
+
+**This workflow deliberately does not notarize.** Notarization needs an Apple app-specific
+password and a Developer ID private key; neither is assumed to exist as a repository secret.
+Signed, notarized artifacts are produced locally with `npm run notarize` and attached to the
+GitHub release by `npm run release`.
+
+- [ ] **Step 4: Validate the workflow files parse**
+
+Run:
+
+```bash
+node -e "import('yaml').then(async ({default: YAML}) => { const fs = await import('node:fs/promises'); for (const f of ['.github/workflows/ci.yml', '.github/workflows/release.yml']) { YAML.parse(await fs.readFile(f, 'utf8')); console.log('ok', f); } })"
+grep -n 'uses:' .github/workflows/*.yml
+```
+
+Expected: `ok .github/workflows/ci.yml`, `ok .github/workflows/release.yml`, and every `uses:`
+line carrying a 40-character hex SHA (no `@v4` floating tags).
+
+- [ ] **Step 5: Confirm the new CI gates pass locally**
+
+Run:
+
+```bash
+npm ci
+npm run test:scripts
+npm run gen && git diff --exit-code macos/Macomprendo.xcodeproj
+npm run sync-agents -- --check
+npm run audit
+npm run build -- --arch arm64,x86_64 --dry-run
+```
+
+Expected: every command exits 0. These are exactly the commands CI will run.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add .github/workflows/ci.yml .github/workflows/release.yml
+git commit -m "ci: gate on the audit and build plan, add a tag-triggered release build"
+```
+
+---
+
+### Task 14: Finalize the release skill and verify end to end
+
+**Files:**
+- Modify: `.agents/skills/macomprendo-release/SKILL.md`
+- Modify: `package.json` (final review of the `scripts` block)
+
+**Interfaces:**
+- Consumes: every npm script and document produced by Tasks 1–13.
+- Produces: the operator-facing skill; nothing depends on it programmatically.
+
+- [ ] **Step 1: Confirm the full `scripts` block in `package.json`**
+
+It must contain exactly these entries (order does not matter):
+
+```json
+  "scripts": {
+    "gen": "xcodegen generate --spec macos/project.yml",
+    "test:swift": "swift test --package-path macos",
+    "test:scripts": "node --test scripts/__tests__/",
+    "sync-agents": "node scripts/sync-agent-config.mjs",
+    "build": "node scripts/build-app.mjs",
+    "notarize": "node scripts/notarize-app.mjs",
+    "configure-notary": "node scripts/configure-notarization.mjs",
+    "release": "node scripts/release.mjs",
+    "audit": "node scripts/audit-public-repo.mjs",
+    "install-app": "node scripts/install-app.mjs",
+    "sync-icons": "node scripts/sync-icons.mjs",
+    "fetch-model-hashes": "node scripts/fetch-model-hashes.mjs"
+  }
+```
+
+Run: `node -e "console.log(Object.keys(require('./package.json').scripts).sort().join(' '))"`
+Expected: `audit build configure-notary fetch-model-hashes gen install-app notarize release sync-agents sync-icons test:scripts test:swift`
+
+`fetch-model-hashes` comes from Plan 2 and `sync-icons` from Plan 1; this plan only adds
+`build`, `notarize`, `configure-notary`, `release`, `audit` and `install-app`.
+
+- [ ] **Step 2: Write the final `.agents/skills/macomprendo-release/SKILL.md`**
+
+Remember that `.claude/skills` is a symlink to `.agents/skills`, so this single file serves both
+agents. Replace the file's contents with:
+
+````markdown
+---
+name: macomprendo-release
+description: Use when building, signing, notarizing, installing, or publishing a Macomprendo release, or when a release command fails
+---
+
+# Macomprendo Release
+
+Every release action is an npm script backed by a Node ES module in `scripts/`. There are no
+shell scripts. Full prose runbook: `DISTRIBUTING.md`. Manual checklist: `docs/SMOKE_TEST.md`.
+
+## Commands
+
+```sh
+npm run build                                      # host arch, ad-hoc signed -> dist/Macomprendo.app
+npm run build -- --arch arm64,x86_64               # universal, ad-hoc signed
+npm run build -- --dry-run                         # print the step plan, change nothing
+npm run build -- --arch arm64,x86_64 --sign "Developer ID Application: Denis Zamataev (68QJJA7HK9)"
+
+npm run configure-notary                           # one-time: store the app-specific password
+NOTARY_APPLE_ID="you@example.com" npm run configure-notary
+
+npm run notarize                                   # universal signed build -> submit -> staple -> zip + sha256
+npm run notarize -- --dry-run
+npm run notarize -- --sign "Developer ID Application: Denis Zamataev (68QJJA7HK9)"
+
+npm run install-app                                # build + atomic install into /Applications
+npm run install-app -- --no-open
+MACOS_INSTALL_DIR="$HOME/Applications" npm run install-app
+
+npm run audit                                      # refuse to publish secrets / machine paths
+npm run release -- --dry-run patch                 # resolve version, validate changelog, print plan
+npm run release -- patch                           # real release, with confirmation
+npm run release -- 1.0.0 --yes                     # explicit version, no prompt
+
+npm run fetch-model-hashes                         # (from Plan 2) refresh whisper model SHA-256 digests
+```
+
+## Order of operations for a real release
+
+1. Write the entries under `## [Unreleased]` in `CHANGELOG.md`. The release refuses to run
+   without them.
+2. `npm run audit`
+3. `npm run release -- --dry-run patch` — check the version and the notes.
+4. `npm run notarize` — produces `dist/Macomprendo-<version>-macos.zip`. Skip only if you
+   accept a release with no attached binary.
+5. Work through the release checklist in `docs/SMOKE_TEST.md`.
+6. `npm run release -- patch` — bumps, tests, commits `Release X.Y.Z`, tags `vX.Y.Z`, pushes,
+   and creates the GitHub release with the changelog section as notes plus the ZIP.
+
+## Facts that trip people up
+
+- Version source of truth is `MARKETING_VERSION` in `macos/project.yml`. The release script
+  mirrors it into `macos/Macomprendo.xcodeproj/project.pbxproj`. Never edit the pbxproj by hand
+  — run `npm run gen` after changing `project.yml`.
+- Git tags are `vX.Y.Z`; changelog headings are `## [X.Y.Z] - YYYY-MM-DD`.
+- Bundle id `com.dzamataev.macomprendo`, team `68QJJA7HK9`, notary profile `macomprendo-notary`.
+- Ad-hoc (`--sign -`) is the default and is fine locally. Notarization needs a **Developer ID
+  Application** certificate; an *Apple Development* certificate cannot be notarized.
+- The build copies every `*.bundle` SwiftPM emits next to the executable into
+  `Contents/Resources` — that is where whisper's Metal shaders live. If the build warns "No
+  SwiftPM resource bundles found", stop and fix it before shipping.
+- CI never notarizes: no Apple secrets are assumed to exist in the repository.
+
+## When something fails
+
+| Symptom | Fix |
+|---|---|
+| `No "Developer ID Application" certificate…` | Follow DISTRIBUTING.md → prerequisites; check `security find-identity -v -p codesigning` |
+| `Could not authenticate with notarytool` | Re-run `npm run configure-notary` |
+| Notarization not `Accepted` | Read `dist/notary-log-<id>.json`; it names the offending binary and reason |
+| `The working tree is not clean` | Commit or stash, then retry the release |
+| `Tag vX.Y.Z already exists on the remote` | Choose a higher version, or delete the tag if it was a mistake |
+| `no entries under "## [Unreleased]"` | Write the release notes in `CHANGELOG.md` first |
+| `macos/…/project.pbxproj declares MARKETING_VERSION …` | Run `npm run gen` and commit the regenerated project |
+| Audit flags a `/Users/<name>` path | Replace it with `~/`, `<repo>`, or `/Users/test` |
+````
+
+- [ ] **Step 3: Verify the skill symlink still resolves**
+
+Run:
+
+```bash
+npm run sync-agents -- --check
+ls -l .claude/skills
+cat .claude/skills/macomprendo-release/SKILL.md | head -5
+```
+
+Expected: the check passes, `.claude/skills` is a symlink to `../.agents/skills`, and the
+front matter prints.
+
+- [ ] **Step 4: Run the whole verification suite**
+
+Run each command and confirm the expected result:
+
+```bash
+npm ci                                      # clean install succeeds
+npm run test:scripts                        # all Node tests pass, # fail 0
+npm run test:swift                          # all Swift tests pass
+npm run audit                               # "Public repository audit passed."
+npm run build -- --dry-run                  # prints the plan, exit 0
+npm run build -- --arch arm64,x86_64        # builds dist/Macomprendo.app
+lipo -archs dist/Macomprendo.app/Contents/MacOS/Macomprendo   # "x86_64 arm64"
+npm run notarize -- --dry-run --sign "Developer ID Application: Denis Zamataev (68QJJA7HK9)"
+npm run release -- --dry-run patch          # THE FINAL DELIVERABLE
+git status --porcelain                      # empty: nothing was mutated
+```
+
+Expected for the final deliverable, `npm run release -- --dry-run patch`:
+
+```text
+Current version: 0.1.0
+Release version: 0.1.1
+Changelog heading: ## [0.1.1] - <today>
+Release notes:
+### Added
+- Menubar-only macOS app …
+…
+Planned commands:
+  npm run test:scripts
+  swift test --package-path macos
+  xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo -configuration Release …
+  git diff --check
+  git add macos/project.yml macos/Macomprendo.xcodeproj/project.pbxproj CHANGELOG.md
+  git commit -m Release 0.1.1
+  git tag -a v0.1.1 -m Macomprendo 0.1.1
+  git push origin main
+  git push origin v0.1.1
+  gh release create v0.1.1 --target main --title Macomprendo 0.1.1 --notes-file …/dist/release-notes-0.1.1.md --latest
+Dry run complete; no files, tags or remote state changed.
+```
+
+and `git status --porcelain` prints nothing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add .agents/skills/macomprendo-release/SKILL.md package.json
+git commit -m "docs(skills): finalize the release skill with the exact commands"
+```
+
+---
+
+## Verification summary
+
+After Task 14 every one of these must hold:
+
+| Check | Command | Expected |
+|---|---|---|
+| Node tests | `npm run test:scripts` | `# fail 0` |
+| Swift tests | `npm run test:swift` | all pass |
+| Public audit | `npm run audit` | `Public repository audit passed.` |
+| Build plan | `npm run build -- --dry-run` | exit 0, plan printed |
+| Universal build | `npm run build -- --arch arm64,x86_64` | `dist/Macomprendo.app`, `lipo -archs` = `x86_64 arm64` |
+| Notarize plan | `npm run notarize -- --dry-run --sign "<Developer ID>"` | exit 0, 13-step plan |
+| **Release dry run** | `npm run release -- --dry-run patch` | exit 0, plan printed, working tree untouched |
+| Xcode project fresh | `npm run gen && git diff --exit-code macos/Macomprendo.xcodeproj` | no diff |
+| Agent symlinks | `npm run sync-agents -- --check` | passes |
+
+Manual (documented in `docs/SMOKE_TEST.md`, not automatable here): the SPM resource-bundle
+discovery in Task 4 Step 7, the real app launch in Task 4 Step 8, the notarization credential
+setup in Task 5 Step 6, and the `/Applications` install in Task 10 Step 7.

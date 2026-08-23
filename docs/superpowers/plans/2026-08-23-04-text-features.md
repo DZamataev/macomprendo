@@ -6,7 +6,7 @@
 
 **Architecture:** Everything OS-facing sits behind a protocol (`AXReading`, `SpeechSynthesizing`, `QuickPanelHosting`) so the three new `@MainActor` controllers are pure state machines that can be driven by scripted test doubles. Prompt presets are plain `Codable` data in `Settings` with a pure renderer/validator on top. `TextFeatures` is a single routing object that `AppModel` forwards non-dictation hotkey events to, which keeps the edit to Plan 3's `AppModel` down to one line.
 
-**Tech Stack:** Swift 6 (strict concurrency), SwiftUI + AppKit, AVFoundation (`AVSpeechSynthesizer`), ApplicationServices (Accessibility API), swift-testing, PhosphorSwift icons.
+**Tech Stack:** Swift 6 (strict concurrency), SwiftUI + AppKit, AVFoundation (`AVSpeechSynthesizer`), ApplicationServices (Accessibility API), swift-testing, Plan 1's `Icon`/`AppIcon` seam over vendored Phosphor SVGs.
 
 **Spec:** `docs/superpowers/specs/2026-08-23-macomprendo-design.md` (§3.4 except dictation, §3.5 Quick Panel + Speech/Prompts tabs, §3.6, §4, §5)
 
@@ -45,7 +45,10 @@ plan's layer.
 | `PresetError` | `Features/Prompts/PromptPreset.swift` | typed error for `Settings.deletePreset(id:)` |
 | `Settings` preset helpers | `Features/Prompts/PromptPreset.swift` | `presets(of:)`, `preset(id:)`, `defaultPreset(for:)`, `defaultPresetID(for:)`, `setDefaultPreset(id:for:)`, `addPreset(_:)`, `updatePreset(_:)`, `deletePreset(id:)`, `movePreset(id:to:)` |
 | `Toasting` | `Features/Toasting.swift` | one-method view of `HUDController` so controllers are testable without AppKit |
-| `LLMTarget`, `FeatureConfigError`, `FeatureErrorText` | `Features/LLMTarget.swift` | provider+model pair, "not configured" error, error→string mapping |
+| `LLMTarget`, `FeatureConfigError` | `Features/LLMTarget.swift` | provider+model pair and the "not configured" error |
+| widened `ErrorText.describe(_:)` | Plan 3's `ErrorText` file | it only handled `MacomprendoError`; now any `LocalizedError` plus `CancellationError` |
+| `AppEnvironment.pasteboard/keySimulator/ax/speech/quickPanelHost` | `App/AppEnvironment.swift` | the services the new controllers need; `quickPanelHost` is nil in tests so no NSPanel is built |
+| `AppModel.llmTarget(for:)`, `.textFeatures`, `.speechTabModel`, `.promptsTabModel` | `App/AppModel.swift` | composition, following Plan 3's `lazy var modelsViewModel` pattern |
 | `SettingsHolding` | `App/SettingsHolding.swift` | read/write `Settings` from view models and the panel controller |
 | `DictationCapture` | `Features/DictationCapture.swift` | mic → transcript state machine reused by `RefineController` |
 | `QuickPanelHosting`, `QuickPanelWindow`, `FloatingPanelHost` | `UI/QuickPanel/...` | thin AppKit shell behind a protocol |
@@ -1331,9 +1334,11 @@ git commit -m "feat(services): add AVSpeechSynthesizer-backed speech service"
 - Create: `macos/Sources/Macomprendo/Features/Toasting.swift`
 - Create: `macos/Sources/Macomprendo/Features/LLMTarget.swift`
 - Create: `macos/Sources/Macomprendo/App/SettingsHolding.swift`
+- Modify: the file declaring `enum ErrorText` (Plan 3 put it beside `DictationController`; find it with
+  `grep -rn "enum ErrorText" macos/Sources`)
 - Create: `macos/Tests/MacomprendoTests/Fakes/ScriptedToaster.swift`
 - Create: `macos/Tests/MacomprendoTests/Fakes/ScriptedSettingsHolder.swift`
-- Test: `macos/Tests/MacomprendoTests/Features/FeatureErrorTextTests.swift`
+- Test: `macos/Tests/MacomprendoTests/Features/ErrorTextTests.swift`
 
 **Interfaces:**
 - Consumes: `HUDController` (Plan 3), `LLMProvider` (Plan 2), `Settings`, `PresetKind`, `MacomprendoError`.
@@ -1342,22 +1347,22 @@ git commit -m "feat(services): add AVSpeechSynthesizer-backed speech service"
   (with `extension HUDController: Toasting {}`);
   `struct LLMTarget: Sendable { let provider: any LLMProvider; let model: String }`;
   `enum FeatureConfigError: Error, LocalizedError, Equatable { case llmNotConfigured(PresetKind), noPreset(PresetKind) }`;
-  `enum FeatureErrorText { static func describe(_ error: Error) -> String }`;
+  a widened `ErrorText.describe(_:)` (Plan 3's version only understands `MacomprendoError`);
   `@MainActor protocol SettingsHolding: AnyObject { var settings: Settings { get set } }`
   (with `extension AppModel: SettingsHolding {}`).
 
 - [ ] **Step 1: Write the failing test**
 
-Create `macos/Tests/MacomprendoTests/Features/FeatureErrorTextTests.swift`:
+Create `macos/Tests/MacomprendoTests/Features/ErrorTextTests.swift`:
 
 ```swift
 import Foundation
 import Testing
 @testable import Macomprendo
 
-@Suite struct FeatureErrorTextTests {
+@Suite struct ErrorTextTests {
     @Test func localizedErrorsGetDescriptionAndRecovery() {
-        let text = FeatureErrorText.describe(MacomprendoError.noSelection)
+        let text = ErrorText.describe(MacomprendoError.noSelection)
         #expect(text.contains(MacomprendoError.noSelection.errorDescription ?? "!"))
         if let recovery = MacomprendoError.noSelection.recoverySuggestion {
             #expect(text.contains(recovery))
@@ -1365,17 +1370,17 @@ import Testing
     }
 
     @Test func cancellationBecomesAShortMessage() {
-        #expect(FeatureErrorText.describe(CancellationError()) == "Cancelled.")
+        #expect(ErrorText.describe(CancellationError()) == "Cancelled.")
     }
 
     @Test func configErrorsNameTheFeature() {
-        let text = FeatureErrorText.describe(FeatureConfigError.llmNotConfigured(.summarize))
+        let text = ErrorText.describe(FeatureConfigError.llmNotConfigured(.summarize))
         #expect(text.contains("Summarize"))
         #expect(text.contains("Settings"))
     }
 
     @Test func missingPresetErrorNamesTheFeature() {
-        let text = FeatureErrorText.describe(FeatureConfigError.noPreset(.refine))
+        let text = ErrorText.describe(FeatureConfigError.noPreset(.refine))
         #expect(text.contains("Refine"))
     }
 }
@@ -1383,8 +1388,9 @@ import Testing
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `swift test --package-path macos --filter FeatureErrorTextTests`
-Expected: build failure — `error: cannot find 'FeatureErrorText' in scope`.
+Run: `swift test --package-path macos --filter ErrorTextTests`
+Expected: build failure — `error: cannot find 'FeatureConfigError' in scope` (Plan 3's `ErrorText`
+exists but knows nothing about the new error types).
 
 - [ ] **Step 3: Create the support types**
 
@@ -1431,14 +1437,18 @@ enum FeatureConfigError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
+```
+
+Then widen Plan 3's `ErrorText` so it also handles `FeatureConfigError`, `PresetError` and
+cancellation. Replace its whole body with:
+
+```swift
 /// Turns any error into the one-line text shown in a toast or the panel's error banner.
-enum FeatureErrorText {
+enum ErrorText {
     static func describe(_ error: Error) -> String {
         if error is CancellationError { return "Cancelled." }
         if let localized = error as? LocalizedError {
-            var parts: [String] = []
-            if let description = localized.errorDescription { parts.append(description) }
-            if let recovery = localized.recoverySuggestion { parts.append(recovery) }
+            let parts = [localized.errorDescription, localized.recoverySuggestion].compactMap { $0 }
             if !parts.isEmpty { return parts.joined(separator: " ") }
         }
         return error.localizedDescription
@@ -1499,7 +1509,7 @@ import Foundation
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `swift test --package-path macos --filter FeatureErrorTextTests`
+Run: `swift test --package-path macos --filter ErrorTextTests`
 Expected: PASS — 4 tests, 0 failures.
 
 - [ ] **Step 6: Commit**
@@ -1510,7 +1520,7 @@ git add macos/Sources/Macomprendo/Features/Toasting.swift \
         macos/Sources/Macomprendo/App/SettingsHolding.swift \
         macos/Tests/MacomprendoTests/Fakes/ScriptedToaster.swift \
         macos/Tests/MacomprendoTests/Fakes/ScriptedSettingsHolder.swift \
-        macos/Tests/MacomprendoTests/Features/FeatureErrorTextTests.swift
+        macos/Tests/MacomprendoTests/Features/ErrorTextTests.swift
 git commit -m "feat(features): add toasting, LLM target and settings-holder protocols"
 ```
 
@@ -1523,7 +1533,7 @@ git commit -m "feat(features): add toasting, LLM target and settings-holder prot
 - Test: `macos/Tests/MacomprendoTests/Features/SpeakControllerTests.swift`
 
 **Interfaces:**
-- Consumes: `SpeechSynthesizing`, `ScriptedSpeech` (Task 5), `Toasting`, `FeatureErrorText` (Task 6), `Settings`.
+- Consumes: `SpeechSynthesizing`, `ScriptedSpeech` (Task 5), `Toasting`, `ErrorText` (Task 6), `Settings`.
 - Produces:
   ```swift
   @MainActor final class SpeakController: ObservableObject {
@@ -1645,13 +1655,13 @@ import Foundation
             let raw = try await text()
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
-                toaster.toast(FeatureErrorText.describe(MacomprendoError.noSelection), duration: 2.0)
+                toaster.toast(ErrorText.describe(MacomprendoError.noSelection), duration: 2.0)
                 return
             }
             speech.speak(trimmed, settings: settings().speech)
             isSpeaking = speech.isSpeaking
         } catch {
-            toaster.toast(FeatureErrorText.describe(error), duration: 2.5)
+            toaster.toast(ErrorText.describe(error), duration: 2.5)
         }
     }
 }
@@ -2028,7 +2038,7 @@ git commit -m "feat(quickpanel): add panel controller with per-screen frame memo
       var onTranscript: (@MainActor (String) -> Void)?
       var onError: (@MainActor (Error) -> Void)?
       init(recorder: any AudioRecording,
-           transcriberProvider: @escaping @Sendable () throws -> any TranscriptionProvider,
+           transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider,
            permissions: any PermissionsChecking,
            mode: @escaping @MainActor () -> DictationMode,
            language: @escaping @MainActor () -> String?)
@@ -2247,14 +2257,14 @@ import Foundation
     var onError: (@MainActor (Error) -> Void)?
 
     private let recorder: any AudioRecording
-    private let transcriberProvider: @Sendable () throws -> any TranscriptionProvider
+    private let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
     private let permissions: any PermissionsChecking
     private let mode: @MainActor () -> DictationMode
     private let language: @MainActor () -> String?
     private var task: Task<Void, Never>?
 
     init(recorder: any AudioRecording,
-         transcriberProvider: @escaping @Sendable () throws -> any TranscriptionProvider,
+         transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider,
          permissions: any PermissionsChecking,
          mode: @escaping @MainActor () -> DictationMode,
          language: @escaping @MainActor () -> String?) {
@@ -2323,7 +2333,7 @@ import Foundation
             do {
                 try Task.checkCancellation()
                 guard !samples.isEmpty else { throw MacomprendoError.audio("Nothing heard.") }
-                let transcriber = try self.transcriberProvider()
+                let transcriber = try await self.transcriberProvider()
                 let raw = try await transcriber.transcribe(samples, sampleRate: 16_000,
                                                            language: self.language())
                 try Task.checkCancellation()
@@ -2375,7 +2385,7 @@ git commit -m "feat(features): add reusable microphone capture state machine"
 
 **Interfaces:**
 - Consumes: `DictationCapture` (Task 9), `QuickPanelController` (Task 8), `LLMTarget`,
-  `FeatureConfigError`, `FeatureErrorText`, `Toasting` (Task 6), `PromptRenderer` (Task 3),
+  `FeatureConfigError`, `ErrorText`, `Toasting` (Task 6), `PromptRenderer` (Task 3),
   `PasteboardProtocol`, `TextInserting`, `FrontmostAppTracking`, `LLMProvider`, `ChatOptions`.
 - Produces:
   ```swift
@@ -2763,7 +2773,7 @@ enum RefineSide: Equatable, Sendable {
 
         capture.onTranscript = { [weak self] text in self?.beginRefine(with: text) }
         capture.onError = { [weak self] error in
-            self?.toaster.toast(FeatureErrorText.describe(error), duration: 2.5)
+            self?.toaster.toast(ErrorText.describe(error), duration: 2.5)
         }
         capture.onStateChange = { [weak self] state in self?.isCapturing = state != .idle }
     }
@@ -2836,7 +2846,7 @@ enum RefineSide: Equatable, Sendable {
             chosen = current.defaultPreset(for: .refine)
         }
         guard let preset = chosen else {
-            error = FeatureErrorText.describe(FeatureConfigError.noPreset(.refine))
+            error = ErrorText.describe(FeatureConfigError.noPreset(.refine))
             return
         }
 
@@ -2860,7 +2870,7 @@ enum RefineSide: Equatable, Sendable {
             // The user pressed Stop or started a re-run: keep whatever streamed so far.
         } catch MacomprendoError.cancelled {
         } catch {
-            if generation == streamGeneration { self.error = FeatureErrorText.describe(error) }
+            if generation == streamGeneration { self.error = ErrorText.describe(error) }
         }
     }
 
@@ -2891,7 +2901,7 @@ enum RefineSide: Equatable, Sendable {
             try await inserter.insert(value, into: target, method: settings().insertMethod)
             panel.dismiss()
         } catch {
-            toaster.toast(FeatureErrorText.describe(error), duration: 2.5)
+            toaster.toast(ErrorText.describe(error), duration: 2.5)
         }
     }
 
@@ -3185,7 +3195,7 @@ import Foundation
             chosen = current.defaultPreset(for: .summarize)
         }
         guard let preset = chosen else {
-            error = FeatureErrorText.describe(FeatureConfigError.noPreset(.summarize))
+            error = ErrorText.describe(FeatureConfigError.noPreset(.summarize))
             return
         }
 
@@ -3208,7 +3218,7 @@ import Foundation
         } catch is CancellationError {
         } catch MacomprendoError.cancelled {
         } catch {
-            if generation == streamGeneration { self.error = FeatureErrorText.describe(error) }
+            if generation == streamGeneration { self.error = ErrorText.describe(error) }
         }
     }
 
@@ -3227,7 +3237,7 @@ import Foundation
             try await inserter.insert(summary, into: target, method: settings().insertMethod)
             panel.dismiss()
         } catch {
-            toaster.toast(FeatureErrorText.describe(error), duration: 2.5)
+            toaster.toast(ErrorText.describe(error), duration: 2.5)
         }
     }
 }
@@ -3262,10 +3272,13 @@ git commit -m "feat(summarize): stream summaries into the quick panel"
   — all initialised with `(panel:refine:summarize:app:)`, `(controller:presets:)`,
   `(controller:presets:)` respectively.
 
-**Phosphor facts:** `PhosphorSwift` exposes every icon as `Ph.<camelCasedName>.<weight>` returning
-a SwiftUI `Image` (weights: `thin`, `light`, `regular`, `bold`, `fill`, `duotone`). Size them with
-`.resizable().frame(width:height:)`. Icons used here: `Ph.copy`, `Ph.arrowLineDown`,
-`Ph.arrowsClockwise`, `Ph.stop`, `Ph.warningCircle`, `Ph.textAlignLeft`.
+**Icon facts (Plan 1):** never `import PhosphorSwift` in feature code. Use the seam
+`Components/Icon.swift`: `Icon(.copy, size: 14)`, where `enum AppIcon: String` already has the
+cases `microphone, waveform, speakerHigh, stop, play, sparkle, textAa, clipboardText,
+arrowSquareIn, copy, gear, keyboard, downloadSimple, trash, checkCircle, warningCircle, x, plus,
+minus, arrowsClockwise, cloud, cpu, listBullets, magicWand` (rendered from vendored Phosphor SVGs).
+Icons used here: `.copy`, `.arrowSquareIn` (insert/replace), `.arrowsClockwise` (re-run), `.stop`,
+`.warningCircle`, `.textAa`.
 
 - [ ] **Step 1: Write the switching container**
 
@@ -3301,7 +3314,6 @@ struct QuickPanelView: View {
 Create `macos/Sources/Macomprendo/UI/QuickPanel/RefineLayout.swift`:
 
 ```swift
-import PhosphorSwift
 import SwiftUI
 
 /// Original | Refined side by side, both editable, with per-side Copy and Insert.
@@ -3340,12 +3352,12 @@ struct RefineLayout: View {
             if controller.isStreaming {
                 ProgressView().controlSize(.small)
                 Button { controller.stop() } label: {
-                    Ph.stop.regular.resizable().frame(width: 14, height: 14)
+                    Icon(.stop, size: 14)
                 }
                 .help("Stop streaming")
             } else {
                 Button { controller.rerun() } label: {
-                    Ph.arrowsClockwise.regular.resizable().frame(width: 14, height: 14)
+                    Icon(.arrowsClockwise, size: 14)
                 }
                 .help("Run again (⌘↩)")
             }
@@ -3361,7 +3373,7 @@ struct RefineLayout: View {
 
     private func errorBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 6) {
-            Ph.warningCircle.regular.resizable().frame(width: 14, height: 14)
+            Icon(.warningCircle, size: 14)
             Text(message).font(.callout).textSelection(.enabled)
             Spacer()
         }
@@ -3376,11 +3388,11 @@ struct RefineLayout: View {
                 Text(title).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button { controller.copy(side) } label: {
-                    Ph.copy.regular.resizable().frame(width: 14, height: 14)
+                    Icon(.copy, size: 14)
                 }
                 .help("Copy \(title.lowercased())")
                 Button { Task { await controller.insert(side) } } label: {
-                    Ph.arrowLineDown.regular.resizable().frame(width: 14, height: 14)
+                    Icon(.arrowSquareIn, size: 14)
                 }
                 .help("Insert \(title.lowercased()) into the previous app")
             }
@@ -3402,7 +3414,6 @@ struct RefineLayout: View {
 Create `macos/Sources/Macomprendo/UI/QuickPanel/SummaryLayout.swift`:
 
 ```swift
-import PhosphorSwift
 import SwiftUI
 
 /// One pane with the streamed summary; Copy or Replace the selection in the source app.
@@ -3426,7 +3437,7 @@ struct SummaryLayout: View {
 
     private var toolbar: some View {
         HStack(spacing: 8) {
-            Ph.textAlignLeft.regular.resizable().frame(width: 14, height: 14)
+            Icon(.textAa, size: 14)
                 .foregroundStyle(.secondary)
 
             Picker("", selection: $controller.selectedPresetID) {
@@ -3445,12 +3456,12 @@ struct SummaryLayout: View {
             if controller.isStreaming {
                 ProgressView().controlSize(.small)
                 Button { controller.stop() } label: {
-                    Ph.stop.regular.resizable().frame(width: 14, height: 14)
+                    Icon(.stop, size: 14)
                 }
                 .help("Stop streaming")
             } else {
                 Button { controller.rerun() } label: {
-                    Ph.arrowsClockwise.regular.resizable().frame(width: 14, height: 14)
+                    Icon(.arrowsClockwise, size: 14)
                 }
                 .help("Run again (⌘↩)")
             }
@@ -3465,7 +3476,7 @@ struct SummaryLayout: View {
 
     private func errorBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 6) {
-            Ph.warningCircle.regular.resizable().frame(width: 14, height: 14)
+            Icon(.warningCircle, size: 14)
             Text(message).font(.callout).textSelection(.enabled)
             Spacer()
         }
@@ -3482,12 +3493,12 @@ struct SummaryLayout: View {
             Spacer()
             Button { controller.copy() } label: {
                 Label { Text("Copy") } icon: {
-                    Ph.copy.regular.resizable().frame(width: 14, height: 14)
+                    Icon(.copy, size: 14)
                 }
             }
             Button { Task { await controller.replaceSelection() } } label: {
                 Label { Text("Replace selection") } icon: {
-                    Ph.arrowLineDown.regular.resizable().frame(width: 14, height: 14)
+                    Icon(.arrowSquareIn, size: 14)
                 }
             }
             .keyboardShortcut(.defaultAction)
@@ -3501,10 +3512,9 @@ struct SummaryLayout: View {
 
 Run: `swift build --package-path macos`
 Expected: `Build complete!`
-If the compiler reports an unknown `Ph` member, run
-`grep -R "static var copy" ~/.swiftpm 2>/dev/null || true` and instead check the icon names in
-`.build/checkouts/swift/Sources/PhosphorSwift/` — the enum case is the icon's kebab-case name in
-lowerCamelCase.
+If the compiler reports an unknown `AppIcon` case, add it to `enum AppIcon` in
+`macos/Sources/Macomprendo/UI/Components/Icon.swift` together with its vendored SVG, following the
+cases Plan 1 created there.
 
 - [ ] **Step 5: Commit**
 
@@ -3523,6 +3533,7 @@ git commit -m "feat(quickpanel): add refine and summary layouts"
 - Create: `macos/Sources/Macomprendo/App/TextFeatures.swift`
 - Modify: `macos/Sources/Macomprendo/App/AppModel.swift`
 - Modify: `macos/Sources/Macomprendo/App/AppEnvironment.swift`
+- Modify: Plan 3's test-only `AppEnvironment.fake(...)` in `macos/Tests/MacomprendoTests/Fakes/`
 - Test: `macos/Tests/MacomprendoTests/App/TextFeaturesTests.swift`
 
 **Interfaces:**
@@ -3538,10 +3549,13 @@ git commit -m "feat(quickpanel): add refine and summary layouts"
       init(quickPanel:refine:summarize:speak:selectedText:toaster:)
       func handle(_ event: HotkeyEvent)
       func drain() async
-      static func live(model:hud:factory:recorder:permissions:inserter:tracker:pasteboard:keySimulator:transcriberProvider:) -> TextFeatures
+      static func live(model: AppModel, env: AppEnvironment, hud: HUDController,
+                       transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider) -> TextFeatures
   }
+  extension AppModel { func llmTarget(for kind: PresetKind) throws -> LLMTarget }
   ```
-- `AppModel` gains `var textFeatures: TextFeatures?`.
+- `AppModel` gains `private(set) var textFeatures: TextFeatures?`, built in `start()`.
+- `AppEnvironment` gains `pasteboard`, `keySimulator`, `ax`, `speech`, `quickPanelHost`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3744,7 +3758,7 @@ import Foundation
             do {
                 body(try await self.selectedText.read())
             } catch {
-                self.toaster.toast(FeatureErrorText.describe(error), duration: 2.5)
+                self.toaster.toast(ErrorText.describe(error), duration: 2.5)
             }
         }
     }
@@ -3761,120 +3775,154 @@ Expected: PASS — 6 tests, 0 failures.
 Append to `macos/Sources/Macomprendo/App/TextFeatures.swift`:
 
 ```swift
+extension AppModel {
+    /// The provider + model configured for one feature in Settings ▸ Refine & Summarize.
+    func llmTarget(for kind: PresetKind) throws -> LLMTarget {
+        let selection: LLMSelection?
+        switch kind {
+        case .refine: selection = settings.refineLLM
+        case .summarize: selection = settings.summarizeLLM
+        }
+        guard let selection, !selection.model.isEmpty,
+              let endpoint = settings.endpoints.first(where: { $0.id == selection.endpointID })
+        else { throw FeatureConfigError.llmNotConfigured(kind) }
+        return LLMTarget(provider: try env.factory.llm(for: endpoint), model: selection.model)
+    }
+}
+
 extension TextFeatures {
-    /// Builds the real object graph, including the floating panel window.
+    /// Builds the real object graph, including the floating panel window when the environment
+    /// supplies a host factory (it is nil in `AppEnvironment.fake()`, so tests build no windows).
     static func live(model: AppModel,
+                     env: AppEnvironment,
                      hud: HUDController,
-                     factory: ProviderFactory,
-                     recorder: any AudioRecording,
-                     permissions: any PermissionsChecking,
-                     inserter: any TextInserting,
-                     tracker: any FrontmostAppTracking,
-                     pasteboard: any PasteboardProtocol,
-                     keySimulator: any KeySimulating,
-                     transcriberProvider: @escaping @Sendable () throws -> any TranscriptionProvider)
+                     transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider)
         -> TextFeatures {
 
         let quickPanel = QuickPanelController(holder: model)
 
-        func target(_ kind: PresetKind) throws -> LLMTarget {
-            let selection: LLMSelection?
-            switch kind {
-            case .refine: selection = model.settings.refineLLM
-            case .summarize: selection = model.settings.summarizeLLM
-            }
-            guard let selection, !selection.model.isEmpty,
-                  let endpoint = model.settings.endpoints.first(where: { $0.id == selection.endpointID })
-            else { throw FeatureConfigError.llmNotConfigured(kind) }
-            return LLMTarget(provider: try factory.llm(for: endpoint), model: selection.model)
-        }
-
         let capture = DictationCapture(
-            recorder: recorder,
+            recorder: env.recorder,
             transcriberProvider: transcriberProvider,
-            permissions: permissions,
+            permissions: env.permissions,
             mode: { model.settings.dictationMode },
             language: { model.settings.transcriptionLanguage })
 
         let refine = RefineController(
             capture: capture,
-            llm: { try target(.refine) },
+            llm: { try model.llmTarget(for: .refine) },
             panel: quickPanel,
-            pasteboard: pasteboard,
-            inserter: inserter,
-            tracker: tracker,
+            pasteboard: env.pasteboard,
+            inserter: env.inserter,
+            tracker: env.tracker,
             toaster: hud,
             settings: { model.settings })
 
         let summarize = SummarizeController(
-            llm: { try target(.summarize) },
+            llm: { try model.llmTarget(for: .summarize) },
             panel: quickPanel,
-            pasteboard: pasteboard,
-            inserter: inserter,
-            tracker: tracker,
+            pasteboard: env.pasteboard,
+            inserter: env.inserter,
+            tracker: env.tracker,
             toaster: hud,
             settings: { model.settings })
 
-        let speak = SpeakController(speech: AVSpeechService(), toaster: hud,
-                                    settings: { model.settings })
+        let speak = SpeakController(speech: env.speech, toaster: hud, settings: { model.settings })
 
-        let selectedText = AXSelectedTextService(ax: SystemAXReader(),
-                                                 pasteboard: pasteboard,
-                                                 keySimulator: keySimulator)
+        let selectedText = AXSelectedTextService(ax: env.ax,
+                                                 pasteboard: env.pasteboard,
+                                                 keySimulator: env.keySimulator)
 
         let features = TextFeatures(quickPanel: quickPanel, refine: refine, summarize: summarize,
                                     speak: speak, selectedText: selectedText, toaster: hud)
 
         // The panel's content needs the controllers, so the window is built last and attached.
-        let host = FloatingPanelHost(rootView: QuickPanelView(panel: quickPanel, refine: refine,
-                                                              summarize: summarize, app: model))
-        quickPanel.attach(host)
+        if let makeHost = env.quickPanelHost {
+            quickPanel.attach(makeHost(QuickPanelView(panel: quickPanel, refine: refine,
+                                                      summarize: summarize, app: model)))
+        }
         return features
     }
 }
 ```
 
-- [ ] **Step 6: Route the hotkeys in `AppModel`**
+- [ ] **Step 6: Extend `AppEnvironment`**
 
-Open `macos/Sources/Macomprendo/App/AppModel.swift`:
-
-1. Add a stored property next to the other controllers:
+Open `macos/Sources/Macomprendo/App/AppEnvironment.swift`. Plan 3's struct has `hotkeys`,
+`recorder`, `inserter`, `tracker`, `permissions`, `models`, `http`, `keychain`, `factory`,
+`hudPresenter`, `ollamaDetector`. Add five properties after `ollamaDetector`:
 
 ```swift
-    /// Hotkeys #2–#5; assigned by `AppEnvironment.live()`.
-    var textFeatures: TextFeatures?
+    var pasteboard: any PasteboardProtocol
+    var keySimulator: any KeySimulating
+    var ax: any AXReading
+    var speech: any SpeechSynthesizing
+    /// nil in tests: no NSPanel is created and the Quick Panel controller stays headless.
+    var quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)?
 ```
 
-2. In the `switch` that handles `HotkeyEvent` (Plan 3 left it with `default: break`), replace that
-   line with:
+and fill them in `live()` (the pasteboard and key simulator are the same instances
+`PasteTextInserter` already uses there — reuse the locals rather than making new ones):
+
+```swift
+        pasteboard: pasteboard,
+        keySimulator: keySimulator,
+        ax: SystemAXReader(),
+        speech: AVSpeechService(),
+        quickPanelHost: { view in FloatingPanelHost(rootView: view) }
+```
+
+Then open the test-only `AppEnvironment.fake(...)` (Plan 3 defined it in
+`macos/Tests/MacomprendoTests/Fakes/`) and give the five new parameters defaults:
+
+```swift
+        pasteboard: any PasteboardProtocol = ScriptedPasteboard(),
+        keySimulator: any KeySimulating = ScriptedKeySimulator(),
+        ax: any AXReading = ScriptedAXReader(text: nil),
+        speech: any SpeechSynthesizing = ScriptedSpeech(),
+        quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)? = nil
+```
+
+`AppEnvironment.fake()` is `@MainActor`; if Plan 3 declared it non-isolated, add `@MainActor`
+now — `ScriptedSpeech` is main-actor isolated.
+
+- [ ] **Step 7: Route the hotkeys in `AppModel`**
+
+Open `macos/Sources/Macomprendo/App/AppModel.swift`.
+
+1. Add a stored property right after `let transcriberProvider`:
+
+```swift
+    private(set) var textFeatures: TextFeatures?
+```
+
+2. At the top of `start()`, before the hotkey enablement loop, build it once:
+
+```swift
+        if textFeatures == nil {
+            textFeatures = TextFeatures.live(model: self, env: env, hud: hud,
+                                             transcriberProvider: transcriberProvider)
+        }
+```
+
+3. In `route(_:)`, replace
+
+```swift
+        default:
+            break   // Plan 4 adds dictateAndRefine, speak, summarize, refineSelection
+```
+
+with
 
 ```swift
         default:
             textFeatures?.handle(event)
 ```
 
-- [ ] **Step 7: Wire it in `AppEnvironment`**
-
-Open `macos/Sources/Macomprendo/App/AppEnvironment.swift` and, at the end of `live()` — after the
-model, HUD, provider factory, recorder, permissions, inserter, tracker, pasteboard, key simulator
-and the transcriber closure already used by `DictationController` exist — add:
-
-```swift
-        model.textFeatures = TextFeatures.live(
-            model: model,
-            hud: hud,
-            factory: providerFactory,
-            recorder: recorder,
-            permissions: permissions,
-            inserter: inserter,
-            tracker: tracker,
-            pasteboard: pasteboard,
-            keySimulator: keySimulator,
-            transcriberProvider: transcriberProvider)
-```
-
-Rename the right-hand side identifiers to whatever those locals are called in that file; every
-argument is a value `DictationController` already receives there.
+Plan 3's `AppModelTests.ignoresActionsThatAreNotImplementedYet` still passes: with the fake
+environment `.keyDown(.speak)` and `.keyDown(.summarize)` find no selection, so they only toast
+and `model.dictation.state` stays `.idle`. Rename that test to
+`routesSelectionActionsToTheTextFeatures` and extend it if you prefer, but do not delete it.
 
 - [ ] **Step 8: Run the whole suite**
 
@@ -3913,3 +3961,957 @@ git commit -m "feat(app): route selection hotkeys to the text feature controller
 ```
 
 ---
+
+### Task 14: Settings ▸ Speech tab
+
+**Files:**
+- Create: `macos/Sources/Macomprendo/UI/Settings/SpeechTab.swift`
+- Modify: `macos/Sources/Macomprendo/App/AppModel.swift`, `macos/Sources/Macomprendo/UI/Settings/SettingsView.swift`
+- Test: `macos/Tests/MacomprendoTests/UI/SpeechTabModelTests.swift`
+
+**Interfaces:**
+- Consumes: `Voice`, `SpeechSynthesizing` (Task 5), `SettingsHolding` (Task 6).
+- Produces:
+  ```swift
+  @MainActor final class SpeechTabModel: ObservableObject {
+      struct VoiceGroup: Identifiable, Equatable { let language: String; let displayName: String; let voices: [Voice]; var id: String { language } }
+      @Published private(set) var groups: [VoiceGroup]
+      init(speech: any SpeechSynthesizing, holder: any SettingsHolding)
+      func reload()
+      func preview()
+      static func group(_ voices: [Voice]) -> [VoiceGroup]
+      static let sampleText: String
+  }
+  struct SpeechTab: View { init(model: SpeechTabModel, app: AppModel) }
+  ```
+
+- [ ] **Step 1: Write the failing test**
+
+Create `macos/Tests/MacomprendoTests/UI/SpeechTabModelTests.swift`:
+
+```swift
+import Foundation
+import Testing
+@testable import Macomprendo
+
+@MainActor
+@Suite struct SpeechTabModelTests {
+    private let voices = [
+        Voice(id: "v.fr", name: "Amélie", language: "fr-FR", quality: "premium"),
+        Voice(id: "v.en2", name: "Alex", language: "en-US", quality: "default"),
+        Voice(id: "v.en1", name: "Ava", language: "en-US", quality: "enhanced"),
+    ]
+
+    @Test func voicesAreGroupedByLanguageAndSortedByName() {
+        let groups = SpeechTabModel.group(voices)
+        #expect(groups.map(\.language) == ["en-US", "fr-FR"])
+        #expect(groups[0].voices.map(\.name) == ["Alex", "Ava"])
+        #expect(groups[0].displayName.contains("English"))
+        #expect(groups[1].voices.map(\.name) == ["Amélie"])
+    }
+
+    @Test func groupingAnEmptyListYieldsNoGroups() {
+        #expect(SpeechTabModel.group([]).isEmpty)
+    }
+
+    @Test func reloadPublishesTheServiceVoices() {
+        let speech = ScriptedSpeech()
+        speech.available = voices
+        let model = SpeechTabModel(speech: speech, holder: ScriptedSettingsHolder())
+        #expect(model.groups.count == 2)
+
+        speech.available = [voices[0]]
+        model.reload()
+        #expect(model.groups.count == 1)
+    }
+
+    @Test func previewSpeaksTheSampleWithTheCurrentSettings() {
+        let speech = ScriptedSpeech()
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech = SpeechSettings(voiceID: "v.en1", rate: 0.7, pitch: 1.2, volume: 0.8)
+        let model = SpeechTabModel(speech: speech, holder: holder)
+
+        model.preview()
+
+        #expect(speech.spoken.count == 1)
+        #expect(speech.spoken[0].text == SpeechTabModel.sampleText)
+        #expect(speech.spoken[0].settings.voiceID == "v.en1")
+        #expect(speech.spoken[0].settings.rate == 0.7)
+    }
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `swift test --package-path macos --filter SpeechTabModelTests`
+Expected: build failure — `error: cannot find 'SpeechTabModel' in scope`.
+
+- [ ] **Step 3: Implement the tab**
+
+Create `macos/Sources/Macomprendo/UI/Settings/SpeechTab.swift`:
+
+```swift
+import SwiftUI
+
+@MainActor final class SpeechTabModel: ObservableObject {
+    struct VoiceGroup: Identifiable, Equatable {
+        let language: String        // BCP-47, e.g. "en-US"
+        let displayName: String     // "English (United States)"
+        let voices: [Voice]
+        var id: String { language }
+    }
+
+    static let sampleText = "Macomprendo can read your selected text out loud."
+
+    @Published private(set) var groups: [VoiceGroup] = []
+
+    private let speech: any SpeechSynthesizing
+    private let holder: any SettingsHolding
+
+    init(speech: any SpeechSynthesizing, holder: any SettingsHolding) {
+        self.speech = speech
+        self.holder = holder
+        reload()
+    }
+
+    func reload() {
+        groups = Self.group(speech.voices())
+    }
+
+    func preview() {
+        speech.speak(Self.sampleText, settings: holder.settings.speech)
+    }
+
+    static func group(_ voices: [Voice]) -> [VoiceGroup] {
+        Dictionary(grouping: voices, by: \.language)
+            .map { language, voices in
+                VoiceGroup(language: language,
+                           displayName: Locale.current.localizedString(forIdentifier: language) ?? language,
+                           voices: voices.sorted { ($0.name, $0.id) < ($1.name, $1.id) })
+            }
+            .sorted { ($0.displayName, $0.language) < ($1.displayName, $1.language) }
+    }
+}
+
+struct SpeechTab: View {
+    @ObservedObject var model: SpeechTabModel
+    @ObservedObject var app: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Voice").font(.headline)
+            List(selection: voiceSelection) {
+                ForEach(model.groups) { group in
+                    Section(group.displayName) {
+                        ForEach(group.voices) { voice in
+                            HStack {
+                                Text(voice.name)
+                                if voice.quality != "default" {
+                                    Text(voice.quality.uppercased())
+                                        .font(.caption2)
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(Color.accentColor.opacity(0.18))
+                                        .clipShape(Capsule())
+                                }
+                                Spacer()
+                            }
+                            .tag(voice.id)
+                        }
+                    }
+                }
+            }
+            .frame(minHeight: 200)
+
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                GridRow {
+                    Text("Rate")
+                    Slider(value: $app.settings.speech.rate, in: 0...1)
+                }
+                GridRow {
+                    Text("Pitch")
+                    Slider(value: $app.settings.speech.pitch, in: 0.5...2.0)
+                }
+                GridRow {
+                    Text("Volume")
+                    Slider(value: $app.settings.speech.volume, in: 0...1)
+                }
+            }
+
+            HStack {
+                Button("Preview") { model.preview() }
+                Button("Reload voices") { model.reload() }
+                Spacer()
+                Text("Hotkey ⌥S reads the current selection; press it again to stop.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(20)
+    }
+
+    private var voiceSelection: Binding<String?> {
+        Binding(get: { app.settings.speech.voiceID },
+                set: { app.settings.speech.voiceID = $0 })
+    }
+}
+```
+
+- [ ] **Step 4: Register the tab**
+
+Following Plan 3's pattern for `modelsViewModel`, add the view model to
+`macos/Sources/Macomprendo/App/AppModel.swift` right after `lazy var modelsViewModel`:
+
+```swift
+    lazy var speechTabModel = SpeechTabModel(speech: env.speech, holder: self)
+```
+
+Then open `macos/Sources/Macomprendo/UI/Settings/SettingsView.swift` and add the tab to the
+existing `TabView`, after the Dictation tab (Plan 3's tabs take no arguments and reach the model
+through `AppRoot.model`):
+
+```swift
+            SpeechTab(model: AppRoot.model.speechTabModel, app: AppRoot.model)
+                .tabItem { Label("Speech", systemImage: "speaker.wave.2") }
+```
+
+- [ ] **Step 5: Run the test and the build**
+
+Run: `swift test --package-path macos --filter SpeechTabModelTests`
+Expected: PASS — 4 tests, 0 failures.
+
+Run: `swift build --package-path macos`
+Expected: `Build complete!`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add macos/Sources/Macomprendo/UI/Settings/SpeechTab.swift \
+        macos/Sources/Macomprendo/App/AppModel.swift \
+        macos/Sources/Macomprendo/UI/Settings/SettingsView.swift \
+        macos/Tests/MacomprendoTests/UI/SpeechTabModelTests.swift
+git commit -m "feat(settings): add the Speech tab with voice picker and preview"
+```
+
+---
+
+### Task 15: Settings ▸ Refine & Summarize tab
+
+**Files:**
+- Create: `macos/Sources/Macomprendo/UI/Settings/PromptsTab.swift`
+- Modify: `macos/Sources/Macomprendo/App/AppModel.swift`, `macos/Sources/Macomprendo/UI/Settings/SettingsView.swift`
+- Test: `macos/Tests/MacomprendoTests/UI/PromptsTabModelTests.swift`
+
+**Interfaces:**
+- Consumes: `Settings` preset helpers (Task 1), `FactoryPresets` (Task 2), `PromptRenderer` (Task 3),
+  `LLMTarget`/`ErrorText` (Task 6), `SettingsHolding` (Task 6).
+- Produces:
+  ```swift
+  @MainActor final class PromptsTabModel: ObservableObject {
+      @Published var kind: PresetKind
+      @Published private(set) var selectedID: UUID?
+      @Published var draft: PromptPreset?
+      @Published private(set) var problems: [String]
+      @Published private(set) var testOutput: String
+      @Published private(set) var isTesting: Bool
+      @Published private(set) var testError: String?
+      @Published private(set) var availableModels: [String]
+      @Published private(set) var modelsError: String?
+      @Published var lastError: String?
+      var presets: [PromptPreset] { get }
+      var selection: LLMSelection? { get set }
+      static let sampleText: String
+      init(holder: any SettingsHolding, llm: @escaping @MainActor (PresetKind) throws -> LLMTarget)
+      func select(_ id: UUID?)
+      func save()
+      func add()
+      func duplicate()
+      func delete()
+      func move(from: IndexSet, to: Int)
+      func makeDefault()
+      func restoreFactory()
+      func runTest()
+      func stopTest()
+      func drainTest() async
+      func loadModels() async
+  }
+  struct PromptsTab: View { init(model: PromptsTabModel, app: AppModel) }
+  ```
+
+- [ ] **Step 1: Write the failing test**
+
+Create `macos/Tests/MacomprendoTests/UI/PromptsTabModelTests.swift`:
+
+```swift
+import Foundation
+import Testing
+@testable import Macomprendo
+
+@MainActor
+@Suite struct PromptsTabModelTests {
+    private func make(deltas: [String] = ["tested"], failure: MacomprendoError? = nil)
+        -> (PromptsTabModel, ScriptedSettingsHolder, LLMCallRecorder) {
+        let holder = ScriptedSettingsHolder.seeded()
+        let recorder = LLMCallRecorder()
+        let provider = ScriptedLLMProvider(deltas: deltas, failure: failure, recorder: recorder)
+        let model = PromptsTabModel(holder: holder,
+                                    llm: { _ in LLMTarget(provider: provider, model: "m") })
+        return (model, holder, recorder)
+    }
+
+    @Test func startsOnRefineWithTheFirstPresetSelected() {
+        let (model, _, _) = make()
+        #expect(model.kind == .refine)
+        #expect(model.presets.count == 7)
+        #expect(model.selectedID == FactoryPresets.ID.cleanUp)
+        #expect(model.draft?.name == "Clean up")
+        #expect(model.problems.isEmpty)
+    }
+
+    @Test func switchingKindSelectsThatKindsFirstPreset() {
+        let (model, _, _) = make()
+        model.kind = .summarize
+        #expect(model.presets.count == 4)
+        #expect(model.selectedID == FactoryPresets.ID.brief)
+    }
+
+    @Test func editingTheDraftAndSavingWritesThrough() {
+        let (model, holder, _) = make()
+        model.draft?.name = "Tidy up"
+        model.save()
+        #expect(holder.settings.preset(id: FactoryPresets.ID.cleanUp)?.name == "Tidy up")
+    }
+
+    @Test func validationProblemsAreRepublishedOnSave() {
+        let (model, _, _) = make()
+        model.draft?.userTemplate = "no placeholder here"
+        model.save()
+        #expect(model.problems.contains("The user template must contain {text}."))
+    }
+
+    @Test func addCreatesACustomPresetOfTheCurrentKindAndSelectsIt() {
+        let (model, holder, _) = make()
+        model.add()
+        #expect(holder.settings.presets(of: .refine).count == 8)
+        #expect(model.draft?.isFactory == false)
+        #expect(model.draft?.id == model.selectedID)
+        #expect(model.presets.last?.id == model.selectedID)
+    }
+
+    @Test func duplicateCopiesTheSelectionAsANonFactoryPreset() {
+        let (model, holder, _) = make()
+        model.duplicate()
+        #expect(holder.settings.presets(of: .refine).count == 8)
+        #expect(model.draft?.name == "Clean up copy")
+        #expect(model.draft?.isFactory == false)
+        #expect(model.draft?.userTemplate == FactoryPresets.refine()[0].userTemplate)
+    }
+
+    @Test func deleteRemovesTheSelectionAndSelectsAnother() {
+        let (model, holder, _) = make()
+        model.delete()
+        #expect(holder.settings.preset(id: FactoryPresets.ID.cleanUp) == nil)
+        #expect(model.selectedID == FactoryPresets.ID.formal)
+        #expect(model.lastError == nil)
+    }
+
+    @Test func deletingTheLastPresetOfAKindPublishesAnError() {
+        let (model, holder, _) = make()
+        while holder.settings.presets(of: .refine).count > 1 { model.delete() }
+        model.delete()
+        #expect(holder.settings.presets(of: .refine).count == 1)
+        #expect(model.lastError?.contains("At least one") == true)
+    }
+
+    @Test func moveReordersWithinTheKind() {
+        let (model, _, _) = make()
+        model.move(from: IndexSet(integer: 6), to: 0)     // Translate to the top
+        #expect(model.presets.first?.id == FactoryPresets.ID.translate)
+    }
+
+    @Test func makeDefaultUpdatesSettings() {
+        let (model, holder, _) = make()
+        model.select(FactoryPresets.ID.formal)
+        model.makeDefault()
+        #expect(holder.settings.defaultRefinePresetID == FactoryPresets.ID.formal)
+    }
+
+    @Test func restoreFactoryReaddsDeletedFactoryPresets() {
+        let (model, holder, _) = make()
+        model.delete()                                   // removes Clean up
+        model.restoreFactory()
+        #expect(holder.settings.preset(id: FactoryPresets.ID.cleanUp) != nil)
+        #expect(holder.settings.presets(of: .refine).count == 7)
+    }
+
+    @Test func testWithSampleTextStreamsIntoTheOutputBox() async {
+        let (model, _, recorder) = make(deltas: ["Ti", "dy"])
+        model.runTest()
+        await model.drainTest()
+        #expect(model.testOutput == "Tidy")
+        #expect(!model.isTesting)
+        #expect(model.testError == nil)
+        #expect(recorder.calls.last?.messages.last?.content.contains(PromptsTabModel.sampleText) == true)
+    }
+
+    @Test func aFailingTestShowsTheProviderError() async {
+        let (model, _, _) = make(deltas: [], failure: .providerUnreachable(endpointName: "Ollama (local)"))
+        model.runTest()
+        await model.drainTest()
+        #expect(model.testError != nil)
+        #expect(!model.isTesting)
+    }
+
+    @Test func loadModelsPublishesTheProviderList() async {
+        let (model, _, _) = make()
+        await model.loadModels()
+        #expect(model.availableModels == ["scripted-model"])
+        #expect(model.modelsError == nil)
+    }
+
+    @Test func selectionReadsAndWritesThePerFeatureLLMChoice() {
+        let (model, holder, _) = make()
+        let endpointID = holder.settings.endpoints[0].id
+        model.selection = LLMSelection(endpointID: endpointID, model: "llama3.2")
+        #expect(holder.settings.refineLLM == LLMSelection(endpointID: endpointID, model: "llama3.2"))
+        model.kind = .summarize
+        model.selection = LLMSelection(endpointID: endpointID, model: "qwen2.5:1.5b")
+        #expect(holder.settings.summarizeLLM?.model == "qwen2.5:1.5b")
+        #expect(holder.settings.refineLLM?.model == "llama3.2")
+    }
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `swift test --package-path macos --filter PromptsTabModelTests`
+Expected: build failure — `error: cannot find 'PromptsTabModel' in scope`.
+
+- [ ] **Step 3: Implement the view model**
+
+Create `macos/Sources/Macomprendo/UI/Settings/PromptsTab.swift` with the view model first:
+
+```swift
+import SwiftUI
+
+@MainActor final class PromptsTabModel: ObservableObject {
+    static let sampleText = """
+        so um i think we should probably ship the thing on friday, uh, unless the tests \
+        are still red — anyway can you tell marta and also book the room
+        """
+
+    @Published var kind: PresetKind = .refine {
+        didSet { if kind != oldValue { select(presets.first?.id) } }
+    }
+    @Published private(set) var selectedID: UUID?
+    @Published var draft: PromptPreset?
+    @Published private(set) var problems: [String] = []
+    @Published private(set) var testOutput: String = ""
+    @Published private(set) var isTesting = false
+    @Published private(set) var testError: String?
+    @Published private(set) var availableModels: [String] = []
+    @Published private(set) var modelsError: String?
+    @Published var lastError: String?
+
+    private let holder: any SettingsHolding
+    private let llm: @MainActor (PresetKind) throws -> LLMTarget
+    private var testTask: Task<Void, Never>?
+
+    init(holder: any SettingsHolding,
+         llm: @escaping @MainActor (PresetKind) throws -> LLMTarget) {
+        self.holder = holder
+        self.llm = llm
+        select(holder.settings.presets(of: kind).first?.id)
+    }
+
+    var presets: [PromptPreset] { holder.settings.presets(of: kind) }
+
+    var defaultPresetID: UUID? { holder.settings.defaultPresetID(for: kind) }
+
+    /// The endpoint + model chosen for the current feature.
+    var selection: LLMSelection? {
+        get {
+            switch kind {
+            case .refine: holder.settings.refineLLM
+            case .summarize: holder.settings.summarizeLLM
+            }
+        }
+        set {
+            switch kind {
+            case .refine: holder.settings.refineLLM = newValue
+            case .summarize: holder.settings.summarizeLLM = newValue
+            }
+        }
+    }
+
+    // MARK: Selection & editing
+
+    func select(_ id: UUID?) {
+        selectedID = id
+        draft = id.flatMap { holder.settings.preset(id: $0) }
+        problems = draft.map { PromptRenderer.validate($0) } ?? []
+        lastError = nil
+    }
+
+    func save() {
+        guard let draft else { return }
+        holder.settings.updatePreset(draft)
+        problems = PromptRenderer.validate(draft)
+    }
+
+    func add() {
+        let new = PromptPreset(id: UUID(), kind: kind, name: "New preset",
+                               systemPrompt: FactoryPresets.systemPrompt,
+                               userTemplate: "{instruction}\n\n{text}",
+                               isFactory: false, sortOrder: 0)
+        let stored = holder.settings.addPreset(new)
+        select(stored.id)
+    }
+
+    func duplicate() {
+        guard let source = draft else { return }
+        var copy = source
+        copy.id = UUID()
+        copy.name = source.name + " copy"
+        copy.isFactory = false
+        let stored = holder.settings.addPreset(copy)
+        select(stored.id)
+    }
+
+    func delete() {
+        guard let id = selectedID else { return }
+        do {
+            try holder.settings.deletePreset(id: id)
+            select(presets.first?.id)
+        } catch {
+            lastError = ErrorText.describe(error)
+        }
+    }
+
+    func move(from offsets: IndexSet, to destination: Int) {
+        guard let from = offsets.first else { return }
+        let ordered = presets
+        guard from < ordered.count else { return }
+        holder.settings.movePreset(id: ordered[from].id,
+                                   to: destination > from ? destination - 1 : destination)
+    }
+
+    func makeDefault() {
+        guard let id = selectedID else { return }
+        holder.settings.setDefaultPreset(id: id, for: kind)
+    }
+
+    func restoreFactory() {
+        var settings = holder.settings
+        FactoryPresets.restoreMissing(into: &settings)
+        holder.settings = settings
+        select(selectedID ?? presets.first?.id)
+    }
+
+    // MARK: Test run
+
+    func runTest() {
+        guard let draft else { return }
+        testTask?.cancel()
+        testOutput = ""
+        testError = nil
+        isTesting = true
+        let prompt = PromptRenderer.render(draft, text: Self.sampleText,
+                                           instruction: nil, language: nil)
+        let kind = self.kind
+        testTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.isTesting = false }
+            do {
+                let target = try self.llm(kind)
+                for try await delta in target.provider.chat(prompt.messages, model: target.model,
+                                                            options: ChatOptions()) {
+                    self.testOutput += delta
+                }
+            } catch is CancellationError {
+            } catch {
+                self.testError = ErrorText.describe(error)
+            }
+        }
+    }
+
+    func stopTest() {
+        testTask?.cancel()
+        isTesting = false
+    }
+
+    /// Awaits the in-flight test stream. Used by tests.
+    func drainTest() async {
+        _ = await testTask?.value
+    }
+
+    func loadModels() async {
+        do {
+            availableModels = try await llm(kind).provider.listModels()
+            modelsError = nil
+        } catch {
+            availableModels = []
+            modelsError = ErrorText.describe(error)
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `swift test --package-path macos --filter PromptsTabModelTests`
+Expected: PASS — 15 tests, 0 failures.
+
+- [ ] **Step 5: Add the view**
+
+Append to `macos/Sources/Macomprendo/UI/Settings/PromptsTab.swift`:
+
+```swift
+struct PromptsTab: View {
+    @ObservedObject var model: PromptsTabModel
+    @ObservedObject var app: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Feature", selection: $model.kind) {
+                ForEach(PresetKind.allCases, id: \.self) { kind in
+                    Text(kind.displayName).tag(kind)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            endpointRow
+
+            HStack(alignment: .top, spacing: 12) {
+                presetList
+                editor
+            }
+        }
+        .padding(20)
+        .task(id: model.kind) { await model.loadModels() }
+    }
+
+    private var endpointRow: some View {
+        HStack {
+            Picker("Endpoint", selection: endpointBinding) {
+                ForEach(app.settings.endpoints) { endpoint in
+                    Text(endpoint.name).tag(Optional(endpoint.id))
+                }
+            }
+            .frame(width: 240)
+
+            Picker("Model", selection: modelBinding) {
+                ForEach(model.availableModels, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+            .frame(width: 260)
+
+            Button("Reload") { Task { await model.loadModels() } }
+
+            if let error = model.modelsError {
+                Text(error).font(.caption).foregroundStyle(.orange).lineLimit(2)
+            }
+        }
+    }
+
+    private var presetList: some View {
+        VStack(spacing: 6) {
+            List(selection: Binding(get: { model.selectedID }, set: { model.select($0) })) {
+                ForEach(model.presets) { preset in
+                    HStack {
+                        Text(preset.name)
+                        if preset.id == model.defaultPresetID {
+                            Text("DEFAULT").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .tag(preset.id)
+                }
+                .onMove { model.move(from: $0, to: $1) }
+            }
+            .frame(width: 220, minHeight: 260)
+
+            HStack {
+                Button("＋") { model.add() }.help("Add a preset")
+                Button("⧉") { model.duplicate() }.help("Duplicate")
+                Button("－") { model.delete() }.help("Delete")
+                Spacer()
+                Button("Make default") { model.makeDefault() }
+            }
+            .font(.caption)
+
+            Button("Restore factory presets") { model.restoreFactory() }
+                .font(.caption)
+
+            if let error = model.lastError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+        }
+    }
+
+    @ViewBuilder private var editor: some View {
+        if let draft = Binding($model.draft) {
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Name", text: draft.name)
+                    .onSubmit { model.save() }
+
+                Text("System prompt").font(.caption).foregroundStyle(.secondary)
+                TextEditor(text: draft.systemPrompt)
+                    .frame(height: 70)
+                    .border(.separator)
+
+                Text("User template — must contain {text}; may use {instruction} and {language}")
+                    .font(.caption).foregroundStyle(.secondary)
+                TextEditor(text: draft.userTemplate)
+                    .frame(height: 110)
+                    .border(.separator)
+
+                if model.problems.isEmpty {
+                    Text("Template looks good.").font(.caption).foregroundStyle(.green)
+                } else {
+                    ForEach(model.problems, id: \.self) { problem in
+                        Text(problem).font(.caption).foregroundStyle(.red)
+                    }
+                }
+
+                HStack {
+                    Button("Save") { model.save() }
+                    if model.isTesting {
+                        Button("Stop") { model.stopTest() }
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Test with sample text") { model.save(); model.runTest() }
+                    }
+                }
+
+                Text(model.testError ?? model.testOutput)
+                    .font(.callout)
+                    .foregroundStyle(model.testError == nil ? .primary : .red)
+                    .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
+                    .textSelection(.enabled)
+                    .padding(6)
+                    .background(Color.secondary.opacity(0.08))
+            }
+        } else {
+            Text("Select a preset.").foregroundStyle(.secondary)
+        }
+    }
+
+    private var endpointBinding: Binding<UUID?> {
+        Binding(get: { model.selection?.endpointID },
+                set: { id in
+                    guard let id else { return }
+                    model.selection = LLMSelection(endpointID: id,
+                                                   model: model.selection?.model ?? "")
+                })
+    }
+
+    private var modelBinding: Binding<String> {
+        Binding(get: { model.selection?.model ?? "" },
+                set: { name in
+                    guard let endpointID = model.selection?.endpointID
+                            ?? app.settings.endpoints.first?.id else { return }
+                    model.selection = LLMSelection(endpointID: endpointID, model: name)
+                })
+    }
+}
+```
+
+- [ ] **Step 6: Register the tab**
+
+Add the view model to `macos/Sources/Macomprendo/App/AppModel.swift`, right after
+`lazy var speechTabModel` (`llmTarget(for:)` was added to `AppModel` in Task 13):
+
+```swift
+    lazy var promptsTabModel = PromptsTabModel(
+        holder: self,
+        llm: { [unowned self] kind in try self.llmTarget(for: kind) })
+```
+
+Then open `macos/Sources/Macomprendo/UI/Settings/SettingsView.swift` and add, after the Speech tab:
+
+```swift
+            PromptsTab(model: AppRoot.model.promptsTabModel, app: AppRoot.model)
+                .tabItem { Label("Refine & Summarize", systemImage: "text.badge.star") }
+```
+
+Note: `Core/Settings` shadows SwiftUI's `Settings` scene, so if you touch the scene declaration in
+`MacomprendoApp.swift` write `SwiftUI.Settings { … }`.
+
+- [ ] **Step 7: Run the full suite and build**
+
+Run: `swift test --package-path macos`
+Expected: all suites pass, 0 failures.
+
+Run: `swift build --package-path macos`
+Expected: `Build complete!`
+
+- [ ] **Step 8: Manual verification**
+
+Launch the app, open Settings ▸ Refine & Summarize and confirm:
+1. Both feature segments list their presets; the default is marked.
+2. Editing a template to remove `{text}` shows the red validation line immediately after Save.
+3. "Test with sample text" streams a cleaned-up version of the sample into the read-only box.
+4. Deleting presets down to one and pressing delete again shows "At least one refine preset…".
+5. "Restore factory presets" brings the deleted ones back without duplicating custom presets.
+6. The preset picker in the Quick Panel shows the same list and order.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add macos/Sources/Macomprendo/UI/Settings/PromptsTab.swift \
+        macos/Sources/Macomprendo/App/AppModel.swift \
+        macos/Sources/Macomprendo/UI/Settings/SettingsView.swift \
+        macos/Tests/MacomprendoTests/UI/PromptsTabModelTests.swift
+git commit -m "feat(settings): add the Refine & Summarize preset manager"
+```
+
+---
+
+### Task 16: Smoke-test checklist for the text features
+
+**Files:**
+- Modify (or create): `docs/SMOKE_TEST.md`
+
+**Interfaces:**
+- Consumes: the shipped behaviour of Tasks 4–15. Produces no code.
+
+- [ ] **Step 1: Make sure the file exists**
+
+Run: `ls docs/SMOKE_TEST.md`
+If it does not exist (Plan 5 owns its final form), create it with exactly this preamble:
+
+```markdown
+# Macomprendo — Manual Smoke Test
+
+Run this checklist on a clean machine state before every release. Hardware- and OS-bound
+paths (microphone, Accessibility, CGEvent, NSPanel, speech synthesis) are not unit-tested;
+this document is their coverage.
+
+**Setup:** Developer ID build installed in `/Applications`, Microphone and Accessibility
+permissions granted, Ollama running with `qwen2.5:1.5b` pulled, TextEdit open with a
+paragraph of text.
+```
+
+- [ ] **Step 2: Append the text-feature sections**
+
+Append to `docs/SMOKE_TEST.md`:
+
+```markdown
+## Refine selection (hotkey #5, unassigned by default)
+
+Assign a shortcut in Settings ▸ Hotkeys first.
+
+- [ ] Select a sentence in TextEdit and press the shortcut. The Quick Panel opens top-center
+      of the screen holding the mouse, 680×420, above the frontmost window, and TextEdit stays
+      the active app (its title bar keeps colour).
+- [ ] "Original" shows exactly the selected text; "Refined" fills in progressively; the
+      spinner and Stop button are visible while it streams.
+- [ ] Press Stop mid-stream: streaming halts, the partial text stays, no error banner appears.
+- [ ] Type "make it one sentence" in the instruction field and press ⌘↩: "Refined" clears and
+      re-streams.
+- [ ] Change the preset picker to "Formal": it re-runs automatically.
+- [ ] Click "Copy" on the Refined side: a "Copied." toast appears and the panel stays open;
+      ⌘V in TextEdit pastes the refined text.
+- [ ] Click "Insert" on the Refined side: TextEdit comes forward, the selected text is
+      replaced by the refined version, and the panel closes.
+- [ ] Reopen the panel, drag it to the bottom-left, press Esc, reopen: it appears where it was
+      dragged. On a second display it remembers a separate position.
+- [ ] Stop Ollama (`pkill ollama`) and trigger the hotkey: a red banner names the endpoint and
+      suggests starting Ollama or choosing another endpoint. Restart Ollama afterwards.
+
+## Dictate & Refine (hotkey #2, ⌥⇧Space)
+
+- [ ] With Dictation mode = Hold: hold ⌥⇧Space, say two sentences, release. The recording HUD
+      shows a live level meter, then the Quick Panel opens with "Original" holding the
+      transcript and "Refined" streaming.
+- [ ] With Dictation mode = Toggle: press once to start, press again to stop; same result.
+- [ ] Say nothing and release: a "Nothing heard." toast appears and no panel opens.
+- [ ] Click Insert on either side: the text lands in the app that was frontmost when the
+      hotkey fired (not in the panel), and the panel closes.
+- [ ] Deny microphone permission in System Settings, trigger the hotkey: the permission error
+      toast appears with a link to the correct System Settings pane. Re-grant afterwards.
+
+## Summarize selection (hotkey #4, ⌥M)
+
+- [ ] Select three paragraphs in Safari and press ⌥M: the Quick Panel opens in the single-pane
+      summary layout with the "Brief" preset and streams a summary.
+- [ ] Switch the preset to "Bullets": it re-runs and produces a bullet list.
+- [ ] Press "Copy": a toast appears, the panel stays open, ⌘V pastes the summary.
+- [ ] In TextEdit, select a paragraph, press ⌥M, then "Replace selection": the selected
+      paragraph is replaced by the summary and the panel closes.
+- [ ] Press ⌥M with nothing selected: a "nothing selected" toast appears, no panel opens.
+- [ ] Copy something to the clipboard, then press ⌥M in an app without Accessibility selection
+      support (Terminal): the summary is produced via the ⌘C fallback **and** the clipboard
+      still holds what you copied before.
+
+## Speak selection (hotkey #3, ⌥S)
+
+- [ ] Select a paragraph and press ⌥S: it is read aloud with the voice chosen in
+      Settings ▸ Speech.
+- [ ] Press ⌥S again while it is speaking: it stops immediately and does **not** re-read the
+      selection or touch the clipboard.
+- [ ] Let an utterance finish on its own, then press ⌥S again: it starts speaking again.
+- [ ] Press ⌥S with nothing selected: a "nothing selected" toast appears, nothing is spoken.
+- [ ] Change rate, pitch and volume in Settings ▸ Speech and press "Preview": the change is
+      audible; the next ⌥S uses the new values.
+
+## Settings ▸ Speech
+
+- [ ] Voices are grouped by language with the system language's group listed under its
+      localized name; enhanced/premium voices carry a quality badge.
+- [ ] Selecting a voice persists across an app restart.
+
+## Settings ▸ Refine & Summarize
+
+- [ ] Each feature segment shows its own endpoint + model picker; "Reload" repopulates the
+      model list from the endpoint (and shows an orange message when it is unreachable).
+- [ ] Both preset lists show the factory presets in order with the default marked.
+- [ ] Add, rename, duplicate, reorder (drag) and delete presets; all changes survive an app
+      restart and appear in the Quick Panel's picker in the same order.
+- [ ] Remove `{text}` from a template: a red validation line appears; the Quick Panel shows the
+      same message in its error banner instead of calling the model.
+- [ ] "Test with sample text" streams a result into the read-only box; "Stop" halts it.
+- [ ] Delete presets until one remains, then delete again: "At least one refine preset must
+      exist." is shown and nothing is deleted.
+- [ ] Delete the default preset: the default moves to the first remaining preset.
+- [ ] "Restore factory presets" re-adds every deleted factory preset at the end of its list and
+      leaves custom presets untouched (no duplicates).
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add docs/SMOKE_TEST.md
+git commit -m "docs: add smoke tests for refine, summarize and speak"
+```
+
+---
+
+## Self-review notes
+
+**Spec coverage**
+
+| Spec item | Task |
+|---|---|
+| §3.2 `SelectedTextReading` / `AXSelectedTextService` with ⌘C fallback | 4 |
+| §3.2 `SpeechSynthesizing` / `AVSpeechService` | 5 |
+| §3.4 `RefineController` (dictation + selection sources, re-run, copy/insert) | 9, 10 |
+| §3.4 `SummarizeController` (copy / replace selection) | 11 |
+| §3.4 `SpeakController` (toggle stops) | 7 |
+| §3.5 Quick Panel: 680×420 top-center, per-screen frame memory, Esc, key on click, stays open while streaming, two layouts, streaming indicator, stop, error banner | 8, 12 |
+| §3.5 Settings ▸ Speech (voices by language, quality badge, sliders, preview) | 14 |
+| §3.5 Settings ▸ Refine & Summarize (endpoint+model per feature, preset manager, editor, live validation, test run, default picker, restore) | 15 |
+| §3.6 Preset model, factory list, seeding, restore-missing, last-preset guard, default reassignment, `PromptRenderer` | 1, 2, 3 |
+| §4 Speak/Summarize/Refine-selection flow (`read()` → toast on empty → controller) | 13 |
+| §5 Pasteboard restore, one in-flight task per controller, errors with recovery text | 4, 10, 11 |
+| §6 Unit coverage for renderer, factory presets, controllers with fakes | 1–11, 14, 15 |
+| Manual coverage for AX/CGEvent/NSPanel/AVSpeech | 13, 15, 16 |
+
+**Deliberate deviations**, all listed in the "Interface additions" table:
+`SpeechSynthesizing` is `@MainActor` and has `onStateChange`; `QuickPanelController` gains
+`attach(_:)` plus a screen-name/frame overload of `present` so it is testable without `NSScreen`;
+controllers take `any Toasting` instead of the concrete `HUDController`; the LLM provider+model
+pair travels as `LLMTarget`; `RefineController` gains `handle(_:)` for hold/toggle routing and
+`drain()`/`drainCapture()` as async test hooks. Sentence-level speech progress in the HUD is not
+implemented because `HUDState` (Plan 3) has no case for it. `DictationController` is not
+refactored onto `DictationCapture`; the duplication is intentional so Plan 3's tests are untouched.

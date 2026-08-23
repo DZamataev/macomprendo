@@ -166,7 +166,7 @@ services; `AppModel` owns one of each and wires hotkeys → controllers.
 - **SummarizeController** — selected text → Quick Panel in *summary* layout; uses the
   summarize presets (§3.6); actions Copy / Replace selection.
 - **SpeakController** — selected text → `SpeechSynthesizing`; pressing the hotkey while
-  speaking stops. Sentence-level progress is shown in the HUD.
+  speaking stops. The HUD shows a "Speaking…" state with the stop hint while audio plays.
 
 ### 3.6 Prompt presets
 
