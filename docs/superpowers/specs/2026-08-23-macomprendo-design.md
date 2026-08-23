@@ -55,7 +55,8 @@ macomprendo/
       Providers/  TranscriptionProvider.swift, WhisperCppTranscriber.swift, OpenAICompatibleTranscriber.swift,
                   LLMProvider.swift, OllamaProvider.swift, OpenAICompatibleLLMProvider.swift,
                   Streaming/ (SSEParser, NDJSONParser)
-      Features/   DictationController, RefineController, SpeakController, SummarizeController, Prompts.swift
+      Features/   DictationController, RefineController, SpeakController, SummarizeController,
+                  Prompts/ (PromptPreset, FactoryPresets, PromptRenderer)
       UI/         MenuBar/, Settings/, QuickPanel/, RecordingHUD/, Onboarding/, Components/ (icons, buttons)
     Tests/MacomprendoTests/   (swift-testing, one file per unit, Fakes/ for protocol doubles)
 ```
@@ -92,7 +93,7 @@ UI  ──▶  Features (controllers, @MainActor, own state machines)
   through `AppModel`. Fields: hotkeys (managed by KeyboardShortcuts), dictation mode
   (hold/toggle), `transcriptionSource` (`.local(modelID)` | `.endpoint(id, model)`),
   `llmSelection` per feature (`refine`, `summarize`) = `(endpointID, model)`,
-  speech (voiceID, rate, pitch, volume), summary/refine presets and last-used preset,
+  speech (voiceID, rate, pitch, volume), `presets: [PromptPreset]`, default preset per kind,
   launchAtLogin, insert method preference (`auto|paste|typing`), HUD/panel position
   overrides. Versioned with a `schemaVersion` and a migration hook.
 - `Endpoint` — `{ id: UUID, name, kind: .ollama | .openAICompatible, baseURL,
@@ -155,17 +156,36 @@ services; `AppModel` owns one of each and wires hotkeys → controllers.
   press while transcribing cancels. Empty/near-silent result → "Nothing heard" toast.
 - **RefineController** — same capture as dictation (or selected text for #5), then opens
   Quick Panel in *refine* layout, streams `LLMProvider.chat` with the chosen preset.
-  Presets (editable in Settings): Clean up (default), Formal, Casual, Shorten, Expand,
-  Fix grammar, Translate to ‹language›, Custom. Re-run with ⌘↩ after editing the
-  instruction. Actions: Copy original / Copy refined / Insert original / Insert refined
+  Presets are user data (see §3.6): factory presets Clean up (default), Formal, Casual,
+  Shorten, Expand, Fix grammar, Translate to ‹language› are seeded on first run and can
+  be edited, reordered, deleted, or supplemented with new ones. Re-run with ⌘↩ after
+  editing the instruction. Actions: Copy original / Copy refined / Insert original / Insert refined
   (Insert = `TextInserting` into remembered app; for #5 it replaces the selection).
-- **SummarizeController** — selected text → Quick Panel in *summary* layout; presets
-  Brief, Bullets, TL;DR, Key actions; actions Copy / Replace selection.
+- **SummarizeController** — selected text → Quick Panel in *summary* layout; uses the
+  summarize presets (§3.6); actions Copy / Replace selection.
 - **SpeakController** — selected text → `SpeechSynthesizing`; pressing the hotkey while
   speaking stops. Sentence-level progress is shown in the HUD.
 
-Prompts live in `Prompts.swift` as templates with `{text}`/`{instruction}`/`{language}`
-placeholders; the system prompt forbids commentary ("return only the result").
+### 3.6 Prompt presets
+
+Refine and summarize prompts are fully user-customizable:
+
+- `PromptPreset { id: UUID, kind: .refine | .summarize, name, systemPrompt, userTemplate,
+  isFactory: Bool, sortOrder }`, stored in `Settings.presets`. `userTemplate` supports
+  `{text}` (required), `{instruction}` and `{language}` placeholders; `PromptRenderer`
+  validates that `{text}` is present and renders the final messages.
+- `FactoryPresets.swift` holds the defaults (refine: Clean up, Formal, Casual, Shorten,
+  Expand, Fix grammar, Translate; summarize: Brief, Bullets, TL;DR, Key actions) plus a
+  shared default system prompt ("return only the result, no commentary"). They are
+  seeded once (`Settings.presetsSeeded`) and thereafter are ordinary presets: the user
+  can edit any field, reorder, delete unused factory presets, add new ones, and
+  "Restore factory presets" (re-adds missing factory items without touching custom ones).
+- Settings ▸ Refine & Summarize shows a preset list per kind with add/duplicate/delete,
+  an editor (name, system prompt, user template, live placeholder check, "Test with
+  sample text" button that streams from the selected endpoint), and a default-preset
+  picker per kind. The Quick Panel's preset picker reads the same list.
+- At least one preset per kind must exist; deleting the last one is refused with a
+  message. Deleting the default preset moves the default to the first remaining one.
 
 ### 3.5 UI
 
@@ -184,7 +204,7 @@ placeholders; the system prompt forbids commentary ("return only the result").
   method), Hotkeys (KeyboardShortcuts recorders), Dictation (source: local model picker
   w/ download status, or endpoint + model; language auto/fixed), Speech (voice grouped
   by language, rate/pitch/volume sliders, preview), Refine & Summarize (endpoint+model
-  per feature, presets editor), Providers (endpoint list: add/edit/test connection,
+  per feature, preset manager per §3.6), Providers (endpoint list: add/edit/test connection,
   Keychain-backed API key field, Ollama "Pull model" button), Models (whisper catalog,
   download/delete, disk usage).
 - **Onboarding** — first launch window: Microphone, Accessibility (required for selected
@@ -236,7 +256,7 @@ swift-testing, `swift test --package-path macos`, CI-enforced. Unit coverage tar
 - `PasteTextInserter` pasteboard restore logic with a `PasteboardProtocol` fake.
 - `ModelCatalog` + download state machine with `URLProtocol` stub (progress, SHA
   mismatch, resume).
-- `Prompts` rendering.
+- `PromptRenderer` rendering/validation; `FactoryPresets` seeding, restore-missing, last-preset deletion guard.
 
 Hardware-bound code (AVAudioEngine, AX, CGEvent, KeyboardShortcuts, whisper C calls) is
 kept thin and covered by `docs/SMOKE_TEST.md`, a manual checklist run before release.
