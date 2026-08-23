@@ -41,9 +41,10 @@ macomprendo/
   .claude/settings.json     # allowlisted build/test commands
   .github/workflows/ci.yml  # swift test + unsigned xcodebuild + audits, SHA-pinned actions
   docs/ARCHITECTURE.md  docs/SMOKE_TEST.md  docs/DECISIONS/ADR-*.md  docs/superpowers/{specs,plans}/
-  scripts/build_app.py  notarize_app.py  configure_notarization.py
-          release.py  audit_public_repo.py  sync_agent_config.py  (Python 3.9+, stdlib only)
-  tests/  (Python unittest for the scripts)
+  package.json              # scripts runner only (node >= 20, zero npm deps)
+  scripts/build-app.mjs  notarize-app.mjs  configure-notarization.mjs
+          release.mjs  audit-public-repo.mjs  sync-agent-config.mjs  lib/ (shared helpers)
+  scripts/__tests__/        # node:test unit tests for the scripts
   macos/
     project.yml             # XcodeGen source of truth; generated .xcodeproj committed
     Package.swift           # for `swift test` / `swift build`
@@ -264,16 +265,18 @@ kept thin and covered by `docs/SMOKE_TEST.md`, a manual checklist run before rel
 
 ## 7. Build, CI, release
 
-All tooling scripts are **Python 3.9+ (stdlib only, `#!/usr/bin/env python3`)** —
-no shell scripts beyond one-line shims. Ported from mac-dev-clean's logic:
-`build_app.py` (swift build per arch → lipo → assemble bundle → PlistBuddy version →
-codesign), `notarize_app.py` (identity discovery, notarytool submit/staple/validate,
-zip + sha256), `configure_notarization.py`, `release.py` (version bump in
-`project.yml`, pbxproj, `CHANGELOG.md`; tests; tag; `gh release`),
-`audit_public_repo.py`, `sync_agent_config.py`. Shared helpers in `scripts/_lib.py`
-(run/log/version parsing). Scripts are unit-tested with `unittest` in `tests/`
-(subprocess calls mocked). CI: `python3 -m unittest`, `swift test`, unsigned
-`xcodebuild`, audit, symlink check.
+All tooling scripts are **Node.js ≥ 20 ES modules (`.mjs`), zero npm dependencies** —
+only `node:` built-ins (`child_process`, `fs/promises`, `path`, `crypto`, `util.parseArgs`).
+Ported from mac-dev-clean's shell/Python logic: `build-app.mjs` (swift build per arch →
+lipo → assemble bundle → PlistBuddy version → codesign), `notarize-app.mjs` (identity
+discovery, notarytool submit/staple/validate, zip + sha256), `configure-notarization.mjs`,
+`release.mjs` (version bump in `project.yml`, pbxproj, `CHANGELOG.md`; tests; tag;
+`gh release`), `audit-public-repo.mjs`, `sync-agent-config.mjs`. Shared helpers in
+`scripts/lib/` (`run.mjs` for spawning with logging, `version.mjs`, `log.mjs`).
+`package.json` exposes them as `npm run build|notarize|release|audit|sync-agents|test:scripts`.
+Scripts are unit-tested with `node:test` in `scripts/__tests__/` (process spawning
+injected/mocked). CI: `npm run test:scripts`, `swift test`, unsigned `xcodebuild`,
+audit, symlink check.
 Bundle id `com.ravenvector.macomprendo` (placeholder until branding is decided).
 
 ## 8. AI-driven development setup
@@ -285,11 +288,11 @@ Bundle id `com.ravenvector.macomprendo` (placeholder until branding is decided).
   `docs/DECISIONS`).
 - Skills (single source `.agents/skills/`, symlinked into `.claude/skills/`):
   `macomprendo-architecture`, `macomprendo-build-test`, `macomprendo-add-provider`,
-  `macomprendo-add-hotkey-feature`, `macomprendo-release`, `macomprendo-scripts` (Python script conventions).
+  `macomprendo-add-hotkey-feature`, `macomprendo-release`, `macomprendo-scripts` (Node script conventions).
 - Claude-specific: `.claude/agents/planner.md` (model: opus), `swift-implementer.md`,
   `reviewer.md` (model: opus); `.claude/settings.json` permission allowlist for
-  `swift build/test`, `xcodegen`, `xcodebuild`, `python3 scripts/*.py`.
-- `scripts/sync_agent_config.py` creates/validates symlinks; CI fails if they drift.
+  `swift build/test`, `xcodegen`, `xcodebuild`, `node scripts/*.mjs`, `npm run *`.
+- `scripts/sync-agent-config.mjs` creates/validates symlinks; CI fails if they drift.
 
 ## 9. Decisions (to be recorded as ADRs)
 
