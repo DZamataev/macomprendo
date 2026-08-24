@@ -48,12 +48,27 @@ struct PasteTextInserter: TextInserting, @unchecked Sendable {
         let ourChangeCount = pasteboard.changeCount
         await keySimulator.pressCommand("v")
         if restoreDelay > 0 {
-            try? await Task.sleep(nanoseconds: UInt64(restoreDelay * 1_000_000_000))
+            await Self.uncancellableSleep(restoreDelay)
         }
         guard pasteboard.changeCount == ourChangeCount else {
             Log.ui.info("Pasteboard changed during paste; leaving the user's clipboard alone")
             return
         }
         pasteboard.restore(snapshot)
+    }
+
+    /// `Task.sleep` returns (throwing) IMMEDIATELY the instant the *calling* task is
+    /// cancelled — exactly what happens when a controller's `cancel()` races a
+    /// still-in-flight `insert()`. That would let the pasteboard restore above run before
+    /// the receiving app has processed the synthetic ⌘V, pasting the user's old clipboard
+    /// instead of the dictated text — defeating this type's documented contract that the
+    /// restore "must run to completion". Running the delay inside its own, never-cancelled
+    /// `Task` sidesteps that: nothing ever calls `.cancel()` on it, so awaiting its `.value`
+    /// here always waits out the real delay regardless of what happens to the caller's task.
+    private static func uncancellableSleep(_ seconds: TimeInterval) async {
+        let nanoseconds = UInt64(seconds * 1_000_000_000)
+        await Task.detached {
+            try? await Task.sleep(nanoseconds: nanoseconds)
+        }.value
     }
 }

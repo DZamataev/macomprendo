@@ -103,4 +103,39 @@ import Testing
         #expect(tracker.activated.isEmpty)
         #expect(keys.pressed == ["v"])
     }
+
+    /// `Task.sleep` returns (throwing) IMMEDIATELY the instant its enclosing task is
+    /// cancelled — exactly what happens when `cancel()` races a still-in-flight
+    /// `insert()`. A `try?`-wrapped `Task.sleep` would let the restore run right away,
+    /// putting the user's old clipboard back before the receiving app has processed the
+    /// synthetic ⌘V. `insert()`'s own contract says this delay "must run to completion";
+    /// prove cancelling the caller's task doesn't shorten it.
+    @Test func restoreDelaySurvivesCancellationOfTheCallersTask() async throws {
+        let pasteboard = FakePasteboard()
+        pasteboard.writeString("previous clipboard")
+        let tracker = FakeFrontmostAppTracker()
+        let keys = FakeKeySimulator()
+        let pasted = AsyncGate()
+        keys.onPressCommand = { _ in pasted.open() }
+        let delay: TimeInterval = 0.1
+        let inserter = PasteTextInserter(pasteboard: pasteboard, tracker: tracker,
+                                         keySimulator: keys, restoreDelay: delay)
+
+        let clock = ContinuousClock()
+        let task = Task {
+            try await inserter.insert("dictated text", into: nil, method: .paste)
+        }
+
+        await pasted.wait()   // the ⌘V has happened; the restore delay is now in flight
+        let cancelledAt = clock.now
+        task.cancel()          // races the restore, exactly as `cancel()` does on the controller
+
+        _ = try? await task.value
+        let elapsed = cancelledAt.duration(to: clock.now)
+
+        // A cancellable delay would let this elapse in near-zero time instead of the real
+        // ~100 ms — assert enough of it survived that the delay clearly wasn't skipped.
+        #expect(elapsed >= .milliseconds(70))
+        #expect(pasteboard.readString() == "previous clipboard")
+    }
 }
