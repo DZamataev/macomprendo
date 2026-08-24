@@ -39,3 +39,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   everything else on an `LSUIElement` app.
 - "Check permissions…" now reopens the onboarding wizard on the first step
   that still needs attention instead of wherever it was last left.
+- Dictation no longer gets stuck: a provider-side cancellation (without the
+  user pressing Esc) now stops the escape-key monitor and clears the HUD
+  instead of leaving it on "Transcribing…" forever.
+- The recording level meter and timer no longer go dead for the rest of the
+  app's lifetime after a dictation hits the maximum recording length once.
+- Cancelling dictation mid-paste can no longer restore your previous
+  clipboard before the dictated text has actually been pasted.
