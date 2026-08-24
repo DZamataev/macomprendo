@@ -19,6 +19,7 @@ let package = Package(
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts")
             ],
             path: "Sources/Macomprendo",
+            resources: [.copy("Resources/Icons")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
