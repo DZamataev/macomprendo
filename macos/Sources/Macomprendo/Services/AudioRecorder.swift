@@ -1,4 +1,8 @@
-import AVFoundation
+// @preconcurrency: AVFAudio's completion-handler based APIs (AVAudioConverter.convert,
+// the input tap block) predate Swift concurrency and aren't Sendable-audited, so Swift 6
+// strict concurrency treats every capture crossing them as a potential data race even
+// though they are, in practice, called synchronously on the calling thread.
+@preconcurrency import AVFoundation
 import Foundation
 
 protocol AudioRecording: AnyObject, Sendable {
@@ -136,7 +140,11 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
         guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return [] }
 
-        var supplied = false
+        // `AVAudioConverter.convert(to:error:withInputFrom:)` declares its pull block as
+        // `@Sendable`, so Swift 6 treats this capture as if it could run concurrently.
+        // In practice the block is called synchronously and repeatedly on the calling
+        // thread until this function returns — `nonisolated(unsafe)` is safe here.
+        nonisolated(unsafe) var supplied = false
         var conversionError: NSError?
         let status = converter.convert(to: output, error: &conversionError) { _, inputStatus in
             if supplied {

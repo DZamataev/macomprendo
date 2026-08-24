@@ -23,12 +23,12 @@ import Testing
         let recorder = FakeAudioRecorder()
         recorder.samplesToReturn = [0.1, 0.2, 0.3]
         try await recorder.start()
-        #expect(await recorder.isRecording == true)
+        #expect(recorder.isRecording == true)
         let samples = await recorder.stop()
         #expect(samples == [0.1, 0.2, 0.3])
         #expect(recorder.startCount == 1)
         #expect(recorder.stopCount == 1)
-        #expect(await recorder.isRecording == false)
+        #expect(recorder.isRecording == false)
     }
 
     @Test func startThrowsTheScriptedError() async {
