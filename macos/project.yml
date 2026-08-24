@@ -1,0 +1,91 @@
+name: Macomprendo
+
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "14.0"
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SDKROOT: macosx
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: 68QJJA7HK9
+
+packages:
+  WhisperBinary:
+    path: Packages/WhisperBinary
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: 2.0.0
+
+targets:
+  Macomprendo:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    productName: Macomprendo
+    sources:
+      - path: Sources/Macomprendo
+        excludes:
+          - "Resources/Icons"
+      - path: Sources/Macomprendo/Resources/Icons
+        type: folder
+        buildPhase: resources
+      - path: AppBundle/AppIcon.icns
+        buildPhase: resources
+    dependencies:
+      - package: WhisperBinary
+        product: Whisper
+      - package: KeyboardShortcuts
+        product: KeyboardShortcuts
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dzamataev.macomprendo
+        PRODUCT_NAME: Macomprendo
+        PRODUCT_MODULE_NAME: Macomprendo
+        EXECUTABLE_NAME: Macomprendo
+        INFOPLIST_FILE: AppBundle/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: AppBundle/Macomprendo.entitlements
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        COMBINE_HIDPI_IMAGES: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        SWIFT_STRICT_CONCURRENCY: complete
+        LD_RUNPATH_SEARCH_PATHS:
+          - $(inherited)
+          - "@executable_path/../Frameworks"
+      configs:
+        Debug:
+          ONLY_ACTIVE_ARCH: YES
+        Release:
+          ONLY_ACTIVE_ARCH: NO
+    scheme:
+      gatherCoverageData: true
+      testTargets:
+        - MacomprendoTests
+
+  MacomprendoTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Tests/MacomprendoTests
+    dependencies:
+      - target: Macomprendo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dzamataev.macomprendo.tests
+        PRODUCT_NAME: MacomprendoTests
+        GENERATE_INFOPLIST_FILE: YES
+        BUNDLE_LOADER: $(TEST_HOST)
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Macomprendo.app/Contents/MacOS/Macomprendo
+        CODE_SIGN_STYLE: Automatic
