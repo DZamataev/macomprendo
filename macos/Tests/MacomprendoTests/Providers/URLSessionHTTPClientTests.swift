@@ -81,6 +81,43 @@ import Testing
         }
     }
 
+    @Test func sendMapsCancellationToCancelledError() async {
+        let client = makeClient()
+        StubURLProtocol.set(path: "/api/tags", error: URLError(.cancelled))
+
+        await #expect(throws: MacomprendoError.cancelled) {
+            _ = try await client.send(HTTPRequest(url: URL(string: "http://127.0.0.1:11434/api/tags")!))
+        }
+    }
+
+    @Test func sendCancelledMidRequestThrowsCancelled() async throws {
+        let client = makeClient()
+        // The request is still in flight (URLProtocol is mid-`Thread.sleep` before its
+        // second chunk) when the surrounding Task is cancelled for real, so this
+        // exercises live `Task` cancellation rather than a scripted transport error.
+        StubURLProtocol.set(path: "/api/tags", chunks: [Data("first".utf8), Data("second".utf8)], chunkDelay: 0.3)
+
+        let task = Task<HTTPResponse, Error> {
+            try await client.send(HTTPRequest(url: URL(string: "http://127.0.0.1:11434/api/tags")!))
+        }
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        task.cancel()
+
+        await #expect(throws: MacomprendoError.cancelled) {
+            _ = try await task.value
+        }
+    }
+
+    @Test func streamMapsScriptedCancellationToCancelledError() async {
+        let client = makeClient()
+        StubURLProtocol.set(path: "/api/chat", error: URLError(.cancelled))
+
+        await #expect(throws: MacomprendoError.cancelled) {
+            for try await _ in client.stream(HTTPRequest(method: "POST", url: URL(string: "http://127.0.0.1:11434/api/chat")!)) {}
+        }
+    }
+
     @Test func requestCarriesMethodHeadersBodyAndTimeout() {
         let request = HTTPRequest(
             method: "POST",

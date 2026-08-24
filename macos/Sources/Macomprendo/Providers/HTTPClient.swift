@@ -53,6 +53,16 @@ struct HTTPResponse: Sendable {
 ///
 /// Both entry points map transport failures to `MacomprendoError.providerUnreachable`
 /// and task cancellation to `MacomprendoError.cancelled`.
+///
+/// - Note: For `send`, this holds even when the *caller's* task is the one that gets
+///   cancelled: `URLSession`'s async APIs propagate that as a thrown error. For
+///   `stream`, the same mapping happens internally (a cancelled transport finishes the
+///   stream with `.cancelled`), but if it's the *consumer's own* task that's cancelled
+///   mid-iteration, `AsyncThrowingStream` ends the `for await` loop silently instead of
+///   throwing — this is `AsyncThrowingStream`'s documented cancellation behavior, not
+///   something this type can override. Callers that must detect their own cancellation
+///   should check `Task.isCancelled` after the loop rather than relying on a caught
+///   error from `stream`.
 protocol HTTPClient: Sendable {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
     func stream(_ request: HTTPRequest) -> AsyncThrowingStream<Data, Error>
@@ -87,6 +97,8 @@ struct URLSessionHTTPClient: HTTPClient {
             throw error
         } catch let error as URLError {
             throw Self.mapURLError(error, url: request.url)
+        } catch is CancellationError {
+            throw MacomprendoError.cancelled
         }
     }
 

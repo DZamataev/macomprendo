@@ -9,6 +9,9 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         var headers: [String: String] = [:]
         var chunks: [Data] = []
         var error: URLError?
+        /// Delay inserted before each chunk after the first, so tests can cancel
+        /// mid-stream deterministically instead of racing chunk delivery.
+        var chunkDelay: TimeInterval = 0
     }
 
     private static let lock = NSLock()
@@ -19,9 +22,12 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         status: Int = 200,
         headers: [String: String] = [:],
         chunks: [Data] = [],
-        error: URLError? = nil
+        error: URLError? = nil,
+        chunkDelay: TimeInterval = 0
     ) {
-        lock.withLock { stubs[path] = Stub(status: status, headers: headers, chunks: chunks, error: error) }
+        lock.withLock {
+            stubs[path] = Stub(status: status, headers: headers, chunks: chunks, error: error, chunkDelay: chunkDelay)
+        }
     }
 
     static func reset() {
@@ -62,11 +68,39 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             headerFields: stub.headers
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        for chunk in stub.chunks {
+        for (index, chunk) in stub.chunks.enumerated() {
+            if index > 0, stub.chunkDelay > 0 {
+                Thread.sleep(forTimeInterval: stub.chunkDelay)
+            }
+            if stopped.withLock({ $0 }) { return }
             client?.urlProtocol(self, didLoad: chunk)
         }
+        if stopped.withLock({ $0 }) { return }
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    override func stopLoading() {}
+    /// Set by `stopLoading()` when the owning `URLSessionTask` is cancelled, so an
+    /// in-flight `startLoading()` (possibly mid-`Thread.sleep`, simulating a slow
+    /// chunk) stops delivering further chunks instead of racing the cancellation.
+    private let stopped = Locked(false)
+
+    override func stopLoading() {
+        stopped.withLock { $0 = true }
+    }
+}
+
+/// Minimal lock-protected box; `StubURLProtocol` instances are touched from both the
+/// URL loading system's background queue and, via `stopLoading()`, the calling task's
+/// cancellation path.
+private final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) { self.value = value }
+
+    func withLock<Result>(_ body: (inout Value) -> Result) -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&value)
+    }
 }
