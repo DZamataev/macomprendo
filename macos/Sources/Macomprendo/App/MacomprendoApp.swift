@@ -2,13 +2,23 @@ import SwiftUI
 
 @main
 struct MacomprendoApp: App {
+    @StateObject private var model: AppModel
+
+    init() {
+        _model = StateObject(wrappedValue: AppEnvironment.live().model)
+    }
+
     var body: some Scene {
         // The status item is deliberately an SF Symbol template image (spec §2, §3.5).
-        // Phosphor icons are for in-app UI only.
+        // `AppIcon` raw values are SVG file names and must not be used here.
         MenuBarExtra("Macomprendo", systemImage: "waveform") {
-            Button("Quit Macomprendo") { NSApplication.shared.terminate(nil) }
-                .keyboardShortcut("q", modifiers: .command)
+            MenuBarView().environmentObject(model)
         }
         .menuBarExtraStyle(.menu)
+
+        // `Settings` alone would resolve to our own Core type, so qualify the scene.
+        SwiftUI.Settings {
+            SettingsView().environmentObject(model)
+        }
     }
 }
