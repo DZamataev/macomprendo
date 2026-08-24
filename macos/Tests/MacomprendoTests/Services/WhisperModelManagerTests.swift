@@ -173,6 +173,55 @@ import Testing
         #expect(try Data(contentsOf: directory.appendingPathComponent("ggml-test.bin")) == Self.payload)
     }
 
+    // MARK: - Concurrency
+
+    @Test func rejectsASecondConcurrentDownloadOfTheSameModel() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // Gate the GET stream after its first chunk, so the first download is
+        // guaranteed to still be mid-flight (suspended, `inFlight` populated) when
+        // the second concurrent attempt starts, rather than racing on timing.
+        let gate = Gate()
+        let http = GatedHTTPClient(
+            inner: makeHTTP(chunks: [Data("he".utf8), Data("llo".utf8)]), gate: gate
+        )
+        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
+
+        var firstIterator = manager.download("test").makeAsyncIterator()
+        let firstProgress = try await firstIterator.next()
+        #expect(firstProgress != nil)
+
+        await #expect(throws: MacomprendoError.modelDownloadFailed(
+            "A download for this model is already in progress."
+        )) {
+            for try await _ in manager.download("test") {}
+        }
+
+        // Let the first download proceed to completion, unaffected by the rejection.
+        await gate.open()
+        var fractions = [firstProgress!]
+        while let value = try await firstIterator.next() {
+            fractions.append(value)
+        }
+        #expect(fractions.last == 1.0)
+        #expect(try Data(contentsOf: directory.appendingPathComponent("ggml-test.bin")) == Self.payload)
+    }
+
+    @Test func aFinishedDownloadDoesNotLeaveAStaleInFlightEntryBlockingTheNextOne() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let http = makeHTTP()
+        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
+
+        _ = try await collect(manager.download("test"))
+
+        // If the first attempt's id were still marked in-flight, this would throw
+        // "already in progress" instead of taking the already-downloaded fast path.
+        let fractions = try await collect(manager.download("test"))
+
+        #expect(fractions == [1.0])
+    }
+
     // MARK: - Verification failures
 
     @Test func failsAndCleansUpWhenTheChecksumDoesNotMatch() async {
@@ -335,5 +384,66 @@ import Testing
         )
 
         #expect(manager.modelsDirectory == directory)
+    }
+}
+
+// MARK: - Concurrency test helpers
+
+/// Lets a test suspend a producer until it explicitly releases it, to force genuine
+/// task overlap instead of relying on incidental scheduling order.
+private actor Gate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters.removeAll()
+        for continuation in pending { continuation.resume() }
+    }
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+}
+
+/// Wraps another `HTTPClient` and, on its GET stream only, suspends before
+/// forwarding every chunk after the first until `gate` is opened — so a test can
+/// guarantee a download is genuinely still mid-flight before it starts a second one.
+private final class GatedHTTPClient: HTTPClient, Sendable {
+    private let inner: any HTTPClient
+    private let gate: Gate
+
+    init(inner: any HTTPClient, gate: Gate) {
+        self.inner = inner
+        self.gate = gate
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        try await inner.send(request)
+    }
+
+    func stream(_ request: HTTPRequest) -> AsyncThrowingStream<Data, Error> {
+        guard request.method.uppercased() == "GET" else { return inner.stream(request) }
+        let upstream = inner.stream(request)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var isFirstChunk = true
+                    for try await chunk in upstream {
+                        if !isFirstChunk { await gate.wait() }
+                        isFirstChunk = false
+                        continuation.yield(chunk)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 }

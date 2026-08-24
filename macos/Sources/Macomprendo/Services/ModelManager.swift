@@ -32,6 +32,10 @@ actor WhisperModelManager: ModelManaging {
     private let http: any HTTPClient
     private let catalog: [WhisperModel]
     private var states: [String: ModelState] = [:]
+    /// Model ids with a download currently running, so a second concurrent
+    /// `download(_:)` for the same id is rejected instead of racing the first
+    /// one over the same `.partial` file.
+    private var inFlight: Set<String> = []
 
     init(directory: URL, http: any HTTPClient) {
         self.init(directory: directory, http: http, catalog: ModelCatalog.all)
@@ -96,6 +100,17 @@ actor WhisperModelManager: ModelManaging {
         _ id: String,
         continuation: AsyncThrowingStream<Double, Error>.Continuation
     ) async throws {
+        // Check-and-insert happens atomically here because this whole method runs
+        // actor-isolated: no other call can observe `inFlight` between the check and
+        // the insert. Removed in every exit path (success, failure, cancellation) via
+        // `defer`, so a finished or failed attempt never blocks a later one.
+        guard inFlight.insert(id).inserted else {
+            throw MacomprendoError.modelDownloadFailed(
+                "A download for this model is already in progress."
+            )
+        }
+        defer { inFlight.remove(id) }
+
         guard let model = model(id) else { throw MacomprendoError.modelMissing(id) }
 
         let destination = destinationURL(for: model)
@@ -125,6 +140,19 @@ actor WhisperModelManager: ModelManaging {
         if received > 0 { headers["Range"] = "bytes=\(received)-" }
 
         // 3. Stream the body onto the partial file.
+        //
+        // NOTE: `HTTPClient.stream` deliberately does not expose the response status
+        // (see its doc comment), so if a server ignores our `Range` header and sends
+        // the full 200 body instead of a 206 partial one, we cannot detect that from
+        // the status here. It still fails safely in practice: we append onto the
+        // existing `received` bytes, so `received` overshoots `total` and the
+        // completeness check below throws `modelDownloadFailed` and cleans up. The one
+        // gap is a pathological, currently-accepted limitation: an ignored-Range body
+        // that happens to be exactly `total - received` bytes long (matching the
+        // expected remainder count) combined with an empty catalog `sha256` (which
+        // skips verification, see Task 13) would pass unnoticed. That closes once
+        // `ModelCatalog`'s hashes are filled in, since the checksum check would then
+        // catch the wrong bytes.
         let handle = try FileHandle(forWritingTo: partial)
         defer { try? handle.close() }
         try handle.seekToEnd()
@@ -133,6 +161,14 @@ actor WhisperModelManager: ModelManaging {
         for try await chunk in http.stream(
             HTTPRequest(method: "GET", url: model.downloadURL, headers: headers, timeout: 60)
         ) {
+            // This mostly guards other cancellation-triggered suspension points, not
+            // consumer-side cancellation of this loop itself: per `HTTPClient`'s doc
+            // comment, when this task (the consumer of `http.stream`) is the one that
+            // gets cancelled mid-iteration, `AsyncThrowingStream` ends the `for await`
+            // loop silently instead of throwing here, so this check never runs again
+            // for that case. That is still safe: the loop simply stops early, and the
+            // `received != total` completeness check below throws
+            // `modelDownloadFailed`, same as any other truncated download.
             try Task.checkCancellation()
             try handle.write(contentsOf: chunk)
             received += Int64(chunk.count)
