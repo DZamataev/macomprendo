@@ -107,3 +107,73 @@ struct OllamaProvider: LLMProvider {
         return chunk.done == true
     }
 }
+
+/// One progress line from `POST /api/pull`. `completed`/`total` are absent on
+/// status-only lines ("pulling manifest", "verifying sha256 digest", "success").
+struct PullProgress: Sendable, Equatable {
+    var status: String
+    var completed: Int64?
+    var total: Int64?
+
+    init(status: String, completed: Int64? = nil, total: Int64? = nil) {
+        self.status = status
+        self.completed = completed
+        self.total = total
+    }
+}
+
+extension OllamaProvider {
+
+    private struct PullRequestBody: Encodable {
+        let name: String
+        let stream: Bool
+    }
+
+    private struct PullChunk: Decodable {
+        let status: String?
+        let completed: Int64?
+        let total: Int64?
+    }
+
+    /// Downloads `model` into the local Ollama instance, reporting progress.
+    /// The stream ends when the HTTP body ends — there is no `done` flag; the last
+    /// line is normally `{"status":"success"}`.
+    func pull(model: String) -> AsyncThrowingStream<PullProgress, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let body = try JSONEncoder().encode(PullRequestBody(name: model, stream: true))
+                    let request = HTTPRequest(
+                        method: "POST",
+                        url: EndpointURL.join(endpoint.baseURL, "/api/pull"),
+                        headers: ["Content-Type": "application/json"],
+                        body: body,
+                        timeout: 60
+                    )
+
+                    var parser = NDJSONParser()
+                    for try await bytes in http.stream(request) {
+                        for document in parser.feed(bytes) {
+                            continuation.yield(try Self.progress(from: document))
+                        }
+                    }
+                    for document in parser.finish() {
+                        continuation.yield(try Self.progress(from: document))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private static func progress(from document: Data) throws -> PullProgress {
+        guard let chunk = try? JSONDecoder().decode(PullChunk.self, from: document),
+              let status = chunk.status else {
+            throw MacomprendoError.providerStreamMalformed
+        }
+        return PullProgress(status: status, completed: chunk.completed, total: chunk.total)
+    }
+}
