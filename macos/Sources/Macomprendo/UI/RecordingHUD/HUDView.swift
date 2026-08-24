@@ -58,7 +58,12 @@ struct HUDView: View {
         .padding(12)
     }
 
-    static func elapsedText(_ elapsed: TimeInterval) -> String {
+    /// Pure formatting, no actor state — `nonisolated` so it can be called from a
+    /// synchronous nonisolated context (e.g. a `swift-testing` test) without an `await`.
+    /// `HUDView` conforms to `View`, whose `body` requirement is main-actor-isolated;
+    /// without this, the compiler infers the same isolation for every member of the type,
+    /// including this one, even though it touches nothing actor-isolated.
+    nonisolated static func elapsedText(_ elapsed: TimeInterval) -> String {
         let total = Int(elapsed.rounded(.down))
         return String(format: "%d:%02d", total / 60, total % 60)
     }
