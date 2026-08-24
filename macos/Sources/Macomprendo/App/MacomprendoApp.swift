@@ -5,7 +5,11 @@ struct MacomprendoApp: App {
     @StateObject private var model: AppModel
 
     init() {
-        _model = StateObject(wrappedValue: AppEnvironment.live().model)
+        let model = AppModel(store: UserDefaultsSettingsStore(),
+                             keychain: SystemKeychainStore(),
+                             env: .live())
+        model.start()
+        _model = StateObject(wrappedValue: model)
     }
 
     var body: some Scene {
