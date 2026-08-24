@@ -32,6 +32,9 @@ export function escapeRegExp(value) {
 
 /**
  * Rewrites `sizeBytes` and `sha256` for each record in the Swift catalog source.
+ * When incoming sha256 is empty, preserves the existing sha256 and only updates sizeBytes.
+ * When incoming sha256 is non-empty, overwrites it.
+ * When incoming sizeBytes is 0 or null, preserves the existing sizeBytes.
  * @param {string} source contents of ModelCatalog.swift
  * @param {{id: string, sizeBytes: number, sha256: string}[]} records
  * @returns {string} the updated source
@@ -39,13 +42,21 @@ export function escapeRegExp(value) {
 export function updateCatalogSource(source, records) {
   let out = source;
   for (const { id, sizeBytes, sha256 } of records) {
+    // Match the entire WhisperModel line with capture groups for size and hash
     const pattern = new RegExp(
-      `(WhisperModel\\(id: "${escapeRegExp(id)}",[^\\n]*?sizeBytes: )\\d+(, sha256: ")[^"]*(")`,
+      `(WhisperModel\\(id: "${escapeRegExp(id)}",[^\\n]*?sizeBytes: )(\\d+)(, sha256: ")([^"]*)(")`,
     );
-    if (!pattern.test(out)) {
+    const match = pattern.exec(out);
+    if (!match) {
       throw new Error(`no catalog entry for model id "${id}"`);
     }
-    out = out.replace(pattern, `$1${sizeBytes}$2${sha256}$3`);
+
+    // Determine what values to write
+    const newSize = (sizeBytes && sizeBytes > 0) ? sizeBytes : match[2]; // preserve existing size if 0 or null
+    const newHash = sha256 ? sha256 : match[4]; // preserve existing hash if incoming is empty
+
+    const replacement = `${match[1]}${newSize}${match[3]}${newHash}${match[5]}`;
+    out = out.replace(pattern, replacement);
   }
   return out;
 }

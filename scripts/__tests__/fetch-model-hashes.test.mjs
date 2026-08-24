@@ -63,6 +63,22 @@ test('updateCatalogSource throws for an id that is not in the catalog', () => {
   );
 });
 
+test('updateCatalogSource preserves existing hash when incoming sha256 is empty', () => {
+  const out = updateCatalogSource(SOURCE, [
+    { id: 'base', sizeBytes: 999, sha256: '' },
+  ]);
+  // Hash should remain "abc", size should change to 999
+  assert.match(out, /id: "base",.*sizeBytes: 999, sha256: "abc"/);
+});
+
+test('updateCatalogSource preserves existing sizeBytes when incoming is 0', () => {
+  const out = updateCatalogSource(SOURCE, [
+    { id: 'base', sizeBytes: 0, sha256: 'newhash' },
+  ]);
+  // Size should remain 147951465, hash should change to newhash
+  assert.match(out, /id: "base",.*sizeBytes: 147951465, sha256: "newhash"/);
+});
+
 test('fetchModelMetadata reads the size from a HEAD Content-Length', async () => {
   const calls = [];
   const fakeFetch = async (url, options) => {
