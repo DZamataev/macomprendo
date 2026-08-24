@@ -25,6 +25,7 @@
 		227DF3FBDD75DA79FC75CABB /* DictationControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A937CA0585D957D3FC7B1FF /* DictationControllerTests.swift */; };
 		249C367FE283B0624FA92012 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 232C651CEF56EC2D68D0FF12 /* KeyboardShortcuts */; };
 		27A898C346B193C734BC8B33 /* Icon.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF00304292266A46927EE284 /* Icon.swift */; };
+		291FD28F479F0211EEBC45B6 /* EscapeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032B279DB9A2DB88B975971E /* EscapeMonitor.swift */; };
 		2D547B3C202543305C1986A5 /* Icons in Resources */ = {isa = PBXBuildFile; fileRef = 7D4D4682481DA4F22694A554 /* Icons */; };
 		2FCC6541E1A91BE6D310D744 /* HUDControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F12C73C6493DE5C71FFC06 /* HUDControllerTests.swift */; };
 		33214D01376CAB5E86133FA2 /* PasteboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC9B260BEC391BD34EF68A5 /* PasteboardTests.swift */; };
@@ -127,6 +128,7 @@
 		EF1A400B0E690C6D5DBFB4AB /* StubModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64C7633BF2DC5145319B8DF /* StubModelManager.swift */; };
 		F4077477E4E021DEAA08297A /* PromptPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056341C7FF68C9F5B87CE44D /* PromptPreset.swift */; };
 		F61FD3BD8FF2389B2CA27F7A /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056C0098514D425D6D5A19BC /* Settings.swift */; };
+		F672D417E4DC765B0448FDA6 /* FakeEscapeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7488ABFA59EDEDE31129E63B /* FakeEscapeMonitor.swift */; };
 		F6811CA814EEF4F5CD8E6F70 /* LineSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CE35B02D8849148F47C480 /* LineSplitter.swift */; };
 		F881C34FBE974A0A1B4F31B0 /* FakeTextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC120D449606B6F4176BD7E9 /* FakeTextInserter.swift */; };
 		FA7B659D16422CC89AC40051 /* MacomprendoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA56F84CBF24BBD363CC8C3F /* MacomprendoApp.swift */; };
@@ -145,6 +147,7 @@
 
 /* Begin PBXFileReference section */
 		01FA7B0023D3B56A0F4669B3 /* FakeModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeModelManager.swift; sourceTree = "<group>"; };
+		032B279DB9A2DB88B975971E /* EscapeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EscapeMonitor.swift; sourceTree = "<group>"; };
 		03CE35B02D8849148F47C480 /* LineSplitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineSplitter.swift; sourceTree = "<group>"; };
 		056341C7FF68C9F5B87CE44D /* PromptPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptPreset.swift; sourceTree = "<group>"; };
 		056C0098514D425D6D5A19BC /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
@@ -195,6 +198,7 @@
 		72DB2CCEEA4334DBFE479314 /* OpenAICompatibleTranscriberTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAICompatibleTranscriberTests.swift; sourceTree = "<group>"; };
 		730FEC5FFA4C2E4C2D1276B7 /* HUDController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDController.swift; sourceTree = "<group>"; };
 		7387A23205311A6D15A9B00E /* FakeTranscriptionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeTranscriptionProvider.swift; sourceTree = "<group>"; };
+		7488ABFA59EDEDE31129E63B /* FakeEscapeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeEscapeMonitor.swift; sourceTree = "<group>"; };
 		752E8E8467E923BF23B53FD1 /* PermissionsServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsServiceTests.swift; sourceTree = "<group>"; };
 		78393CF01B6DE9B385B07AA8 /* WhisperModelManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelManagerTests.swift; sourceTree = "<group>"; };
 		7ACC25F1FEE4CCF3A8C1E0D8 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
@@ -512,6 +516,7 @@
 			children = (
 				E08D64BEFB69D7B6765B2D83 /* AudioMath.swift */,
 				94BB279AEB39CC0D0CF3FF45 /* AudioRecorder.swift */,
+				032B279DB9A2DB88B975971E /* EscapeMonitor.swift */,
 				4F586E6A5937178D4A671836 /* FrontmostAppTracker.swift */,
 				381609CCF1D7FD71356B0BAC /* HotkeyService.swift */,
 				3B30F01A3AA09FE260151620 /* KeySimulator.swift */,
@@ -603,6 +608,7 @@
 			children = (
 				2C70DF6E0A1ED3C5E0C7CF14 /* FakeAudioRecorder.swift */,
 				18DA58F47EC7928FAFED2988 /* FakeEnvironment.swift */,
+				7488ABFA59EDEDE31129E63B /* FakeEscapeMonitor.swift */,
 				E7EFE08D188CD0550AA5E231 /* FakeFrontmostAppTracker.swift */,
 				D03D31A3D30F7D79337DCA6F /* FakeHotkeyService.swift */,
 				FC8D8EF8D15E92F4F99DA105 /* FakeHTTPClient.swift */,
@@ -759,6 +765,7 @@
 				69DDBDADE61530141C2954D9 /* EndpointURLTests.swift in Sources */,
 				B5E24E1ED7C0CDD93F3C5BF6 /* FakeAudioRecorder.swift in Sources */,
 				048D9D9F8A817B0941DDF96C /* FakeEnvironment.swift in Sources */,
+				F672D417E4DC765B0448FDA6 /* FakeEscapeMonitor.swift in Sources */,
 				99ED0336BBA11B1B25123EF2 /* FakeFrontmostAppTracker.swift in Sources */,
 				516533F301ED94FF93F7E8A7 /* FakeHTTPClient.swift in Sources */,
 				10825C4DC17BCD1A958EEC1F /* FakeHUDPresenter.swift in Sources */,
@@ -829,6 +836,7 @@
 				6140D2204CD33BAEA0FBF3D9 /* Endpoint.swift in Sources */,
 				941D964D9936AE3DE78205C2 /* EndpointURL.swift in Sources */,
 				D5632972664D7C88E409FA68 /* ErrorText.swift in Sources */,
+				291FD28F479F0211EEBC45B6 /* EscapeMonitor.swift in Sources */,
 				089F2E3D6B9DD087C9613127 /* FloatingPanel.swift in Sources */,
 				A0EDE17BFA7689A6B166F69D /* FrontmostAppTracker.swift in Sources */,
 				964D64BD2483DEBE8DF02CDA /* GeneralTab.swift in Sources */,
