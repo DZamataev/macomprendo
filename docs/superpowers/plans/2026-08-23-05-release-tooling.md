@@ -20,7 +20,8 @@
 
 - Node ≥ 20, ES modules only, file extension `.mjs`. **No shell scripts anywhere in the repo.**
 - npm dependencies must be pinned to exact versions (`--save-exact`) with `package-lock.json` committed; CI uses `npm ci`.
-- Node tests: `node --test scripts/__tests__/`. Swift tests: `swift test --package-path macos`.
+- Node tests: `npm run test:scripts` (= `node --test 'scripts/__tests__/**/*.test.mjs'` — keep the
+  quotes, Node expands the glob itself). Swift tests: `swift test --package-path macos`.
 - App name `Macomprendo`, bundle `Macomprendo.app`, executable `Macomprendo`.
 - Bundle identifier `com.dzamataev.macomprendo`. Development team `68QJJA7HK9`.
 - Copyright "© 2026 Denis Zamataev". Licence MIT.
@@ -3835,7 +3836,9 @@ Create `docs/DECISIONS/ADR-0005-phosphor-icons.md`:
 
 ## Status
 
-Accepted — 2026-08-23
+Accepted — 2026-08-23. **The packaging half is superseded by ADR-0008**: Phosphor is vendored as
+SVGs from `@phosphor-icons/core`, and the `phosphor-icons/swift` SwiftPM package is *not* used.
+Only the choice of icon set and the SF-Symbol-only rule for the status item still stand.
 
 ## Context
 
@@ -4481,7 +4484,9 @@ git commit -m "docs: add the distribution runbook, final README, changelog and r
 
 **Constraint reminder:** every GitHub Action must be pinned by commit SHA. This plan uses only
 `actions/checkout`; Node 20+, `swift`, `xcodebuild` and `gh` are all preinstalled on
-`macos-latest` runners, so no `setup-node` or `setup-swift` action is needed.
+`macos-15` runners, so no `setup-node` or `setup-swift` action is needed. Pin `macos-15` (never
+`macos-latest`) for the same reason Plan 1 did: `macos-latest` drifts between Xcode versions and
+Swift 6 language mode is sensitive to that.
 
 - [ ] **Step 1: Recover the pinned `actions/checkout` SHA**
 
@@ -4504,34 +4509,35 @@ and write it as `uses: actions/checkout@<sha> # v4` in both workflow files.
 
 - [ ] **Step 2: Add the new gates to `.github/workflows/ci.yml`**
 
-The file already checks out the repo, runs `swift test --package-path macos`, an unsigned
-`xcodebuild`, and `npm run test:scripts`. Add the four steps below to the job that has Node
-available (the same job that runs `npm run test:scripts`), immediately after the Node test step:
+Plan 1 created `ci.yml` with **two** jobs: `tooling` (`ubuntu-latest`; `npm ci`,
+`npm run test:scripts`, `node scripts/sync-agent-config.mjs --check`,
+`node scripts/sync-icons.mjs --check`) and `macos` (`macos-15`; `swift test`,
+`brew install xcodegen`, `npm run gen`, unsigned `xcodebuild`). Add the new steps to the job that
+can actually run them — Xcode-dependent checks belong to `macos`, the pure-Node audit to `tooling`.
+
+Add to the **`tooling`** job, after the existing icon-check step:
 
 ```yaml
-      - name: Verify the generated Xcode project is up to date
-        run: |
-          brew install xcodegen
-          npm run gen
-          git diff --exit-code macos/Macomprendo.xcodeproj
-
-      - name: Verify agent-config symlinks
-        run: npm run sync-agents -- --check
-
       - name: Audit public repository files
         run: npm run audit
+```
+
+Add to the **`macos`** job. It has Node preinstalled but no `node_modules`, so install first;
+`npm run gen` already exists in that job — append the drift check to it rather than duplicating it:
+
+```yaml
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Verify the generated Xcode project is up to date
+        run: git diff --exit-code macos/Macomprendo.xcodeproj
 
       - name: Verify the app build plan
         run: npm run build -- --arch arm64,x86_64 --dry-run
 ```
 
-Make sure the job installs dependencies with `npm ci` (not `npm install`) before these steps;
-add the step if Plan 1 did not:
-
-```yaml
-      - name: Install Node dependencies
-        run: npm ci
-```
+Do **not** add a second symlink check: the `tooling` job already runs
+`node scripts/sync-agent-config.mjs --check`.
 
 - [ ] **Step 3: Create `.github/workflows/release.yml`**
 
@@ -4550,7 +4556,7 @@ on:
 
 jobs:
   verify-and-build:
-    runs-on: macos-latest
+    runs-on: macos-15
 
     steps:
       - name: Check out repository
@@ -4678,25 +4684,31 @@ It must contain exactly these entries (order does not matter):
 ```json
   "scripts": {
     "gen": "xcodegen generate --spec macos/project.yml",
+    "icon": "node scripts/make-placeholder-icon.mjs",
     "test:swift": "swift test --package-path macos",
-    "test:scripts": "node --test scripts/__tests__/",
+    "test:scripts": "node --test 'scripts/__tests__/**/*.test.mjs'",
     "sync-agents": "node scripts/sync-agent-config.mjs",
+    "sync-agents:check": "node scripts/sync-agent-config.mjs --check",
+    "sync-icons": "node scripts/sync-icons.mjs",
+    "sync-icons:check": "node scripts/sync-icons.mjs --check",
     "build": "node scripts/build-app.mjs",
     "notarize": "node scripts/notarize-app.mjs",
     "configure-notary": "node scripts/configure-notarization.mjs",
     "release": "node scripts/release.mjs",
     "audit": "node scripts/audit-public-repo.mjs",
     "install-app": "node scripts/install-app.mjs",
-    "sync-icons": "node scripts/sync-icons.mjs",
     "fetch-model-hashes": "node scripts/fetch-model-hashes.mjs"
   }
 ```
 
 Run: `node -e "console.log(Object.keys(require('./package.json').scripts).sort().join(' '))"`
-Expected: `audit build configure-notary fetch-model-hashes gen install-app notarize release sync-agents sync-icons test:scripts test:swift`
+Expected: `audit build configure-notary fetch-model-hashes gen icon install-app notarize release sync-agents sync-agents:check sync-icons sync-icons:check test:scripts test:swift`
 
-`fetch-model-hashes` comes from Plan 2 and `sync-icons` from Plan 1; this plan only adds
-`build`, `notarize`, `configure-notary`, `release`, `audit` and `install-app`.
+`gen`, `icon`, `test:swift`, `test:scripts`, `sync-agents{,:check}` and `sync-icons{,:check}` come
+from Plan 1 and **must keep their Plan 1 definitions verbatim** — in particular `test:scripts` keeps
+its quoted glob, because Node must expand it itself (a bare directory argument fails with
+`MODULE_NOT_FOUND`; see Plan 1, Task 1, Step 3). `fetch-model-hashes` comes from Plan 2. This plan
+only *adds* `build`, `notarize`, `configure-notary`, `release`, `audit` and `install-app`.
 
 - [ ] **Step 2: Write the final `.agents/skills/macomprendo-release/SKILL.md`**
 

@@ -4,6 +4,10 @@ Spec: `docs/superpowers/specs/2026-08-23-macomprendo-design.md`. All plans imple
 that spec. This document fixes file locations and the exact Swift/JS signatures that
 cross plan boundaries. Implementers MUST use these names verbatim.
 
+> **Read [Amendments (final)](#amendments-final) at the bottom of this file before you start.**
+> Plans 1–5 deviated from a handful of the declarations below; the amendments record the
+> agreed final shape and take precedence over anything above them.
+
 ## Plans (execute in order)
 
 | # | Plan file | Delivers |
@@ -159,7 +163,7 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
 enum Log { static let app, audio, providers, hotkeys, ui: os.Logger }   // subsystem "com.dzamataev.macomprendo"
 
 // Core/Pasteboard.swift
-protocol PasteboardProtocol: AnyObject {
+protocol PasteboardProtocol: AnyObject, Sendable {   // Sendable: Sendable structs hold one
     var changeCount: Int { get }
     func readString() -> String?
     func writeString(_ s: String)
@@ -167,8 +171,8 @@ protocol PasteboardProtocol: AnyObject {
     func restore(_ snapshot: PasteboardSnapshot)
 }
 struct PasteboardSnapshot: Sendable { var items: [[String: Data]] }  // type identifier -> data
-final class SystemPasteboard: PasteboardProtocol   // wraps NSPasteboard.general
-final class FakePasteboard: PasteboardProtocol     // in Tests/Fakes
+final class SystemPasteboard: PasteboardProtocol, @unchecked Sendable   // wraps NSPasteboard.general
+final class FakePasteboard: PasteboardProtocol, @unchecked Sendable     // in Tests/Fakes
 
 // App/AppModel.swift (Plan 1 creates with settings only; later plans add controllers)
 @MainActor final class AppModel: ObservableObject {
@@ -356,3 +360,157 @@ export async function ensureSymlink(target, linkPath)       // idempotent; retur
 export async function sha256(filePath)
 // package.json scripts: build, notarize, release, audit, sync-agents, test:scripts, test:swift, gen  (gen = xcodegen generate --spec macos/project.yml)
 ```
+
+---
+
+# Amendments (final)
+
+**This section plus everything above is the authoritative contract.** Where an amendment
+contradicts the declaration earlier in this file, the amendment wins. Each plan also lists its
+own additions near its end ("Interface additions beyond the shared map"); those lists are
+normative too — this section records only the items that cross a plan boundary or that *change*
+a declaration made above.
+
+## Plan 1 — Foundation
+
+- `PasteboardProtocol` is `AnyObject, Sendable` (not just `AnyObject`); `SystemPasteboard` and
+  `FakePasteboard` are `@unchecked Sendable`. Required because Plan 3's `PasteTextInserter` and
+  Plan 4's `AXSelectedTextService` are `Sendable` structs holding `any PasteboardProtocol`.
+- `PasteboardSnapshot` is `Sendable, Equatable` with `init(items: [[String: Data]] = [])`.
+- `Endpoint` gains `static let ollamaLocalID: UUID` and a memberwise
+  `init(id: UUID = UUID(), name:, kind:, baseURL:, apiKeyRef: String? = nil)`.
+- `SpeechSettings` memberwise init defaults: `voiceID: nil, rate: 0.5, pitch: 1.0, volume: 1.0`.
+- New error types: `SettingsMigrationError.unsupportedSchemaVersion(Int)`,
+  `KeychainError.{unexpectedStatus(OSStatus), malformedData}`.
+- `InMemorySettingsStore.init(initial: Data? = nil)`.
+- `Log` gains `static let subsystem = "com.dzamataev.macomprendo"`.
+- **Icon seam** (new, not in the map above): `UI/Components/ResourceBundle.swift`
+  (`enum ResourceBundle { static var current: Bundle }`) and `UI/Components/Icon.swift` with
+  `enum AppIcon: String, CaseIterable` + `var fallbackSymbol: String` +
+  `func resourceURL(in bundle: Bundle = ResourceBundle.current) -> URL?`, and
+  `struct Icon: View { init(_ icon: AppIcon, size: CGFloat = 16) }` plus
+  `static func nsImage(for: AppIcon, size: CGFloat) -> NSImage?`.
+  `AppIcon` **case names are semantic; raw values are the SVG file names**:
+  `microphone`, `microphoneFill` (`microphone-fill`), `waveform`, `speak` (`speaker-high`),
+  `stop`, `play`, `refine` (`sparkle`), `summarize` (`text-aa`), `clipboard` (`clipboard-text`),
+  `insert` (`arrow-square-in`), `copy`, `settings` (`gear`), `hotkeys` (`keyboard`),
+  `download` (`download-simple`), `delete` (`trash`), `success` (`check-circle`),
+  `warning` (`warning-circle`), `close` (`x`), `add` (`plus`), `remove` (`minus`),
+  `refresh` (`arrows-clockwise`), `endpoint` (`cloud`), `model` (`cpu`),
+  `presets` (`list-bullets`), `magic` (`magic-wand`).
+  Never `import PhosphorSwift`; never `Image(systemName:)` in a view (the `MenuBarExtra` status
+  item is the single deliberate SF-Symbol exception).
+- `AppModel`/`AppEnvironment` as declared above are **Plan 1 only**; Plan 3 replaces both files
+  wholesale (see below).
+- Node: `scripts/sync-icons.mjs` and `scripts/make-placeholder-icon.mjs` are Plan 1's, and
+  `run(cmd, args, opts)` accepts `check` in addition to the options listed above.
+
+## Plan 2 — Providers
+
+- `ProviderFactory.transcriber(for:endpoints:models:)` is **`async throws`** (it awaits
+  `ModelManaging.localURL(for:)`). This is why `DictationController.transcriberProvider` is
+  `@escaping @Sendable () async throws -> any TranscriptionProvider` everywhere.
+- `SSEParser.finish() -> [SSEEvent]` and `NDJSONParser.finish() -> [Data]` added.
+- New internal type `Providers/EndpointURL.swift`: `join(_:_:)`, `openAI(_:_:)`.
+- `HTTPRequest` gains a defaulted memberwise init (`method: "GET"`, `headers: [:]`, `body: nil`,
+  `timeout: 10`); `HTTPResponse` gains a defaulted init and `func header(_ name: String) -> String?`.
+- `ChatOptions` gains `static let default`.
+- `ModelCatalog.model(id:) -> WhisperModel?`; `WhisperModelManager.init(directory:http:catalog:)`
+  and `static func sha256(of:) throws -> String`.
+- `OpenAICompatibleTranscriber` gains an internal `init(...,boundary:)` and
+  `static func multipartBody(boundary:fileName:fileType:fileData:fields:) -> Data`.
+- `WhisperCppTranscriber.swift` also declares `WhisperParams` and `WhisperTextAssembler`.
+- Test doubles: `Fakes/StubURLProtocol.swift`, `Fakes/FakeModelManager.swift`.
+- **`scripts/fetch-model-hashes.mjs` and its npm script `fetch-model-hashes` belong to Plan 2**,
+  not Plan 5.
+
+## Plan 3 — Dictation
+
+- `App/AppEnvironment.swift` is rewritten: `struct AppEnvironment` no longer has `model`. It holds
+  `hotkeys, recorder, inserter, tracker, permissions, models, http, keychain, factory,
+  hudPresenter, ollamaDetector` and exposes `@MainActor static func live() -> AppEnvironment`.
+  A test-only `AppEnvironment.fake(...)` lives in `Tests/MacomprendoTests/Fakes/`.
+- `App/AppModel.swift` is rewritten:
+  `init(store:keychain:env:hotkeyDefaults: UserDefaults = .standard)` (Plan 1's
+  `init(store:keychain:)` is gone), plus `env`, `hud`, `dictation`, `transcriberProvider`,
+  `start()`, `route(_:)`, `isEnabled(_:)`, `setEnabled(_:_:)`, `statusText`,
+  `lazy var modelsViewModel`, `lazy var providersViewModel`. `SettingsSnapshot` lives in the same
+  file. The app entry point moves to `@MainActor enum AppRoot { static let model: AppModel }` +
+  `AppDelegate` in `App/MacomprendoApp.swift`.
+- `KeySimulating` gains `func type(_ text: String) async` (for `InsertMethod.typing`).
+- `HotkeyServicing`'s default impl `KeyboardShortcutsHotkeyService` has a `@MainActor init()`;
+  `KeyboardShortcuts.Name` constants must be `@MainActor`.
+- `HUDState` is `Equatable, Sendable`. `HUDController` becomes
+  `init(presenter: (any HUDPresenting)? = nil, sleep: @escaping @Sendable (TimeInterval) async -> Void = …)`
+  with `@Published private(set) var state`, `show(_:)`, `toast(_:duration:)`, `hide()`,
+  `hideTask`, `static func autoHideDuration(for:)`. New `@MainActor protocol HUDPresenting`.
+- `Core/ErrorText.swift` (new): `enum ErrorText { static func describe(_ error: Error) -> String }`.
+- Everything else in Plan 3's own "Interface additions beyond the shared map" table applies
+  (`AudioMath`, `PCMResampler`, `PrivacyPane`, `ActivationPoller`, `HotkeyEnablementStore`,
+  `HUDLayout`, `HUDWindowPresenter`, `LevelMeterModel`, `ModelsViewModel`,
+  `TranscriptionLanguages`, `LaunchAtLogin`, `ProvidersViewModel`, `ModelPulling`,
+  `Endpoint.keychainAccount(for:)` = `"endpoint.<uuid>"`, `OllamaDetecting`,
+  `HTTPOllamaDetector`, `OnboardingViewModel`, `OnboardingWindowController`).
+
+## Plan 4 — Text features
+
+- `SpeechSynthesizing` is a **`@MainActor` protocol** and gains
+  `var onStateChange: (@MainActor () -> Void)? { get set }`.
+- `AXSelectedTextService.init(ax:pasteboard:keySimulator:copyTimeout:pollInterval:)`
+  (the last two have defaults).
+- `QuickPanelController.init(holder: any SettingsHolding)` plus `attach(_:)`,
+  `@Published private(set) var layout / isVisible`, `static let panelSize` (680 × 420),
+  `static let topInset`, `screenKey(name:frame:)`, `defaultFrame(inScreenFrame:)`, a second
+  `present(layout:screenName:screenFrame:)` overload, and `dismiss()`. New
+  `@MainActor protocol QuickPanelHosting` and `FloatingPanelHost<Content: View>`.
+- `RefineController` / `SummarizeController` keep every method listed above and add
+  `handle(_:)` (refine only), `selectedPresetID`/`instruction` (summarize), `isCapturing`
+  (refine) and `drain() async`; both are constructed with
+  `(capture:)llm:panel:pasteboard:inserter:tracker:toaster:settings:`.
+- New shared types: `Toasting` (`extension HUDController: Toasting {}`), `LLMTarget`,
+  `FeatureConfigError`, `SettingsHolding` (`extension AppModel: SettingsHolding {}`),
+  `DictationCapture`, `PresetError`, `PromptRenderer.placeholders(in:)`,
+  `FactoryPresets.ID.*` fixed UUIDs, `Settings` preset helpers, `SpeechTabModel`,
+  `PromptsTabModel`, `TextFeatures` (+ `AppModel.textFeatures`, `AppModel.llmTarget(for:)`).
+- `ErrorText.describe(_:)` is widened in `Core/ErrorText.swift` to cover any `LocalizedError`,
+  `CancellationError`, `FeatureConfigError` and `PresetError`.
+- `AppEnvironment` gains `pasteboard`, `keySimulator`, `ax`, `speech`, and
+  `quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)?` (nil in tests).
+- Plan 4's test doubles are named `Scripted*` and coexist with Plan 3's `Fake*`.
+
+## Plan 5 — Release tooling
+
+- New `scripts/lib/paths.mjs` (`ROOT`, `MACOS_DIR`, `PROJECT_YML`, `PBXPROJ`, `XCODEPROJ`,
+  `CHANGELOG_PATH`, `APP_BUNDLE_DIR`, `INFO_PLIST_SRC`, `ICON_SRC`, `ENTITLEMENTS_SRC`,
+  `LICENSE_PATH`, `DIST_DIR`, `README_PATH`, `APP_NAME`, `EXECUTABLE_NAME`, `BUNDLE_ID`,
+  `TEAM_ID`, `NOTARY_PROFILE`, `DEPLOYMENT_TARGET`, `SCHEME`, `appPath(distDir)`).
+- New `scripts/lib/changelog.mjs` (`updateChangelog`, `extractSection`).
+- `scripts/lib/fs.mjs` additions: `mkdirp`, `rmrf`, `copyPath`, `chmodExec`, `pathExists`,
+  `listDirsWithSuffix`, `listBundles`, `listFrameworks`, `move`, `makeTempDir`, `realFsOps`,
+  `realIO`.
+- New script `scripts/install-app.mjs` (npm script `install-app`); the npm script for
+  `configure-notarization.mjs` is named **`configure-notary`**.
+- Final `package.json` scripts (superseding the one-line list above):
+  `gen`, `icon`, `test:swift`, `test:scripts`, `sync-agents`, `sync-agents:check`, `sync-icons`,
+  `sync-icons:check`, `build`, `notarize`, `configure-notary`, `release`, `audit`, `install-app`,
+  `fetch-model-hashes`. `test:scripts` keeps Plan 1's **quoted** glob
+  `node --test 'scripts/__tests__/**/*.test.mjs'`.
+- Build layout: `swift build` emits the app target's resources as
+  `Macomprendo_Macomprendo.bundle` (holding `Icons/`), which `build-app.mjs` copies into
+  `Contents/Resources`; a missing bundle is a hard failure. The XcodeGen build instead copies
+  `Sources/Macomprendo/Resources/Icons` as a folder reference to `Contents/Resources/Icons` —
+  `ResourceBundle.current` (`#if SWIFT_PACKAGE` → `.module`, else `.main`) resolves both.
+- Git: `origin` is `git@github.com:DZamataev/macomprendo.git` (GitHub). A secondary `gitlab`
+  remote may exist; every preflight check and `gh release create` targets `origin` only.
+- CI runners are pinned to `macos-15`, never `macos-latest`.
+
+## Known spec gaps (no task implements these)
+
+1. Spec §3.4: the HUD's **"Speaking…" state with the stop hint** while `SpeakController` plays
+   audio. `HUDState` has no `speaking` case in any plan.
+2. Spec §3.1: `Settings` is specified to carry **"HUD/panel position overrides"**. Only
+   `quickPanelFrames` exists; the Recording HUD has no persisted position override
+   (`HUDLayout` always centres it on the screen under the mouse).
+3. Spec §2 dependency table and §9 decision 5 still name `phosphor-icons/swift` as the delivery
+   mechanism. The plans deliberately vendor `@phosphor-icons/core` SVGs instead; Plan 5's
+   ADR-0008 records the change, but the spec text itself was not updated.

@@ -67,9 +67,9 @@ macomprendo/
 
 | Package | Why |
 |---------|-----|
-| `ggml-org/whisper.cpp` (Package.swift, Metal) | local transcription |
+| whisper.cpp prebuilt xcframework via local SPM package `macos/Packages/WhisperBinary` (upstream ships no Package.swift) | local transcription, Metal embedded |
 | `sindresorhus/KeyboardShortcuts` | global hotkeys + recorder UI |
-| `phosphor-icons/swift` (Phosphor Icons, MIT) | in-app icons, 6 weights |
+| Phosphor Icons vendored as SVGs from npm `@phosphor-icons/core` (MIT) via `scripts/sync-icons.mjs` | in-app icons (the `phosphor-icons/swift` SPM package breaks `swift build` — ADR-0008) |
 
 Everything else is Foundation/AppKit/SwiftUI/AVFoundation/`URLSession`. The menubar
 status item uses an SF Symbol template image (Phosphor in-app only).
@@ -310,5 +310,5 @@ lightweight alternative.
    Ollama has no STT API today; if it adds `/v1/audio/transcriptions` it works unchanged.
 3. Not sandboxed — required for global hotkeys, AX selection, and paste simulation.
 4. KeyboardShortcuts over hand-rolled Carbon hotkeys — recorder UI + conflict handling for free.
-5. Phosphor Icons for UI, SF Symbols for the status item — template-image requirement.
+5. Phosphor Icons for UI (vendored SVGs from `@phosphor-icons/core`; the SwiftPM package is unusable with `swift build`), SF Symbols for the status item — template-image requirement.
 6. Quick Panel at a fixed top-center position — predictable, matches MacWhisper/ChatGPT quick chat.

@@ -1334,11 +1334,10 @@ git commit -m "feat(services): add AVSpeechSynthesizer-backed speech service"
 - Create: `macos/Sources/Macomprendo/Features/Toasting.swift`
 - Create: `macos/Sources/Macomprendo/Features/LLMTarget.swift`
 - Create: `macos/Sources/Macomprendo/App/SettingsHolding.swift`
-- Modify: the file declaring `enum ErrorText` (Plan 3 put it beside `DictationController`; find it with
-  `grep -rn "enum ErrorText" macos/Sources`)
+- Modify: `macos/Sources/Macomprendo/Core/ErrorText.swift` (Plan 3, Task 10)
 - Create: `macos/Tests/MacomprendoTests/Fakes/ScriptedToaster.swift`
 - Create: `macos/Tests/MacomprendoTests/Fakes/ScriptedSettingsHolder.swift`
-- Test: `macos/Tests/MacomprendoTests/Features/ErrorTextTests.swift`
+- Test: `macos/Tests/MacomprendoTests/Core/ErrorTextTests.swift`
 
 **Interfaces:**
 - Consumes: `HUDController` (Plan 3), `LLMProvider` (Plan 2), `Settings`, `PresetKind`, `MacomprendoError`.
@@ -1353,7 +1352,7 @@ git commit -m "feat(services): add AVSpeechSynthesizer-backed speech service"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `macos/Tests/MacomprendoTests/Features/ErrorTextTests.swift`:
+Create `macos/Tests/MacomprendoTests/Core/ErrorTextTests.swift`:
 
 ```swift
 import Foundation
@@ -1520,7 +1519,7 @@ git add macos/Sources/Macomprendo/Features/Toasting.swift \
         macos/Sources/Macomprendo/App/SettingsHolding.swift \
         macos/Tests/MacomprendoTests/Fakes/ScriptedToaster.swift \
         macos/Tests/MacomprendoTests/Fakes/ScriptedSettingsHolder.swift \
-        macos/Tests/MacomprendoTests/Features/ErrorTextTests.swift
+        macos/Tests/MacomprendoTests/Core/ErrorTextTests.swift
 git commit -m "feat(features): add toasting, LLM target and settings-holder protocols"
 ```
 
@@ -1667,9 +1666,11 @@ import Foundation
 }
 ```
 
-Note on the spec's "sentence-level progress in the HUD": `HUDState` (Plan 3) has no case for
-speech progress, so this plan shows no HUD while speaking and only toasts failures. Adding a
-progress case is a `HUDState` change and is intentionally out of scope.
+**Known spec gap.** Spec §3.4 says *"The HUD shows a 'Speaking…' state with the stop hint while
+audio plays."* `HUDState` (Plan 3) has no `speaking` case, and neither the shared interface map nor
+any task in Plans 1–5 adds one, so this plan shows no HUD while speaking and only toasts failures.
+Closing the gap means adding `case speaking` to `HUDState`, rendering it in `HUDView`, and driving
+it from `SpeakController.isSpeaking` — deliberately out of scope here; raise it before release.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -3273,12 +3274,16 @@ git commit -m "feat(summarize): stream summaries into the quick panel"
   `(controller:presets:)` respectively.
 
 **Icon facts (Plan 1):** never `import PhosphorSwift` in feature code. Use the seam
-`Components/Icon.swift`: `Icon(.copy, size: 14)`, where `enum AppIcon: String` already has the
-cases `microphone, waveform, speakerHigh, stop, play, sparkle, textAa, clipboardText,
-arrowSquareIn, copy, gear, keyboard, downloadSimple, trash, checkCircle, warningCircle, x, plus,
-minus, arrowsClockwise, cloud, cpu, listBullets, magicWand` (rendered from vendored Phosphor SVGs).
-Icons used here: `.copy`, `.arrowSquareIn` (insert/replace), `.arrowsClockwise` (re-run), `.stop`,
-`.warningCircle`, `.textAa`.
+`Components/Icon.swift`: `Icon(.copy, size: 14)`. `enum AppIcon: String` (Plan 1, Task 4) uses
+**semantic case names** whose raw values are the SVG file names: `microphone`, `microphoneFill`,
+`waveform`, `speak` (`speaker-high`), `stop`, `play`, `refine` (`sparkle`), `summarize`
+(`text-aa`), `clipboard` (`clipboard-text`), `insert` (`arrow-square-in`), `copy`, `settings`
+(`gear`), `hotkeys` (`keyboard`), `download` (`download-simple`), `delete` (`trash`), `success`
+(`check-circle`), `warning` (`warning-circle`), `close` (`x`), `add` (`plus`), `remove` (`minus`),
+`refresh` (`arrows-clockwise`), `endpoint` (`cloud`), `model` (`cpu`), `presets` (`list-bullets`),
+`magic` (`magic-wand`) — all rendered from vendored Phosphor SVGs.
+Icons used here: `.copy`, `.insert` (insert/replace), `.refresh` (re-run), `.stop`,
+`.warning`, `.summarize`, `.speak`, `.presets`.
 
 - [ ] **Step 1: Write the switching container**
 
@@ -3357,7 +3362,7 @@ struct RefineLayout: View {
                 .help("Stop streaming")
             } else {
                 Button { controller.rerun() } label: {
-                    Icon(.arrowsClockwise, size: 14)
+                    Icon(.refresh, size: 14)
                 }
                 .help("Run again (⌘↩)")
             }
@@ -3373,7 +3378,7 @@ struct RefineLayout: View {
 
     private func errorBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 6) {
-            Icon(.warningCircle, size: 14)
+            Icon(.warning, size: 14)
             Text(message).font(.callout).textSelection(.enabled)
             Spacer()
         }
@@ -3392,7 +3397,7 @@ struct RefineLayout: View {
                 }
                 .help("Copy \(title.lowercased())")
                 Button { Task { await controller.insert(side) } } label: {
-                    Icon(.arrowSquareIn, size: 14)
+                    Icon(.insert, size: 14)
                 }
                 .help("Insert \(title.lowercased()) into the previous app")
             }
@@ -3437,7 +3442,7 @@ struct SummaryLayout: View {
 
     private var toolbar: some View {
         HStack(spacing: 8) {
-            Icon(.textAa, size: 14)
+            Icon(.summarize, size: 14)
                 .foregroundStyle(.secondary)
 
             Picker("", selection: $controller.selectedPresetID) {
@@ -3461,7 +3466,7 @@ struct SummaryLayout: View {
                 .help("Stop streaming")
             } else {
                 Button { controller.rerun() } label: {
-                    Icon(.arrowsClockwise, size: 14)
+                    Icon(.refresh, size: 14)
                 }
                 .help("Run again (⌘↩)")
             }
@@ -3476,7 +3481,7 @@ struct SummaryLayout: View {
 
     private func errorBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 6) {
-            Icon(.warningCircle, size: 14)
+            Icon(.warning, size: 14)
             Text(message).font(.callout).textSelection(.enabled)
             Spacer()
         }
@@ -3498,7 +3503,7 @@ struct SummaryLayout: View {
             }
             Button { Task { await controller.replaceSelection() } } label: {
                 Label { Text("Replace selection") } icon: {
-                    Icon(.arrowSquareIn, size: 14)
+                    Icon(.insert, size: 14)
                 }
             }
             .keyboardShortcut(.defaultAction)
@@ -4170,7 +4175,7 @@ through `AppRoot.model`):
 
 ```swift
             SpeechTab(model: AppRoot.model.speechTabModel, app: AppRoot.model)
-                .tabItem { Label("Speech", systemImage: "speaker.wave.2") }
+                .tabItem { Label { Text("Speech") } icon: { Icon(.speak, size: 16) } }
 ```
 
 - [ ] **Step 5: Run the test and the build**
@@ -4731,7 +4736,7 @@ Then open `macos/Sources/Macomprendo/UI/Settings/SettingsView.swift` and add, af
 
 ```swift
             PromptsTab(model: AppRoot.model.promptsTabModel, app: AppRoot.model)
-                .tabItem { Label("Refine & Summarize", systemImage: "text.badge.star") }
+                .tabItem { Label { Text("Refine & Summarize") } icon: { Icon(.presets, size: 16) } }
 ```
 
 Note: `Core/Settings` shadows SwiftUI's `Settings` scene, so if you touch the scene declaration in
