@@ -136,10 +136,18 @@ final class DictationController: ObservableObject {
     }
 
     private func startRecording() async {
-        guard await ensurePermission(.microphone), await ensurePermission(.accessibility) else { return }
+        // Every await below is a suspension point a second `begin()` can race through:
+        // it cancels this task (see `begin()`), but cancellation is cooperative — nothing
+        // stops this task from resuming and reaching `recorder.start()` right alongside
+        // the second task's own call unless checked explicitly after each one.
+        guard await ensurePermission(.microphone) else { return }
+        guard !Task.isCancelled else { return }
+        guard await ensurePermission(.accessibility) else { return }
+        guard !Task.isCancelled else { return }
         // A cancel() just before this begin() may still be stopping the recorder;
         // starting again before that stop lands can fail (or, worse, race) against it.
         await pendingStopTask?.value
+        guard !Task.isCancelled else { return }
         pendingStopTask = nil
         target = tracker.capture()
         do {

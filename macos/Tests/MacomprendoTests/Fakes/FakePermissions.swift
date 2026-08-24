@@ -7,6 +7,7 @@ final class FakePermissions: PermissionsChecking, @unchecked Sendable {
     private var _requestResults: [PermissionKind: PermissionStatus] = [:]
     private var _openedPanes: [PermissionKind] = []
     private var _requested: [PermissionKind] = []
+    private var _statusGate: AsyncGate?
 
     var statuses: [PermissionKind: PermissionStatus] {
         get { lock.withLock { _statuses } }
@@ -21,8 +22,16 @@ final class FakePermissions: PermissionsChecking, @unchecked Sendable {
     var openedPanes: [PermissionKind] { lock.withLock { _openedPanes } }
     var requested: [PermissionKind] { lock.withLock { _requested } }
 
+    /// Blocks `status(of:)` until the test opens it — lets a test suspend a controller
+    /// mid-permission-check to exercise a race against a second concurrent call.
+    var statusGate: AsyncGate? {
+        get { lock.withLock { _statusGate } }
+        set { lock.withLock { _statusGate = newValue } }
+    }
+
     func status(of kind: PermissionKind) async -> PermissionStatus {
-        lock.withLock { _statuses[kind] ?? .granted }
+        if let statusGate { await statusGate.wait() }
+        return lock.withLock { _statuses[kind] ?? .granted }
     }
 
     func request(_ kind: PermissionKind) async -> PermissionStatus {

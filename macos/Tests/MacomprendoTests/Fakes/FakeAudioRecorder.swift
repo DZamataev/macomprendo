@@ -46,7 +46,14 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
 
     func start() async throws {
         if let error = startError { throw error }
-        lock.withLock {
+        // Mirrors `AVAudioEngineRecorder.start()`'s double-start guard (AudioRecorder.swift):
+        // a real second `start()` while recording traps/fails, so a controller-level race
+        // that lets two `start()`s reach the recorder must be caught by a test, not hidden
+        // by a fake that tolerates it.
+        try lock.withLock {
+            guard !_recording else {
+                throw MacomprendoError.audio("Recording is already in progress.")
+            }
             _startCount += 1
             _recording = true
         }

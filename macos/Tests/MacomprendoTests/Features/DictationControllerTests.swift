@@ -277,6 +277,32 @@ import Testing
         #expect(h.controller.state == .recording)
     }
 
+    /// `startRecording()` has three suspension points (two `ensurePermission` awaits and
+    /// `await pendingStopTask?.value`) with no `Task.isCancelled` check after any of them.
+    /// Two `begin()`s racing through the mic-permission prompt could both reach
+    /// `recorder.start()` — the second `begin()` cancels the first task, but if the first
+    /// resumes from its permission await anyway and isn't checked, it starts the recorder
+    /// too, hits the real recorder's double-start guard, and fails while the engine is
+    /// genuinely recording.
+    @Test func aSecondBeginDuringTheFirstsPermissionCheckCancelsTheFirstBeforeItCanStart() async {
+        let h = makeHarness(mode: .hold)
+        let gate = AsyncGate()
+        h.permissions.statusGate = gate
+
+        h.controller.handle(.keyDown(.dictate))   // task 1: suspends inside ensurePermission
+        await waitFor("task 1 waiting on the permission check") { gate.waiterCount > 0 }
+        let firstTask = h.controller.activeTask
+
+        h.controller.handle(.keyDown(.dictate))   // task 2: cancels task 1, starts fresh
+        gate.open()                                // let task 1's status(of:) resume (still granted)
+
+        await firstTask?.value
+        await h.controller.activeTask?.value
+
+        #expect(h.controller.state == .recording)
+        #expect(h.recorder.startCount == 1)
+    }
+
     // MARK: - Esc cancels
 
     @Test func startingDictationStartsTheEscapeMonitor() async {

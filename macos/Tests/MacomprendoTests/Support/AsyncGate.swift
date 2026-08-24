@@ -8,6 +8,11 @@ final class AsyncGate: @unchecked Sendable {
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
+    /// How many callers are currently suspended in `wait()` — lets a test know a
+    /// background task has actually reached the gate before it acts on that timing,
+    /// instead of guessing with a fixed sleep.
+    var waiterCount: Int { lock.withLock { waiters.count } }
+
     func open() {
         let toResume: [CheckedContinuation<Void, Never>] = lock.withLock {
             isOpen = true
