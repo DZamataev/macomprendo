@@ -24,3 +24,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   toggle backed by `SMAppService` that reconciles with System Settings on
   appear, dictation/insert-method pickers, and shortcut recorders for all
   five hotkeys.
+- Models and Dictation settings tabs: download, cancel and delete whisper
+  models with live progress and disk-usage totals, and choose between local
+  transcription or an endpoint plus spoken language from the Dictation tab.
+- Providers settings tab: add, edit and remove LLM/transcription endpoints,
+  store and clear their API keys in the Keychain, test a connection's model
+  count, and pull an Ollama model with live progress.

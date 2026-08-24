@@ -19,6 +19,18 @@ final class AppModel: ObservableObject {
     let dictation: DictationController
     let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
     lazy var modelsViewModel = ModelsViewModel(models: env.models)
+    lazy var providersViewModel: ProvidersViewModel = {
+        let factory = env.factory
+        let http = env.http
+        return ProvidersViewModel(
+            endpoints: settings.endpoints,
+            update: { [weak self] endpoints in self?.settings.endpoints = endpoints },
+            keychain: keychain,
+            llmFor: { try factory.llm(for: $0) },
+            pullerFor: { endpoint in
+                endpoint.kind == .ollama ? OllamaProvider(endpoint: endpoint, http: http) : nil
+            })
+    }()
 
     private let store: any SettingsPersisting
     private let snapshot: SettingsSnapshot
