@@ -476,6 +476,15 @@ a declaration made above.
   `CancellationError`, `FeatureConfigError` and `PresetError`.
 - `AppEnvironment` gains `pasteboard`, `keySimulator`, `ax`, `speech`, and
   `quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)?` (nil in tests).
+- **`HUDState` gains `case speaking(hint: String)`** (Plan 4, Task 16 — the one place Plan 4
+  changes a shipped Plan 3 type). It never auto-hides, so `HUDController.autoHideDuration(for:)`
+  returns `nil` for it, and `HUDView` renders `Icon(.speak, size: 20)` + "Speaking…" + the hint.
+  Consequently `Toasting` is **three** methods, not one:
+  `toast(_:duration:)`, `show(_ state: HUDState)`, `hide()` — all already satisfied by
+  `HUDController`, so `extension HUDController: Toasting {}` still needs no members. Any other
+  exhaustive `switch` over `HUDState` must add the case.
+  `SpeakController` gains `static let stopHint` and drives the state from the
+  `SpeechSynthesizing.onStateChange` hook. This closes known spec gap 1 below.
 - Plan 4's test doubles are named `Scripted*` and coexist with Plan 3's `Fake*`.
 
 ## Plan 5 — Release tooling
@@ -504,10 +513,12 @@ a declaration made above.
   remote may exist; every preflight check and `gh release create` targets `origin` only.
 - CI runners are pinned to `macos-15`, never `macos-latest`.
 
-## Known spec gaps (no task implements these)
+## Known spec gaps (item 1 is closed; the rest have no task)
 
-1. Spec §3.4: the HUD's **"Speaking…" state with the stop hint** while `SpeakController` plays
-   audio. `HUDState` has no `speaking` case in any plan.
+1. ~~Spec §3.4: the HUD's **"Speaking…" state with the stop hint** while `SpeakController` plays
+   audio.~~ **Closed** by Plan 4, Task 16 (`HUDState.speaking(hint:)`, `HUDView` rendering,
+   `Toasting.show(_:)`/`hide()`, driven from `SpeakController`). Sentence-*level* progress
+   (highlighting the sentence being read) remains unimplemented and is not required by the spec.
 2. Spec §3.1: `Settings` is specified to carry **"HUD/panel position overrides"**. Only
    `quickPanelFrames` exists; the Recording HUD has no persisted position override
    (`HUDLayout` always centres it on the screen under the mouse).

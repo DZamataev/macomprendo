@@ -45,6 +45,7 @@ plan's layer.
 | `PresetError` | `Features/Prompts/PromptPreset.swift` | typed error for `Settings.deletePreset(id:)` |
 | `Settings` preset helpers | `Features/Prompts/PromptPreset.swift` | `presets(of:)`, `preset(id:)`, `defaultPreset(for:)`, `defaultPresetID(for:)`, `setDefaultPreset(id:for:)`, `addPreset(_:)`, `updatePreset(_:)`, `deletePreset(id:)`, `movePreset(id:to:)` |
 | `Toasting` | `Features/Toasting.swift` | one-method view of `HUDController` so controllers are testable without AppKit |
+| `Toasting.show(_:)` / `.hide()` + `HUDState.speaking(hint:)` | `Features/Toasting.swift`, Plan 3's `UI/RecordingHUD/HUDController.swift` and `HUDView.swift` | Task 16: the §3.4 "Speaking…" HUD state; the only Plan-4 change to a shipped Plan 3 type |
 | `LLMTarget`, `FeatureConfigError` | `Features/LLMTarget.swift` | provider+model pair and the "not configured" error |
 | widened `ErrorText.describe(_:)` | Plan 3's `ErrorText` file | it only handled `MacomprendoError`; now any `LocalizedError` plus `CancellationError` |
 | `AppEnvironment.pasteboard/keySimulator/ax/speech/quickPanelHost` | `App/AppEnvironment.swift` | the services the new controllers need; `quickPanelHost` is nil in tests so no NSPanel is built |
@@ -1438,7 +1439,7 @@ enum FeatureConfigError: Error, LocalizedError, Equatable, Sendable {
 
 ```
 
-Then widen Plan 3's `ErrorText` so it also handles `FeatureConfigError`, `PresetError` and
+Then widen Plan 3's `ErrorText` (`macos/Sources/Macomprendo/Core/ErrorText.swift`) so it also handles `FeatureConfigError`, `PresetError` and
 cancellation. Replace its whole body with:
 
 ```swift
@@ -1666,11 +1667,11 @@ import Foundation
 }
 ```
 
-**Known spec gap.** Spec §3.4 says *"The HUD shows a 'Speaking…' state with the stop hint while
-audio plays."* `HUDState` (Plan 3) has no `speaking` case, and neither the shared interface map nor
-any task in Plans 1–5 adds one, so this plan shows no HUD while speaking and only toasts failures.
-Closing the gap means adding `case speaking` to `HUDState`, rendering it in `HUDView`, and driving
-it from `SpeakController.isSpeaking` — deliberately out of scope here; raise it before release.
+**HUD while speaking.** Spec §3.4 also says *"The HUD shows a 'Speaking…' state with the stop
+hint while audio plays."* That needs a new `HUDState` case in shipped Plan 3 code, so it is done
+separately in **Task 16**, which adds `case speaking(hint:)`, renders it in `HUDView`, widens the
+`Toasting` seam with `show(_:)`/`hide()` and drives it from the `onStateChange` hook installed
+above. Until Task 16 lands, `SpeakController` shows no HUD and only toasts failures.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -4772,7 +4773,254 @@ git commit -m "feat(settings): add the Refine & Summarize preset manager"
 
 ---
 
-### Task 16: Smoke-test checklist for the text features
+### Task 16: "Speaking…" HUD state
+
+**Spec:** §3.4 — *"`SpeakController` — selected text → `SpeechSynthesizing`; pressing the hotkey
+while speaking stops. The HUD shows a 'Speaking…' state with the stop hint while audio plays."*
+
+**Files:**
+- Modify: `macos/Sources/Macomprendo/UI/RecordingHUD/HUDController.swift` (shipped Plan 3 code)
+- Modify: `macos/Sources/Macomprendo/UI/RecordingHUD/HUDView.swift` (shipped Plan 3 code)
+- Modify: `macos/Sources/Macomprendo/Features/Toasting.swift` (Task 6)
+- Modify: `macos/Sources/Macomprendo/Features/SpeakController.swift` (Task 7)
+- Modify: `macos/Tests/MacomprendoTests/Fakes/ScriptedToaster.swift` (Task 6)
+- Modify: `macos/Tests/MacomprendoTests/UI/HUDControllerTests.swift` (Plan 3)
+- Modify: `macos/Tests/MacomprendoTests/Features/SpeakControllerTests.swift` (Task 7)
+
+**Cross-plan note:** this is the only place where Plan 4 changes a *shipped Plan 3 type*.
+`HUDState` gains `case speaking(hint: String)`; because `HUDController.autoHideDuration(for:)`
+and `HUDView.content` both switch exhaustively over `HUDState`, they stop compiling until both
+are updated in Steps 4 and 5. Plan 3's own document is **not** edited — the amendment is recorded
+under "Plan 4" in `docs/superpowers/plans/2026-08-23-00-file-map-and-interfaces.md`.
+
+**Interfaces:**
+- Consumes: `HUDState`, `HUDController`, `HUDView`, `Icon`/`AppIcon` (Plans 1 and 3);
+  `Toasting` (Task 6); `SpeakController`, `ScriptedSpeech` (Tasks 5 and 7).
+- Produces:
+  ```swift
+  enum HUDState: Equatable, Sendable {
+      case hidden
+      case recording(level: Float, elapsed: TimeInterval)
+      case transcribing
+      case speaking(hint: String)          // NEW
+      case success(String)
+      case error(String)
+      case toast(String)
+  }
+  @MainActor protocol Toasting: AnyObject {
+      func toast(_ message: String, duration: TimeInterval)
+      func show(_ state: HUDState)         // NEW
+      func hide()                          // NEW
+  }
+  extension SpeakController { static let stopHint: String }
+  ```
+  `HUDController` already declares `show(_:)` and `hide()`, so
+  `extension HUDController: Toasting {}` still needs no members.
+
+- [ ] **Step 1: Write the failing HUD test**
+
+Append these two tests to the existing `@Suite struct HUDControllerTests` in
+`macos/Tests/MacomprendoTests/UI/HUDControllerTests.swift`:
+
+```swift
+    @Test func speakingNeverAutoHides() {
+        #expect(HUDController.autoHideDuration(for: .speaking(hint: "hint")) == nil)
+    }
+
+    @Test func speakingStaysVisibleUntilItIsHidden() {
+        let hud = HUDController(sleep: { _ in })
+        hud.show(.speaking(hint: "Press ⌥S again to stop."))
+        #expect(hud.state == .speaking(hint: "Press ⌥S again to stop."))
+        #expect(hud.hideTask == nil)
+        hud.hide()
+        #expect(hud.state == .hidden)
+    }
+```
+
+- [ ] **Step 2: Write the failing SpeakController tests**
+
+Append these three tests to the existing `@Suite struct SpeakControllerTests` in
+`macos/Tests/MacomprendoTests/Features/SpeakControllerTests.swift`:
+
+```swift
+    @Test func startingPlaybackShowsTheSpeakingHUDWithTheStopHint() async {
+        let (controller, _, toaster) = make()
+        await controller.toggle(text: { "read me" })
+        #expect(toaster.states == [.speaking(hint: SpeakController.stopHint)])
+        #expect(SpeakController.stopHint.contains("stop"))
+        #expect(toaster.hideCount == 0)
+    }
+
+    @Test func finishingNaturallyHidesTheSpeakingHUD() async {
+        let (controller, speech, toaster) = make()
+        await controller.toggle(text: { "read me" })
+        speech.finish()
+        #expect(toaster.hideCount == 1)
+        #expect(!controller.isSpeaking)
+    }
+
+    @Test func togglingWhileSpeakingHidesTheSpeakingHUD() async {
+        let (controller, _, toaster) = make()
+        await controller.toggle(text: { "read me" })
+        await controller.toggle(text: { Issue.record("must not read again"); return "" })
+        #expect(toaster.hideCount == 1)
+        #expect(toaster.states.count == 1)          // no second .speaking
+    }
+```
+
+- [ ] **Step 3: Run both suites to verify they fail**
+
+Run: `swift test --package-path macos --filter "HUDControllerTests|SpeakControllerTests"`
+Expected: build failure — `error: type 'HUDState' has no member 'speaking'` and
+`error: value of type 'ScriptedToaster' has no member 'states'`.
+
+- [ ] **Step 4: Add the state**
+
+In `macos/Sources/Macomprendo/UI/RecordingHUD/HUDController.swift`, replace the `HUDState`
+declaration with:
+
+```swift
+enum HUDState: Equatable, Sendable {
+    case hidden
+    case recording(level: Float, elapsed: TimeInterval)
+    case transcribing
+    /// Text-to-speech is playing; `hint` tells the user how to stop it.
+    case speaking(hint: String)
+    case success(String)
+    case error(String)
+    case toast(String)
+}
+```
+
+and add `.speaking` to the "never auto-hides" arm of `autoHideDuration(for:)` in the same file:
+
+```swift
+    static func autoHideDuration(for state: HUDState) -> TimeInterval? {
+        switch state {
+        case .success, .toast: 1.2
+        case .error: 4
+        case .hidden, .recording, .transcribing, .speaking: nil
+        }
+    }
+```
+
+- [ ] **Step 5: Render it**
+
+In `macos/Sources/Macomprendo/UI/RecordingHUD/HUDView.swift`, add a case to the `content`
+`switch`, between `.transcribing` and `.success`:
+
+```swift
+        case .speaking(let hint):
+            VStack(spacing: 6) {
+                Icon(.speak, size: 20).foregroundStyle(Color.accentColor)
+                Text("Speaking…").font(.caption)
+                Text(hint)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .padding(12)
+```
+
+- [ ] **Step 6: Widen the HUD seam**
+
+Replace the whole of `macos/Sources/Macomprendo/Features/Toasting.swift` with:
+
+```swift
+import Foundation
+
+/// The part of the HUD that feature controllers drive. Keeps them testable without AppKit.
+@MainActor protocol Toasting: AnyObject {
+    func toast(_ message: String, duration: TimeInterval)
+    func show(_ state: HUDState)
+    func hide()
+}
+
+extension HUDController: Toasting {}
+```
+
+and replace `macos/Tests/MacomprendoTests/Fakes/ScriptedToaster.swift` with:
+
+```swift
+import Foundation
+@testable import Macomprendo
+
+@MainActor final class ScriptedToaster: Toasting {
+    private(set) var messages: [String] = []
+    private(set) var states: [HUDState] = []
+    private(set) var hideCount = 0
+
+    func toast(_ message: String, duration: TimeInterval) { messages.append(message) }
+    func show(_ state: HUDState) { states.append(state) }
+    func hide() { hideCount += 1 }
+}
+```
+
+- [ ] **Step 7: Drive it from `SpeakController`**
+
+In `macos/Sources/Macomprendo/Features/SpeakController.swift`, add the hint constant and replace
+the `onStateChange` hook installed in `init` (the property is still called `toaster`; it is the
+same `any Toasting` seam, now used for the HUD state as well as toasts):
+
+```swift
+    /// Shown under "Speaking…" in the HUD.
+    static let stopHint = "Press the Speak hotkey again to stop."
+```
+
+```swift
+        speech.onStateChange = { [weak self] in
+            guard let self else { return }
+            let speaking = self.speech.isSpeaking
+            self.isSpeaking = speaking
+            if speaking {
+                self.toaster.show(.speaking(hint: Self.stopHint))
+            } else {
+                self.toaster.hide()
+            }
+        }
+```
+
+Nothing else in `toggle(text:)` changes: `speech.speak(_:settings:)` and `speech.stop()` both
+flip `isSpeaking` and call `onStateChange`, so the HUD appears and disappears from that one hook —
+including when an utterance ends by itself via `AVSpeechSynthesizerDelegate`.
+
+- [ ] **Step 8: Run both suites to verify they pass**
+
+Run: `swift test --package-path macos --filter "HUDControllerTests|SpeakControllerTests"`
+Expected: PASS — `HUDControllerTests` 12 tests, `SpeakControllerTests` 8 tests, 0 failures.
+
+- [ ] **Step 9: Run the whole suite and build**
+
+Run: `swift test --package-path macos`
+Expected: all suites pass, 0 failures. (`DictationControllerTests` and `HUDViewTests` from Plan 3
+still compile: neither switches over `HUDState` outside the two files changed here.)
+
+Run: `swift build --package-path macos`
+Expected: `Build complete!`
+
+- [ ] **Step 10: Manual verification**
+
+Launch the app, select a paragraph and press ⌥S. The HUD appears top-center with the speaker
+icon, "Speaking…" and the stop hint, stays for the whole utterance, and disappears the moment the
+text finishes or you press ⌥S again.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add macos/Sources/Macomprendo/UI/RecordingHUD/HUDController.swift \
+        macos/Sources/Macomprendo/UI/RecordingHUD/HUDView.swift \
+        macos/Sources/Macomprendo/Features/Toasting.swift \
+        macos/Sources/Macomprendo/Features/SpeakController.swift \
+        macos/Tests/MacomprendoTests/Fakes/ScriptedToaster.swift \
+        macos/Tests/MacomprendoTests/UI/HUDControllerTests.swift \
+        macos/Tests/MacomprendoTests/Features/SpeakControllerTests.swift
+git commit -m "feat(speak): show a Speaking… HUD state with the stop hint"
+```
+
+---
+
+### Task 17: Smoke-test checklist for the text features
 
 **Files:**
 - Modify (or create): `docs/SMOKE_TEST.md`
@@ -4856,7 +5104,10 @@ Assign a shortcut in Settings ▸ Hotkeys first.
 - [ ] Press ⌥S again while it is speaking: it stops immediately and does **not** re-read the
       selection or touch the clipboard.
 - [ ] Let an utterance finish on its own, then press ⌥S again: it starts speaking again.
-- [ ] Press ⌥S with nothing selected: a "nothing selected" toast appears, nothing is spoken.
+- [ ] The HUD shows "Speaking…" with the stop hint for the whole utterance and disappears the
+      moment playback ends or is stopped with ⌥S.
+- [ ] Press ⌥S with nothing selected: a "nothing selected" toast appears, nothing is spoken, and
+      no "Speaking…" HUD appears.
 - [ ] Change rate, pitch and volume in Settings ▸ Speech and press "Preview": the change is
       audible; the next ⌥S uses the new values.
 
@@ -4903,20 +5154,24 @@ git commit -m "docs: add smoke tests for refine, summarize and speak"
 | §3.4 `RefineController` (dictation + selection sources, re-run, copy/insert) | 9, 10 |
 | §3.4 `SummarizeController` (copy / replace selection) | 11 |
 | §3.4 `SpeakController` (toggle stops) | 7 |
+| §3.4 HUD "Speaking…" state with the stop hint while audio plays | 16 |
 | §3.5 Quick Panel: 680×420 top-center, per-screen frame memory, Esc, key on click, stays open while streaming, two layouts, streaming indicator, stop, error banner | 8, 12 |
 | §3.5 Settings ▸ Speech (voices by language, quality badge, sliders, preview) | 14 |
 | §3.5 Settings ▸ Refine & Summarize (endpoint+model per feature, preset manager, editor, live validation, test run, default picker, restore) | 15 |
 | §3.6 Preset model, factory list, seeding, restore-missing, last-preset guard, default reassignment, `PromptRenderer` | 1, 2, 3 |
 | §4 Speak/Summarize/Refine-selection flow (`read()` → toast on empty → controller) | 13 |
 | §5 Pasteboard restore, one in-flight task per controller, errors with recovery text | 4, 10, 11 |
-| §6 Unit coverage for renderer, factory presets, controllers with fakes | 1–11, 14, 15 |
-| Manual coverage for AX/CGEvent/NSPanel/AVSpeech | 13, 15, 16 |
+| §6 Unit coverage for renderer, factory presets, controllers with fakes | 1–11, 14, 15, 16 |
+| Manual coverage for AX/CGEvent/NSPanel/AVSpeech | 13, 15, 16, 17 |
 
 **Deliberate deviations**, all listed in the "Interface additions" table:
 `SpeechSynthesizing` is `@MainActor` and has `onStateChange`; `QuickPanelController` gains
 `attach(_:)` plus a screen-name/frame overload of `present` so it is testable without `NSScreen`;
 controllers take `any Toasting` instead of the concrete `HUDController`; the LLM provider+model
 pair travels as `LLMTarget`; `RefineController` gains `handle(_:)` for hold/toggle routing and
-`drain()`/`drainCapture()` as async test hooks. Sentence-level speech progress in the HUD is not
-implemented because `HUDState` (Plan 3) has no case for it. `DictationController` is not
+`drain()`/`drainCapture()` as async test hooks. Task 16 adds `HUDState.speaking(hint:)` to shipped
+Plan 3 code and widens `Toasting` with `show(_:)`/`hide()` — this closes the §3.4 "Speaking…" HUD
+gap that earlier drafts of this plan left open. Sentence-*level* progress (highlighting the
+sentence being read) is still not implemented; the spec only requires the state and the stop hint,
+which Task 16 delivers. `DictationController` is not
 refactored onto `DictationCapture`; the duplication is intentional so Plan 3's tests are untouched.
