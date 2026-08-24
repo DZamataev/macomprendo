@@ -23,6 +23,7 @@ final class DictationController: ObservableObject {
     private let hud: HUDController
     private let pasteboard: any PasteboardProtocol
     private let settings: @MainActor () -> Settings
+    private let escapeMonitor: any EscapeMonitoring
 
     private var target: FrontmostApp?
     private var startedAt: Date?
@@ -50,7 +51,8 @@ final class DictationController: ObservableObject {
          permissions: any PermissionsChecking,
          hud: HUDController,
          pasteboard: any PasteboardProtocol,
-         settings: @escaping @MainActor () -> Settings) {
+         settings: @escaping @MainActor () -> Settings,
+         escapeMonitor: any EscapeMonitoring) {
         self.recorder = recorder
         self.transcriberProvider = transcriberProvider
         self.inserter = inserter
@@ -59,6 +61,8 @@ final class DictationController: ObservableObject {
         self.hud = hud
         self.pasteboard = pasteboard
         self.settings = settings
+        self.escapeMonitor = escapeMonitor
+        escapeMonitor.onEscape = { [weak self] in self?.cancel() }
 
         // One long-lived consumer: an `AsyncStream` can only be iterated once, so the
         // level task lives as long as the controller and filters by state instead.
@@ -106,6 +110,7 @@ final class DictationController: ObservableObject {
         state = .idle
         startedAt = nil
         target = nil
+        escapeMonitor.stop()
         if wasRecording {
             let recorder = self.recorder
             pendingStopTask = Task { _ = await recorder.stop() }
@@ -138,6 +143,9 @@ final class DictationController: ObservableObject {
         }
         startedAt = Date()
         state = .recording
+        // Leaving `.idle`: the HUD's cancel hint needs Esc to actually do something.
+        // Stopped again wherever the cycle reaches a terminal `.idle`/`.failed` state below.
+        escapeMonitor.start()
         hud.show(.recording(level: 0, elapsed: 0))
     }
 
@@ -163,6 +171,7 @@ final class DictationController: ObservableObject {
             let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else {
                 state = .idle
+                escapeMonitor.stop()
                 hud.toast("Nothing heard")
                 return
             }
@@ -191,6 +200,7 @@ final class DictationController: ObservableObject {
             case .success:
                 state = .idle
                 target = nil
+                escapeMonitor.stop()
                 hud.show(.success("Inserted"))
             case .failure(MacomprendoError.insertFailed):
                 // `PasteTextInserter` throws `insertFailed` before it ever writes to the
@@ -216,6 +226,7 @@ final class DictationController: ObservableObject {
         Log.app.error("Dictation failed: \(message, privacy: .public)")
         state = .failed(message)
         target = nil
+        escapeMonitor.stop()
         hud.toast("Copied to clipboard")
     }
 
@@ -242,6 +253,7 @@ final class DictationController: ObservableObject {
         let message = ErrorText.describe(error)
         Log.app.error("Dictation failed: \(message, privacy: .public)")
         state = .failed(message)
+        escapeMonitor.stop()
         hud.show(.error(message))
     }
 }

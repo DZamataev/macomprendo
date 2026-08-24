@@ -174,6 +174,56 @@ import Testing
         #expect(applied.count == 0)
     }
 
+    // MARK: - resetToFirstIncompleteStep
+
+    @Test func resetGoesToMicrophoneWhenMicrophoneIsNotGranted() async {
+        let permissions = FakePermissions()
+        permissions.statuses[.microphone] = .denied
+        permissions.statuses[.accessibility] = .granted
+        let viewModel = makeModel(permissions: permissions)
+        viewModel.next()   // land on .accessibility so the reset has to move it back
+
+        await viewModel.resetToFirstIncompleteStep()
+        #expect(viewModel.step == .microphone)
+    }
+
+    @Test func resetGoesToAccessibilityWhenOnlyAccessibilityIsMissing() async {
+        let permissions = FakePermissions()
+        permissions.statuses[.microphone] = .granted
+        permissions.statuses[.accessibility] = .denied
+        let viewModel = makeModel(permissions: permissions)
+        viewModel.next()   // accessibility
+        viewModel.next()   // model
+        viewModel.next()   // ollama — reset must move it back
+
+        await viewModel.resetToFirstIncompleteStep()
+        #expect(viewModel.step == .accessibility)
+    }
+
+    @Test func resetGoesToModelWhenPermissionsAreGrantedButTheModelIsNotDownloaded() async {
+        let permissions = FakePermissions()
+        permissions.statuses[.microphone] = .granted
+        permissions.statuses[.accessibility] = .granted
+        let models = StubModelManager()
+        let viewModel = makeModel(permissions: permissions, models: models)
+
+        await viewModel.resetToFirstIncompleteStep()
+        #expect(viewModel.step == .model)
+    }
+
+    @Test func resetGoesToOllamaWhenEverythingElseIsDone() async {
+        let permissions = FakePermissions()
+        permissions.statuses[.microphone] = .granted
+        permissions.statuses[.accessibility] = .granted
+        let models = StubModelManager()
+        models.downloadFractions = [1.0]
+        let viewModel = makeModel(permissions: permissions, models: models)
+        await viewModel.downloadSelectedModel()   // leaves modelState == .downloaded
+
+        await viewModel.resetToFirstIncompleteStep()
+        #expect(viewModel.step == .ollama)
+    }
+
     @Test func aCancelledDownloadEndsWithNotDownloadedNotFailed() async {
         let models = StubModelManager()
         models.downloadError = MacomprendoError.cancelled

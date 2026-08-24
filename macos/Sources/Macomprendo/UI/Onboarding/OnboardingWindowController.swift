@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 enum OnboardingWindowController {
     private static var window: NSWindow?
+    private static var viewModel: OnboardingViewModel?
 
     static func showIfNeeded(model: AppModel) {
         guard OnboardingViewModel.shouldShow() else { return }
@@ -13,9 +14,12 @@ enum OnboardingWindowController {
     }
 
     static func show(model: AppModel) {
-        if let window {
+        if let window, let viewModel {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
+            // "Check permissions…" must reopen on whichever step still needs the user's
+            // attention, not wherever the wizard happened to be left last time.
+            Task { await viewModel.resetToFirstIncompleteStep() }
             return
         }
 
@@ -36,6 +40,7 @@ enum OnboardingWindowController {
         window.contentView = NSHostingView(rootView: OnboardingView(viewModel: viewModel))
         window.center()
         self.window = window
+        self.viewModel = viewModel
 
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)

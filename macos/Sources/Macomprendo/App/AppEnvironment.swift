@@ -31,6 +31,7 @@ struct AppEnvironment {
     var ollamaDetector: any OllamaDetecting
     var pasteboard: any PasteboardProtocol
     var launchAtLogin: any LaunchAtLoginManaging
+    var escapeMonitor: any EscapeMonitoring
 
     @MainActor
     static func live() -> AppEnvironment {
@@ -58,6 +59,7 @@ struct AppEnvironment {
             hudPresenter: HUDWindowPresenter(),
             ollamaDetector: HTTPOllamaDetector(http: http),
             pasteboard: pasteboard,
-            launchAtLogin: SMAppServiceLaunchAtLogin())
+            launchAtLogin: SMAppServiceLaunchAtLogin(),
+            escapeMonitor: GlobalEscapeMonitor())
     }
 }

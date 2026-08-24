@@ -88,6 +88,22 @@ final class OnboardingViewModel: ObservableObject {
         modelState = await models.state(of: selectedModelID)
     }
 
+    /// Re-entry point for "Check permissions…": refreshes every status from the OS/disk,
+    /// then jumps to the first step that still needs the user's attention, rather than
+    /// leaving the wizard on whatever step it was cached at from a previous run.
+    func resetToFirstIncompleteStep() async {
+        await refresh()
+        if micStatus != .granted {
+            step = .microphone
+        } else if accessibilityStatus != .granted {
+            step = .accessibility
+        } else if case .downloaded = modelState {
+            step = .ollama
+        } else {
+            step = .model
+        }
+    }
+
     func requestMicrophone() async {
         micStatus = await permissions.request(.microphone)
         if micStatus != .granted {

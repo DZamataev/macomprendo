@@ -14,6 +14,7 @@ import Testing
         let hud: HUDController
         let pasteboard: FakePasteboard
         let settings: SettingsHolder
+        let escapeMonitor: FakeEscapeMonitor
     }
 
     private func makeHarness(mode: DictationMode = .hold,
@@ -35,6 +36,7 @@ import Testing
         settings.value.dictationMode = mode
         settings.value.insertMethod = insertMethod
         settings.value.transcriptionLanguage = "en"
+        let escapeMonitor = FakeEscapeMonitor()
 
         let controller = DictationController(
             recorder: recorder,
@@ -44,10 +46,11 @@ import Testing
             permissions: permissions,
             hud: hud,
             pasteboard: pasteboard,
-            settings: { settings.value })
+            settings: { settings.value },
+            escapeMonitor: escapeMonitor)
         return Harness(controller: controller, recorder: recorder, transcriber: transcriber,
                        inserter: inserter, tracker: tracker, permissions: permissions,
-                       hud: hud, pasteboard: pasteboard, settings: settings)
+                       hud: hud, pasteboard: pasteboard, settings: settings, escapeMonitor: escapeMonitor)
     }
 
     // MARK: - Hold mode
@@ -248,6 +251,70 @@ import Testing
         #expect(h.controller.state == .recording)
     }
 
+    // MARK: - Esc cancels
+
+    @Test func startingDictationStartsTheEscapeMonitor() async {
+        let h = makeHarness(mode: .hold)
+        #expect(h.escapeMonitor.startCount == 0)
+        #expect(h.escapeMonitor.isRunning == false)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        #expect(h.controller.state == .recording)
+        #expect(h.escapeMonitor.startCount == 1)
+        #expect(h.escapeMonitor.isRunning == true)
+    }
+
+    @Test func escapeDuringRecordingCancels() async {
+        let h = makeHarness(mode: .hold)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        #expect(h.controller.state == .recording)
+
+        h.escapeMonitor.fireEscape()
+
+        #expect(h.controller.state == .idle)
+        #expect(h.hud.state == .toast("Cancelled"))
+        #expect(h.escapeMonitor.isRunning == false)
+        await waitFor("recorder stopped") { h.recorder.stopCount == 1 }
+        #expect(h.inserter.inserted.isEmpty)
+    }
+
+    @Test func escapeDuringTranscribingCancels() async {
+        let h = makeHarness(mode: .hold)
+        h.transcriber.delay = .seconds(5)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await waitFor("state transcribing") { h.controller.state == .transcribing }
+
+        let pending = h.controller.activeTask
+        h.escapeMonitor.fireEscape()
+
+        #expect(h.controller.state == .idle)
+        #expect(h.hud.state == .toast("Cancelled"))
+        #expect(h.escapeMonitor.isRunning == false)
+        await pending?.value
+        #expect(h.inserter.inserted.isEmpty)
+    }
+
+    @Test func escapeMonitorIsNotRunningWhenIdle() async {
+        let h = makeHarness(mode: .hold)
+        #expect(h.escapeMonitor.isRunning == false)
+
+        // A full record → transcribe → insert cycle must leave the monitor stopped again.
+        h.transcriber.result = .success("done")
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await h.controller.activeTask?.value
+
+        #expect(h.controller.state == .idle)
+        #expect(h.escapeMonitor.isRunning == false)
+    }
+
     // MARK: - Permissions
 
     @Test func aDeniedMicrophoneFailsAndOpensSystemSettings() async {
@@ -388,7 +455,8 @@ import Testing
             permissions: FakePermissions(),
             hud: hud,
             pasteboard: FakePasteboard(),
-            settings: { settings.value })
+            settings: { settings.value },
+            escapeMonitor: FakeEscapeMonitor())
 
         controller.handle(.keyDown(.dictate))
         await controller.activeTask?.value

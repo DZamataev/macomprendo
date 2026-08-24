@@ -14,7 +14,8 @@ extension AppEnvironment {
                      keychain: any KeychainStoring = InMemoryKeychainStore(),
                      detector: any OllamaDetecting = FakeOllamaDetector(),
                      pasteboard: any PasteboardProtocol = FakePasteboard(),
-                     launchAtLogin: any LaunchAtLoginManaging = FakeLaunchAtLogin()) -> AppEnvironment {
+                     launchAtLogin: any LaunchAtLoginManaging = FakeLaunchAtLogin(),
+                     escapeMonitor: any EscapeMonitoring = FakeEscapeMonitor()) -> AppEnvironment {
         AppEnvironment(hotkeys: hotkeys,
                        recorder: recorder,
                        inserter: inserter,
@@ -27,6 +28,7 @@ extension AppEnvironment {
                        hudPresenter: nil,
                        ollamaDetector: detector,
                        pasteboard: pasteboard,
-                       launchAtLogin: launchAtLogin)
+                       launchAtLogin: launchAtLogin,
+                       escapeMonitor: escapeMonitor)
     }
 }

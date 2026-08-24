@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Text(model.statusText)
@@ -18,8 +19,13 @@ struct MenuBarView: View {
 
         Divider()
 
-        SettingsLink {
-            Text("Settings…")
+        // `LSUIElement` apps never activate themselves when a SwiftUI `Settings` scene
+        // opens, so a bare `SettingsLink` can open the window behind everything else with
+        // no way for the user to notice. Activate the app in the same action so the
+        // window actually comes to the front.
+        Button("Settings…") {
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
         }
         .keyboardShortcut(",", modifiers: .command)
 

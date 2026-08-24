@@ -78,7 +78,8 @@ final class AppModel: ObservableObject {
                                         permissions: env.permissions,
                                         hud: hud,
                                         pasteboard: env.pasteboard,
-                                        settings: { snapshot.current })
+                                        settings: { snapshot.current },
+                                        escapeMonitor: env.escapeMonitor)
 
         // `didSet` never fires during `init`, so a migrated or corrupt-and-repaired
         // document would otherwise sit only in memory until the user next changes a

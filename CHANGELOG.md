@@ -30,3 +30,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Providers settings tab: add, edit and remove LLM/transcription endpoints,
   store and clear their API keys in the Keychain, test a connection's model
   count, and pull an Ollama model with live progress.
+- Esc now cancels an in-progress dictation (recording or transcribing), matching
+  the HUD's cancel hint.
+
+### Fixed
+- The menubar's "Settings…" item now activates the app before opening the
+  Settings window, so it reliably comes to the front instead of opening behind
+  everything else on an `LSUIElement` app.
+- "Check permissions…" now reopens the onboarding wizard on the first step
+  that still needs attention instead of wherever it was last left.
