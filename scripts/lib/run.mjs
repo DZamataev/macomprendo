@@ -30,12 +30,13 @@ export async function run(cmd, args = [], options = {}) {
     child.stdout?.on("data", (d) => { stdout += d.toString(); });
     child.stderr?.on("data", (d) => { stderr += d.toString(); });
     child.on("error", reject);
-    child.on("close", (code) => {
-      if (check && code !== 0) {
-        reject(new Error(`${cmd} ${args.join(" ")} exited with ${code}${stderr ? `\n${stderr}` : ""}`));
+    child.on("close", (code, signal) => {
+      if (check && (code !== 0 || (code === null && signal))) {
+        const reason = code === null && signal ? `was killed with ${signal}` : `exited with ${code}`;
+        reject(new Error(`${cmd} ${args.join(" ")} ${reason}${stderr ? `\n${stderr}` : ""}`));
         return;
       }
-      resolve({ stdout, stderr, code: code ?? 0 });
+      resolve({ stdout, stderr, code: code === null && signal ? null : code ?? 0, signal: signal ?? null });
     });
   });
 }

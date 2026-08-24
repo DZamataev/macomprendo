@@ -66,6 +66,10 @@ jobs:
       - name: Regenerate the Xcode project
         run: npm run gen
 
+      # xcodegen floats via brew; if a new version changes output, regenerate and commit.
+      - name: Committed project matches project.yml
+        run: git diff --exit-code macos/Macomprendo.xcodeproj
+
       - name: Build the app without signing
         run: >-
           xcodebuild

@@ -19,6 +19,16 @@ test("run returns the code instead of throwing when check is false", async () =>
   assert.equal(result.code, 1);
 });
 
+test("run reports a null code and the signal when the child is killed", async () => {
+  const result = await run("node", ["-e", "process.kill(process.pid,'SIGTERM')"], {
+    capture: true,
+    check: false,
+    log: silent,
+  });
+  assert.equal(result.signal, "SIGTERM");
+  assert.equal(result.code, null);
+});
+
 test("dryRun does not spawn anything", async () => {
   const result = await run("definitely-not-a-command", [], { dryRun: true, log: silent });
   assert.deepEqual(result, { stdout: "", stderr: "", code: 0 });

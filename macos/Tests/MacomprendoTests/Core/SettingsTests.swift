@@ -67,6 +67,13 @@ import Testing
     }
 }
 
+@Test func migrateFillsInLLMSelectionsMissingFromAnOlderPayload() throws {
+    let json = Data(#"{"schemaVersion":1,"dictationMode":"toggle"}"#.utf8)
+    let s = try Settings.migrate(json)
+    #expect(s.refineLLM == Settings.default.refineLLM)
+    #expect(s.summarizeLLM == Settings.default.summarizeLLM)
+}
+
 @Test func migrateThrowsOnGarbage() {
     #expect(throws: (any Error).self) {
         try Settings.migrate(Data("not json".utf8))

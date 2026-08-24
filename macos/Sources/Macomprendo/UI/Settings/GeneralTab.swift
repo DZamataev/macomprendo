@@ -33,6 +33,8 @@ struct GeneralTab: View {
         .padding()
     }
 
+    // PLAN 3 REPLACES THIS: direct SMAppService use is a deliberate foundation-only shim.
+    // Plan 3 introduces LaunchAtLoginManaging (see map Amendments) — do not copy this pattern.
     private func setLaunchAtLogin(_ enabled: Bool) {
         do {
             if enabled {

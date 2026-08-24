@@ -112,8 +112,8 @@ extension Settings {
         transcriptionSource = try c.decodeIfPresent(TranscriptionSource.self, forKey: .transcriptionSource) ?? d.transcriptionSource
         transcriptionLanguage = try c.decodeIfPresent(String.self, forKey: .transcriptionLanguage)
         endpoints = try c.decodeIfPresent([Endpoint].self, forKey: .endpoints) ?? d.endpoints
-        refineLLM = try c.decodeIfPresent(LLMSelection.self, forKey: .refineLLM)
-        summarizeLLM = try c.decodeIfPresent(LLMSelection.self, forKey: .summarizeLLM)
+        refineLLM = try c.decodeIfPresent(LLMSelection.self, forKey: .refineLLM) ?? d.refineLLM
+        summarizeLLM = try c.decodeIfPresent(LLMSelection.self, forKey: .summarizeLLM) ?? d.summarizeLLM
         speech = try c.decodeIfPresent(SpeechSettings.self, forKey: .speech) ?? d.speech
         presets = try c.decodeIfPresent([PromptPreset].self, forKey: .presets) ?? d.presets
         presetsSeeded = try c.decodeIfPresent(Bool.self, forKey: .presetsSeeded) ?? d.presetsSeeded
