@@ -1,0 +1,65 @@
+import SwiftUI
+
+struct HUDView: View {
+    @ObservedObject var controller: HUDController
+
+    var body: some View {
+        content
+            .frame(width: HUDLayout.size.width, height: HUDLayout.size.height)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08))
+            )
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch controller.state {
+        case .hidden:
+            Color.clear
+        case .recording(let level, let elapsed):
+            VStack(spacing: 8) {
+                LevelMeter(level: level)
+                HStack(spacing: 6) {
+                    Text("Recording")
+                    Text(Self.elapsedText(elapsed)).monospacedDigit()
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                Text("Release to transcribe · Esc cancels")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+        case .transcribing:
+            VStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Transcribing…").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(12)
+        case .success(let message):
+            label(message, icon: .success, tint: .accentColor)
+        case .error(let message):
+            label(message, icon: .warning, tint: .red)
+        case .toast(let message):
+            label(message, icon: .warning, tint: .secondary)
+        }
+    }
+
+    private func label(_ message: String, icon: AppIcon, tint: Color) -> some View {
+        VStack(spacing: 6) {
+            Icon(icon, size: 20).foregroundStyle(tint)
+            Text(message)
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+        }
+        .padding(12)
+    }
+
+    static func elapsedText(_ elapsed: TimeInterval) -> String {
+        let total = Int(elapsed.rounded(.down))
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}

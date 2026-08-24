@@ -22,3 +22,10 @@ func everyIconLoadsAsATemplateImage(icon: AppIcon) throws {
 @Test func theLicenceTravelsWithTheIcons() {
     #expect(ResourceBundle.current.url(forResource: "LICENSE-phosphor", withExtension: "txt", subdirectory: "Icons") != nil)
 }
+
+@MainActor
+@Test func repeatedLoadsOfTheSameIconAndSizeReturnTheSameCachedInstance() throws {
+    let first = try #require(Icon.nsImage(for: .microphone, size: 16))
+    let second = try #require(Icon.nsImage(for: .microphone, size: 16))
+    #expect(first === second)
+}

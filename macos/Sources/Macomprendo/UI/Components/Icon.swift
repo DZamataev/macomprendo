@@ -88,10 +88,18 @@ struct Icon: View {
 
     /// Loads the SVG through `NSImage` (SVG is supported since macOS 11) and marks it a
     /// template so AppKit and SwiftUI tint it with the current foreground style.
+    ///
+    /// The HUD re-renders at animation rates, so decoded images are cached by icon and size
+    /// rather than re-decoded from the SVG on every render.
+    private static var cache: [String: NSImage] = [:]
+
     static func nsImage(for icon: AppIcon, size: CGFloat) -> NSImage? {
+        let key = "\(icon.rawValue)-\(size)"
+        if let cached = cache[key] { return cached }
         guard let url = icon.resourceURL(), let image = NSImage(contentsOf: url) else { return nil }
         image.isTemplate = true
         image.size = NSSize(width: size, height: size)
+        cache[key] = image
         return image
     }
 }
