@@ -1,0 +1,44 @@
+import AppKit
+import SwiftUI
+
+/// The onboarding window. `LSUIElement` apps have no Dock icon, so the window is created
+/// programmatically and the app is activated so it comes to the front.
+@MainActor
+enum OnboardingWindowController {
+    private static var window: NSWindow?
+
+    static func showIfNeeded(model: AppModel) {
+        guard OnboardingViewModel.shouldShow() else { return }
+        show(model: model)
+    }
+
+    static func show(model: AppModel) {
+        if let window {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let viewModel = OnboardingViewModel(permissions: model.env.permissions,
+                                            models: model.env.models,
+                                            detector: model.env.ollamaDetector)
+        viewModel.onFinish = { close() }
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 460),
+                              styleMask: [.titled, .closable],
+                              backing: .buffered,
+                              defer: false)
+        window.title = "Welcome to Macomprendo"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: OnboardingView(viewModel: viewModel))
+        window.center()
+        self.window = window
+
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    static func close() {
+        window?.close()
+    }
+}

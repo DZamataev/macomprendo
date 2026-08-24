@@ -23,3 +23,116 @@ struct HTTPOllamaDetector: OllamaDetecting {
         return (200..<300).contains(response.status)
     }
 }
+
+/// First-launch flow: microphone, accessibility, a whisper model, and an optional Ollama check.
+@MainActor
+final class OnboardingViewModel: ObservableObject {
+    enum Step: Int, CaseIterable, Equatable {
+        case microphone, accessibility, model, ollama
+
+        var title: String {
+            switch self {
+            case .microphone: "Microphone"
+            case .accessibility: "Accessibility"
+            case .model: "Speech model"
+            case .ollama: "Ollama (optional)"
+            }
+        }
+    }
+
+    static let completedKey = "hasCompletedOnboarding"
+
+    @Published private(set) var step: Step = .microphone
+    @Published private(set) var micStatus: PermissionStatus = .undetermined
+    @Published private(set) var accessibilityStatus: PermissionStatus = .undetermined
+    @Published private(set) var modelState: ModelState = .notDownloaded
+    @Published private(set) var ollamaFound: Bool?
+    @Published var selectedModelID: String = ModelCatalog.defaultID
+
+    var onFinish: (@MainActor () -> Void)?
+
+    private let permissions: any PermissionsChecking
+    private let models: any ModelManaging
+    private let detector: any OllamaDetecting
+    private let defaults: UserDefaults
+    private let ollamaURL: URL
+
+    init(permissions: any PermissionsChecking,
+         models: any ModelManaging,
+         detector: any OllamaDetecting,
+         defaults: UserDefaults = .standard,
+         ollamaURL: URL = URL(string: "http://localhost:11434")!) {
+        self.permissions = permissions
+        self.models = models
+        self.detector = detector
+        self.defaults = defaults
+        self.ollamaURL = ollamaURL
+    }
+
+    static func shouldShow(defaults: UserDefaults = .standard) -> Bool {
+        !defaults.bool(forKey: completedKey)
+    }
+
+    var canContinue: Bool {
+        switch step {
+        case .microphone: micStatus == .granted
+        case .accessibility: accessibilityStatus == .granted
+        case .model, .ollama: true
+        }
+    }
+
+    func refresh() async {
+        micStatus = await permissions.status(of: .microphone)
+        accessibilityStatus = await permissions.status(of: .accessibility)
+        modelState = await models.state(of: selectedModelID)
+    }
+
+    func requestMicrophone() async {
+        micStatus = await permissions.request(.microphone)
+        if micStatus != .granted {
+            permissions.openSystemSettings(for: .microphone)
+        }
+    }
+
+    func requestAccessibility() async {
+        accessibilityStatus = await permissions.request(.accessibility)
+        if accessibilityStatus != .granted {
+            permissions.openSystemSettings(for: .accessibility)
+        }
+    }
+
+    func downloadSelectedModel() async {
+        modelState = .downloading(fraction: 0)
+        do {
+            for try await fraction in models.download(selectedModelID) {
+                modelState = .downloading(fraction: fraction)
+            }
+            modelState = await models.state(of: selectedModelID)
+        } catch {
+            modelState = .failed(ErrorText.describe(error))
+        }
+    }
+
+    func detectOllama() async {
+        ollamaFound = await detector.isRunning(at: ollamaURL)
+    }
+
+    func next() {
+        if let next = Step(rawValue: step.rawValue + 1) {
+            step = next
+        } else {
+            finish()
+        }
+    }
+
+    func back() {
+        if let previous = Step(rawValue: step.rawValue - 1) {
+            step = previous
+        }
+    }
+
+    func finish() {
+        defaults.set(true, forKey: Self.completedKey)
+        onFinish?()
+    }
+}
