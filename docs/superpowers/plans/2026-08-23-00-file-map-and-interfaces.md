@@ -19,7 +19,7 @@ cross plan boundaries. Implementers MUST use these names verbatim.
 - Swift 6.0, strict concurrency; SwiftUI + AppKit; `platforms: [.macOS(.v14)]`; universal (arm64 + x86_64).
 - Bundle id `com.dzamataev.macomprendo`; `DEVELOPMENT_TEAM 68QJJA7HK9`; copyright "© 2026 Denis Zamataev"; MIT.
 - Product/module name `Macomprendo`; executable `Macomprendo`; `LSUIElement = true`; not sandboxed; hardened runtime.
-- SPM deps ONLY: `https://github.com/ggml-org/whisper.cpp` (product `whisper`), `https://github.com/sindresorhus/KeyboardShortcuts` (from 2.0.0), `https://github.com/phosphor-icons/swift` (product `PhosphorSwift`).
+- SPM deps ONLY: whisper.cpp as a prebuilt xcframework via local package `macos/Packages/WhisperBinary` (product `Whisper`, module `whisper`; upstream has no Package.swift), `https://github.com/sindresorhus/KeyboardShortcuts` (from 2.0.0). Icons: Phosphor SVGs vendored from npm `@phosphor-icons/core` via `scripts/sync-icons.mjs` — the `phosphor-icons/swift` package is NOT used (breaks `swift build`).
 - Tests: swift-testing (`import Testing`), `swift test --package-path macos`. Node: `node --test` in `scripts/__tests__/`.
 - Tooling: Node ≥ 20 ESM `.mjs`; npm deps allowed (pinned, lockfile committed). No shell scripts.
 - No telemetry. API keys only in Keychain. Never log transcript/LLM text at default level.
