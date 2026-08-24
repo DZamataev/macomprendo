@@ -1,16 +1,27 @@
+import AppKit
 import SwiftUI
+
+/// Single, main-actor-isolated instance shared by the SwiftUI scenes and the app delegate.
+@MainActor
+enum AppRoot {
+    static let model = AppModel(store: UserDefaultsSettingsStore(),
+                                keychain: SystemKeychainStore(),
+                                env: .live())
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let model = AppRoot.model
+        model.start()
+        OnboardingWindowController.showIfNeeded(model: model)
+    }
+}
 
 @main
 struct MacomprendoApp: App {
-    @StateObject private var model: AppModel
-
-    init() {
-        let model = AppModel(store: UserDefaultsSettingsStore(),
-                             keychain: SystemKeychainStore(),
-                             env: .live())
-        model.start()
-        _model = StateObject(wrappedValue: model)
-    }
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    @StateObject private var model = AppRoot.model
 
     var body: some Scene {
         // The status item is deliberately an SF Symbol template image (spec §2, §3.5).

@@ -19,3 +19,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - First-launch onboarding: step-by-step permissions (microphone, accessibility),
   model selection and download, and optional Ollama detection. Applies the
   selected model to settings on finish.
+- Menubar menu, General and Hotkeys settings tabs: per-hotkey enable toggles,
+  a "Check permissions…" entry that reopens onboarding, a launch-at-login
+  toggle backed by `SMAppService` that reconciles with System Settings on
+  appear, dictation/insert-method pickers, and shortcut recorders for all
+  five hotkeys.

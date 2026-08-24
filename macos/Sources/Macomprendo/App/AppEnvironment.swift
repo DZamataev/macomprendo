@@ -30,6 +30,7 @@ struct AppEnvironment {
     var hudPresenter: (any HUDPresenting)?
     var ollamaDetector: any OllamaDetecting
     var pasteboard: any PasteboardProtocol
+    var launchAtLogin: any LaunchAtLoginManaging
 
     @MainActor
     static func live() -> AppEnvironment {
@@ -56,6 +57,7 @@ struct AppEnvironment {
             factory: ProviderFactory(http: http, keychain: keychain),
             hudPresenter: HUDWindowPresenter(),
             ollamaDetector: HTTPOllamaDetector(http: http),
-            pasteboard: pasteboard)
+            pasteboard: pasteboard,
+            launchAtLogin: SMAppServiceLaunchAtLogin())
     }
 }

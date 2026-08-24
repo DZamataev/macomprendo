@@ -13,7 +13,8 @@ extension AppEnvironment {
                      http: any HTTPClient = FakeHTTPClient(),
                      keychain: any KeychainStoring = InMemoryKeychainStore(),
                      detector: any OllamaDetecting = FakeOllamaDetector(),
-                     pasteboard: any PasteboardProtocol = FakePasteboard()) -> AppEnvironment {
+                     pasteboard: any PasteboardProtocol = FakePasteboard(),
+                     launchAtLogin: any LaunchAtLoginManaging = FakeLaunchAtLogin()) -> AppEnvironment {
         AppEnvironment(hotkeys: hotkeys,
                        recorder: recorder,
                        inserter: inserter,
@@ -25,6 +26,7 @@ extension AppEnvironment {
                        factory: ProviderFactory(http: http, keychain: keychain),
                        hudPresenter: nil,
                        ollamaDetector: detector,
-                       pasteboard: pasteboard)
+                       pasteboard: pasteboard,
+                       launchAtLogin: launchAtLogin)
     }
 }
