@@ -18,6 +18,7 @@ final class AppModel: ObservableObject {
     let hud: HUDController
     let dictation: DictationController
     let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
+    lazy var modelsViewModel = ModelsViewModel(models: env.models)
 
     private let store: any SettingsPersisting
     private let snapshot: SettingsSnapshot
