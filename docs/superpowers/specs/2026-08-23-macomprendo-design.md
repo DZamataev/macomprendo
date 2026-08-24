@@ -96,8 +96,7 @@ UI  ──▶  Features (controllers, @MainActor, own state machines)
   (hold/toggle), `transcriptionSource` (`.local(modelID)` | `.endpoint(id, model)`),
   `llmSelection` per feature (`refine`, `summarize`) = `(endpointID, model)`,
   speech (voiceID, rate, pitch, volume), `presets: [PromptPreset]`, default preset per kind,
-  launchAtLogin, insert method preference (`auto|paste|typing`), HUD/panel position
-  overrides. Versioned with a `schemaVersion` and a migration hook.
+  launchAtLogin, insert method preference (`auto|paste|typing`), Quick Panel position overrides (the HUD is transient, always top-center, not persisted). Versioned with a `schemaVersion` and a migration hook.
 - `Endpoint` — `{ id: UUID, name, kind: .ollama | .openAICompatible, baseURL,
   apiKeyRef }`. API keys live only in the Keychain (`KeychainStore` protocol; default
   uses `Security` framework, tests use `InMemoryKeychain`). Settings stores the
