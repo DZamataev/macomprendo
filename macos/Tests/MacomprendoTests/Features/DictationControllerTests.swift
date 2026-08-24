@@ -300,6 +300,26 @@ import Testing
         #expect(h.inserter.inserted.isEmpty)
     }
 
+    /// `HTTPClient` maps both `CancellationError` and `URLError.cancelled` to
+    /// `MacomprendoError.cancelled`, so a provider can throw it even when `cancel()` was
+    /// never called (the controller's task itself isn't cancelled). That path must still
+    /// stop the escape monitor and leave the HUD off `.transcribing`, not just the path
+    /// that goes through `cancel()`.
+    @Test func aProviderThrownCancelledErrorStopsTheMonitorAndHUDWithoutCancelBeingCalled() async {
+        let h = makeHarness(mode: .hold)
+        h.transcriber.result = .failure(MacomprendoError.cancelled)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await h.controller.activeTask?.value
+
+        #expect(h.controller.state == .idle)
+        #expect(h.escapeMonitor.isRunning == false)
+        #expect(h.hud.state != .transcribing)
+        #expect(h.inserter.inserted.isEmpty)
+    }
+
     @Test func escapeMonitorIsNotRunningWhenIdle() async {
         let h = makeHarness(mode: .hold)
         #expect(h.escapeMonitor.isRunning == false)

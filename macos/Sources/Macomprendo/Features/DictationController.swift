@@ -212,12 +212,33 @@ final class DictationController: ObservableObject {
                 fail(error)
             }
         } catch is CancellationError {
-            state = .idle
+            cancelledInFlight()
         } catch MacomprendoError.cancelled {
-            state = .idle
+            // `HTTPClient` maps both `CancellationError` and `URLError.cancelled` here, so
+            // this can arrive even when `cancel()` was never called (this task itself isn't
+            // cancelled) — e.g. a transport-level cancellation the provider originated. Treat
+            // it exactly like the cooperative-cancellation path above: whichever one got here
+            // first is what matters, not which error type carried it.
+            cancelledInFlight()
         } catch {
             fail(error)
         }
+    }
+
+    // Every terminal transition stops the monitor. `cancel()` already does this
+    // synchronously (and shows the "Cancelled" toast) when it's the one that triggered
+    // this cancellation — by the time this runs, `state` is already `.idle` and there's
+    // nothing left to do. But a provider can throw a cancellation error on its own
+    // (see the `MacomprendoError.cancelled` catch above), in which case `cancel()` never
+    // ran: the monitor would otherwise keep swallowing Esc app-wide and the HUD would sit
+    // stuck on `.transcribing` forever. Cover that case too, without re-toasting or
+    // stopping an already-stopped monitor twice worth caring about (`stop()` is
+    // idempotent).
+    private func cancelledInFlight() {
+        escapeMonitor.stop()
+        guard state != .idle else { return }
+        state = .idle
+        hud.toast("Cancelled")
     }
 
     private func copyFallback(_ text: String) {
