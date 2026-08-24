@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct MenuBarView: View {
@@ -5,22 +6,51 @@ struct MenuBarView: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Text(statusLine)
+        Text(model.statusText)
+        Text(sourceDescription).font(.caption)
+
         Divider()
-        Button("Settings…") { openSettings() }
-            .keyboardShortcut(",", modifiers: .command)
+
+        ForEach(HotkeyAction.allCases, id: \.self) { action in
+            Toggle(action.displayName, isOn: Binding(
+                get: { model.isEnabled(action) },
+                set: { model.setEnabled(action, $0) }))
+        }
+
         Divider()
-        Button("Quit Macomprendo") { NSApplication.shared.terminate(nil) }
-            .keyboardShortcut("q", modifiers: .command)
+
+        // `LSUIElement` apps never activate themselves when a SwiftUI `Settings` scene
+        // opens, so a bare `SettingsLink` can open the window behind everything else with
+        // no way for the user to notice. Activate the app in the same action so the
+        // window actually comes to the front.
+        Button("Settings…") {
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
+        }
+        .keyboardShortcut(",", modifiers: .command)
+
+        Button("Check permissions…") {
+            OnboardingWindowController.show(model: model)
+        }
+
+        Divider()
+
+        Button("Quit Macomprendo") {
+            NSApp.terminate(nil)
+        }
+        .keyboardShortcut("q", modifiers: .command)
     }
 
-    private var statusLine: String {
+    private var sourceDescription: String {
         switch model.settings.transcriptionSource {
         case .local(let modelID):
-            return "Idle · local \(modelID)"
-        case .endpoint(let id, let modelName):
-            let endpointName = model.settings.endpoints.first { $0.id == id }?.name ?? "endpoint"
-            return "Idle · \(endpointName) · \(modelName)"
+            "Local model: \(modelID)"
+        case .endpoint(let id, let model):
+            "Endpoint: \(endpointName(id)) · \(model)"
         }
+    }
+
+    private func endpointName(_ id: UUID) -> String {
+        model.settings.endpoints.first { $0.id == id }?.name ?? "unknown"
     }
 }

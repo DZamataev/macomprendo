@@ -88,10 +88,24 @@ struct Icon: View {
 
     /// Loads the SVG through `NSImage` (SVG is supported since macOS 11) and marks it a
     /// template so AppKit and SwiftUI tint it with the current foreground style.
+    ///
+    /// The HUD re-renders at animation rates, so decoded images are cached by icon and size
+    /// rather than re-decoded from the SVG on every render.
+    ///
+    /// The cache is mutable shared state, so it is explicitly confined to the main actor.
+    /// `Icon` only *infers* main-actor isolation from its `View` conformance, and because
+    /// `View` is `@preconcurrency` that inference is not enforced at call sites — an
+    /// explicit annotation is what actually makes the compiler reject off-main access.
+    @MainActor private static var cache: [String: NSImage] = [:]
+
+    @MainActor
     static func nsImage(for icon: AppIcon, size: CGFloat) -> NSImage? {
+        let key = "\(icon.rawValue)-\(size)"
+        if let cached = cache[key] { return cached }
         guard let url = icon.resourceURL(), let image = NSImage(contentsOf: url) else { return nil }
         image.isTemplate = true
         image.size = NSSize(width: size, height: size)
+        cache[key] = image
         return image
     }
 }
