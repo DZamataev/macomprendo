@@ -50,6 +50,7 @@ final class OnboardingViewModel: ObservableObject {
     @Published var selectedModelID: String = ModelCatalog.defaultID
 
     var onFinish: (@MainActor () -> Void)?
+    var applySelection: (@MainActor (String) -> Void)?
 
     private let permissions: any PermissionsChecking
     private let models: any ModelManaging
@@ -108,6 +109,10 @@ final class OnboardingViewModel: ObservableObject {
                 modelState = .downloading(fraction: fraction)
             }
             modelState = await models.state(of: selectedModelID)
+        } catch is CancellationError {
+            modelState = await models.state(of: selectedModelID)
+        } catch MacomprendoError.cancelled {
+            modelState = await models.state(of: selectedModelID)
         } catch {
             modelState = .failed(ErrorText.describe(error))
         }
@@ -132,6 +137,9 @@ final class OnboardingViewModel: ObservableObject {
     }
 
     func finish() {
+        if case .downloaded = modelState {
+            applySelection?(selectedModelID)
+        }
         defaults.set(true, forKey: Self.completedKey)
         onFinish?()
     }

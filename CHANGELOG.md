@@ -16,3 +16,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Dictate hotkey now works end-to-end: the app model wires the global
   hotkey service, the recording HUD and the dictation controller together at
   launch and routes hold/toggle key events to them.
+- First-launch onboarding: step-by-step permissions (microphone, accessibility),
+  model selection and download, and optional Ollama detection. Applies the
+  selected model to settings on finish.

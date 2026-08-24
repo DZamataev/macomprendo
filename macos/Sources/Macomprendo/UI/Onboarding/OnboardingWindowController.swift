@@ -22,6 +22,9 @@ enum OnboardingWindowController {
         let viewModel = OnboardingViewModel(permissions: model.env.permissions,
                                             models: model.env.models,
                                             detector: model.env.ollamaDetector)
+        viewModel.applySelection = { modelID in
+            model.settings.transcriptionSource = .local(modelID: modelID)
+        }
         viewModel.onFinish = { close() }
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 460),

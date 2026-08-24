@@ -147,4 +147,43 @@ import Testing
         viewModel.next()   // model — optional
         #expect(viewModel.canContinue == true)
     }
+
+    @Test func finishWithDownloadedModelInvokesApplySelection() async {
+        let models = StubModelManager()
+        models.downloadFractions = [1.0]
+        let viewModel = makeModel(models: models)
+        let applied = Counter()
+        var appliedID: String?
+        viewModel.applySelection = { id in
+            appliedID = id
+            applied.increment()
+        }
+
+        await viewModel.downloadSelectedModel()
+        viewModel.finish()
+        #expect(applied.count == 1)
+        #expect(appliedID == "large-v3-turbo")
+    }
+
+    @Test func finishWithoutDownloadedModelDoesNotInvokeApplySelection() {
+        let viewModel = makeModel()
+        let applied = Counter()
+        viewModel.applySelection = { _ in applied.increment() }
+
+        viewModel.finish()
+        #expect(applied.count == 0)
+    }
+
+    @Test func aCancelledDownloadEndsWithNotDownloadedNotFailed() async {
+        let models = StubModelManager()
+        models.downloadError = MacomprendoError.cancelled
+        let viewModel = makeModel(models: models)
+
+        await viewModel.downloadSelectedModel()
+        if case .notDownloaded = viewModel.modelState {
+            // expected
+        } else {
+            Issue.record("expected .notDownloaded, got \(viewModel.modelState)")
+        }
+    }
 }
