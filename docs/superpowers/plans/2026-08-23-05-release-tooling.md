@@ -2910,13 +2910,9 @@ Run: `git remote get-url origin`
 Expected: a `github.com` URL. The spec mandates `gh release create`, which only works against
 GitHub.
 
-**If the remote is GitLab or anything else, stop and ask the maintainer before continuing.**
-At the time this plan was written `origin` pointed at `gitlab.com/dzamataev/macomprendo`, so
-this is a live question, not a hypothetical. The three possible resolutions are: (a) add a
-GitHub remote and publish there, (b) keep GitLab and swap the last step of `planRelease` for
-`glab release create v<version> --notes-file <path>` plus `--assets-links`, or (c) drop the
-hosted-release step and publish tags only. Do **not** guess — the choice also decides the
-`README.md` Releases URL and the `gh auth status` preflight check.
+**Resolved 2026-08-24:** the maintainer moved `origin` to `git@github.com:DZamataev/macomprendo.git`
+(a `gitlab` secondary remote may still exist — ignore it; all preflight checks and `gh release create`
+target `origin`). If this check ever fails again, stop and ask the maintainer rather than guessing.
 
 - [ ] **Step 7: Verify the real dry run**
 
