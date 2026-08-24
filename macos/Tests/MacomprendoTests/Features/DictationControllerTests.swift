@@ -173,6 +173,81 @@ import Testing
         #expect(h.inserter.inserted.isEmpty)
     }
 
+    /// `insert()` is non-cooperative with cancellation by design (the paste must run to
+    /// completion so the pasteboard restore isn't skipped), but the *controller* must
+    /// not act on its result once cancelled: the "Cancelled" toast must win, not a
+    /// stale "Inserted".
+    @Test func cancelDuringInsertWinsOverTheInsertResult() async {
+        let h = makeHarness(mode: .hold)
+        h.transcriber.result = .success("won't be shown")
+        let gate = AsyncGate()
+        h.inserter.gate = gate
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await waitFor("insert to start") { h.controller.state == .inserting }
+
+        let pending = h.controller.activeTask
+        h.controller.cancel()
+        #expect(h.controller.state == .idle)
+        #expect(h.hud.state == .toast("Cancelled"))
+
+        gate.open()
+        await pending?.value
+
+        #expect(h.controller.state == .idle)
+        #expect(h.hud.state == .toast("Cancelled"))
+        #expect(h.inserter.inserted.map(\.text) == ["won't be shown"])   // the paste still ran
+    }
+
+    /// `AVAudioEngineRecorder` finishes its level stream when it auto-stops after
+    /// hitting `maxDuration`; the controller must treat that termination exactly like a
+    /// keyUp/second-press stop.
+    @Test func hittingTheRecordingCapTriggersAnImplicitStop() async {
+        let h = makeHarness(mode: .hold)
+        h.transcriber.result = .success("capped")
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        #expect(h.controller.state == .recording)
+
+        h.recorder.emitLevel(0.4)
+        h.recorder.endLevelStream()
+
+        await waitFor("implicit stop transcribes and inserts") {
+            h.inserter.inserted.map(\.text) == ["capped"]
+        }
+        #expect(h.controller.state == .idle)
+        #expect(h.hud.state == .success("Inserted"))
+    }
+
+    /// `cancel()` kicks off `recorder.stop()` without awaiting it (it must return
+    /// synchronously); a fast restart must still wait for that stop to land before
+    /// starting again, rather than racing `recorder.start()` against it.
+    @Test func cancelledRecorderStopIsAwaitedBeforeARestart() async {
+        let h = makeHarness(mode: .hold)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        #expect(h.controller.state == .recording)
+
+        let stopGate = AsyncGate()
+        h.recorder.stopGate = stopGate
+        h.controller.cancel()
+        #expect(h.controller.state == .idle)
+
+        h.controller.handle(.keyDown(.dictate))
+        try? await Task.sleep(for: .milliseconds(20))
+        // Still just the one `start()` from the recording above — the restart is
+        // blocked on the pending stop.
+        #expect(h.recorder.startCount == 1)
+
+        stopGate.open()
+        await h.controller.activeTask?.value
+        #expect(h.recorder.startCount == 2)
+        #expect(h.controller.state == .recording)
+    }
+
     // MARK: - Permissions
 
     @Test func aDeniedMicrophoneFailsAndOpensSystemSettings() async {

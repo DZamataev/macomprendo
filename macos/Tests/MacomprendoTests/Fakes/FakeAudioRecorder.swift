@@ -10,6 +10,7 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
     private var _stopCount = 0
     private var _samplesToReturn: [Float] = [0.1, 0.2]
     private var _startError: Error?
+    private var _stopGate: AsyncGate?
 
     init() {
         var continuation: AsyncStream<Float>.Continuation!
@@ -31,6 +32,13 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
     var stopCount: Int { lock.withLock { _stopCount } }
     var isRecording: Bool { lock.withLock { _recording } }
 
+    /// Blocks `stop()` until the test opens it — for asserting a fast restart waits
+    /// for a still-pending stop from a cancel().
+    var stopGate: AsyncGate? {
+        get { lock.withLock { _stopGate } }
+        set { lock.withLock { _stopGate = newValue } }
+    }
+
     func start() async throws {
         if let error = startError { throw error }
         lock.withLock {
@@ -40,7 +48,8 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
     }
 
     func stop() async -> [Float] {
-        lock.withLock {
+        if let stopGate { await stopGate.wait() }
+        return lock.withLock {
             _stopCount += 1
             _recording = false
             return _samplesToReturn
@@ -49,5 +58,11 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
 
     func emitLevel(_ value: Float) {
         levelContinuation.yield(value)
+    }
+
+    /// Ends the level stream, as `AVAudioEngineRecorder` does when it auto-stops after
+    /// hitting `maxDuration`.
+    func endLevelStream() {
+        levelContinuation.finish()
     }
 }

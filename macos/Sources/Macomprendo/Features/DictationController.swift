@@ -37,6 +37,12 @@ final class DictationController: ObservableObject {
     // is still finishing in the background.
     private var isInserting = false
 
+    // The recorder `stop()` that `cancel()` kicks off is deliberately unawaited there
+    // (cancel() must return synchronously), but a `start()` from a fast restart must
+    // not race it — `AVAudioEngineRecorder.start()` traps/fails if a tap is already
+    // installed. `begin()`'s flow awaits this before calling `recorder.start()`.
+    private var pendingStopTask: Task<Void, Never>?
+
     init(recorder: any AudioRecording,
          transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider,
          inserter: any TextInserting,
@@ -61,6 +67,13 @@ final class DictationController: ObservableObject {
                 guard let self else { return }
                 self.onLevel(level)
             }
+            // The level stream ends when the recorder auto-stops after hitting its
+            // maximum duration (there is no other way for it to finish). Treat that
+            // exactly like a keyUp/second-press stop so transcription proceeds and the
+            // HUD leaves `.recording` instead of sitting frozen. `finish()` already
+            // no-ops unless `state == .recording`, so this can never double-finish a
+            // session that already ended through the normal hotkey path.
+            self?.finish()
         }
     }
 
@@ -95,7 +108,7 @@ final class DictationController: ObservableObject {
         target = nil
         if wasRecording {
             let recorder = self.recorder
-            Task { _ = await recorder.stop() }
+            pendingStopTask = Task { _ = await recorder.stop() }
         }
         hud.toast("Cancelled")
     }
@@ -112,6 +125,10 @@ final class DictationController: ObservableObject {
 
     private func startRecording() async {
         guard await ensurePermission(.microphone), await ensurePermission(.accessibility) else { return }
+        // A cancel() just before this begin() may still be stopping the recorder;
+        // starting again before that stop lands can fail (or, worse, race) against it.
+        await pendingStopTask?.value
+        pendingStopTask = nil
         target = tracker.capture()
         do {
             try await recorder.start()
@@ -151,22 +168,39 @@ final class DictationController: ObservableObject {
             }
 
             state = .inserting
+            isInserting = true
+            let insertOutcome: Result<Void, Error>
             do {
-                isInserting = true
-                defer { isInserting = false }
                 try await inserter.insert(text, into: target, method: settings().insertMethod)
-            } catch MacomprendoError.insertFailed {
+                insertOutcome = .success(())
+            } catch {
+                insertOutcome = .failure(error)
+            }
+            isInserting = false
+
+            // `insert()` is deliberately non-cooperative with cancellation — it must run
+            // to completion so the pasteboard restore isn't skipped — so a `cancel()`
+            // mid-insert doesn't stop the paste, it only stops *this task* from acting on
+            // the result afterwards. `cancel()` has already set state to `.idle` and shown
+            // the "Cancelled" toast synchronously; touching either here would overwrite it
+            // with a stale "Inserted"/"Copied to clipboard" outcome the user has already
+            // moved past.
+            guard !Task.isCancelled else { return }
+
+            switch insertOutcome {
+            case .success:
+                state = .idle
+                target = nil
+                hud.show(.success("Inserted"))
+            case .failure(MacomprendoError.insertFailed):
                 // `PasteTextInserter` throws `insertFailed` before it ever writes to the
                 // pasteboard when it cannot re-activate the target app, but its recovery
                 // text promises "the text is on the clipboard" — make that true here so
                 // the fallback is a genuine copy, not just a claim.
                 copyFallback(text)
-                return
+            case .failure(let error):
+                fail(error)
             }
-
-            state = .idle
-            target = nil
-            hud.show(.success("Inserted"))
         } catch is CancellationError {
             state = .idle
         } catch MacomprendoError.cancelled {

@@ -127,8 +127,16 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
         if reachedCap {
             Task.detached { [weak self] in self?.stopEngine() }
         }
-        guard !converted.isEmpty else { return }
-        levelContinuation.yield(AudioMath.level(fromRMS: AudioMath.rms(converted)))
+        if !converted.isEmpty {
+            levelContinuation.yield(AudioMath.level(fromRMS: AudioMath.rms(converted)))
+        }
+        if reachedCap {
+            // The engine just auto-stopped with no further `stop()` call coming from the
+            // caller — finishing the stream is the only signal a consumer (like
+            // `DictationController`'s level loop) gets that this recording session is
+            // over, so it can transcribe instead of sitting frozen in `.recording`.
+            levelContinuation.finish()
+        }
     }
 
     /// Must be called with `lock` held.
