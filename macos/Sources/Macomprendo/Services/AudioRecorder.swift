@@ -42,6 +42,15 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     var isRecording: Bool { lock.withLock { recording } }
 
     func start() throws {
+        // Guard against a second start() while already recording: AVAudioEngine's
+        // installTap(onBus:) traps if a tap is installed twice on the same bus, so this
+        // must be checked before any engine work below. Not covered by a unit test that
+        // exercises the real engine (would require actual mic hardware in CI); covered
+        // by the manual dictation-hotkey walkthrough in docs/SMOKE_TEST.md instead.
+        guard !isRecording else {
+            throw MacomprendoError.audio("Recording is already in progress.")
+        }
+
         let input = engine.inputNode
         let inputFormat = input.inputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {

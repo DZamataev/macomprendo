@@ -1,5 +1,8 @@
 import AppKit
-import ApplicationServices
+// @preconcurrency: `kAXTrustedCheckOptionPrompt` is imported as a mutable global
+// `Unmanaged<CFString>`; without @preconcurrency Swift 6 strict concurrency flags any
+// read of it as a data race even though the underlying C constant never changes.
+@preconcurrency import ApplicationServices
 import AVFoundation
 import Foundation
 
@@ -46,12 +49,7 @@ struct SystemPermissions: PermissionsChecking {
         case .microphone:
             return await AVCaptureDevice.requestAccess(for: .audio) ? .granted : .denied
         case .accessibility:
-            // `kAXTrustedCheckOptionPrompt` is imported as a mutable global
-            // `Unmanaged<CFString>`, which Swift 6 strict concurrency flags as a data
-            // race even though the underlying C constant never changes. Its value is
-            // the stable, documented ABI string "AXTrustedCheckOptionPrompt", so we use
-            // the literal directly rather than touching the global.
-            let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             return AXIsProcessTrustedWithOptions(options) ? .granted : .denied
         }
     }
