@@ -11,7 +11,7 @@ import Testing
 
     data: [DONE]
 
-    """
+    """ + "\n"  // Explicit trailing newline ensures blank line dispatches final event
 
     @Test func dispatchesOneEventPerBlankLine() {
         var parser = SSEParser()
