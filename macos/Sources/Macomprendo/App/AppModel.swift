@@ -48,8 +48,19 @@ final class AppModel: ObservableObject {
         self.enablement = HotkeyEnablementStore(defaults: hotkeyDefaults)
 
         let loaded: Settings
-        if let data = store.load(), let restored = try? Settings.migrate(data) {
-            loaded = restored
+        if let data = store.load() {
+            do {
+                loaded = try Settings.migrate(data)
+            } catch {
+                // Never log the settings content itself (may hold provider config) — just
+                // that the load failed and defaults are taking over, so a corrupt or
+                // future-schema document doesn't fail silently.
+                Log.app.error("""
+                    Settings could not be read, falling back to defaults: \
+                    \(error.localizedDescription, privacy: .public)
+                    """)
+                loaded = .default
+            }
         } else {
             loaded = .default
         }

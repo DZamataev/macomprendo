@@ -318,6 +318,19 @@ import Testing
         #expect(h.escapeMonitor.isRunning == true)
     }
 
+    @Test func startingDictationInToggleModeStartsTheEscapeMonitor() async {
+        let h = makeHarness(mode: .toggle)
+        #expect(h.escapeMonitor.startCount == 0)
+        #expect(h.escapeMonitor.isRunning == false)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        #expect(h.controller.state == .recording)
+        #expect(h.escapeMonitor.startCount == 1)
+        #expect(h.escapeMonitor.isRunning == true)
+    }
+
     @Test func escapeDuringRecordingCancels() async {
         let h = makeHarness(mode: .hold)
         h.controller.handle(.keyDown(.dictate))
