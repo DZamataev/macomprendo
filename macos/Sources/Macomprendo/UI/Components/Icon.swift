@@ -91,8 +91,14 @@ struct Icon: View {
     ///
     /// The HUD re-renders at animation rates, so decoded images are cached by icon and size
     /// rather than re-decoded from the SVG on every render.
-    private static var cache: [String: NSImage] = [:]
+    ///
+    /// The cache is mutable shared state, so it is explicitly confined to the main actor.
+    /// `Icon` only *infers* main-actor isolation from its `View` conformance, and because
+    /// `View` is `@preconcurrency` that inference is not enforced at call sites — an
+    /// explicit annotation is what actually makes the compiler reject off-main access.
+    @MainActor private static var cache: [String: NSImage] = [:]
 
+    @MainActor
     static func nsImage(for icon: AppIcon, size: CGFloat) -> NSImage? {
         let key = "\(icon.rawValue)-\(size)"
         if let cached = cache[key] { return cached }

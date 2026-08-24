@@ -8,6 +8,9 @@ func everyIconHasAVendoredSVG(icon: AppIcon) throws {
     #expect(url.lastPathComponent == "\(icon.rawValue).svg")
 }
 
+// Touches `Icon.nsImage`, whose cache is main-actor confined, so this suite of cases runs
+// on the main actor instead of in parallel on the cooperative pool.
+@MainActor
 @Test(arguments: AppIcon.allCases)
 func everyIconLoadsAsATemplateImage(icon: AppIcon) throws {
     let image = try #require(Icon.nsImage(for: icon, size: 16))
