@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(swift:*)",
+      "Bash(xcodegen:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(defaults read com.dzamataev.macomprendo:*)",
+      "Bash(defaults delete com.dzamataev.macomprendo:*)",
+      "Bash(plutil:*)",
+      "Bash(pkill -f Macomprendo.app)"
+    ],
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(security:*)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  }
+}

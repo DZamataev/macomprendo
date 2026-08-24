@@ -1,0 +1,81 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tooling:
+    name: Node tooling
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Set up Node
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run script tests
+        run: npm run test:scripts
+
+      - name: Check agent config symlinks
+        run: node scripts/sync-agent-config.mjs --check
+
+      - name: Check vendored Phosphor icons are current
+        run: node scripts/sync-icons.mjs --check
+
+  macos:
+    name: Swift tests and unsigned build
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Report toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
+        with:
+          path: macos/.build
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('macos/Package.resolved', 'macos/Packages/WhisperBinary/Package.swift') }}
+          restore-keys: swiftpm-${{ runner.os }}-
+
+      - name: Run Swift package tests
+        run: swift test --package-path macos
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Regenerate the Xcode project
+        run: npm run gen
+
+      # xcodegen floats via brew; if a new version changes output, regenerate and commit.
+      - name: Committed project matches project.yml
+        run: git diff --exit-code macos/Macomprendo.xcodeproj
+
+      - name: Build the app without signing
+        run: >-
+          xcodebuild
+          -project macos/Macomprendo.xcodeproj
+          -scheme Macomprendo
+          -configuration Release
+          -destination 'generic/platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+          build

@@ -1,0 +1,33 @@
+.DS_Store
+
+# Secrets and signing material — never commit
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.pem
+*.cer
+*.key
+*.keychain*
+*.mobileprovision
+*.provisionprofile
+notary-log-*.json
+
+# Node
+node_modules/
+
+# SwiftPM / Xcode build output
+macos/.build/
+macos/.swiftpm/
+build/
+dist/
+DerivedData/
+**/xcuserdata/
+*.xcuserstate
+*.xcarchive/
+*.xcresult/
+*.dSYM/
+
+# Generated during icon creation, never committed
+macos/AppBundle/AppIcon.iconset/
