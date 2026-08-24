@@ -3,7 +3,9 @@ import Foundation
 
 final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
     let level: AsyncStream<Float>
+    let autoStopped: AsyncStream<Void>
     private let levelContinuation: AsyncStream<Float>.Continuation
+    private let autoStopContinuation: AsyncStream<Void>.Continuation
     private let lock = NSLock()
     private var _recording = false
     private var _startCount = 0
@@ -16,6 +18,9 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
         var continuation: AsyncStream<Float>.Continuation!
         level = AsyncStream(bufferingPolicy: .unbounded) { continuation = $0 }
         levelContinuation = continuation
+        var autoStopContinuation: AsyncStream<Void>.Continuation!
+        autoStopped = AsyncStream(bufferingPolicy: .unbounded) { autoStopContinuation = $0 }
+        self.autoStopContinuation = autoStopContinuation
     }
 
     var samplesToReturn: [Float] {
@@ -60,9 +65,10 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
         levelContinuation.yield(value)
     }
 
-    /// Ends the level stream, as `AVAudioEngineRecorder` does when it auto-stops after
-    /// hitting `maxDuration`.
-    func endLevelStream() {
-        levelContinuation.finish()
+    /// Signals an auto-stop, as `AVAudioEngineRecorder` does when it auto-stops after
+    /// hitting `maxDuration` — without ever finishing the shared `level` stream, which
+    /// must keep working for every recording after this one.
+    func triggerAutoStop() {
+        autoStopContinuation.yield(())
     }
 }

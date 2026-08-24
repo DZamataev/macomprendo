@@ -216,13 +216,39 @@ import Testing
         #expect(h.controller.state == .recording)
 
         h.recorder.emitLevel(0.4)
-        h.recorder.endLevelStream()
+        h.recorder.triggerAutoStop()
 
         await waitFor("implicit stop transcribes and inserts") {
             h.inserter.inserted.map(\.text) == ["capped"]
         }
         #expect(h.controller.state == .idle)
         #expect(h.hud.state == .success("Inserted"))
+    }
+
+    /// `AVAudioEngineRecorder`'s `level` stream is created once in `init` and shared by
+    /// every recording that instance ever makes; the auto-stop signal must never finish
+    /// it, or every recording after the first cap would have a dead meter and a dead
+    /// cap-detection signal too.
+    @Test func levelUpdatesStillReachTheHUDAfterAnEarlierRecordingHitTheCap() async {
+        let h = makeHarness(mode: .hold)
+        h.transcriber.result = .success("capped")
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.recorder.triggerAutoStop()
+        await waitFor("implicit stop transcribes and inserts") {
+            h.inserter.inserted.map(\.text) == ["capped"]
+        }
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        #expect(h.controller.state == .recording)
+
+        h.recorder.emitLevel(0.5)
+        await waitFor("HUD level update after an earlier cap") {
+            if case .recording(let level, _) = h.hud.state { return level == 0.5 }
+            return false
+        }
     }
 
     /// `cancel()` kicks off `recorder.stop()` without awaiting it (it must return

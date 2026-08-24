@@ -28,6 +28,7 @@ final class DictationController: ObservableObject {
     private var target: FrontmostApp?
     private var startedAt: Date?
     private var levelTask: Task<Void, Never>?
+    private var autoStopTask: Task<Void, Never>?
     private(set) var activeTask: Task<Void, Never>?
 
     // Guards against ever starting a second `insert()` while one is still running.
@@ -64,20 +65,26 @@ final class DictationController: ObservableObject {
         self.escapeMonitor = escapeMonitor
         escapeMonitor.onEscape = { [weak self] in self?.cancel() }
 
-        // One long-lived consumer: an `AsyncStream` can only be iterated once, so the
-        // level task lives as long as the controller and filters by state instead.
+        // One long-lived consumer each: an `AsyncStream` can only be iterated once, so
+        // both tasks live as long as the controller and filter/react by state instead.
+        // `level` is never finished by the recorder (a capped recording must not be the
+        // last one that ever reports a level), so this loop is never expected to end.
         levelTask = Task { [weak self, recorder] in
             for await level in recorder.level {
                 guard let self else { return }
                 self.onLevel(level)
             }
-            // The level stream ends when the recorder auto-stops after hitting its
-            // maximum duration (there is no other way for it to finish). Treat that
-            // exactly like a keyUp/second-press stop so transcription proceeds and the
-            // HUD leaves `.recording` instead of sitting frozen. `finish()` already
-            // no-ops unless `state == .recording`, so this can never double-finish a
-            // session that already ended through the normal hotkey path.
-            self?.finish()
+        }
+        // Fires when the recorder auto-stops after hitting its maximum duration — the
+        // only signal that a session ended without an explicit `stop()` call. Treat it
+        // exactly like a keyUp/second-press stop so transcription proceeds and the HUD
+        // leaves `.recording` instead of sitting frozen. `finish()` already no-ops unless
+        // `state == .recording`, so this can never double-finish a session that already
+        // ended through the normal hotkey path.
+        autoStopTask = Task { [weak self, recorder] in
+            for await _ in recorder.autoStopped {
+                self?.finish()
+            }
         }
     }
 

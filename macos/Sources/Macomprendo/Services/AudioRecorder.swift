@@ -6,8 +6,14 @@
 import Foundation
 
 protocol AudioRecording: AnyObject, Sendable {
-    /// RMS level 0…1, roughly ten values per second while recording.
+    /// RMS level 0…1, roughly ten values per second while recording. Lives as long as the
+    /// recorder itself and is never finished — a capped recording must not be the last one
+    /// a caller can ever get level updates for.
     var level: AsyncStream<Float> { get }
+    /// Fires once whenever the recorder auto-stops after hitting its maximum duration —
+    /// the only signal a caller gets that a session ended without an explicit `stop()`
+    /// call. Separate from `level` so reaching the cap never has to finish that stream.
+    var autoStopped: AsyncStream<Void> { get }
     func start() async throws
     /// Returns everything captured since `start()`, as 16 kHz mono Float32 PCM.
     func stop() async -> [Float]
@@ -23,8 +29,10 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     static let targetSampleRate: Double = 16_000
 
     let level: AsyncStream<Float>
+    let autoStopped: AsyncStream<Void>
 
     private let levelContinuation: AsyncStream<Float>.Continuation
+    private let autoStopContinuation: AsyncStream<Void>.Continuation
     private let engine = AVAudioEngine()
     private let maxSamples: Int
     private let lock = NSLock()
@@ -41,6 +49,9 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
         var continuation: AsyncStream<Float>.Continuation!
         level = AsyncStream(bufferingPolicy: .bufferingNewest(4)) { continuation = $0 }
         levelContinuation = continuation
+        var autoStopContinuation: AsyncStream<Void>.Continuation!
+        autoStopped = AsyncStream(bufferingPolicy: .bufferingNewest(1)) { autoStopContinuation = $0 }
+        self.autoStopContinuation = autoStopContinuation
     }
 
     var isRecording: Bool { lock.withLock { recording } }
@@ -132,10 +143,14 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
         }
         if reachedCap {
             // The engine just auto-stopped with no further `stop()` call coming from the
-            // caller — finishing the stream is the only signal a consumer (like
-            // `DictationController`'s level loop) gets that this recording session is
-            // over, so it can transcribe instead of sitting frozen in `.recording`.
-            levelContinuation.finish()
+            // caller — this is the only signal a consumer (like `DictationController`'s
+            // auto-stop loop) gets that this recording session is over, so it can
+            // transcribe instead of sitting frozen in `.recording`. Deliberately a
+            // separate stream from `level`, and never `finish()`ed: `level` is created
+            // once in `init` and shared across every recording this instance ever makes,
+            // so finishing it here would permanently kill the meter (and this signal)
+            // for every later recording, not just this one.
+            autoStopContinuation.yield(())
         }
     }
 
