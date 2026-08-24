@@ -98,11 +98,52 @@ import Testing
         #expect(body["stream"] as? Bool == true)
         let options = try #require(body["options"] as? [String: Any])
         #expect(options["temperature"] as? Double == 0.7)
+        #expect(options["num_predict"] == nil)
         let messages = try #require(body["messages"] as? [[String: String]])
         #expect(messages == [
             ["role": "system", "content": "Return only the result."],
             ["role": "user", "content": "clean up: helo"]
         ])
+    }
+
+    @Test func chatMapsMaxTokensToNumPredictWhenSet() async throws {
+        let http = StubHTTPClient()
+        http.stubStream(path: "/api/chat", chunks: [
+            Data((#"{"message":{"role":"assistant","content":"ok"},"done":true}"# + "\n").utf8)
+        ])
+
+        _ = try await collect(
+            OllamaProvider(endpoint: makeEndpoint(), http: http).chat(
+                [ChatMessage(role: .user, content: "hi")],
+                model: "qwen2.5:1.5b",
+                options: ChatOptions(temperature: 0.7, maxTokens: 256)
+            )
+        )
+
+        let request = http.requests(forPath: "/api/chat")[0]
+        let body = try jsonBody(request)
+        let options = try #require(body["options"] as? [String: Any])
+        #expect(options["num_predict"] as? Int == 256)
+    }
+
+    @Test func chatOmitsNumPredictWhenMaxTokensIsNil() async throws {
+        let http = StubHTTPClient()
+        http.stubStream(path: "/api/chat", chunks: [
+            Data((#"{"message":{"role":"assistant","content":"ok"},"done":true}"# + "\n").utf8)
+        ])
+
+        _ = try await collect(
+            OllamaProvider(endpoint: makeEndpoint(), http: http).chat(
+                [ChatMessage(role: .user, content: "hi")],
+                model: "qwen2.5:1.5b",
+                options: ChatOptions(temperature: 0.7, maxTokens: nil)
+            )
+        )
+
+        let request = http.requests(forPath: "/api/chat")[0]
+        let body = try jsonBody(request)
+        let options = try #require(body["options"] as? [String: Any])
+        #expect(options["num_predict"] == nil)
     }
 
     // MARK: - chat streaming

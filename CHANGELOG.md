@@ -12,4 +12,4 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Providers layer: transcription via a local whisper.cpp model or any
   OpenAI-compatible endpoint; refine and summarize via Ollama or any
   OpenAI-compatible chat endpoint; a whisper model catalog with in-app,
-  resumable, checksum-verified downloads.
+  resumable downloads (checksum-verified once catalog hashes are published).

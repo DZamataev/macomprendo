@@ -45,7 +45,11 @@ enum WAVEncoder {
 
     /// Signed 16-bit PCM spans -32768...32767, so the negative side scales by 32768
     /// and the positive side by 32767. Clamping keeps a hot mic from trapping.
+    /// NaN compares false against every bound, so it would slip through that
+    /// clamp untouched and abort the process in `Int16(_:)`; map it to silence
+    /// instead. ±infinity already clamps correctly via `min`/`max`.
     private static func int16(from sample: Float) -> Int16 {
+        guard !sample.isNaN else { return 0 }
         let clamped = min(max(sample, -1.0), 1.0)
         return Int16(clamped < 0 ? clamped * 32768.0 : clamped * 32767.0)
     }

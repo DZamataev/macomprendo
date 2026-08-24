@@ -36,7 +36,15 @@ struct OllamaProvider: LLMProvider {
     // MARK: - chat
 
     private struct ChatRequestBody: Encodable {
-        struct Options: Encodable { let temperature: Double }
+        struct Options: Encodable {
+            let temperature: Double
+            let numPredict: Int?
+
+            enum CodingKeys: String, CodingKey {
+                case temperature
+                case numPredict = "num_predict"
+            }
+        }
         let model: String
         let messages: [ChatMessage]
         let stream: Bool
@@ -57,11 +65,13 @@ struct OllamaProvider: LLMProvider {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
+                    // `numPredict` nil is omitted from the JSON by the synthesised
+                    // `encodeIfPresent`, so Ollama falls back to its own default.
                     let body = try JSONEncoder().encode(ChatRequestBody(
                         model: model,
                         messages: messages,
                         stream: true,
-                        options: .init(temperature: options.temperature)
+                        options: .init(temperature: options.temperature, numPredict: options.maxTokens)
                     ))
                     let request = HTTPRequest(
                         method: "POST",

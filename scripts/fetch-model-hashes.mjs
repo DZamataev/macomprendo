@@ -82,9 +82,16 @@ export async function fetchModelMetadata(model, { download = false, fetchImpl = 
   if (!response.ok) {
     throw new Error(`GET ${model.downloadURL} failed with ${response.status}`);
   }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const sha256 = createHash('sha256').update(bytes).digest('hex');
-  return { id: model.id, sizeBytes: bytes.length || sizeBytes, sha256 };
+  // Hash the body as it streams in rather than buffering the whole model (up to
+  // ~1.6 GB) in memory: `response.body` is a web ReadableStream, which Node's
+  // fetch implementation makes async-iterable.
+  const hash = createHash('sha256');
+  let bytesRead = 0;
+  for await (const chunk of response.body) {
+    hash.update(chunk);
+    bytesRead += chunk.length;
+  }
+  return { id: model.id, sizeBytes: bytesRead || sizeBytes, sha256: hash.digest('hex') };
 }
 
 function downloadURLFor(id) {

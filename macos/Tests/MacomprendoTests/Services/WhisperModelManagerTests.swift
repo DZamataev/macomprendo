@@ -207,6 +207,57 @@ import Testing
         #expect(try Data(contentsOf: directory.appendingPathComponent("ggml-test.bin")) == Self.payload)
     }
 
+    @Test func cancellingTheConsumingTaskPreservesThePartialFileAndDoesNotStickAtFailed() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // The gate holds back every chunk after the first, so the download is
+        // guaranteed to still be mid-flight (partial file has exactly "he" on disk,
+        // "llo" not yet delivered) at the moment we cancel.
+        let gate = Gate()
+        let http = GatedHTTPClient(
+            inner: makeHTTP(chunks: [Data("he".utf8), Data("llo".utf8)]), gate: gate
+        )
+        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
+
+        let firstChunkReceived = Gate()
+        let consumer = Task {
+            var iterator = manager.download("test").makeAsyncIterator()
+            _ = try await iterator.next()             // "he" chunk reported
+            await firstChunkReceived.open()
+            _ = try? await iterator.next()             // suspended waiting on the gated "llo" chunk
+        }
+
+        await firstChunkReceived.wait()
+        consumer.cancel()
+
+        let partial = directory.appendingPathComponent("ggml-test.bin.partial")
+        #expect(FileManager.default.fileExists(atPath: partial.path))
+        #expect(try Data(contentsOf: partial) == Data("he".utf8))
+
+        let state = await manager.state(of: "test")
+        if case .failed = state {
+            Issue.record("expected state(of:) not to stick at .failed after cancellation, got \(state)")
+        }
+
+        // The manager's own in-flight bookkeeping clears asynchronously as the
+        // cancelled download unwinds, so poll briefly instead of assuming it has
+        // already happened by the time `consumer.cancel()` returns.
+        var accepted = false
+        for _ in 0..<500 {
+            var secondIterator = manager.download("test").makeAsyncIterator()
+            do {
+                let first = try await secondIterator.next()
+                accepted = (first != nil)
+                break
+            } catch let error as MacomprendoError
+            where error == .modelDownloadFailed("A download for this model is already in progress.") {
+                await Task.yield()
+                continue
+            }
+        }
+        #expect(accepted, "a subsequent download call should be accepted, not rejected as already in progress")
+    }
+
     @Test func aFinishedDownloadDoesNotLeaveAStaleInFlightEntryBlockingTheNextOne() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

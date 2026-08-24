@@ -88,8 +88,22 @@ actor WhisperModelManager: ModelManaging {
                     try await performDownload(id, continuation: continuation)
                     continuation.finish()
                 } catch {
-                    await setState(id, .failed(error.localizedDescription))
-                    continuation.finish(throwing: error)
+                    // A raw `CancellationError` reaches here either from
+                    // `Task.checkCancellation()` inside the GET loop, or from any
+                    // other suspension point that reacted to the consumer cancelling
+                    // this stream; normalise both to `.cancelled` so callers only ever
+                    // see `MacomprendoError`.
+                    let mapped: Error = (error is CancellationError) ? MacomprendoError.cancelled : error
+                    if case MacomprendoError.cancelled = mapped {
+                        // Cancellation is not a failure: the partial file is kept for
+                        // a later resume (see `performDownload`), so the model must
+                        // not be stuck reporting `.failed` — `state(of:)` falls back
+                        // to checking disk for `.notDownloaded`/`.downloaded`.
+                        await setState(id, .notDownloaded)
+                    } else {
+                        await setState(id, .failed(mapped.localizedDescription))
+                    }
+                    continuation.finish(throwing: mapped)
                 }
             }
             continuation.onTermination = { _ in task.cancel() }
@@ -166,9 +180,8 @@ actor WhisperModelManager: ModelManaging {
             // comment, when this task (the consumer of `http.stream`) is the one that
             // gets cancelled mid-iteration, `AsyncThrowingStream` ends the `for await`
             // loop silently instead of throwing here, so this check never runs again
-            // for that case. That is still safe: the loop simply stops early, and the
-            // `received != total` completeness check below throws
-            // `modelDownloadFailed`, same as any other truncated download.
+            // for that case. That case is caught by the `Task.isCancelled` check right
+            // below the loop instead.
             try Task.checkCancellation()
             try handle.write(contentsOf: chunk)
             received += Int64(chunk.count)
@@ -183,8 +196,20 @@ actor WhisperModelManager: ModelManaging {
         }
         try handle.close()
 
+        // Cancellation is not a truncated download: keep the partial file for a
+        // later resume instead of falling into the "received != total" cleanup
+        // below, which would delete it and report a misleading download failure.
+        // This is the loop-ends-silently case described above; `Task.checkCancellation()`
+        // covers the other case by throwing `CancellationError` directly instead, which
+        // skips straight past the rest of this function and is normalised to
+        // `.cancelled` by `download(_:)` the same way.
+        if Task.isCancelled {
+            throw MacomprendoError.cancelled
+        }
+
         // 4. Verify: a truncated ggml file fails deep inside whisper.cpp with a
-        //    useless message, so catch it here.
+        //    useless message, so catch it here. Only reached when not cancelled, so
+        //    this cleanup never races with the cancellation path above.
         if received != total {
             try? FileManager.default.removeItem(at: partial)
             throw MacomprendoError.modelDownloadFailed(

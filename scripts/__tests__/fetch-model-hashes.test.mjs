@@ -106,6 +106,15 @@ test('fetchModelMetadata throws when the HEAD request fails', async () => {
   );
 });
 
+/** An async-iterable of chunks, standing in for a web ReadableStream body. */
+function fakeBody(chunks) {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const chunk of chunks) yield chunk;
+    },
+  };
+}
+
 test('fetchModelMetadata hashes the body when download is requested', async () => {
   const fakeFetch = async (url, options) => {
     if (options.method === 'HEAD') {
@@ -115,7 +124,7 @@ test('fetchModelMetadata hashes the body when download is requested', async () =
       ok: true,
       status: 200,
       headers: new Headers({ 'content-length': '5' }),
-      arrayBuffer: async () => new TextEncoder().encode('hello').buffer,
+      body: fakeBody([new TextEncoder().encode('hello')]),
     };
   };
 
@@ -125,6 +134,38 @@ test('fetchModelMetadata hashes the body when download is requested', async () =
   );
 
   // sha256("hello")
+  assert.equal(
+    record.sha256,
+    '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+  );
+  assert.equal(record.sizeBytes, 5);
+});
+
+test('fetchModelMetadata hashes a body delivered across several chunks', async () => {
+  const fakeFetch = async (url, options) => {
+    if (options.method === 'HEAD') {
+      return { ok: true, status: 200, headers: new Headers({ 'content-length': '5' }) };
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-length': '5' }),
+      // Split "hello" across three chunks, so streamed hashing must
+      // accumulate across `for await` iterations rather than assuming one
+      // chunk holds the whole body.
+      body: fakeBody([
+        new TextEncoder().encode('he'),
+        new TextEncoder().encode('l'),
+        new TextEncoder().encode('lo'),
+      ]),
+    };
+  };
+
+  const record = await fetchModelMetadata(
+    { id: 'tiny', downloadURL: 'https://example.com/ggml-tiny.bin' },
+    { download: true, fetchImpl: fakeFetch },
+  );
+
   assert.equal(
     record.sha256,
     '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',

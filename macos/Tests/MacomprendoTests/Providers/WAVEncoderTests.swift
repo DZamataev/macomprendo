@@ -54,6 +54,16 @@ import Testing
         #expect(Array(data[46..<48]) == [0x00, 0x80])   // -32768
     }
 
+    @Test func mapsNaNToSilenceInsteadOfTrappingAndStillClampsInfinities() {
+        // A NaN sample compares false against every bound, so it slips through
+        // `min`/`max` clamping untouched; feeding it to `Int16(_:)` unguarded
+        // aborts the process. ±infinity already clamps correctly.
+        let data = WAVEncoder.encode(pcm: [.nan, .infinity, -.infinity], sampleRate: 16_000)
+        #expect(Array(data[44..<46]) == [0x00, 0x00])   //  NaN ->      0
+        #expect(Array(data[46..<48]) == [0xFF, 0x7F])   // +inf ->  32767
+        #expect(Array(data[48..<50]) == [0x00, 0x80])   // -inf -> -32768
+    }
+
     @Test func roundTripsThroughAVAudioFileReadableStructure() throws {
         // Sanity check that the bytes are a file macOS itself accepts.
         let data = WAVEncoder.encode(pcm: [0.1, -0.1, 0.2, -0.2], sampleRate: 16_000)
