@@ -13,6 +13,7 @@ import Testing
         let toaster: ScriptedToaster
         let recorder: LLMCallRecorder
         let holder: ScriptedSettingsHolder
+        let audioRecorder: ScriptedRecorder
     }
 
     private func makeRig(deltas: [String] = ["Hello", " there"],
@@ -30,9 +31,10 @@ import Testing
         let pasteboard = ScriptedPasteboard()
         let inserter = ScriptedInserter()
         let toaster = ScriptedToaster()
+        let audioRecorder = ScriptedRecorder()
 
         let capture = DictationCapture(
-            recorder: ScriptedRecorder(),
+            recorder: audioRecorder,
             transcriberProvider: { ScriptedTranscriber(text: "spoken words") },
             permissions: ScriptedPermissions(),
             mode: { .hold },
@@ -52,7 +54,8 @@ import Testing
             settings: { holder.settings })
 
         return Rig(controller: controller, panel: panel, host: host, pasteboard: pasteboard,
-                   inserter: inserter, toaster: toaster, recorder: recorder, holder: holder)
+                   inserter: inserter, toaster: toaster, recorder: recorder, holder: holder,
+                   audioRecorder: audioRecorder)
     }
 
     @Test func startingFromASelectionOpensThePanelAndStreamsTheResult() async {
@@ -179,5 +182,39 @@ import Testing
         #expect(rig.controller.original == "spoken words")
         #expect(rig.panel.isVisible)
         #expect(rig.controller.refined == "Hello there")
+    }
+
+    // F1: hotkey #2 (Dictate & Refine) reuses `DictationCapture`, which has no HUD
+    // dependency of its own — RefineController must drive the toaster from
+    // `capture.onStateChange`. Resolution (a): show nothing while recording, because
+    // `HUDState.recording` renders "Release to transcribe · Esc cancels" and Esc is not
+    // wired to `DictationCapture` — showing that hint here would be a false promise.
+    @Test func dictationCaptureShowsNoHUDWhileRecordingAndTranscribingWhileTranscribing() async {
+        let rig = makeRig()
+        rig.controller.handle(.keyDown(.dictateAndRefine))
+        #expect(rig.toaster.states.isEmpty)
+        #expect(rig.toaster.hideCount == 0)
+
+        rig.controller.handle(.keyUp(.dictateAndRefine))
+        #expect(rig.toaster.states == [.transcribing])
+
+        await rig.controller.drainCapture()
+        #expect(rig.toaster.hideCount == 1)      // back to idle just before the transcript arrives
+        #expect(rig.panel.isVisible)             // ... and the Quick Panel takes over from there
+
+        await rig.controller.drain()
+    }
+
+    @Test func aSilentDictationHidesTheTranscribingHUDAndToastsNothingHeard() async {
+        let rig = makeRig()
+        rig.audioRecorder.samples = []
+        rig.controller.handle(.keyDown(.dictateAndRefine))
+        rig.controller.handle(.keyUp(.dictateAndRefine))
+        await rig.controller.drainCapture()
+
+        #expect(rig.toaster.states == [.transcribing])
+        #expect(rig.toaster.hideCount == 1)
+        #expect(rig.toaster.messages.contains { $0.contains("Nothing heard") })
+        #expect(!rig.panel.isVisible)
     }
 }

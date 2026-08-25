@@ -56,7 +56,21 @@ enum RefineSide: Equatable, Sendable {
         capture.onError = { [weak self] error in
             self?.toaster.toast(ErrorText.describe(error), duration: 2.5)
         }
-        capture.onStateChange = { [weak self] state in self?.isCapturing = state != .idle }
+        capture.onStateChange = { [weak self] state in
+            guard let self else { return }
+            self.isCapturing = state != .idle
+            // Drive the toaster — it *is* the HUD (`Toasting.show(_:)/hide()`) — through
+            // capture, since `DictationCapture` has no HUD dependency of its own.
+            // `HUDState.recording` renders "Release to transcribe · Esc cancels", but Esc
+            // is not wired to `DictationCapture`, so showing that hint here would be a
+            // false promise: show nothing while recording, only "Transcribing…" once
+            // recording stops, matching docs/SMOKE_TEST.md's Dictate & Refine row.
+            switch state {
+            case .recording: break
+            case .transcribing: self.toaster.show(.transcribing)
+            case .idle: self.toaster.hide()
+            }
+        }
     }
 
     // MARK: Starting
