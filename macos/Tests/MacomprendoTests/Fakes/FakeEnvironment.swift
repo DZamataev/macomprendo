@@ -15,7 +15,11 @@ extension AppEnvironment {
                      detector: any OllamaDetecting = FakeOllamaDetector(),
                      pasteboard: any PasteboardProtocol = FakePasteboard(),
                      launchAtLogin: any LaunchAtLoginManaging = FakeLaunchAtLogin(),
-                     escapeMonitor: any EscapeMonitoring = FakeEscapeMonitor()) -> AppEnvironment {
+                     escapeMonitor: any EscapeMonitoring = FakeEscapeMonitor(),
+                     keySimulator: any KeySimulating = ScriptedKeySimulator(),
+                     ax: any AXReading = ScriptedAXReader(text: nil),
+                     speech: any SpeechSynthesizing = ScriptedSpeech(),
+                     quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)? = nil) -> AppEnvironment {
         AppEnvironment(hotkeys: hotkeys,
                        recorder: recorder,
                        inserter: inserter,
@@ -29,6 +33,10 @@ extension AppEnvironment {
                        ollamaDetector: detector,
                        pasteboard: pasteboard,
                        launchAtLogin: launchAtLogin,
-                       escapeMonitor: escapeMonitor)
+                       escapeMonitor: escapeMonitor,
+                       keySimulator: keySimulator,
+                       ax: ax,
+                       speech: speech,
+                       quickPanelHost: quickPanelHost)
     }
 }

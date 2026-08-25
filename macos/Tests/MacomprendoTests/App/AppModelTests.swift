@@ -4,6 +4,12 @@ import Testing
 
 @MainActor
 @Suite struct AppModelTests {
+    private func defaultWithSeededPresets() -> Settings {
+        var s = Settings.default
+        FactoryPresets.seed(into: &s)
+        return s
+    }
+
     @Test func loadsPersistedSettingsAndSavesChanges() throws {
         let store = InMemorySettingsStore()
         let model = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
@@ -26,17 +32,28 @@ import Testing
         #expect(model.dictation.state == .recording)
     }
 
-    @Test func ignoresActionsThatAreNotImplementedYet() async {
+    @Test func routesSelectionActionsToTheTextFeatures() async {
         let hotkeys = FakeHotkeyService()
         let model = AppModel(store: InMemorySettingsStore(),
                              keychain: InMemoryKeychainStore(),
                              env: .fake(hotkeys: hotkeys))
         model.start()
 
+        // With the fake environment there is no AX selection and no clipboard fallback, so
+        // both actions only toast — dictation is never touched by either one. TextFeatures
+        // has one in-flight selection-read task total (F2), so the .speak read here gets
+        // cancelled by the .summarize one right behind it and briefly shows "Cancelled." —
+        // wait for the settled toast rather than the first one observed.
         hotkeys.send(.keyDown(.speak))
         hotkeys.send(.keyDown(.summarize))
-        try? await Task.sleep(for: .milliseconds(50))
+
+        let expectedMessage = MacomprendoError.noSelection.errorDescription ?? "!"
+        await waitFor("the no-selection toast") {
+            if case .toast(let message) = model.hud.state { return message.contains(expectedMessage) }
+            return false
+        }
         #expect(model.dictation.state == .idle)
+        #expect(model.textFeatures?.quickPanel.isVisible == false)
     }
 
     @Test func startAppliesTheStoredHotkeyEnablement() {
@@ -93,14 +110,26 @@ import Testing
 
     @Test func appModelStartsFromDefaultsWhenTheStoreIsEmpty() {
         let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(), env: .fake())
-        #expect(model.settings == Settings.default)
+        #expect(model.settings == defaultWithSeededPresets())
     }
 
     @Test func firstLaunchWritesTheDefaultsSoTheStoreIsNeverEmptyAgain() throws {
         let store = InMemorySettingsStore()
         _ = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
         let data = try #require(store.load())
-        #expect(try Settings.migrate(data) == Settings.default)
+        #expect(try Settings.migrate(data) == defaultWithSeededPresets())
+    }
+
+    // Controller ruling: the factory-preset seeding in `init` must reach the STORE, not
+    // just `model.settings` in memory — a session that quits right after first launch
+    // (before any setting changes) must not lose the seeded presets.
+    @Test func factoryPresetSeedingAtFirstLaunchReachesTheStoreItself() throws {
+        let store = InMemorySettingsStore()
+        _ = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
+        let data = try #require(store.load())
+        let stored = try Settings.migrate(data)
+        #expect(stored.presetsSeeded == true)
+        #expect(stored.presets.count == 11)
     }
 
     @Test func changingSettingsWritesThemToTheStore() throws {
@@ -124,7 +153,7 @@ import Testing
     @Test func corruptStoredSettingsFallBackToDefaults() {
         let store = InMemorySettingsStore(initial: Data("not json".utf8))
         let model = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
-        #expect(model.settings == Settings.default)
+        #expect(model.settings == defaultWithSeededPresets())
     }
 
     // Controller ruling: `didSet` never fires during `init`, so both the migrated
@@ -134,7 +163,7 @@ import Testing
         let store = InMemorySettingsStore(initial: Data("not json".utf8))
         _ = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
         let data = try #require(store.load())
-        #expect(try Settings.migrate(data) == Settings.default)
+        #expect(try Settings.migrate(data) == defaultWithSeededPresets())
     }
 
     @Test func theKeychainPassedInIsTheOneHandedOut() throws {

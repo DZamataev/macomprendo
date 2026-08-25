@@ -32,6 +32,11 @@ struct AppEnvironment {
     var pasteboard: any PasteboardProtocol
     var launchAtLogin: any LaunchAtLoginManaging
     var escapeMonitor: any EscapeMonitoring
+    var keySimulator: any KeySimulating
+    var ax: any AXReading
+    var speech: any SpeechSynthesizing
+    /// nil in tests: no NSPanel is created and the Quick Panel controller stays headless.
+    var quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)?
 
     @MainActor
     static func live() -> AppEnvironment {
@@ -60,6 +65,10 @@ struct AppEnvironment {
             ollamaDetector: HTTPOllamaDetector(http: http),
             pasteboard: pasteboard,
             launchAtLogin: SMAppServiceLaunchAtLogin(),
-            escapeMonitor: GlobalEscapeMonitor())
+            escapeMonitor: GlobalEscapeMonitor(),
+            keySimulator: keySimulator,
+            ax: SystemAXReader(),
+            speech: AVSpeechService(),
+            quickPanelHost: { view in FloatingPanelHost(rootView: view) })
     }
 }

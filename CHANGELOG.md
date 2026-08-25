@@ -32,6 +32,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   count, and pull an Ollama model with live progress.
 - Esc now cancels an in-progress dictation (recording or transcribing), matching
   the HUD's cancel hint.
+- The remaining four hotkeys now work end-to-end: Dictate & Refine, Refine
+  selection and Summarize selection open a floating Quick Panel over a
+  streamed LLM response, with Copy/Insert/Replace actions and a live-editable
+  instruction field, and Speak selection reads the selection aloud (a second
+  press stops it immediately). Refine and Summarize each ship with seeded
+  factory prompt presets (Clean up, Formal, Casual, Shorten, Expand, Fix
+  grammar, Translate for Refine; Brief, Bullets, TL;DR, Key actions for
+  Summarize).
+- Speech settings tab: pick a voice grouped by language, adjust rate, pitch
+  and volume, and preview the current settings against a sample sentence.
+- Refine & Summarize settings tab: choose the endpoint and model per feature,
+  browse, add, duplicate, reorder, delete and set the default preset for
+  each, edit a preset's system prompt and user template with placeholder
+  validation shown on selecting or saving a preset, restore deleted factory
+  presets, and test a preset against sample text with a live streamed preview.
 
 ### Fixed
 - The menubar's "Settings…" item now activates the app before opening the
@@ -46,3 +61,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   app's lifetime after a dictation hits the maximum recording length once.
 - Cancelling dictation mid-paste can no longer restore your previous
   clipboard before the dictated text has actually been pasted.
+- Speak selection now shows a "Speaking…" HUD state with a stop hint for the
+  whole utterance, instead of leaving the HUD blank while audio plays.
+- A second "Test" run in the Prompts settings tab no longer lets a stale
+  first run clear `isTesting` or overwrite the newer run's streamed output.
