@@ -4,6 +4,12 @@ import Testing
 
 @MainActor
 @Suite struct AppModelTests {
+    private func defaultWithSeededPresets() -> Settings {
+        var s = Settings.default
+        FactoryPresets.seed(into: &s)
+        return s
+    }
+
     @Test func loadsPersistedSettingsAndSavesChanges() throws {
         let store = InMemorySettingsStore()
         let model = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
@@ -93,14 +99,14 @@ import Testing
 
     @Test func appModelStartsFromDefaultsWhenTheStoreIsEmpty() {
         let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(), env: .fake())
-        #expect(model.settings == Settings.default)
+        #expect(model.settings == defaultWithSeededPresets())
     }
 
     @Test func firstLaunchWritesTheDefaultsSoTheStoreIsNeverEmptyAgain() throws {
         let store = InMemorySettingsStore()
         _ = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
         let data = try #require(store.load())
-        #expect(try Settings.migrate(data) == Settings.default)
+        #expect(try Settings.migrate(data) == defaultWithSeededPresets())
     }
 
     @Test func changingSettingsWritesThemToTheStore() throws {
@@ -124,7 +130,7 @@ import Testing
     @Test func corruptStoredSettingsFallBackToDefaults() {
         let store = InMemorySettingsStore(initial: Data("not json".utf8))
         let model = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
-        #expect(model.settings == Settings.default)
+        #expect(model.settings == defaultWithSeededPresets())
     }
 
     // Controller ruling: `didSet` never fires during `init`, so both the migrated
@@ -134,7 +140,7 @@ import Testing
         let store = InMemorySettingsStore(initial: Data("not json".utf8))
         _ = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
         let data = try #require(store.load())
-        #expect(try Settings.migrate(data) == Settings.default)
+        #expect(try Settings.migrate(data) == defaultWithSeededPresets())
     }
 
     @Test func theKeychainPassedInIsTheOneHandedOut() throws {
