@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 enum RefineSource: Equatable, Sendable {
@@ -86,7 +85,7 @@ enum RefineSide: Equatable, Sendable {
         if selectedPresetID == nil {
             selectedPresetID = settings().defaultPreset(for: .refine)?.id
         }
-        panel.present(layout: .refine, on: NSScreen.main)
+        panel.present(layout: .refine)
         rerun()
     }
 

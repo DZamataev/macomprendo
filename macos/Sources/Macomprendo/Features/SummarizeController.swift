@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 /// Hotkey #4. Selected text in, streamed summary out, Copy or Replace selection.
@@ -46,7 +45,7 @@ import Foundation
         if selectedPresetID == nil {
             selectedPresetID = settings().defaultPreset(for: .summarize)?.id
         }
-        panel.present(layout: .summary, on: NSScreen.main)
+        panel.present(layout: .summary)
         rerun()
     }
 

@@ -50,8 +50,12 @@ enum QuickPanelLayout: Equatable, Sendable {
                height: panelSize.height)
     }
 
-    func present(layout: QuickPanelLayout, on screen: NSScreen?) {
-        let target = screen ?? NSScreen.main
+    /// Presents on the screen holding the mouse — an `LSUIElement` app has no key window
+    /// to infer a screen from, and the menu-bar item lives on `NSScreen.main`, which would
+    /// otherwise always win regardless of where the user is working.
+    func present(layout: QuickPanelLayout) {
+        let target = HUDLayout.screenUnderMouse(mouseLocation: NSEvent.mouseLocation,
+                                                 screens: NSScreen.screens)
         present(layout: layout,
                 screenName: target?.localizedName ?? "default",
                 screenFrame: target?.visibleFrame ?? CGRect(origin: .zero, size: Self.panelSize))

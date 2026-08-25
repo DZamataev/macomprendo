@@ -64,6 +64,20 @@ import Testing
         #expect(host.hideCount == 1)
     }
 
+    // Controller ruling (F4): the screen-free overload is what RefineController and
+    // SummarizeController call — it must resolve a real screen itself (via
+    // `HUDLayout.screenUnderMouse`) rather than defaulting to `NSScreen.main`, which on
+    // this `LSUIElement` app is always the menu-bar screen. The exact screen picked isn't
+    // asserted here (headless test hosts may have zero or many screens); this only
+    // guards that Features/ code no longer has to supply one and the panel still opens.
+    @Test func presentWithoutAnExplicitScreenStillOpensThePanel() {
+        let (controller, host, _) = make()
+        controller.present(layout: .refine)
+        #expect(controller.isVisible)
+        #expect(controller.layout == .refine)
+        #expect(host.shownFrames.count == 1)
+    }
+
     @Test func presentingTwiceKeepsOneVisiblePanelAndUpdatesTheLayout() {
         let (controller, host, _) = make()
         controller.present(layout: .refine, screenName: "S1", screenFrame: screen)
