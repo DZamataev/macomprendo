@@ -69,8 +69,16 @@ import Foundation
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                if await self.permissions.status(of: .microphone) != .granted {
+                let currentStatus = await self.permissions.status(of: .microphone)
+                // `cancel()` may have run while the line above was suspended — cooperative
+                // cancellation alone doesn't stop this task from resuming and racing on to
+                // `recorder.start()` after `cancel()` already kicked off `recorder.stop()`,
+                // so every suspension point below must be checked explicitly. Mirrors
+                // `DictationController.startRecording()`'s guards.
+                guard !Task.isCancelled else { return }
+                if currentStatus != .granted {
                     let granted = await self.permissions.request(.microphone)
+                    guard !Task.isCancelled else { return }
                     guard granted == .granted else { throw MacomprendoError.permissionDenied(.microphone) }
                 }
                 try await self.recorder.start()
@@ -102,7 +110,13 @@ import Foundation
                 self.onTranscript?(text)
             } catch {
                 self.setState(.idle)
-                if !(error is CancellationError) { self.onError?(error) }
+                // `HTTPClient` maps both `CancellationError` and transport-level
+                // `URLError.cancelled` to `MacomprendoError.cancelled` — treat that
+                // identically to `CancellationError`, matching `DictationController`'s
+                // `cancelledInFlight()` handling, so a provider-originated cancellation
+                // never surfaces as a user-visible error.
+                let isCancellation = error is CancellationError || (error as? MacomprendoError) == .cancelled
+                if !isCancellation { self.onError?(error) }
             }
         }
     }

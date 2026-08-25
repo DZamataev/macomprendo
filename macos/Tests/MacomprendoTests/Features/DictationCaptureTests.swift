@@ -98,4 +98,43 @@ import Testing
         #expect(transcripts.isEmpty)
         #expect(errors.isEmpty)
     }
+
+    // MARK: - Fix-review findings
+
+    /// `HTTPClient` maps transport-level cancellation (`URLError.cancelled`) to
+    /// `MacomprendoError.cancelled`, and `DictationController` deliberately treats that
+    /// identically to `CancellationError` — a provider-originated cancellation must not
+    /// surface as a user-visible error here either.
+    @Test func providerOriginatedCancelledErrorIsSwallowedSilently() async {
+        let capture = make(transcriber: ScriptedTranscriber(failure: .cancelled))
+        capture.handle(.keyDown(.dictateAndRefine))
+        capture.handle(.keyUp(.dictateAndRefine))
+        await capture.drain()
+        #expect(transcripts.isEmpty)
+        #expect(errors.isEmpty)
+        #expect(capture.state == .idle)
+    }
+
+    /// `cancel()` during the permission-check window must stop `startRecording()`'s task
+    /// from reaching `recorder.start()` — otherwise the mic starts untracked and the next
+    /// `start()` fails with "Recording is already in progress."
+    @Test func cancelDuringPermissionCheckPreventsARecorderStart() async {
+        let recorder = ScriptedRecorder()
+        let permissions = ScriptedPermissions()
+        let gate = AsyncGate()
+        permissions.statusGate = gate
+        let capture = make(recorder: recorder, permissions: permissions)
+
+        capture.handle(.keyDown(.dictateAndRefine))          // suspends inside the permission check
+        await waitFor("permission check reached") { gate.waiterCount > 0 }
+
+        capture.cancel()
+        gate.open()                                          // let the suspended task resume, now cancelled
+
+        await capture.drain()
+        try? await Task.sleep(for: .milliseconds(20))        // let the orphaned first task settle
+
+        #expect(recorder.startCount == 0)
+        #expect(capture.state == .idle)
+    }
 }
