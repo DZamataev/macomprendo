@@ -52,6 +52,7 @@
 		5150FE8C91C82E3AB7445E05 /* PresetStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 502C3AA64AC6BA0C52392885 /* PresetStoreTests.swift */; };
 		516533F301ED94FF93F7E8A7 /* FakeHTTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC8D8EF8D15E92F4F99DA105 /* FakeHTTPClient.swift */; };
 		51F8C3EEDBD6D3DD1B6A9946 /* URLSessionHTTPClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE6DE4552D77F065A18EBB9 /* URLSessionHTTPClientTests.swift */; };
+		578D4E69B7A010A02001C135 /* PromptRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A981BF4430DA14DA6D926C1 /* PromptRendererTests.swift */; };
 		58137B0C3C08F2A706FCCA42 /* NDJSONParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D0B32334A3AB878CBF21E38 /* NDJSONParser.swift */; };
 		5996A188943965F021879C5A /* PermissionsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82DFD16A44FDEBB68DEE24A /* PermissionsService.swift */; };
 		5A78C3271017BE7A5DACB660 /* GeneralTabModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F0B7F3D5F512AC703FCDF9B /* GeneralTabModel.swift */; };
@@ -114,6 +115,7 @@
 		CBB4489E11C150BD72B495DC /* WhisperModelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78393CF01B6DE9B385B07AA8 /* WhisperModelManagerTests.swift */; };
 		CE487DF12E69585792B18960 /* FakePasteboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D479E761B95A218F5C82DACB /* FakePasteboard.swift */; };
 		CF99FD33C9E60F54A52AD909 /* OnboardingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D3585ABB95E4F152C79217 /* OnboardingWindowController.swift */; };
+		D402FF42014C563972E78BBF /* PromptRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C49EBEF46C6E6E113D27C46 /* PromptRenderer.swift */; };
 		D4141290D4D8D64B33F34F4E /* ProviderFactoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1287B86386F7B341E1A13C6E /* ProviderFactoryTests.swift */; };
 		D5632972664D7C88E409FA68 /* ErrorText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33A9346E06AFE9E8C869032A /* ErrorText.swift */; };
 		D645A96C54827A7A209DC4D2 /* StubURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A6A71C6A2CDB098272E6BE /* StubURLProtocol.swift */; };
@@ -189,6 +191,7 @@
 		4F586E6A5937178D4A671836 /* FrontmostAppTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontmostAppTracker.swift; sourceTree = "<group>"; };
 		502C3AA64AC6BA0C52392885 /* PresetStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetStoreTests.swift; sourceTree = "<group>"; };
 		5AF38A8A70920A1A061B8403 /* ModelsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsViewModel.swift; sourceTree = "<group>"; };
+		5C49EBEF46C6E6E113D27C46 /* PromptRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptRenderer.swift; sourceTree = "<group>"; };
 		5D63CC6C4D2DDE6B34243E08 /* WhisperRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperRuntimeTests.swift; sourceTree = "<group>"; };
 		5EC14D979EDBCAE2767B8F8F /* HUDWindowPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDWindowPresenter.swift; sourceTree = "<group>"; };
 		62734ECEA0BE4337412F7F99 /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
@@ -217,6 +220,7 @@
 		94BB279AEB39CC0D0CF3FF45 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
 		955948668C0FA3B3AAC2F1CA /* WhisperCppTranscriberTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperCppTranscriberTests.swift; sourceTree = "<group>"; };
 		9A937CA0585D957D3FC7B1FF /* DictationControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationControllerTests.swift; sourceTree = "<group>"; };
+		9A981BF4430DA14DA6D926C1 /* PromptRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptRendererTests.swift; sourceTree = "<group>"; };
 		9AF65A9034FD1C50C91E82B6 /* EndpointURL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndpointURL.swift; sourceTree = "<group>"; };
 		9E0A7441DC03BAA16C45F06F /* LogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogTests.swift; sourceTree = "<group>"; };
 		9E786AF130059D7044240A9D /* ProvidersTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersTab.swift; sourceTree = "<group>"; };
@@ -397,6 +401,7 @@
 				9A937CA0585D957D3FC7B1FF /* DictationControllerTests.swift */,
 				F605F008515E190C89C9D925 /* FactoryPresetsTests.swift */,
 				502C3AA64AC6BA0C52392885 /* PresetStoreTests.swift */,
+				9A981BF4430DA14DA6D926C1 /* PromptRendererTests.swift */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -440,6 +445,7 @@
 			children = (
 				E1A20A30A5E1AE8B35D90A1B /* FactoryPresets.swift */,
 				056341C7FF68C9F5B87CE44D /* PromptPreset.swift */,
+				5C49EBEF46C6E6E113D27C46 /* PromptRenderer.swift */,
 			);
 			path = Prompts;
 			sourceTree = "<group>";
@@ -812,6 +818,7 @@
 				33214D01376CAB5E86133FA2 /* PasteboardTests.swift in Sources */,
 				94BB3F5E75455B3AF03C36CC /* PermissionsServiceTests.swift in Sources */,
 				5150FE8C91C82E3AB7445E05 /* PresetStoreTests.swift in Sources */,
+				578D4E69B7A010A02001C135 /* PromptRendererTests.swift in Sources */,
 				D4141290D4D8D64B33F34F4E /* ProviderFactoryTests.swift in Sources */,
 				51367557A9B99D372EB79DE8 /* ProvidersViewModelTests.swift in Sources */,
 				808AD024A75E51C49EFA221D /* SSEParserTests.swift in Sources */,
@@ -884,6 +891,7 @@
 				95274FD18A9AED08FFF88B0C /* Pasteboard.swift in Sources */,
 				5996A188943965F021879C5A /* PermissionsService.swift in Sources */,
 				F4077477E4E021DEAA08297A /* PromptPreset.swift in Sources */,
+				D402FF42014C563972E78BBF /* PromptRenderer.swift in Sources */,
 				EF0BD6713CED5C3BD9996EC8 /* ProviderFactory.swift in Sources */,
 				62B777E070A92B3DF0D2A5D8 /* ProvidersTab.swift in Sources */,
 				A1796CC2101664FE4C67A9C8 /* ProvidersViewModel.swift in Sources */,
