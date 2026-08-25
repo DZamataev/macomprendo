@@ -38,8 +38,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instruction field, and Speak selection reads the selection aloud (a second
   press stops it immediately). Refine and Summarize each ship with seeded
   factory prompt presets (Clean up, Formal, Casual, Shorten, Expand, Fix
-  grammar, Translate for Refine; Brief, Bullets, TL;DR for Summarize); a
-  Settings tab to browse and edit them is still to come.
+  grammar, Translate for Refine; Brief, Bullets, TL;DR for Summarize).
+- Speech settings tab: pick a voice grouped by language, adjust rate, pitch
+  and volume, and preview the current settings against a sample sentence.
+- Refine & Summarize settings tab: choose the endpoint and model per feature,
+  browse, add, duplicate, reorder, delete and set the default preset for
+  each, edit a preset's system prompt and user template with live
+  placeholder validation, restore deleted factory presets, and test a
+  preset against sample text with a live streamed preview.
 
 ### Fixed
 - The menubar's "Settings…" item now activates the app before opening the
