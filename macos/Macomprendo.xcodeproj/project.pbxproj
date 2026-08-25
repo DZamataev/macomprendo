@@ -45,6 +45,7 @@
 		4573AB68236D4A24566AE5BC /* WhisperRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D63CC6C4D2DDE6B34243E08 /* WhisperRuntimeTests.swift */; };
 		465245635D7F317584D23865 /* SleepRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A87DE90269E02655E71DB2 /* SleepRecorder.swift */; };
 		483910725020FEEC5B0FA42E /* FrontmostAppTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A2A67522E573F9BA0082ADA /* FrontmostAppTrackerTests.swift */; };
+		4970C59FA57E57F3C32A936E /* SpeakControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D084BD96D5228E9CBD83487E /* SpeakControllerTests.swift */; };
 		4A6084F8D124007702934770 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFEC1B6C721844D9FC835F3C /* SettingsView.swift */; };
 		4A7E18A249AD17CDD74CB33D /* LevelMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1786876E0AB26E1B59ECE142 /* LevelMeter.swift */; };
 		4C664DD585D7AA6E10E53F94 /* ModelsViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E535809D2DB36A223B818026 /* ModelsViewModelTests.swift */; };
@@ -141,6 +142,7 @@
 		E74CAD04D16E91962D133DDA /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E4BEE2BA4D32CEBA3ED70FD /* ModelManager.swift */; };
 		E764498B94EE3ADB99A6B3D2 /* LLMProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88044C54DD8B10A6DFC20DF7 /* LLMProvider.swift */; };
 		E81A5DC32F2680AA492C6488 /* ScriptedAXReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 451C42950DAA44B1775B3F57 /* ScriptedAXReader.swift */; };
+		EB3C6D36090469C825F3B464 /* SpeakController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7814FC9DF379F2465EC30ACA /* SpeakController.swift */; };
 		EF0BD6713CED5C3BD9996EC8 /* ProviderFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1281840526457269FF284BC1 /* ProviderFactory.swift */; };
 		EF1A400B0E690C6D5DBFB4AB /* StubModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64C7633BF2DC5145319B8DF /* StubModelManager.swift */; };
 		F0FD3F88FA0CF451EBCE8D90 /* FactoryPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A20A30A5E1AE8B35D90A1B /* FactoryPresets.swift */; };
@@ -231,6 +233,7 @@
 		747DB259D13D86C17DF0E193 /* SpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechService.swift; sourceTree = "<group>"; };
 		7488ABFA59EDEDE31129E63B /* FakeEscapeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeEscapeMonitor.swift; sourceTree = "<group>"; };
 		752E8E8467E923BF23B53FD1 /* PermissionsServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsServiceTests.swift; sourceTree = "<group>"; };
+		7814FC9DF379F2465EC30ACA /* SpeakController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakController.swift; sourceTree = "<group>"; };
 		78393CF01B6DE9B385B07AA8 /* WhisperModelManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelManagerTests.swift; sourceTree = "<group>"; };
 		7ACC25F1FEE4CCF3A8C1E0D8 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		7D4D4682481DA4F22694A554 /* Icons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Icons; path = Sources/Macomprendo/Resources/Icons; sourceTree = SOURCE_ROOT; };
@@ -274,6 +277,7 @@
 		CBF92C988FF37A6DEC54D2B3 /* LaunchAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLogin.swift; sourceTree = "<group>"; };
 		CC120D449606B6F4176BD7E9 /* FakeTextInserter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeTextInserter.swift; sourceTree = "<group>"; };
 		D03D31A3D30F7D79337DCA6F /* FakeHotkeyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeHotkeyService.swift; sourceTree = "<group>"; };
+		D084BD96D5228E9CBD83487E /* SpeakControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakControllerTests.swift; sourceTree = "<group>"; };
 		D25FAD6C6C5458D4AE9A2B67 /* Wait.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Wait.swift; sourceTree = "<group>"; };
 		D479E761B95A218F5C82DACB /* FakePasteboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakePasteboard.swift; sourceTree = "<group>"; };
 		D4AD2D737D088071B542DA1E /* KeySimulatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeySimulatorTests.swift; sourceTree = "<group>"; };
@@ -432,6 +436,7 @@
 				F605F008515E190C89C9D925 /* FactoryPresetsTests.swift */,
 				502C3AA64AC6BA0C52392885 /* PresetStoreTests.swift */,
 				9A981BF4430DA14DA6D926C1 /* PromptRendererTests.swift */,
+				D084BD96D5228E9CBD83487E /* SpeakControllerTests.swift */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -466,6 +471,7 @@
 			children = (
 				D560B6F964A12576C048EC9C /* DictationController.swift */,
 				399F76BE12F3C565927A2514 /* LLMTarget.swift */,
+				7814FC9DF379F2465EC30ACA /* SpeakController.swift */,
 				DC1BC772198BEE9912D3BF36 /* Toasting.swift */,
 				4C39079E43595EBCAD59C029 /* Prompts */,
 			);
@@ -876,6 +882,7 @@
 				8F59403537FD0E34FFECFAF3 /* SettingsStoreTests.swift in Sources */,
 				AECAF84D24B54A8402ABAFC3 /* SettingsTests.swift in Sources */,
 				465245635D7F317584D23865 /* SleepRecorder.swift in Sources */,
+				4970C59FA57E57F3C32A936E /* SpeakControllerTests.swift in Sources */,
 				4DAD115533BD95444DB2D767 /* SpeechServiceTests.swift in Sources */,
 				B8036FB9210E14D04FEFEEEE /* StubHTTPClient.swift in Sources */,
 				99F3C9C621B27A2CEFC2CDF8 /* StubLLMProvider.swift in Sources */,
@@ -954,6 +961,7 @@
 				2FDD755A1612D81830BD0A27 /* SettingsHolding.swift in Sources */,
 				8901BAA7643C3A7EF77B41DC /* SettingsStore.swift in Sources */,
 				4A6084F8D124007702934770 /* SettingsView.swift in Sources */,
+				EB3C6D36090469C825F3B464 /* SpeakController.swift in Sources */,
 				BC96CDDCEA7D4203587222E8 /* SpeechService.swift in Sources */,
 				AE0EE43F824CB06567F16A1A /* TextInserter.swift in Sources */,
 				9995097DC91DB7D8C89115C7 /* Toasting.swift in Sources */,
