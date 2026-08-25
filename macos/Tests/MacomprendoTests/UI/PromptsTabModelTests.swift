@@ -117,6 +117,37 @@ import Testing
         #expect(!model.isTesting)
     }
 
+    @Test func aSecondRunTestSupersedesTheFirst() async {
+        let holder = ScriptedSettingsHolder.seeded()
+        // The first run never completes within the test window, but its cancellation is
+        // near-instant — that's exactly when its unguarded `defer` would fire.
+        let first = ScriptedLLMProvider(deltas: ["first"], delayPerDelta: .seconds(5))
+        // The second run streams for a while, so we can observe state mid-stream.
+        let second = ScriptedLLMProvider(deltas: ["a", "b"], delayPerDelta: .milliseconds(60))
+        var callCount = 0
+        let model = PromptsTabModel(holder: holder, llm: { _ in
+            callCount += 1
+            return callCount == 1
+                ? LLMTarget(provider: first, model: "first")
+                : LLMTarget(provider: second, model: "second")
+        })
+
+        model.runTest()      // starts the slow first run
+        model.runTest()      // supersedes it with the second run
+
+        // Give the cancelled first run's task time to unwind (cancellation is near-instant)
+        // while the second run is still mid-stream (its first delta lands after 60ms).
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(model.isTesting)             // the second run must still read as in-flight
+        #expect(model.testOutput.isEmpty)    // neither run has appended anything yet
+
+        await model.drainTest()
+
+        #expect(model.testOutput == "ab")
+        #expect(!model.isTesting)
+        #expect(model.testError == nil)
+    }
+
     @Test func loadModelsPublishesTheProviderList() async {
         let (model, _, _) = make()
         await model.loadModels()

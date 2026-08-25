@@ -22,6 +22,7 @@ import SwiftUI
     private let holder: any SettingsHolding
     private let llm: @MainActor (PresetKind) throws -> LLMTarget
     private var testTask: Task<Void, Never>?
+    private var testGeneration = 0
 
     init(holder: any SettingsHolding,
          llm: @escaping @MainActor (PresetKind) throws -> LLMTarget) {
@@ -119,6 +120,8 @@ import SwiftUI
     func runTest() {
         guard let draft else { return }
         testTask?.cancel()
+        testGeneration += 1
+        let generation = testGeneration
         testOutput = ""
         testError = nil
         isTesting = true
@@ -126,18 +129,22 @@ import SwiftUI
                                            instruction: nil, language: nil)
         let kind = self.kind
         testTask = Task { [weak self] in
-            guard let self else { return }
-            defer { self.isTesting = false }
-            do {
-                let target = try self.llm(kind)
-                for try await delta in target.provider.chat(prompt.messages, model: target.model,
-                                                            options: ChatOptions()) {
-                    self.testOutput += delta
-                }
-            } catch is CancellationError {
-            } catch {
-                self.testError = ErrorText.describe(error)
+            await self?.runTestStream(prompt: prompt, kind: kind, generation: generation)
+        }
+    }
+
+    private func runTestStream(prompt: RenderedPrompt, kind: PresetKind, generation: Int) async {
+        defer { if generation == testGeneration { isTesting = false } }
+        do {
+            let target = try llm(kind)
+            for try await delta in target.provider.chat(prompt.messages, model: target.model,
+                                                        options: ChatOptions()) {
+                guard generation == testGeneration else { return }
+                testOutput += delta
             }
+        } catch is CancellationError {
+        } catch {
+            if generation == testGeneration { testError = ErrorText.describe(error) }
         }
     }
 
