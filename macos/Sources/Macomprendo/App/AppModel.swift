@@ -97,15 +97,19 @@ final class AppModel: ObservableObject {
                                         settings: { snapshot.current },
                                         escapeMonitor: env.escapeMonitor)
 
-        // `didSet` never fires during `init`, so a migrated or corrupt-and-repaired
-        // document would otherwise sit only in memory until the user next changes a
-        // setting. Persist once here so the store is never left holding a stale-schema
-        // or corrupt payload after launch.
-        persist()
-
         var seeded = settings
         FactoryPresets.seed(into: &seeded)
         if seeded != settings { settings = seeded }
+
+        // `didSet` never fires for a property's first assignment within its own
+        // initializer, and firing on a *later* one is a `@Published`-specific quirk this
+        // code must not depend on (it would silently stop persisting on every launch
+        // after the first, once seeding above becomes a no-op and is the only
+        // assignment). Sync the snapshot and persist explicitly and unconditionally here
+        // instead, so a migrated, corrupt-and-repaired, or freshly-seeded first-launch
+        // document is never left sitting only in memory after `init` returns.
+        snapshot.current = settings
+        persist()
     }
 
     /// Called once at launch: applies hotkey enablement and starts routing hotkey events.

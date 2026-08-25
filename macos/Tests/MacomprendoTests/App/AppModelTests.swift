@@ -121,6 +121,18 @@ import Testing
         #expect(try Settings.migrate(data) == defaultWithSeededPresets())
     }
 
+    // Controller ruling: the factory-preset seeding in `init` must reach the STORE, not
+    // just `model.settings` in memory — a session that quits right after first launch
+    // (before any setting changes) must not lose the seeded presets.
+    @Test func factoryPresetSeedingAtFirstLaunchReachesTheStoreItself() throws {
+        let store = InMemorySettingsStore()
+        _ = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
+        let data = try #require(store.load())
+        let stored = try Settings.migrate(data)
+        #expect(stored.presetsSeeded == true)
+        #expect(stored.presets.count == 11)
+    }
+
     @Test func changingSettingsWritesThemToTheStore() throws {
         let store = InMemorySettingsStore()
         let model = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
