@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
     private(set) var textFeatures: TextFeatures?
     lazy var modelsViewModel = ModelsViewModel(models: env.models)
+    lazy var speechTabModel = SpeechTabModel(speech: env.speech, holder: self)
     lazy var providersViewModel: ProvidersViewModel = {
         let factory = env.factory
         let http = env.http
