@@ -32,17 +32,29 @@ import Testing
         #expect(model.dictation.state == .recording)
     }
 
-    @Test func ignoresActionsThatAreNotImplementedYet() async {
+    @Test func routesSelectionActionsToTheTextFeatures() async {
         let hotkeys = FakeHotkeyService()
         let model = AppModel(store: InMemorySettingsStore(),
                              keychain: InMemoryKeychainStore(),
                              env: .fake(hotkeys: hotkeys))
         model.start()
 
+        // With the fake environment there is no AX selection and no clipboard fallback, so
+        // both actions only toast — dictation is never touched by either one.
         hotkeys.send(.keyDown(.speak))
         hotkeys.send(.keyDown(.summarize))
-        try? await Task.sleep(for: .milliseconds(50))
+
+        await waitFor("a selection toast") {
+            if case .toast = model.hud.state { return true }
+            return false
+        }
         #expect(model.dictation.state == .idle)
+        #expect(model.textFeatures?.quickPanel.isVisible == false)
+        if case .toast(let message) = model.hud.state {
+            #expect(message.contains(MacomprendoError.noSelection.errorDescription ?? "!"))
+        } else {
+            Issue.record("Expected the HUD to be showing a toast")
+        }
     }
 
     @Test func startAppliesTheStoredHotkeyEnablement() {

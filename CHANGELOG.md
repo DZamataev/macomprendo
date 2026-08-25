@@ -32,6 +32,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   count, and pull an Ollama model with live progress.
 - Esc now cancels an in-progress dictation (recording or transcribing), matching
   the HUD's cancel hint.
+- The remaining four hotkeys now work end-to-end: Dictate & Refine, Refine
+  selection and Summarize selection open a floating Quick Panel over a
+  streamed LLM response, with Copy/Insert/Replace actions and a live-editable
+  instruction field, and Speak selection reads the selection aloud (a second
+  press stops it immediately). Refine and Summarize each ship with seeded
+  factory prompt presets (Clean up, Formal, Casual, Shorten, Expand, Fix
+  grammar, Translate for Refine; Brief, Bullets, TL;DR for Summarize); a
+  Settings tab to browse and edit them is still to come.
 
 ### Fixed
 - The menubar's "Settings…" item now activates the app before opening the

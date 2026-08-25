@@ -18,6 +18,7 @@ final class AppModel: ObservableObject {
     let hud: HUDController
     let dictation: DictationController
     let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
+    private(set) var textFeatures: TextFeatures?
     lazy var modelsViewModel = ModelsViewModel(models: env.models)
     lazy var providersViewModel: ProvidersViewModel = {
         let factory = env.factory
@@ -105,6 +106,11 @@ final class AppModel: ObservableObject {
 
     /// Called once at launch: applies hotkey enablement and starts routing hotkey events.
     func start() {
+        if textFeatures == nil {
+            textFeatures = TextFeatures.live(model: self, env: env, hud: hud,
+                                             transcriberProvider: transcriberProvider)
+        }
+
         for action in HotkeyAction.allCases {
             env.hotkeys.setEnabled(action, enablement.isEnabled(action))
         }
@@ -126,7 +132,7 @@ final class AppModel: ObservableObject {
         case .dictate:
             dictation.handle(event)
         default:
-            break   // Plan 4 adds dictateAndRefine, speak, summarize, refineSelection
+            textFeatures?.handle(event)
         }
     }
 
