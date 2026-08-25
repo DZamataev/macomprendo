@@ -90,4 +90,17 @@ import Testing
         #expect(presenter.presentCount == 0)
         #expect(presenter.dismissCount == 1)
     }
+
+    @Test func speakingNeverAutoHides() {
+        #expect(HUDController.autoHideDuration(for: .speaking(hint: "hint")) == nil)
+    }
+
+    @Test func speakingStaysVisibleUntilItIsHidden() {
+        let hud = HUDController(sleep: { _ in })
+        hud.show(.speaking(hint: "Press ⌥S again to stop."))
+        #expect(hud.state == .speaking(hint: "Press ⌥S again to stop."))
+        #expect(hud.hideTask == nil)
+        hud.hide()
+        #expect(hud.state == .hidden)
+    }
 }

@@ -57,4 +57,28 @@ import Testing
         speech.finish()
         #expect(!controller.isSpeaking)
     }
+
+    @Test func startingPlaybackShowsTheSpeakingHUDWithTheStopHint() async {
+        let (controller, _, toaster) = make()
+        await controller.toggle(text: { "read me" })
+        #expect(toaster.states == [.speaking(hint: SpeakController.stopHint)])
+        #expect(SpeakController.stopHint.contains("stop"))
+        #expect(toaster.hideCount == 0)
+    }
+
+    @Test func finishingNaturallyHidesTheSpeakingHUD() async {
+        let (controller, speech, toaster) = make()
+        await controller.toggle(text: { "read me" })
+        speech.finish()
+        #expect(toaster.hideCount == 1)
+        #expect(!controller.isSpeaking)
+    }
+
+    @Test func togglingWhileSpeakingHidesTheSpeakingHUD() async {
+        let (controller, _, toaster) = make()
+        await controller.toggle(text: { "read me" })
+        await controller.toggle(text: { Issue.record("must not read again"); return "" })
+        #expect(toaster.hideCount == 1)
+        #expect(toaster.states.count == 1)          // no second .speaking
+    }
 }

@@ -4,6 +4,9 @@ import Foundation
 @MainActor final class SpeakController: ObservableObject {
     @Published private(set) var isSpeaking = false
 
+    /// Shown under "Speaking…" in the HUD.
+    static let stopHint = "Press the Speak hotkey again to stop."
+
     private let speech: any SpeechSynthesizing
     private let toaster: any Toasting
     private let settings: @MainActor () -> Settings
@@ -16,7 +19,13 @@ import Foundation
         self.settings = settings
         speech.onStateChange = { [weak self] in
             guard let self else { return }
-            self.isSpeaking = self.speech.isSpeaking
+            let speaking = self.speech.isSpeaking
+            self.isSpeaking = speaking
+            if speaking {
+                self.toaster.show(.speaking(hint: Self.stopHint))
+            } else {
+                self.toaster.hide()
+            }
         }
     }
 

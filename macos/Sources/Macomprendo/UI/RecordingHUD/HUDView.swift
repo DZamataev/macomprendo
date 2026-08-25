@@ -38,6 +38,17 @@ struct HUDView: View {
                 Text("Transcribing…").font(.caption).foregroundStyle(.secondary)
             }
             .padding(12)
+        case .speaking(let hint):
+            VStack(spacing: 6) {
+                Icon(.speak, size: 20).foregroundStyle(Color.accentColor)
+                Text("Speaking…").font(.caption)
+                Text(hint)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .padding(12)
         case .success(let message):
             label(message, icon: .success, tint: .accentColor)
         case .error(let message):
