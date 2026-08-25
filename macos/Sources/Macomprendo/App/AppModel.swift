@@ -97,6 +97,10 @@ final class AppModel: ObservableObject {
         // setting. Persist once here so the store is never left holding a stale-schema
         // or corrupt payload after launch.
         persist()
+
+        var seeded = settings
+        FactoryPresets.seed(into: &seeded)
+        if seeded != settings { settings = seeded }
     }
 
     /// Called once at launch: applies hotkey enablement and starts routing hotkey events.
