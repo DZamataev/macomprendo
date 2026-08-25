@@ -44,8 +44,18 @@ final class QuickPanelWindow: NSPanel {
 
     func show(frame: CGRect) {
         window.setFrame(frame, display: true)
-        // orderFrontRegardless keeps the source app active; the panel becomes key on first click.
-        window.orderFrontRegardless()
+        // makeKeyAndOrderFront, not orderFrontRegardless: the panel must become key
+        // immediately so Esc (NSPanel.cancelOperation, wired to onEscape above) closes it
+        // without the user clicking into it first — cancelOperation only fires for the
+        // key window. Because the style mask carries .nonactivatingPanel, this makes the
+        // panel key WITHOUT activating the app or stealing focus from the source app the
+        // way a normal window's makeKeyAndOrderFront would.
+        // NOTE: `ScriptedPanelHost` (the test fake) doesn't model key-window state at
+        // all — `host.pressEscape()` fires unconditionally, more permissively than the
+        // real NSPanel, which only calls `cancelOperation` while key. Keep that gap in
+        // mind when trusting a green FloatingPanelHost-adjacent test alone; this file's
+        // behavior is covered by docs/SMOKE_TEST.md, not a unit test.
+        window.makeKeyAndOrderFront(nil)
     }
 
     func hide() {
