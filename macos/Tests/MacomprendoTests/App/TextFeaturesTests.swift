@@ -10,9 +10,10 @@ import Testing
         let toaster: ScriptedToaster
         let panelHost: ScriptedPanelHost
         let keys: ScriptedKeySimulator
+        let pasteboard: ScriptedPasteboard
     }
 
-    private func makeRig(selection: String?) -> Rig {
+    private func makeRig(selection: String?, ax: (any AXReading)? = nil) -> Rig {
         let holder = ScriptedSettingsHolder.seeded()
         let host = ScriptedPanelHost()
         let panel = QuickPanelController(holder: holder)
@@ -45,12 +46,13 @@ import Testing
         let speak = SpeakController(speech: speech, toaster: toaster, settings: { holder.settings })
 
         let selectedText = AXSelectedTextService(
-            ax: ScriptedAXReader(text: selection), pasteboard: pasteboard,
+            ax: ax ?? ScriptedAXReader(text: selection), pasteboard: pasteboard,
             keySimulator: keys, copyTimeout: 0.02, pollInterval: 0.005)
 
         let features = TextFeatures(quickPanel: panel, refine: refine, summarize: summarize,
                                     speak: speak, selectedText: selectedText, toaster: toaster)
-        return Rig(features: features, speech: speech, toaster: toaster, panelHost: host, keys: keys)
+        return Rig(features: features, speech: speech, toaster: toaster, panelHost: host, keys: keys,
+                   pasteboard: pasteboard)
     }
 
     @Test func summarizeHotkeyReadsTheSelectionAndOpensTheSummaryPanel() async {
@@ -106,6 +108,26 @@ import Testing
         #expect(rig.features.refine.original == "spoken")
         #expect(rig.features.quickPanel.isVisible)
         #expect(rig.keys.presses.isEmpty)          // the microphone path never touches the clipboard
+    }
+
+    // F2+F3: a second selection hotkey arriving while the first read is still in flight
+    // must cancel the first instead of racing it — otherwise the second read's ⌘C fallback
+    // can restore over an already-dirtied pasteboard and the user's real clipboard is lost.
+    // The first call's AX read returns nil (falls back to ⌘C, which never resolves here —
+    // the keySimulator has no `onPress`, so it hangs in the poll loop until cancelled); the
+    // second call's AX read succeeds directly and never touches the pasteboard at all.
+    @Test func aSecondHotkeyCancelsTheFirstSelectionReadAndRestoresThePasteboard() async {
+        let ax = CountingAXReader(responses: [nil, "second selection"])
+        let rig = makeRig(selection: nil, ax: ax)
+
+        rig.features.handle(.keyDown(.summarize))   // task 1: falls back to ⌘C and hangs
+        rig.features.handle(.keyDown(.summarize))   // task 2: must supersede task 1
+        await rig.features.drain()
+        try? await Task.sleep(for: .milliseconds(50))   // let task 1 finish unwinding its cancellation
+
+        #expect(rig.features.summarize.source == "second selection")
+        #expect(rig.pasteboard.readString() == "clip")     // restored, not left on "second selection"
+        #expect(rig.toaster.messages.contains("Cancelled."))
     }
 
     @Test func plainDictateHotkeyIsIgnoredHere() async {

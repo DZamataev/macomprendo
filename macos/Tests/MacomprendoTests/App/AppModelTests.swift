@@ -40,21 +40,20 @@ import Testing
         model.start()
 
         // With the fake environment there is no AX selection and no clipboard fallback, so
-        // both actions only toast — dictation is never touched by either one.
+        // both actions only toast — dictation is never touched by either one. TextFeatures
+        // has one in-flight selection-read task total (F2), so the .speak read here gets
+        // cancelled by the .summarize one right behind it and briefly shows "Cancelled." —
+        // wait for the settled toast rather than the first one observed.
         hotkeys.send(.keyDown(.speak))
         hotkeys.send(.keyDown(.summarize))
 
-        await waitFor("a selection toast") {
-            if case .toast = model.hud.state { return true }
+        let expectedMessage = MacomprendoError.noSelection.errorDescription ?? "!"
+        await waitFor("the no-selection toast") {
+            if case .toast(let message) = model.hud.state { return message.contains(expectedMessage) }
             return false
         }
         #expect(model.dictation.state == .idle)
         #expect(model.textFeatures?.quickPanel.isVisible == false)
-        if case .toast(let message) = model.hud.state {
-            #expect(message.contains(MacomprendoError.noSelection.errorDescription ?? "!"))
-        } else {
-            Issue.record("Expected the HUD to be showing a toast")
-        }
     }
 
     @Test func startAppliesTheStoredHotkeyEnablement() {

@@ -68,16 +68,27 @@ struct AXSelectedTextService: SelectedTextReading {
 
         var copied: String?
         var waited: TimeInterval = 0
+        var cancelled = false
         while waited < copyTimeout {
             if pasteboard.changeCount != before {
                 copied = pasteboard.readString()
                 break
             }
-            try? await Task.sleep(for: .seconds(pollInterval))
+            do {
+                try await Task.sleep(for: .seconds(pollInterval))
+            } catch {
+                // `try?` here would discard `CancellationError` and keep looping through
+                // the rest of `copyTimeout`, busy-spinning on the MainActor for no reason.
+                // Exit now — the unconditional restore below still runs on this path.
+                cancelled = true
+                break
+            }
             waited += pollInterval
         }
 
         pasteboard.restore(snapshot)
+
+        if cancelled { throw CancellationError() }
 
         let trimmed = (copied ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw MacomprendoError.noSelection }

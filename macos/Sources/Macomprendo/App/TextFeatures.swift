@@ -39,6 +39,7 @@ import Foundation
             withSelection { [weak self] text in self?.summarize.start(text: text) }
 
         case .keyDown(.speak):
+            task?.cancel()
             task = Task { [weak self] in
                 guard let self else { return }
                 // `toggle` only evaluates the closure when it is about to start speaking, so a
@@ -58,6 +59,12 @@ import Foundation
     }
 
     private func withSelection(_ body: @escaping @MainActor (String) -> Void) {
+        // Two selection hotkeys within `copyTimeout` of each other would otherwise run two
+        // concurrent `readViaCopy` cycles: the second snapshots an already-dirtied
+        // pasteboard, and the restore order can replace the user's clipboard with the
+        // selection. Cancel any in-flight read before starting a new one — invariant 7,
+        // one in-flight task per controller.
+        task?.cancel()
         task = Task { [weak self] in
             guard let self else { return }
             do {
