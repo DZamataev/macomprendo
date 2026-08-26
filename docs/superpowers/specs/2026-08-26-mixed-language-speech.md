@@ -55,13 +55,24 @@ struct TextRun: Equatable, Sendable { var text: String; var script: ScriptClass 
 enum LanguageSegmenter {
     /// Maximal runs of one script. `neutral` characters (digits, punctuation, whitespace)
     /// attach to the preceding run (or the following one at the start of text).
-    /// A non-neutral run shorter than `minRunLength` merges into its neighbor so single
-    /// foreign words ("iPhone") do not flip the voice.
+    ///
+    /// Merging is ASYMMETRIC, because the failure modes are asymmetric: a Russian voice
+    /// reads Latin text with an accent but intelligibly, while an English voice reading
+    /// Cyrillic collapses into character spelling ("Cyrillic letter E…"). Therefore:
+    /// - A LATIN run with fewer than `minRunLength` LETTERS merges into a neighboring
+    ///   Cyrillic run ("iPhone", "Merge" inside a Russian sentence stay with the Russian
+    ///   voice — accented but intelligible).
+    /// - A CYRILLIC run NEVER merges into a Latin neighbor, no matter how short: even a
+    ///   single Russian word gets its own Cyrillic run (a brief voice switch beats
+    ///   letter-spelling).
+    /// - Run length for merge decisions counts ONLY letters — attached neutral characters
+    ///   (digits, punctuation, whitespace) never influence the comparison, so
+    ///   "(swift 538/538, node 38/38)" is a 17-letter Latin run, not a 39-character one.
     static func runs(in text: String, minRunLength: Int) -> [TextRun]
 }
 ```
 
-Default `minRunLength`: 20 characters.
+Default `minRunLength`: 6 letters.
 
 **`AVSpeechService.speak`** changes: compute runs; if every run matches the chosen voice's
 script, behave exactly as today (one utterance). Otherwise enqueue one utterance per run on
