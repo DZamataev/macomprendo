@@ -124,3 +124,69 @@ Assign a shortcut in Settings ▸ Hotkeys first.
 - [ ] Delete the default preset: the default moves to the first remaining preset.
 - [ ] "Restore factory presets" re-adds every deleted factory preset at the end of its list and
       leaves custom presets untouched (no duplicates).
+
+## Mixed-language speech, system voices (hotkey #3, ⌥S)
+
+Setup: in Settings ▸ Speech pick "System voices" and an **English** voice (e.g. Samantha).
+Install a Russian voice first if none is present (System Settings ▸ Accessibility ▸ Spoken
+Content ▸ System Voice ▸ Manage Voices…).
+
+- [ ] Select a paragraph that is entirely English and press ⌥S: it reads exactly as before —
+      one continuous utterance, no seam, no pause at the start.
+- [ ] Select a paragraph with a long Russian sentence followed by a long English sentence and
+      press ⌥S: **both** languages are intelligible and the voice audibly changes at the
+      script boundary, not mid-word.
+- [ ] The "Speaking…" HUD stays up for the *whole* passage, including across the voice switch,
+      and disappears only when the last sentence ends.
+- [ ] Press ⌥S again mid-passage: playback stops immediately, the HUD disappears, and the
+      remaining sentences are not read.
+- [ ] Select a Russian sentence containing one English word ("Я купил новый iPhone вчера…")
+      and press ⌥S: the whole sentence is read by the Russian voice — the voice does **not**
+      flip for the single word.
+- [ ] Select text containing Chinese or Arabic characters mixed into English and press ⌥S:
+      nothing crashes; the foreign characters are read (or skipped) by the surrounding voice.
+- [ ] Remove every Russian voice from the system, then repeat the mixed selection: it still
+      reads without crashing, using the configured voice throughout.
+
+## Endpoint speech source (hotkey #3, ⌥S)
+
+Setup: Settings ▸ Speech ▸ Speech source = "Endpoint", and either an OpenAI-compatible API key
+(Base URL should point at your OpenAI-compatible server — e.g. `https://api.openai.com` for OpenAI,
+`https://api.proxyapi.ru/openai` for a reseller, or `http://localhost:8000` for a local server)
+or a local server on `http://localhost:8000`.
+
+- [ ] With no key saved, press Preview: a toast reads
+      "No speech API key. Add one in Settings ▸ Speech." and nothing plays.
+- [ ] Paste a **wrong** key, press "Save key", press Preview: a toast names the HTTP status the
+      server returned; nothing plays; the app stays responsive.
+- [ ] Paste the real key and press "Save key": the field clears immediately, the caption reads
+      "Key saved to the Keychain.", and the key is **not** visible anywhere in the UI.
+      Confirm with Keychain Access that an item `speech.endpoint` exists for service
+      `com.dzamataev.macomprendo`.
+- [ ] Press Preview: the sample sentence plays in the configured voice within a few seconds.
+- [ ] Pick a different name from the "Built-in" menu and press Preview: the voice audibly
+      changes. Type a name the server does not know and press Preview: a toast names the HTTP
+      error.
+- [ ] Type "Read this slowly and sadly" into Style instructions and press Preview with
+      `gpt-4o-mini-tts`: the delivery changes. Clear the field and press Preview: normal
+      delivery returns.
+- [ ] The rate/pitch/volume sliders are **not** shown while Endpoint is selected; switch back to
+      "System voices" and they reappear.
+- [ ] Select a mixed Russian/English paragraph in TextEdit and press ⌥S: it is read by one
+      natural voice that switches languages mid-sentence without changing timbre.
+- [ ] The "Speaking…" HUD is visible from the moment ⌥S is pressed until the last chunk ends,
+      including the gaps between chunks of a long selection.
+- [ ] Select five or more paragraphs (over ~4000 characters) and press ⌥S: playback is
+      continuous, in order, with only a short gap between chunks.
+- [ ] Press ⌥S again mid-audio: playback stops within a second, the HUD disappears, and **no**
+      error toast appears.
+- [ ] Turn Wi-Fi off and press ⌥S: a toast reads `Could not reach "<your host>".` — the host
+      you typed into Base URL, not a raw URL — with its recovery suggestion. Turn Wi-Fi back on.
+- [ ] Point Base URL at a local server that returns MP3 instead of WAV (openedai-speech with
+      `response_format` ignored): audio still plays.
+- [ ] Switch the source back to "System voices" while endpoint audio is playing: the endpoint
+      audio stops; the next ⌥S uses a system voice.
+- [ ] Clear the API key field and press "Save key": the caption reads "Key removed." and the
+      Keychain item is gone.
+- [ ] Open Console.app filtered on subsystem `com.dzamataev.macomprendo` and repeat a ⌥S with
+      the endpoint source selected: **no** log line contains the selected text or the API key.
