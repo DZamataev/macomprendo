@@ -20,7 +20,7 @@ final class AppModel: ObservableObject {
     let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
     private(set) var textFeatures: TextFeatures?
     lazy var modelsViewModel = ModelsViewModel(models: env.models)
-    lazy var speechTabModel = SpeechTabModel(speech: env.speech, holder: self)
+    lazy var speechTabModel = SpeechTabModel(speech: env.speech, holder: self, keychain: keychain)
     lazy var promptsTabModel = PromptsTabModel(
         holder: self,
         llm: { [unowned self] kind in try self.llmTarget(for: kind) })

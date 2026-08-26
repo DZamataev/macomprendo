@@ -11,10 +11,15 @@ import Foundation
     var onStateChange: (@MainActor () -> Void)?
     var onError: (@MainActor (Error) -> Void)?
     var available: [Voice] = []
+    /// Per-source catalogs for the Speech tab. Falls back to `available` for a source that is
+    /// not listed, so tests that only care about one list keep working.
+    var availableBySource: [SpeechSource: [Voice]] = [:]
     private(set) var spoken: [Spoken] = []
     private(set) var stopCount = 0
 
     func voices() -> [Voice] { available }
+
+    func voices(for source: SpeechSource) -> [Voice] { availableBySource[source] ?? available }
 
     func speak(_ text: String, settings: SpeechSettings) {
         spoken.append(Spoken(text: text, settings: settings))

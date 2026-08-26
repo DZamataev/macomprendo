@@ -42,6 +42,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Summarize).
 - Speech settings tab: pick a voice grouped by language, adjust rate, pitch
   and volume, and preview the current settings against a sample sentence.
+- Speak selection now switches system voices mid-utterance for mixed-script
+  text, so a Cyrillic run inside an otherwise Latin sentence (and vice versa)
+  is read in a matching installed voice instead of the configured one
+  mangling it. Speech settings gained a source picker: alongside System
+  voices, an Endpoint source sends the selection to any OpenAI-compatible
+  `/v1/audio/speech` server (OpenAI itself, a proxy, or a local server such
+  as openedai-speech or Kokoro-FastAPI) with a configurable base URL, model,
+  voice and style instructions, and its own API key stored in the Keychain.
 - Refine & Summarize settings tab: choose the endpoint and model per feature,
   browse, add, duplicate, reorder, delete and set the default preset for
   each, edit a preset's system prompt and user template with placeholder
