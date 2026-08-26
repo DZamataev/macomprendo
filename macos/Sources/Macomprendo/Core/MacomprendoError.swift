@@ -15,6 +15,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case providerHTTP(status: Int, body: String)
     case providerStreamMalformed
     case audio(String)
+    case audioPlayback(String)
+    case speechKeyMissing
     case noSelection
     case insertFailed
     case cancelled
@@ -37,6 +39,10 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "The server sent a response Macomprendo could not read."
         case .audio(let reason):
             return "Recording failed: \(reason)"
+        case .audioPlayback(let reason):
+            return "Playing the speech audio failed: \(reason)"
+        case .speechKeyMissing:
+            return "No speech API key."
         case .noSelection:
             return "No text is selected."
         case .insertFailed:
@@ -64,6 +70,10 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Try again, or pick a different model for this endpoint."
         case .audio:
             return "Check that an input device is connected and try again."
+        case .audioPlayback:
+            return "Check that an output device is connected and try again."
+        case .speechKeyMissing:
+            return "Add one in Settings ▸ Speech."
         case .noSelection:
             return "Select some text and press the shortcut again."
         case .insertFailed:

@@ -79,3 +79,54 @@ import Testing
         try Settings.migrate(Data("not json".utf8))
     }
 }
+
+@Test func speechSettingsDefaultToTheSystemSource() {
+    let speech = Settings.default.speech
+    #expect(speech.source == .system)
+    #expect(speech.endpointBaseURL.absoluteString == "https://api.openai.com")
+    #expect(speech.endpointModel == "gpt-4o-mini-tts")
+    #expect(speech.endpointVoice == "alloy")
+    #expect(speech.endpointInstructions.isEmpty)
+    #expect(speech.endpointAPIKeyRef == nil)
+}
+
+@Test func aSpeechPayloadWithoutTheEndpointFieldsDecodesToDefaults() throws {
+    let legacy = """
+        {"schemaVersion":1,
+         "speech":{"voiceID":"com.apple.voice.compact.en-US.Samantha",
+                   "rate":0.42,"pitch":1.3,"volume":0.7}}
+        """
+    let settings = try Settings.migrate(Data(legacy.utf8))
+    #expect(settings.speech.voiceID == "com.apple.voice.compact.en-US.Samantha")
+    #expect(settings.speech.rate == 0.42)
+    #expect(settings.speech.source == .system)
+    #expect(settings.speech.endpointBaseURL == SpeechSettings.defaultEndpointBaseURL)
+    #expect(settings.speech.endpointModel == SpeechSettings.defaultEndpointModel)
+    #expect(settings.speech.endpointVoice == SpeechSettings.defaultEndpointVoice)
+    #expect(settings.speech.endpointAPIKeyRef == nil)
+}
+
+@Test func endpointSpeechFieldsRoundTripThroughJSON() throws {
+    var settings = Settings.default
+    settings.speech.source = .endpoint
+    settings.speech.endpointBaseURL = URL(string: "https://api.proxyapi.ru/openai")!
+    settings.speech.endpointModel = "tts-1-hd"
+    settings.speech.endpointVoice = "sage"
+    settings.speech.endpointInstructions = "Read slowly and warmly"
+    settings.speech.endpointAPIKeyRef = SpeechSettings.endpointKeychainAccount
+
+    let encoded = try JSONEncoder().encode(settings)
+    let decoded = try Settings.migrate(encoded)
+
+    #expect(decoded.speech == settings.speech)
+    // Only the Keychain account name is persisted, never the key (invariant 5).
+    #expect(String(decoding: encoded, as: UTF8.self)
+            .contains("\"endpointAPIKeyRef\":\"speech.endpoint\""))
+}
+
+@Test func theEndpointKeychainAccountIsStable() {
+    #expect(SpeechSettings.endpointKeychainAccount == "speech.endpoint")
+    #expect(SpeechSource.allCases.map(\.rawValue) == ["system", "endpoint"])
+    #expect(SpeechSource.system.displayName == "System voices")
+    #expect(SpeechSource.endpoint.displayName == "Endpoint")
+}

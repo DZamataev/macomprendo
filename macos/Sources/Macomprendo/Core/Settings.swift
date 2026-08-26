@@ -20,17 +20,83 @@ struct LLMSelection: Codable, Sendable, Equatable {
     }
 }
 
+/// Which backend reads text aloud.
+enum SpeechSource: String, Codable, Sendable, CaseIterable, Identifiable {
+    case system
+    case endpoint
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .system: "System voices"
+        case .endpoint: "Endpoint"
+        }
+    }
+}
+
 struct SpeechSettings: Codable, Sendable, Equatable {
+    /// Any OpenAI-compatible `/v1/audio/speech` server: OpenAI itself, a reseller such as
+    /// `https://api.proxyapi.ru/openai`, or a local server on `http://localhost:8000`.
+    static let defaultEndpointBaseURL = URL(string: "https://api.openai.com")!
+    static let defaultEndpointModel = "gpt-4o-mini-tts"
+    static let defaultEndpointVoice = "alloy"
+    /// Keychain account name for the speech endpoint's key. The key itself never leaves the
+    /// Keychain (invariant 5); `endpointAPIKeyRef` only records that one is stored.
+    static let endpointKeychainAccount = "speech.endpoint"
+
     var voiceID: String?
     var rate: Float
     var pitch: Float
     var volume: Float
+    var source: SpeechSource
+    var endpointBaseURL: URL
+    var endpointModel: String
+    var endpointVoice: String
+    var endpointInstructions: String
+    var endpointAPIKeyRef: String?
 
-    init(voiceID: String? = nil, rate: Float = 0.5, pitch: Float = 1.0, volume: Float = 1.0) {
+    init(voiceID: String? = nil,
+         rate: Float = 0.5,
+         pitch: Float = 1.0,
+         volume: Float = 1.0,
+         source: SpeechSource = .system,
+         endpointBaseURL: URL = SpeechSettings.defaultEndpointBaseURL,
+         endpointModel: String = SpeechSettings.defaultEndpointModel,
+         endpointVoice: String = SpeechSettings.defaultEndpointVoice,
+         endpointInstructions: String = "",
+         endpointAPIKeyRef: String? = nil) {
         self.voiceID = voiceID
         self.rate = rate
         self.pitch = pitch
         self.volume = volume
+        self.source = source
+        self.endpointBaseURL = endpointBaseURL
+        self.endpointModel = endpointModel
+        self.endpointVoice = endpointVoice
+        self.endpointInstructions = endpointInstructions
+        self.endpointAPIKeyRef = endpointAPIKeyRef
+    }
+}
+
+extension SpeechSettings {
+    /// Hand-written so a document written before the endpoint source existed decodes to the
+    /// defaults for the new keys instead of throwing. Declared in an extension so the struct
+    /// keeps its memberwise initialiser — the same pattern `Settings` uses.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = SpeechSettings()
+        voiceID = try c.decodeIfPresent(String.self, forKey: .voiceID)
+        rate = try c.decodeIfPresent(Float.self, forKey: .rate) ?? d.rate
+        pitch = try c.decodeIfPresent(Float.self, forKey: .pitch) ?? d.pitch
+        volume = try c.decodeIfPresent(Float.self, forKey: .volume) ?? d.volume
+        source = try c.decodeIfPresent(SpeechSource.self, forKey: .source) ?? d.source
+        endpointBaseURL = try c.decodeIfPresent(URL.self, forKey: .endpointBaseURL) ?? d.endpointBaseURL
+        endpointModel = try c.decodeIfPresent(String.self, forKey: .endpointModel) ?? d.endpointModel
+        endpointVoice = try c.decodeIfPresent(String.self, forKey: .endpointVoice) ?? d.endpointVoice
+        endpointInstructions = try c.decodeIfPresent(String.self, forKey: .endpointInstructions)
+            ?? d.endpointInstructions
+        endpointAPIKeyRef = try c.decodeIfPresent(String.self, forKey: .endpointAPIKeyRef)
     }
 }
 
