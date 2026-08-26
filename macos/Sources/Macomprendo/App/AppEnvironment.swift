@@ -68,7 +68,11 @@ struct AppEnvironment {
             escapeMonitor: GlobalEscapeMonitor(),
             keySimulator: keySimulator,
             ax: SystemAXReader(),
-            speech: AVSpeechService(),
+            speech: SpeechRouter(
+                system: AVSpeechService(),
+                endpoint: EndpointSpeechService(http: http,
+                                                keychain: keychain,
+                                                player: AVAudioPlayerPlayer())),
             quickPanelHost: { view in FloatingPanelHost(rootView: view) })
     }
 }

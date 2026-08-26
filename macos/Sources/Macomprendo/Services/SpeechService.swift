@@ -24,8 +24,16 @@ struct UtterancePlan: Equatable, Sendable {
     /// errors for local synthesis.
     var onError: (@MainActor (Error) -> Void)? { get set }
     func voices() -> [Voice]
+    /// The catalog of one backend, whether or not it is the active one. The Speech tab lists
+    /// the voices of the source being configured, which is not always the source in use.
+    func voices(for source: SpeechSource) -> [Voice]
     func speak(_ text: String, settings: SpeechSettings)
     func stop()
+}
+
+extension SpeechSynthesizing {
+    /// A single backend only knows its own voices; only `SpeechRouter` overrides this.
+    func voices(for source: SpeechSource) -> [Voice] { voices() }
 }
 
 @MainActor final class AVSpeechService: NSObject, SpeechSynthesizing {
