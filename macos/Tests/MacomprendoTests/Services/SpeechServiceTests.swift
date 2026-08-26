@@ -40,4 +40,18 @@ import Testing
         #expect(speech.stopCount == 1)
         #expect(changes == 2)
     }
+
+    @MainActor
+    @Test func theDoubleReportsBackendFailuresAfterClearingTheSpeakingState() {
+        let speech = ScriptedSpeech()
+        var speakingWhenErrorArrived: Bool?
+        speech.onError = { _ in speakingWhenErrorArrived = speech.isSpeaking }
+
+        speech.speak("hello", settings: SpeechSettings())
+        #expect(speech.isSpeaking)
+        speech.failWith(MacomprendoError.providerHTTP(status: 401, body: "unauthorized"))
+
+        #expect(!speech.isSpeaking)
+        #expect(speakingWhenErrorArrived == false)
+    }
 }

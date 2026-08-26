@@ -19,6 +19,10 @@ struct UtterancePlan: Equatable, Sendable {
     var isSpeaking: Bool { get }
     /// Called whenever `isSpeaking` changes, including when an utterance finishes by itself.
     var onStateChange: (@MainActor () -> Void)? { get set }
+    /// Called after `onStateChange` when a backend fails while speaking. Backends never call
+    /// it for cancellation. `AVSpeechService` never calls it at all: AVFoundation reports no
+    /// errors for local synthesis.
+    var onError: (@MainActor (Error) -> Void)? { get set }
     func voices() -> [Voice]
     func speak(_ text: String, settings: SpeechSettings)
     func stop()
@@ -28,6 +32,9 @@ struct UtterancePlan: Equatable, Sendable {
     private let synthesizer = AVSpeechSynthesizer()
     private(set) var isSpeaking = false
     var onStateChange: (@MainActor () -> Void)?
+    /// Required by `SpeechSynthesizing`; local synthesis has no failure channel, so this is
+    /// stored and never invoked.
+    var onError: (@MainActor (Error) -> Void)?
 
     /// The utterances handed to the synthesizer for the current `speak(_:settings:)` call.
     /// `didFinish`/`didCancel` callbacks for anything not in this list belong to a superseded

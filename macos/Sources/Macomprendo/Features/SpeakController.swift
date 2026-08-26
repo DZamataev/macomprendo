@@ -27,6 +27,11 @@ import Foundation
                 self.toaster.hide()
             }
         }
+        // Surfaced exactly like the controller's own text-read failures. `onStateChange` has
+        // already hidden the "Speaking…" HUD by the time this runs, so the toast survives.
+        speech.onError = { [weak self] error in
+            self?.toaster.toast(ErrorText.describe(error), duration: 2.5)
+        }
     }
 
     /// `text` is evaluated only when we are about to start speaking, so the selection is not

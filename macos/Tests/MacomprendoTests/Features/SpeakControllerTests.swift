@@ -81,4 +81,29 @@ import Testing
         #expect(toaster.hideCount == 1)
         #expect(toaster.states.count == 1)          // no second .speaking
     }
+
+    @Test func aBackendErrorHidesTheHUDAndThenToasts() async {
+        let (controller, speech, toaster) = make()
+        await controller.toggle(text: { "read me" })
+        #expect(toaster.states.count == 1)
+
+        speech.failWith(MacomprendoError.providerHTTP(status: 401, body: "bad key"))
+
+        #expect(!controller.isSpeaking)
+        #expect(toaster.hideCount == 1)
+        #expect(toaster.messages.count == 1)
+        #expect(toaster.messages[0].contains("401"))
+    }
+
+    @Test func theBackendErrorToastCarriesTheRecoverySuggestion() async {
+        let (controller, speech, toaster) = make()
+        await controller.toggle(text: { "read me" })
+        speech.failWith(MacomprendoError.providerUnreachable(endpointName: "api.openai.com"))
+
+        let expected = ErrorText.describe(
+            MacomprendoError.providerUnreachable(endpointName: "api.openai.com"))
+        #expect(toaster.messages == [expected])
+        #expect(expected.contains("api.openai.com"))
+        #expect(!controller.isSpeaking)
+    }
 }

@@ -9,6 +9,7 @@ import Foundation
 
     var isSpeaking = false
     var onStateChange: (@MainActor () -> Void)?
+    var onError: (@MainActor (Error) -> Void)?
     var available: [Voice] = []
     private(set) var spoken: [Spoken] = []
     private(set) var stopCount = 0
@@ -31,5 +32,13 @@ import Foundation
     func finish() {
         isSpeaking = false
         onStateChange?()
+    }
+
+    /// Simulates a backend failure. Mirrors the ordering contract every real backend keeps:
+    /// state change first (hides the HUD), error second (shows the toast).
+    func failWith(_ error: Error) {
+        isSpeaking = false
+        onStateChange?()
+        onError?(error)
     }
 }
