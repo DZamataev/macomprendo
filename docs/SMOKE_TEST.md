@@ -184,8 +184,8 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
       the garbage).
 - [ ] Point Base URL at a local server that returns MP3 instead of WAV (openedai-speech with
       `response_format` ignored): audio still plays.
-- [ ] Switch the source back to "System voices" while endpoint audio is playing: the endpoint
-      audio stops; the next ⌥S uses a system voice.
+- [ ] Switch the source back to "System voices" while endpoint audio is playing: the audio
+      keeps playing; press ⌥S once to stop it, and again to read with a system voice.
 - [ ] Clear the API key field and press "Save key": the caption reads "Key removed." and the
       Keychain item is gone.
 - [ ] Open Console.app filtered on subsystem `com.dzamataev.macomprendo` and repeat a ⌥S with

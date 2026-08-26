@@ -31,7 +31,10 @@ import Foundation
 
     func speak(_ text: String, settings: SpeechSettings) {
         // Stopping the other backend first means switching the source mid-utterance cannot
-        // leave orphaned audio playing behind the new one.
+        // leave orphaned audio playing behind the new one. Unconditional — this relies on
+        // both backends' stop()/setSpeaking guarding on no-op-when-already-idle so calling
+        // stop() on a backend that isn't speaking is harmless; a fake that doesn't guard
+        // (e.g. ScriptedSpeech.stop() in tests) won't catch a regression here.
         backend(for: settings.source == .endpoint ? .system : .endpoint).stop()
         backend(for: settings.source).speak(text, settings: settings)
     }
