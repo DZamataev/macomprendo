@@ -10,6 +10,8 @@ import Testing
     .providerHTTP(status: 401, body: "unauthorized"),
     .providerStreamMalformed,
     .audio("no input device"),
+    .audioPlayback("format not supported"),
+    .speechKeyMissing,
     .noSelection,
     .insertFailed
 ])
@@ -42,4 +44,13 @@ func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
 @Test func errorsAreEquatable() {
     #expect(MacomprendoError.modelMissing("base") == .modelMissing("base"))
     #expect(MacomprendoError.modelMissing("base") != .modelMissing("small"))
+}
+
+@Test func theMissingSpeechKeyErrorReadsAsOneSentencePair() {
+    #expect(MacomprendoError.speechKeyMissing.errorDescription == "No speech API key.")
+    #expect(MacomprendoError.speechKeyMissing.recoverySuggestion == "Add one in Settings ▸ Speech.")
+    #expect(ErrorText.describe(MacomprendoError.speechKeyMissing)
+            == "No speech API key. Add one in Settings ▸ Speech.")
+    // Playback failures are distinct from recording failures.
+    #expect(MacomprendoError.audioPlayback("x").errorDescription?.contains("Playing") == true)
 }
