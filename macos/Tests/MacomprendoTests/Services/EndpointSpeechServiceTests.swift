@@ -275,6 +275,22 @@ import Testing
         #expect(!r.service.isSpeaking)
     }
 
+    /// `speak` with whitespace-only text always cancels whatever was running first, but the
+    /// empty-chunks guard must still drop `isSpeaking`, or a speak-in-flight followed by a
+    /// blank-text speak leaves the state (and the HUD it drives) stuck as "speaking" forever.
+    @Test func speakingBlankTextWhileAlreadySpeakingClearsIsSpeaking() async {
+        let r = rig()
+        r.player.finishesImmediately = false
+        r.service.speak("One. Two. Three.", settings: settings())
+        await settle()
+        #expect(r.service.isSpeaking)
+
+        r.service.speak("   \n ", settings: settings())
+        await r.service.drain()
+
+        #expect(!r.service.isSpeaking)
+    }
+
     @Test func theVoiceCatalogHoldsTheBuiltInNames() {
         let r = rig()
         let voices = r.service.voices()

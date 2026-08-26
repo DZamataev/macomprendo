@@ -61,7 +61,14 @@ enum EndpointVoices {
         let generation = self.generation
 
         let chunks = SpeechTextChunker.chunks(of: text, limit: chunkCharacterLimit)
-        guard !chunks.isEmpty else { return }
+        guard !chunks.isEmpty else {
+            // cancelCurrent() above stops any previous playback but doesn't touch isSpeaking;
+            // without this, speak()-with-blank-text called while already speaking left the
+            // flag (and the HUD it drives) stuck true forever, since no future task would
+            // ever call finish().
+            setSpeaking(false)
+            return
+        }
 
         setSpeaking(true)
         task = Task { [weak self] in
