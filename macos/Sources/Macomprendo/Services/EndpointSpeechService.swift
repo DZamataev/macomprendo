@@ -33,6 +33,12 @@ enum EndpointVoices {
     /// Injectable only so tests can force a multi-chunk queue out of a short string.
     private let chunkCharacterLimit: Int
     private var task: Task<Void, Never>?
+    /// The unstructured fetch `Task` currently being awaited in `play(chunks:settings:)`.
+    /// `task.cancel()` alone does not propagate to it — an unstructured child is only linked
+    /// to its parent's cancellation by explicitly cancelling it too, which is what
+    /// `cancelCurrent()` does with this property. Without it, `stop()` left a live, billed
+    /// network request running to completion (or the 60 s timeout) with its result discarded.
+    private var inFlightFetch: Task<Data, Error>?
     private var playback: CheckedContinuation<Void, Error>?
     /// Bumped by every `speak`/`stop` so a superseded task cannot clobber the new state.
     private var generation = 0
@@ -87,6 +93,8 @@ enum EndpointVoices {
     private func cancelCurrent() {
         task?.cancel()
         task = nil
+        inFlightFetch?.cancel()
+        inFlightFetch = nil
         resumePlayback(throwing: MacomprendoError.cancelled)
         player.stop()
     }
@@ -123,10 +131,21 @@ enum EndpointVoices {
 
         for index in chunks.indices {
             guard let current = next else { break }
+            // Tracked so `cancelCurrent()` can cancel the request actually in flight, not just
+            // the prefetch below — an unstructured `Task` is not cancelled by its creator's
+            // cancellation alone.
+            inFlightFetch = current
             next = index + 1 < chunks.count
                 ? fetch(chunks[index + 1], key: key, settings: settings)
                 : nil
-            let audio = try await current.value
+            let audio: Data
+            do {
+                audio = try await current.value
+            } catch {
+                inFlightFetch = nil
+                throw error
+            }
+            inFlightFetch = nil
             try Task.checkCancellation()
             try await playAndWait(audio)
         }

@@ -131,6 +131,32 @@ import Testing
         #expect(errors.isEmpty)
     }
 
+    @Test func stopCancelsAnInFlightFetchInsteadOfLettingItRunToCompletion() async {
+        let r = rig()
+        r.http.isGated = true
+        var errors: [Error] = []
+        r.service.onError = { errors.append($0) }
+
+        r.service.speak("Hello.", settings: settings())
+        for _ in 0..<50 {
+            if !r.http.requests.isEmpty { break }
+            await Task.yield()
+        }
+        #expect(r.http.requests.count == 1)   // the fetch is genuinely in flight, not queued
+
+        r.service.stop()
+        // `stop()` clears the task handle, so `drain()` returns at once; `settle()` gives the
+        // superseded task room to unwind and prove the fetch was actually cancelled rather
+        // than left running to completion (or the 60 s timeout) with its result discarded.
+        await r.service.drain()
+        await settle()
+
+        #expect(r.http.gateWasCancelled)
+        #expect(!r.service.isSpeaking)
+        #expect(r.player.played.isEmpty)
+        #expect(errors.isEmpty)
+    }
+
     @Test func speakingAgainSupersedesTheRunningRequest() async {
         let r = rig()
         r.player.finishesImmediately = false
