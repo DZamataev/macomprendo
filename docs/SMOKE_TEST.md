@@ -150,10 +150,7 @@ Content ▸ System Voice ▸ Manage Voices…).
 
 ## Endpoint speech source (hotkey #3, ⌥S)
 
-Setup: Settings ▸ Speech ▸ Speech source = "Endpoint", and either an OpenAI-compatible API key
-(Base URL should point at your OpenAI-compatible server — e.g. `https://api.openai.com` for OpenAI,
-`https://api.proxyapi.ru/openai` for a reseller, or `http://localhost:8000` for a local server)
-or a local server on `http://localhost:8000`.
+Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at your own OpenAI-compatible server — for this machine api.openai.com is region-blocked, so use a reseller such as `https://api.proxyapi.ru/openai` or a local server on `http://localhost:8000`.
 
 - [ ] With no key saved, press Preview: a toast reads
       "No speech API key. Add one in Settings ▸ Speech." and nothing plays.
@@ -182,6 +179,9 @@ or a local server on `http://localhost:8000`.
       error toast appears.
 - [ ] Turn Wi-Fi off and press ⌥S: a toast reads `Could not reach "<your host>".` — the host
       you typed into Base URL, not a raw URL — with its recovery suggestion. Turn Wi-Fi back on.
+- [ ] Clear the Base URL field and type an incomplete URL (e.g. `htp:/x`), then click away and
+      reopen the tab: the stored Base URL is unchanged (the field shows the last valid URL, not
+      the garbage).
 - [ ] Point Base URL at a local server that returns MP3 instead of WAV (openedai-speech with
       `response_format` ignored): audio still plays.
 - [ ] Switch the source back to "System voices" while endpoint audio is playing: the endpoint
