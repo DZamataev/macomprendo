@@ -173,6 +173,7 @@
 		EF1A400B0E690C6D5DBFB4AB /* StubModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64C7633BF2DC5145319B8DF /* StubModelManager.swift */; };
 		EF3182B2FF009E5D43232208 /* ScriptedInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 687C533D4CC8412CDC7686AB /* ScriptedInserter.swift */; };
 		F0FD3F88FA0CF451EBCE8D90 /* FactoryPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A20A30A5E1AE8B35D90A1B /* FactoryPresets.swift */; };
+		F14D1E27739EFF7E07115C6A /* SpeechSegmentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0722DC476F8FE4779BEE47D9 /* SpeechSegmentationTests.swift */; };
 		F217C3FBDD931A1172FF2D5E /* ScriptedKeySimulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FD5CCAF32F5D56423204B8A /* ScriptedKeySimulator.swift */; };
 		F4077477E4E021DEAA08297A /* PromptPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056341C7FF68C9F5B87CE44D /* PromptPreset.swift */; };
 		F61FD3BD8FF2389B2CA27F7A /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056C0098514D425D6D5A19BC /* Settings.swift */; };
@@ -200,6 +201,7 @@
 		056341C7FF68C9F5B87CE44D /* PromptPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptPreset.swift; sourceTree = "<group>"; };
 		056C0098514D425D6D5A19BC /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		0611254EEF99E75F3D4442B6 /* QuickPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickPanelController.swift; sourceTree = "<group>"; };
+		0722DC476F8FE4779BEE47D9 /* SpeechSegmentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSegmentationTests.swift; sourceTree = "<group>"; };
 		084F72634E6FEE5B7A628DB6 /* FakeHUDPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeHUDPresenter.swift; sourceTree = "<group>"; };
 		098ECABD8B231F1B4D0D01AE /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		09BBC307E58B223249F19068 /* SelectedTextService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectedTextService.swift; sourceTree = "<group>"; };
@@ -454,6 +456,7 @@
 				DA96A24BF5FD47C31EA54BD9 /* ModelCatalogTests.swift */,
 				752E8E8467E923BF23B53FD1 /* PermissionsServiceTests.swift */,
 				65CC4ABCB5B4FAA1A4087424 /* SelectedTextServiceTests.swift */,
+				0722DC476F8FE4779BEE47D9 /* SpeechSegmentationTests.swift */,
 				0EE8EE7E50A05C5624FC2B40 /* SpeechServiceTests.swift */,
 				4336A9CF7FDA07771599230F /* TextInserterTests.swift */,
 				78393CF01B6DE9B385B07AA8 /* WhisperModelManagerTests.swift */,
@@ -984,6 +987,7 @@
 				AECAF84D24B54A8402ABAFC3 /* SettingsTests.swift in Sources */,
 				465245635D7F317584D23865 /* SleepRecorder.swift in Sources */,
 				4970C59FA57E57F3C32A936E /* SpeakControllerTests.swift in Sources */,
+				F14D1E27739EFF7E07115C6A /* SpeechSegmentationTests.swift in Sources */,
 				4DAD115533BD95444DB2D767 /* SpeechServiceTests.swift in Sources */,
 				4B7F7D93E27D51CEF8491828 /* SpeechTabModelTests.swift in Sources */,
 				B8036FB9210E14D04FEFEEEE /* StubHTTPClient.swift in Sources */,
