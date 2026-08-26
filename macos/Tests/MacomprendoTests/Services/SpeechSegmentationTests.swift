@@ -82,6 +82,16 @@ import Testing
                          UtterancePlan(text: latinPart, voiceID: nil)])
     }
 
+    @Test func aSingleRunInTheWrongScriptStillSwitchesVoice() {
+        // Wholly-Cyrillic text with no Latin run at all: the spec's algorithm has no
+        // single-run exemption, so this must still switch to the Cyrillic fallback voice
+        // instead of mangling the text under the configured English voice.
+        let plan = AVSpeechService.utterancePlan(text: cyrillicPart,
+                                                 settings: settings("en.alex"),
+                                                 voices: voices)
+        #expect(plan == [UtterancePlan(text: cyrillicPart, voiceID: "ru.milena.enhanced")])
+    }
+
     @Test func aSingleForeignWordDoesNotSplitTheUtterance() {
         let text = "Я купил новый iPhone вчера в магазине рядом с домом."
         let plan = AVSpeechService.utterancePlan(text: text,

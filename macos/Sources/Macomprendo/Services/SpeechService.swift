@@ -118,7 +118,7 @@ extension SpeechSynthesizing {
         let configuredScript = configured.map { LanguageSegmenter.script(ofLanguage: $0.language) } ?? .latin
         let runs = LanguageSegmenter.runs(in: text, minRunLength: minRunLength)
         let needsSwitching = runs.contains { $0.script != .neutral && $0.script != configuredScript }
-        guard runs.count > 1, needsSwitching else {
+        guard needsSwitching else {
             return [UtterancePlan(text: text, voiceID: settings.voiceID)]
         }
         return runs.map { run in
