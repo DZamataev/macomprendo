@@ -93,7 +93,9 @@ import Testing
     }
 
     @Test func aSingleForeignWordDoesNotSplitTheUtterance() {
-        let text = "Я купил новый iPhone вчера в магазине рядом с домом."
+        // "Zoom" is 4 letters, under the default minimum of 6, so it merges into the
+        // Cyrillic run and the whole sentence stays one utterance.
+        let text = "Я купил новый Zoom вчера в магазине рядом с домом."
         let plan = AVSpeechService.utterancePlan(text: text,
                                                  settings: settings("ru.milena"),
                                                  voices: voices)
@@ -105,5 +107,19 @@ import Testing
                                                  settings: settings("en.alex"),
                                                  voices: voices)
         #expect(plan == [UtterancePlan(text: "123 456 …", voiceID: "en.alex")])
+    }
+
+    @Test func aCyrillicHeadSwitchesToTheRussianFallbackAheadOfALongLatinTail() {
+        // Real-world case: "Источник «Endpoint» (…)" with an English configured voice.
+        // The Cyrillic head ("Источник «") is short but never merges into Latin (rule 2),
+        // so it gets its own utterance on the Russian fallback voice; the long Latin
+        // remainder stays on the configured English voice.
+        let text = "Источник «Endpoint» (Settings ▸ Speech ▸ Speech source = Endpoint):"
+        let plan = AVSpeechService.utterancePlan(text: text,
+                                                 settings: settings("en.alex"),
+                                                 voices: voices)
+        #expect(plan == [UtterancePlan(text: "Источник «", voiceID: "ru.milena.enhanced"),
+                         UtterancePlan(text: "Endpoint» (Settings ▸ Speech ▸ Speech source = Endpoint):",
+                                       voiceID: "en.alex")])
     }
 }
