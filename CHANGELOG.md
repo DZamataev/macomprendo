@@ -73,3 +73,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whole utterance, instead of leaving the HUD blank while audio plays.
 - A second "Test" run in the Prompts settings tab no longer lets a stale
   first run clear `isTesting` or overwrite the newer run's streamed output.
+- Speak selection's script segmentation is asymmetric: a short Cyrillic run next
+  to Latin text always gets its own voice switch, instead of sometimes being
+  absorbed and read letter-by-letter by an English voice ("Cyrillic letter
+  E…"). Only short Latin runs still merge into a neighboring Cyrillic run
+  (accented but intelligible), and the merge threshold now counts letters
+  only, ignoring attached digits/punctuation.

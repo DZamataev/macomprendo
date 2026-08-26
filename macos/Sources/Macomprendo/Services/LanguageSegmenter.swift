@@ -10,15 +10,28 @@ struct TextRun: Equatable, Sendable {
 /// Splits text into maximal runs of one script so a mixed Cyrillic/Latin selection can be
 /// read by two different voices. Pure: no state, no I/O.
 ///
+/// Merging is ASYMMETRIC, because the failure modes are asymmetric: a Russian voice reads
+/// Latin text with an accent but intelligibly, while an English voice reading Cyrillic
+/// collapses into character spelling ("Cyrillic letter E…"). Therefore:
+/// - A LATIN run with fewer than `minRunLength` LETTERS merges into a neighboring Cyrillic
+///   run ("Merge" inside a Russian sentence stays with the Russian voice — accented but
+///   intelligible).
+/// - A CYRILLIC run NEVER merges into a Latin neighbor, no matter how short: even a single
+///   Russian word gets its own Cyrillic run (a brief voice switch beats letter-spelling).
+/// - Run length for merge decisions counts ONLY letters — attached neutral characters
+///   (digits, punctuation, whitespace) never influence the comparison, so
+///   "(swift 538/538, node 38/38)" is a 17-letter Latin run, not a 39-character one.
+///
 /// - Note: The Swift standard library exposes no `Unicode.Scalar.Properties.script`, so
 ///   classification is `isAlphabetic` plus explicit Unicode block ranges. Anything that is
 ///   not a Cyrillic or Latin letter — digits, punctuation, whitespace, Han, Arabic, emoji —
 ///   is `.neutral`, attaches to a neighbouring run and is therefore read by that run's voice.
 ///   Scripts outside Cyrillic/Latin never crash and never flip the voice on their own.
 enum LanguageSegmenter {
-    /// A non-neutral run shorter than this merges into a neighbour, so a single foreign word
-    /// ("iPhone" inside a Russian sentence) does not flip the voice for one word.
-    static let defaultMinRunLength = 20
+    /// A Latin run with fewer than this many LETTERS merges into a neighboring Cyrillic run,
+    /// so a single short foreign word ("Merge" inside a Russian sentence) does not flip the
+    /// voice for one word. Cyrillic runs never merge, regardless of `minRunLength`.
+    static let defaultMinRunLength = 6
 
     /// Base language codes written in Cyrillic.
     static let cyrillicLanguageCodes: Set<String> = [
@@ -76,8 +89,9 @@ enum LanguageSegmenter {
     }
 
     /// Maximal runs of one script. Neutral characters attach to the preceding run, or to the
-    /// following one at the start of the text. A run shorter than `minRunLength` merges into
-    /// its longer neighbour and the longer side's script wins.
+    /// following one at the start of the text. A Latin run with fewer than `minRunLength`
+    /// LETTERS merges into a neighboring Cyrillic run; Cyrillic runs never merge (see the
+    /// type doc comment for why the rule is asymmetric).
     static func runs(in text: String, minRunLength: Int = defaultMinRunLength) -> [TextRun] {
         guard !text.isEmpty else { return [] }
 
@@ -100,20 +114,16 @@ enum LanguageSegmenter {
             }
         }
 
+        // Because same-script runs already coalesce above, the list here strictly
+        // alternates Cyrillic/Latin, so a short Latin run's only neighbours are Cyrillic.
         // Each iteration removes one run, so this terminates at a single run at the latest.
-        while runs.count > 1, let short = shortestIndex(below: minRunLength, in: runs) {
-            let left = short - 1
-            let right = short + 1
-            let mergeLeft: Bool
-            if left < 0 {
-                mergeLeft = false
-            } else if right >= runs.count {
-                mergeLeft = true
-            } else {
-                mergeLeft = runs[left].text.count >= runs[right].text.count
-            }
-            let first = mergeLeft ? left : short
-            let second = mergeLeft ? short : right
+        while runs.count > 1, let index = shortLatinIndex(below: minRunLength, in: runs) {
+            let left = index - 1
+            let right = index + 1
+            let mergeLeft = left >= 0
+            let neighbor = mergeLeft ? left : right
+            let first = mergeLeft ? neighbor : index
+            let second = mergeLeft ? index : neighbor
             runs[first] = combine(runs[first], runs[second])
             runs.remove(at: second)
         }
@@ -129,17 +139,29 @@ enum LanguageSegmenter {
         return coalesced
     }
 
-    private static func shortestIndex(below minRunLength: Int, in runs: [TextRun]) -> Int? {
-        var best: Int?
-        for index in runs.indices where runs[index].text.count < minRunLength {
-            if let current = best, runs[index].text.count >= runs[current].text.count { continue }
-            best = index
+    /// The first Latin run whose letter count (not character count) is below `minRunLength`.
+    /// Cyrillic runs are never candidates: they never merge into a Latin neighbor.
+    private static func shortLatinIndex(below minRunLength: Int, in runs: [TextRun]) -> Int? {
+        for index in runs.indices
+        where runs[index].script == .latin && letterCount(runs[index]) < minRunLength {
+            return index
         }
-        return best
+        return nil
     }
 
+    /// Counts only letters (Cyrillic or Latin) in the run's text, ignoring attached neutral
+    /// characters (digits, punctuation, whitespace) so they never influence merge decisions.
+    private static func letterCount(_ run: TextRun) -> Int {
+        run.text.reduce(into: 0) { count, character in
+            if script(of: character) != .neutral { count += 1 }
+        }
+    }
+
+    /// Cyrillic always wins: this is only ever called to merge a short Latin run into an
+    /// adjacent Cyrillic one, so the combined run must stay Cyrillic.
     private static func combine(_ first: TextRun, _ second: TextRun) -> TextRun {
-        TextRun(text: first.text + second.text,
-                script: first.text.count >= second.text.count ? first.script : second.script)
+        let winningScript: ScriptClass = (first.script == .cyrillic || second.script == .cyrillic)
+            ? .cyrillic : first.script
+        return TextRun(text: first.text + second.text, script: winningScript)
     }
 }
