@@ -13,7 +13,8 @@ import Testing
         let pasteboard: ScriptedPasteboard
     }
 
-    private func makeRig(selection: String?, ax: (any AXReading)? = nil) -> Rig {
+    private func makeRig(selection: String?, ax: (any AXReading)? = nil,
+                          copyTimeout: TimeInterval = 0.02) -> Rig {
         let holder = ScriptedSettingsHolder.seeded()
         let host = ScriptedPanelHost()
         let panel = QuickPanelController(holder: holder)
@@ -47,7 +48,7 @@ import Testing
 
         let selectedText = AXSelectedTextService(
             ax: ax ?? ScriptedAXReader(text: selection), pasteboard: pasteboard,
-            keySimulator: keys, copyTimeout: 0.02, pollInterval: 0.005)
+            keySimulator: keys, copyTimeout: copyTimeout, pollInterval: 0.005)
 
         let features = TextFeatures(quickPanel: panel, refine: refine, summarize: summarize,
                                     speak: speak, selectedText: selectedText, toaster: toaster)
@@ -116,14 +117,26 @@ import Testing
     // The first call's AX read returns nil (falls back to ⌘C, which never resolves here —
     // the keySimulator has no `onPress`, so it hangs in the poll loop until cancelled); the
     // second call's AX read succeeds directly and never touches the pasteboard at all.
+    //
+    // `CountingAXReader` hands out its two scripted responses in call order, not by which
+    // logical hotkey "should" get which — so task 1 must be provably past its AX check (and
+    // into the poll loop) before task 2 fires, or a scheduling delay under a loaded parallel
+    // suite can let task 2 run first, steal response[0] (nil), and become the one that hangs
+    // — uncancelled — for the full copyTimeout. `keys.presses` flips to 1 the instant task 1
+    // simulates ⌘C, which only happens after it has consumed response[0] and is about to
+    // start polling, so gating on it pins the response ordering deterministically. A generous
+    // copyTimeout (comfortably above `waitFor`'s own timeout) then guarantees that if
+    // cancellation ever fails to land, the test fails fast on the `waitFor` below instead of
+    // hanging for the full timeout.
     @Test func aSecondHotkeyCancelsTheFirstSelectionReadAndRestoresThePasteboard() async {
         let ax = CountingAXReader(responses: [nil, "second selection"])
-        let rig = makeRig(selection: nil, ax: ax)
+        let rig = makeRig(selection: nil, ax: ax, copyTimeout: 10)
 
         rig.features.handle(.keyDown(.summarize))   // task 1: falls back to ⌘C and hangs
+        await waitFor("task 1 to reach its ⌘C poll loop") { rig.keys.presses.count == 1 }
         rig.features.handle(.keyDown(.summarize))   // task 2: must supersede task 1
-        await rig.features.drain()
-        try? await Task.sleep(for: .milliseconds(50))   // let task 1 finish unwinding its cancellation
+        await rig.features.drain()                  // awaits task 2 only; task 1 unwinds separately
+        await waitFor("task 1's cancellation toast") { rig.toaster.messages.contains("Cancelled.") }
 
         #expect(rig.features.summarize.source == "second selection")
         #expect(rig.pasteboard.readString() == "clip")     // restored, not left on "second selection"
