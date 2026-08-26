@@ -142,10 +142,16 @@ enum EndpointVoices {
             do {
                 audio = try await current.value
             } catch {
-                inFlightFetch = nil
+                // Only clear tracking that still belongs to *this* fetch: a superseded task's
+                // cancelled unwind can resume after the new generation has already recorded
+                // its own in-flight fetch here (the old task's resumption waits on the fake or
+                // real transport's cancellation propagation, which is not instantaneous), and
+                // an unconditional nil-out would wipe the new generation's tracking so a later
+                // `stop()` silently fails to cancel the request actually in flight.
+                if inFlightFetch == current { inFlightFetch = nil }
                 throw error
             }
-            inFlightFetch = nil
+            if inFlightFetch == current { inFlightFetch = nil }
             try Task.checkCancellation()
             try await playAndWait(audio)
         }

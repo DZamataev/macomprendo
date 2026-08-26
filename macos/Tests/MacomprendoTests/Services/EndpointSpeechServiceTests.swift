@@ -157,6 +157,38 @@ import Testing
         #expect(errors.isEmpty)
     }
 
+    /// Reproduces the real-world race: a superseded fetch's cancelled unwind runs *after* the
+    /// new generation has already recorded its own in-flight fetch, so an unconditional
+    /// `inFlightFetch = nil` in the old generation's cleanup wipes out the new generation's
+    /// tracking. A later `stop()` then can't find anything to cancel, and the still-billed
+    /// request for the new generation keeps running.
+    @Test func cancellingASupersededFetchDoesNotClobberTheNewGenerationsTracking() async {
+        let r = rig(chunkCharacterLimit: 100)   // one chunk per short text — one request each
+        r.http.isGated = true
+        r.http.holdCancellations = true
+
+        r.service.speak("First.", settings: settings())
+        for _ in 0..<50 { if r.http.requests.count >= 1 { break }; await Task.yield() }
+        #expect(r.http.requests.count == 1)     // fetch A genuinely in flight
+
+        r.service.speak("Second.", settings: settings())
+        for _ in 0..<50 { if r.http.requests.count >= 2 { break }; await Task.yield() }
+        #expect(r.http.requests.count == 2)     // fetch B recorded while A is still unwinding
+
+        // Let A's cancelled fetch actually unwind now, after B's tracking is already in place
+        // — the ordering a real `URLSession` cancellation reliably produces.
+        r.http.releaseGate(at: 0)
+        await settle()
+
+        r.service.stop()
+        await settle()
+
+        #expect(r.http.gateWasCancelled(at: 1))  // B's request must have been cancelled too
+
+        r.http.releaseGate(at: 1)                // don't leak an unresumed continuation
+        await settle()
+    }
+
     @Test func speakingAgainSupersedesTheRunningRequest() async {
         let r = rig()
         r.player.finishesImmediately = false
