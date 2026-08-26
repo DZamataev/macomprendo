@@ -4,23 +4,27 @@
 
 **Goal:** Make hotkey #3 (Speak selection) intelligible for text that mixes Cyrillic and Latin
 script. Two independent improvements: system voices gain per-script voice switching (offline,
-free, on by default), and an optional Gemini-TTS speech source gives natively code-switching
-speech to users who supply a Google AI Studio API key.
+free, on by default), and an optional **endpoint speech source** — any OpenAI-compatible
+`/v1/audio/speech` server (OpenAI itself, a reseller such as ProxyAPI, or a local
+openedai-speech / Kokoro-FastAPI instance) — reads mixed text with one natively code-switching
+voice.
 
 **Architecture:** Everything stays behind the existing `@MainActor protocol SpeechSynthesizing`.
 `AppEnvironment.live()` injects a new `SpeechRouter` that owns both backends and dispatches per
 call on `SpeechSettings.source`; `SpeakController`, `TextFeatures`, the "Speaking…" HUD and every
-existing controller test are untouched. The Gemini backend is a `@MainActor` class over the
+existing controller test are untouched. The endpoint backend is a `@MainActor` class over the
 existing `any HTTPClient` seam plus one new OS seam, `AudioPlaying`. All decision-making logic
-(script segmentation, utterance planning, voice fallback, text chunking, request building,
-response parsing, WAV framing) lives in pure static functions so it is unit-tested without
-AVFoundation, without the network and without audio hardware.
+(script segmentation, utterance planning, voice fallback, text chunking, request building, error
+mapping) lives in pure static functions so it is unit-tested without AVFoundation, without the
+network and without audio hardware.
 
 **Tech Stack:** Swift 6 (strict concurrency), SwiftUI + AppKit, AVFoundation
-(`AVSpeechSynthesizer`, `AVAudioPlayer`), Foundation `JSONEncoder`/`JSONDecoder`, swift-testing,
-Google Gemini Interactions API (`POST /v1beta/interactions`).
+(`AVSpeechSynthesizer`, `AVAudioPlayer`), Foundation `JSONEncoder`, swift-testing, and the
+OpenAI-compatible speech shape: `POST {base}/v1/audio/speech` with `Authorization: Bearer <key>`
+and a JSON body, whose **response body is the audio file itself** — no envelope, no base64.
 
-**Spec:** `docs/superpowers/specs/2026-08-26-mixed-language-speech.md`
+**Spec:** `docs/superpowers/specs/2026-08-26-mixed-language-speech.md` (amended 2026-08-26: the
+cloud source is an OpenAI-compatible endpoint, not Gemini, which is region-blocked for the user).
 
 **Shared interfaces:** `docs/superpowers/plans/2026-08-23-00-file-map-and-interfaces.md` — every
 type name used here is taken verbatim from that document (including its Amendments section)
@@ -33,17 +37,17 @@ unless listed under "Interface additions beyond the shared map" below.
 - Bundle id `com.dzamataev.macomprendo`; `DEVELOPMENT_TEAM 68QJJA7HK9`; copyright
   "© 2026 Denis Zamataev"; MIT.
 - Product/module name `Macomprendo`; `LSUIElement = true`; not sandboxed; hardened runtime.
-- No new SPM dependencies. The Gemini backend uses the existing `HTTPClient` seam and
-  Foundation JSON coding only.
+- No new SPM dependencies. The endpoint backend uses the existing `HTTPClient` seam and
+  Foundation JSON encoding only.
 - Tests: swift-testing (`import Testing`), run with `swift test --package-path macos`.
 - Layering (invariant 1): UI → Features → Services/Providers → Core. Every new file below names
   its layer. Concrete services are constructed **only** in `App/AppEnvironment.swift`.
 - Every OS-facing thing sits behind a protocol declared next to its default implementation, with
   a double in `macos/Tests/MacomprendoTests/Fakes/`.
-- No telemetry. The Gemini endpoint is contacted **only** when the user has selected the Gemini
-  source (invariant 9). The API key lives only in the Keychain under account `speech.gemini`
+- No telemetry. The speech endpoint is contacted **only** when the user has selected the endpoint
+  source (invariant 9). The API key lives only in the Keychain under account `speech.endpoint`
   (invariant 5) and never appears in logs, settings exports or error text.
-- Never log selection text, transcript text or LLM/TTS input at default level (invariant 6).
+- Never log selection text, transcript text or TTS input at default level (invariant 6).
 - Every user-visible failure is a `MacomprendoError` with both `errorDescription` and
   `recoverySuggestion` (invariant 8); adding a case means adding both strings **and** a row in
   `macos/Tests/MacomprendoTests/Core/MacomprendoErrorTests.swift`.
@@ -73,18 +77,17 @@ unless listed under "Interface additions beyond the shared map" below.
    ```
    Expected output: `0`.
 4. **Baseline.** Before Task 1 the suite is **464 swift tests in 55 suites** and **38 node
-   tests**, all green. This plan adds **80 swift tests**; the final total is **544**.
+   tests**, all green. This plan adds **72 swift tests**; the final total is **536**.
 
 ## Assumed starting point
 
 Plans 1–5 are merged. The following exist and are consumed verbatim: `Settings`,
 `SpeechSettings`, `KeychainStoring`/`SystemKeychainStore`/`InMemoryKeychainStore`,
 `MacomprendoError`, `ErrorText`, `Log`, `HTTPClient`/`HTTPRequest`/`HTTPResponse`,
-`URLSessionHTTPClient`, `EndpointURL`, `WAVEncoder`, `Voice`, `SpeechSynthesizing`,
-`AVSpeechService`, `SpeakController`, `Toasting`, `HUDController`/`HUDState.speaking(hint:)`,
-`SettingsHolding`, `SpeechTabModel`/`SpeechTab`, `AppModel`, `AppEnvironment.live()`,
-`AppEnvironment.fake()`, `ScriptedSpeech`, `ScriptedToaster`, `ScriptedSettingsHolder`,
-`FakeHTTPClient`.
+`URLSessionHTTPClient`, `EndpointURL`, `Voice`, `SpeechSynthesizing`, `AVSpeechService`,
+`SpeakController`, `Toasting`, `HUDController`/`HUDState.speaking(hint:)`, `SettingsHolding`,
+`SpeechTabModel`/`SpeechTab`, `AppModel`, `AppEnvironment.live()`, `AppEnvironment.fake()`,
+`ScriptedSpeech`, `ScriptedToaster`, `ScriptedSettingsHolder`, `FakeHTTPClient`.
 
 ## Interface additions beyond the shared map
 
@@ -95,40 +98,38 @@ Plans 1–5 are merged. The following exist and are consumed verbatim: `Settings
 | `AVSpeechService.qualityRank/languageRank/fallbackVoice(for:in:)/utterancePlan(text:settings:voices:minRunLength:)` | `Services/SpeechService.swift` | Services | pure helpers behind the queueing change |
 | `SpeechSynthesizing.onError` | `Services/SpeechService.swift` | Services | backends that can fail need a channel to `SpeakController` |
 | `SpeechSynthesizing.voices(for:)` + protocol-extension default | `Services/SpeechService.swift` | Services | the Speech tab lists the voices of the source being configured, not the active one |
-| `SpeechSource` + six `SpeechSettings` fields + `SpeechSettings.defaultGeminiModel/defaultGeminiBaseURL/geminiKeychainAccount` | `Core/Settings.swift` | Core | spec "Settings schema" |
+| `SpeechSource` + six `SpeechSettings` fields + `SpeechSettings.defaultEndpointBaseURL/defaultEndpointModel/defaultEndpointVoice/endpointKeychainAccount` | `Core/Settings.swift` | Core | spec "Settings schema" |
 | `MacomprendoError.audioPlayback(String)`, `.speechKeyMissing` | `Core/MacomprendoError.swift` | Core | playback and missing-key failures (invariant 8) |
-| `PCM16WAV` | `Providers/PCM16WAV.swift` | Providers | 16-bit sibling of `WAVEncoder` (which only takes `[Float]`) |
-| `GeminiTextChunker` | `Services/GeminiTextChunker.swift` | Services | the spec calls this `GeminiSpeechService.chunks(of:limit:)`; split into its own file so the pure text logic ships and is reviewed one task before the service |
-| `GeminiAudio`, `GeminiTTSParser` | `Providers/GeminiTTSParser.swift` | Providers | the single file a Gemini API shape change touches |
+| `SpeechTextChunker` | `Services/SpeechTextChunker.swift` | Services | the ≤4096-character split, pure and in its own file so it ships and is reviewed one task before the service |
+| `SpeechRequestBuilder` | `Providers/SpeechRequestBuilder.swift` | Providers | the one file an API-shape change touches: URL, headers, body, error naming |
 | `AudioPlaying`, `AVAudioPlayerPlayer` | `Services/AudioPlayer.swift` | Services | new OS seam (spec Part B step 4) |
-| `GeminiVoices`, `GeminiSpeechService` | `Services/GeminiSpeechService.swift` | Services | the Gemini backend + its embedded voice catalog |
+| `EndpointVoices`, `EndpointSpeechService` | `Services/EndpointSpeechService.swift` | Services | the endpoint backend + its built-in voice suggestions |
 | `SpeechRouter` | `Services/SpeechRouter.swift` | Services | per-call dispatch on `SpeechSettings.source` |
 | `FakeAudioPlayer` | `Tests/…/Fakes/FakeAudioPlayer.swift` | Tests | `AudioPlaying` double |
 | `ScriptedSpeech.onError/failWith(_:)/availableBySource` | `Tests/…/Fakes/ScriptedSpeech.swift` | Tests | drives the new protocol members |
-| `SpeechTabModel.init(speech:holder:keychain:)`, `.source`, `.geminiVoices`, `.apiKeyField`, `.keyStatus`, `.saveAPIKey()`, `.hasAPIKey()`, `.geminiPrivacyCaption` | `UI/Settings/SpeechTab.swift` | UI | spec "UI — Settings ▸ Speech" |
+| `SpeechTabModel.init(speech:holder:keychain:)`, `.source`, `.endpointVoices`, `.apiKeyField`, `.keyStatus`, `.saveAPIKey()`, `.hasAPIKey()`, `.endpointPrivacyCaption` | `UI/Settings/SpeechTab.swift` | UI | spec "UI — Settings ▸ Speech" |
 
 **Deliberate deviations from the spec, all resolved here and reflected in the tasks:**
 
-- The spec says script classification uses `Unicode.Scalar.properties.script`. **That property
-  does not exist in the Swift standard library** (verified: `error: value of type
-  'Unicode.Scalar.Properties' has no member 'script'`). Task 1 uses
-  `Unicode.Scalar.properties.isAlphabetic` plus explicit Unicode block ranges instead.
-- The spec gives `SpeechRouter` a `@MainActor () -> Settings` closure. It does not need one:
-  `speak(_:settings:)` already receives the whole `SpeechSettings`, which carries `.source`.
-  Dropping the closure removes an `AppEnvironment`/`AppModel` coupling and cannot go stale.
-  `voices()` therefore returns the **system** catalog and the tab uses `voices(for:)`.
-- The spec puts `voices(for:)` "on the router only". It is a `SpeechSynthesizing` requirement
-  with a protocol-extension default (`voices()`), so `AppEnvironment.speech` keeps its type and
-  `SpeechTabModel` needs no second dependency.
-- The spec says the Gemini voice catalog holds 27 names. The live docs list **30**
-  (verified at <https://ai.google.dev/gemini-api/docs/speech-generation>); Task 8 embeds all 30.
-- The spec's default `geminiModel` is `gemini-2.5-flash-preview-tts`. The documented curl for
-  `POST /v1beta/interactions` uses `gemini-3.1-flash-tts-preview`, so that is the default here;
-  Task 10 adds a Model text field so a retired model name is fixable without a rebuild.
-- The spec wants Gemini Preview errors "inline". `onError` has exactly one owner
-  (`SpeakController`), so Preview failures surface as the same HUD toast as hotkey #3 rather than
-  as a label inside the tab; a second subscriber would need a multicast seam the spec's non-goals
-  do not justify. Task 11's smoke test checks the toast.
+- The spec's Part A says classification uses "explicit Cyrillic/Latin block ranges" because the
+  standard library exposes no `script` property. Confirmed: `Unicode.Scalar.Properties` has no
+  `script` member (`error: value of type 'Unicode.Scalar.Properties' has no member 'script'`).
+  Task 1 uses `Unicode.Scalar.properties.isAlphabetic` plus block ranges.
+- The spec says a short run "merges into its neighbor" without saying which. Task 1 merges into
+  the **longer** neighbour and gives the merged run the longer side's script, so
+  `"Привет, world!"` reads Russian rather than English.
+- The spec's missing-key copy is one sentence. It is split into `errorDescription`
+  ("No speech API key.") and `recoverySuggestion` ("Add one in Settings ▸ Speech.") so
+  `ErrorText.describe` reproduces the spec sentence verbatim.
+- The spec's UI section says the stored key is never read back into the field. `hasAPIKey()`
+  reads `endpointAPIKeyRef` from `Settings` — the secret itself only ever moves *into* the
+  Keychain.
+- `EndpointSpeechService.chunkCharacterLimit` is injectable (defaulted). Production never passes
+  it; it exists so tests can force a multi-chunk queue out of a two-word string instead of
+  building a 4096-character fixture.
+- `SpeechRequestBuilder` uses the existing `EndpointURL.openAI(_:_:)` helper rather than string
+  concatenation, so a reseller base such as `https://api.proxyapi.ru/openai` and a local server
+  already ending in `/v1` both resolve correctly (verified in Task 6).
 
 ---
 
@@ -871,11 +872,12 @@ Append to `macos/Tests/MacomprendoTests/Features/SpeakControllerTests.swift`, in
     @Test func theBackendErrorToastCarriesTheRecoverySuggestion() async {
         let (controller, speech, toaster) = make()
         await controller.toggle(text: { "read me" })
-        speech.failWith(MacomprendoError.providerUnreachable(endpointName: "Gemini"))
+        speech.failWith(MacomprendoError.providerUnreachable(endpointName: "api.openai.com"))
 
-        let expected = ErrorText.describe(MacomprendoError.providerUnreachable(endpointName: "Gemini"))
+        let expected = ErrorText.describe(
+            MacomprendoError.providerUnreachable(endpointName: "api.openai.com"))
         #expect(toaster.messages == [expected])
-        #expect(expected.contains("Gemini"))
+        #expect(expected.contains("api.openai.com"))
         #expect(!controller.isSpeaking)
     }
 ```
@@ -1003,7 +1005,7 @@ git commit -m "feat(speech): surface backend failures through SpeakController to
 
 ---
 
-### Task 4: `SpeechSource` and the Gemini settings fields
+### Task 4: `SpeechSource` and the endpoint settings fields
 
 **Files:**
 - Modify: `macos/Sources/Macomprendo/Core/Settings.swift` (Core layer)
@@ -1014,21 +1016,22 @@ git commit -m "feat(speech): surface backend failures through SpeakController to
 - Produces:
   ```swift
   enum SpeechSource: String, Codable, Sendable, CaseIterable, Identifiable {
-      case system, gemini
+      case system, endpoint
       var id: String { rawValue }
       var displayName: String
   }
 
   extension SpeechSettings {
-      var source: SpeechSource            // default .system
-      var geminiVoice: String             // default "Kore"
-      var geminiStyle: String             // default ""
-      var geminiModel: String             // default SpeechSettings.defaultGeminiModel
-      var geminiBaseURL: URL              // default SpeechSettings.defaultGeminiBaseURL
-      var geminiAPIKeyRef: String?        // default nil
-      static let defaultGeminiModel: String              // "gemini-3.1-flash-tts-preview"
-      static let defaultGeminiBaseURL: URL               // https://generativelanguage.googleapis.com
-      static let geminiKeychainAccount: String           // "speech.gemini"
+      var source: SpeechSource               // default .system
+      var endpointBaseURL: URL               // default https://api.openai.com
+      var endpointModel: String              // default "gpt-4o-mini-tts"
+      var endpointVoice: String              // default "alloy"
+      var endpointInstructions: String       // default ""
+      var endpointAPIKeyRef: String?         // default nil
+      static let defaultEndpointBaseURL: URL
+      static let defaultEndpointModel: String
+      static let defaultEndpointVoice: String
+      static let endpointKeychainAccount: String     // "speech.endpoint"
   }
   ```
 
@@ -1051,14 +1054,14 @@ Expected: clean tree; HEAD is
 @Test func speechSettingsDefaultToTheSystemSource() {
     let speech = Settings.default.speech
     #expect(speech.source == .system)
-    #expect(speech.geminiVoice == "Kore")
-    #expect(speech.geminiStyle.isEmpty)
-    #expect(speech.geminiModel == "gemini-3.1-flash-tts-preview")
-    #expect(speech.geminiBaseURL.absoluteString == "https://generativelanguage.googleapis.com")
-    #expect(speech.geminiAPIKeyRef == nil)
+    #expect(speech.endpointBaseURL.absoluteString == "https://api.openai.com")
+    #expect(speech.endpointModel == "gpt-4o-mini-tts")
+    #expect(speech.endpointVoice == "alloy")
+    #expect(speech.endpointInstructions.isEmpty)
+    #expect(speech.endpointAPIKeyRef == nil)
 }
 
-@Test func aSpeechPayloadWithoutTheGeminiFieldsDecodesToDefaults() throws {
+@Test func aSpeechPayloadWithoutTheEndpointFieldsDecodesToDefaults() throws {
     let legacy = """
         {"schemaVersion":1,
          "speech":{"voiceID":"com.apple.voice.compact.en-US.Samantha",
@@ -1068,34 +1071,35 @@ Expected: clean tree; HEAD is
     #expect(settings.speech.voiceID == "com.apple.voice.compact.en-US.Samantha")
     #expect(settings.speech.rate == 0.42)
     #expect(settings.speech.source == .system)
-    #expect(settings.speech.geminiVoice == "Kore")
-    #expect(settings.speech.geminiModel == SpeechSettings.defaultGeminiModel)
-    #expect(settings.speech.geminiBaseURL == SpeechSettings.defaultGeminiBaseURL)
-    #expect(settings.speech.geminiAPIKeyRef == nil)
+    #expect(settings.speech.endpointBaseURL == SpeechSettings.defaultEndpointBaseURL)
+    #expect(settings.speech.endpointModel == SpeechSettings.defaultEndpointModel)
+    #expect(settings.speech.endpointVoice == SpeechSettings.defaultEndpointVoice)
+    #expect(settings.speech.endpointAPIKeyRef == nil)
 }
 
-@Test func geminiSpeechFieldsRoundTripThroughJSON() throws {
+@Test func endpointSpeechFieldsRoundTripThroughJSON() throws {
     var settings = Settings.default
-    settings.speech.source = .gemini
-    settings.speech.geminiVoice = "Sulafat"
-    settings.speech.geminiStyle = "Read slowly and warmly"
-    settings.speech.geminiModel = "gemini-2.5-pro-preview-tts"
-    settings.speech.geminiBaseURL = URL(string: "https://example.test")!
-    settings.speech.geminiAPIKeyRef = SpeechSettings.geminiKeychainAccount
+    settings.speech.source = .endpoint
+    settings.speech.endpointBaseURL = URL(string: "https://api.proxyapi.ru/openai")!
+    settings.speech.endpointModel = "tts-1-hd"
+    settings.speech.endpointVoice = "sage"
+    settings.speech.endpointInstructions = "Read slowly and warmly"
+    settings.speech.endpointAPIKeyRef = SpeechSettings.endpointKeychainAccount
 
     let encoded = try JSONEncoder().encode(settings)
     let decoded = try Settings.migrate(encoded)
 
     #expect(decoded.speech == settings.speech)
     // Only the Keychain account name is persisted, never the key (invariant 5).
-    #expect(String(decoding: encoded, as: UTF8.self).contains("\"geminiAPIKeyRef\":\"speech.gemini\""))
+    #expect(String(decoding: encoded, as: UTF8.self)
+            .contains("\"endpointAPIKeyRef\":\"speech.endpoint\""))
 }
 
-@Test func theGeminiKeychainAccountIsStable() {
-    #expect(SpeechSettings.geminiKeychainAccount == "speech.gemini")
-    #expect(SpeechSource.allCases.map(\.rawValue) == ["system", "gemini"])
-    #expect(SpeechSource.gemini.displayName == "Gemini")
+@Test func theEndpointKeychainAccountIsStable() {
+    #expect(SpeechSettings.endpointKeychainAccount == "speech.endpoint")
+    #expect(SpeechSource.allCases.map(\.rawValue) == ["system", "endpoint"])
     #expect(SpeechSource.system.displayName == "System voices")
+    #expect(SpeechSource.endpoint.displayName == "Endpoint")
 }
 ```
 
@@ -1114,63 +1118,64 @@ with:
 /// Which backend reads text aloud.
 enum SpeechSource: String, Codable, Sendable, CaseIterable, Identifiable {
     case system
-    case gemini
+    case endpoint
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
         case .system: "System voices"
-        case .gemini: "Gemini"
+        case .endpoint: "Endpoint"
         }
     }
 }
 
 struct SpeechSettings: Codable, Sendable, Equatable {
-    /// The model documented for `POST /v1beta/interactions`; editable in Settings ▸ Speech so
-    /// a retired preview name can be fixed without a new build.
-    static let defaultGeminiModel = "gemini-3.1-flash-tts-preview"
-    static let defaultGeminiBaseURL = URL(string: "https://generativelanguage.googleapis.com")!
-    /// Keychain account name for the Google AI Studio key. The key itself never leaves the
-    /// Keychain (invariant 5); `geminiAPIKeyRef` only records that one is stored.
-    static let geminiKeychainAccount = "speech.gemini"
+    /// Any OpenAI-compatible `/v1/audio/speech` server: OpenAI itself, a reseller such as
+    /// `https://api.proxyapi.ru/openai`, or a local server on `http://localhost:8000`.
+    static let defaultEndpointBaseURL = URL(string: "https://api.openai.com")!
+    static let defaultEndpointModel = "gpt-4o-mini-tts"
+    static let defaultEndpointVoice = "alloy"
+    /// Keychain account name for the speech endpoint's key. The key itself never leaves the
+    /// Keychain (invariant 5); `endpointAPIKeyRef` only records that one is stored.
+    static let endpointKeychainAccount = "speech.endpoint"
 
     var voiceID: String?
     var rate: Float
     var pitch: Float
     var volume: Float
     var source: SpeechSource
-    var geminiVoice: String
-    var geminiStyle: String
-    var geminiModel: String
-    var geminiBaseURL: URL
-    var geminiAPIKeyRef: String?
+    var endpointBaseURL: URL
+    var endpointModel: String
+    var endpointVoice: String
+    var endpointInstructions: String
+    var endpointAPIKeyRef: String?
 
     init(voiceID: String? = nil,
          rate: Float = 0.5,
          pitch: Float = 1.0,
          volume: Float = 1.0,
          source: SpeechSource = .system,
-         geminiVoice: String = "Kore",
-         geminiStyle: String = "",
-         geminiModel: String = SpeechSettings.defaultGeminiModel,
-         geminiBaseURL: URL = SpeechSettings.defaultGeminiBaseURL,
-         geminiAPIKeyRef: String? = nil) {
+         endpointBaseURL: URL = SpeechSettings.defaultEndpointBaseURL,
+         endpointModel: String = SpeechSettings.defaultEndpointModel,
+         endpointVoice: String = SpeechSettings.defaultEndpointVoice,
+         endpointInstructions: String = "",
+         endpointAPIKeyRef: String? = nil) {
         self.voiceID = voiceID
         self.rate = rate
         self.pitch = pitch
         self.volume = volume
         self.source = source
-        self.geminiVoice = geminiVoice
-        self.geminiStyle = geminiStyle
-        self.geminiModel = geminiModel
-        self.geminiBaseURL = geminiBaseURL
-        self.geminiAPIKeyRef = geminiAPIKeyRef
+        self.endpointBaseURL = endpointBaseURL
+        self.endpointModel = endpointModel
+        self.endpointVoice = endpointVoice
+        self.endpointInstructions = endpointInstructions
+        self.endpointAPIKeyRef = endpointAPIKeyRef
     }
 }
 
 extension SpeechSettings {
-    /// Hand-written so a document written before the Gemini source existed decodes to the
+    /// Hand-written so a document written before the endpoint source existed decodes to the
     /// defaults for the new keys instead of throwing. Declared in an extension so the struct
     /// keeps its memberwise initialiser — the same pattern `Settings` uses.
     init(from decoder: any Decoder) throws {
@@ -1181,16 +1186,17 @@ extension SpeechSettings {
         pitch = try c.decodeIfPresent(Float.self, forKey: .pitch) ?? d.pitch
         volume = try c.decodeIfPresent(Float.self, forKey: .volume) ?? d.volume
         source = try c.decodeIfPresent(SpeechSource.self, forKey: .source) ?? d.source
-        geminiVoice = try c.decodeIfPresent(String.self, forKey: .geminiVoice) ?? d.geminiVoice
-        geminiStyle = try c.decodeIfPresent(String.self, forKey: .geminiStyle) ?? d.geminiStyle
-        geminiModel = try c.decodeIfPresent(String.self, forKey: .geminiModel) ?? d.geminiModel
-        geminiBaseURL = try c.decodeIfPresent(URL.self, forKey: .geminiBaseURL) ?? d.geminiBaseURL
-        geminiAPIKeyRef = try c.decodeIfPresent(String.self, forKey: .geminiAPIKeyRef)
+        endpointBaseURL = try c.decodeIfPresent(URL.self, forKey: .endpointBaseURL) ?? d.endpointBaseURL
+        endpointModel = try c.decodeIfPresent(String.self, forKey: .endpointModel) ?? d.endpointModel
+        endpointVoice = try c.decodeIfPresent(String.self, forKey: .endpointVoice) ?? d.endpointVoice
+        endpointInstructions = try c.decodeIfPresent(String.self, forKey: .endpointInstructions)
+            ?? d.endpointInstructions
+        endpointAPIKeyRef = try c.decodeIfPresent(String.self, forKey: .endpointAPIKeyRef)
     }
 }
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `swift test --package-path macos --filter speechSettingsDefaultToTheSystemSource`
 Expected: PASS — 1 test, 0 failures.
@@ -1211,41 +1217,35 @@ Expected: `0`. (No `npm run gen`: this task adds no files.)
 ```bash
 git add macos/Sources/Macomprendo/Core/Settings.swift \
         macos/Tests/MacomprendoTests/Core/SettingsTests.swift
-git commit -m "feat(settings): add the Gemini speech source fields to SpeechSettings"
+git commit -m "feat(settings): add the endpoint speech source fields to SpeechSettings"
 ```
 
 ---
 
-### Task 5: `PCM16WAV` and `GeminiTextChunker`
+### Task 5: `SpeechTextChunker`
 
 **Files:**
-- Create: `macos/Sources/Macomprendo/Providers/PCM16WAV.swift` (Providers layer)
-- Create: `macos/Sources/Macomprendo/Services/GeminiTextChunker.swift` (Services layer)
-- Test: `macos/Tests/MacomprendoTests/Providers/PCM16WAVTests.swift`
-- Test: `macos/Tests/MacomprendoTests/Services/GeminiTextChunkerTests.swift`
+- Create: `macos/Sources/Macomprendo/Services/SpeechTextChunker.swift` (Services layer)
+- Test: `macos/Tests/MacomprendoTests/Services/SpeechTextChunkerTests.swift`
 
 **Interfaces:**
 - Consumes: nothing (pure Foundation).
 - Produces:
   ```swift
-  enum PCM16WAV {
-      static func data(pcm: Data, sampleRate: Int, channels: Int = 1) -> Data
-  }
-
-  enum GeminiTextChunker {
-      static let defaultByteLimit: Int                       // 3800
+  enum SpeechTextChunker {
+      static let defaultCharacterLimit: Int                  // 4096
       static let sentenceTerminators: Set<Character>
       static let closingCharacters: Set<Character>
-      static func chunks(of text: String, limit: Int = defaultByteLimit) -> [String]
+      static func chunks(of text: String, limit: Int = defaultCharacterLimit) -> [String]
       static func sentences(in text: String) -> [String]
       static func splitOversized(_ sentence: String, limit: Int) -> [String]
       static func splitWord(_ word: String, limit: Int) -> [String]
   }
   ```
 
-> `WAVEncoder` is deliberately not reused: it takes normalised `[Float]` samples and converts
-> them, while Gemini hands back bytes that are already signed 16-bit little-endian PCM. Funnelling
-> those through `Float` would be a lossy round trip for no benefit.
+> The limit is counted in **characters**, not UTF-8 bytes: OpenAI's `/v1/audio/speech` documents
+> a 4096-character input cap. Cyrillic therefore costs the same as Latin here, which is the
+> opposite of the transcription upload path — the tests pin that down explicitly.
 
 - [ ] **Step 1: Verify the working directory**
 
@@ -1255,255 +1255,113 @@ git -C /Users/frenzy/dev/macomprendo status --short
 git -C /Users/frenzy/dev/macomprendo log --oneline -1
 ```
 Expected: clean tree; HEAD is
-`feat(settings): add the Gemini speech source fields to SpeechSettings`.
+`feat(settings): add the endpoint speech source fields to SpeechSettings`.
 
-- [ ] **Step 2: Write the failing tests**
+- [ ] **Step 2: Write the failing test**
 
-Create `macos/Tests/MacomprendoTests/Providers/PCM16WAVTests.swift`:
-
-```swift
-import Foundation
-import Testing
-@testable import Macomprendo
-
-@Suite struct PCM16WAVTests {
-    private func uint32(_ data: Data, at offset: Int) -> UInt32 {
-        let bytes = Array(data[offset..<(offset + 4)])
-        return UInt32(bytes[0]) | UInt32(bytes[1]) << 8 | UInt32(bytes[2]) << 16 | UInt32(bytes[3]) << 24
-    }
-
-    private func uint16(_ data: Data, at offset: Int) -> UInt16 {
-        let bytes = Array(data[offset..<(offset + 2)])
-        return UInt16(bytes[0]) | UInt16(bytes[1]) << 8
-    }
-
-    private func ascii(_ data: Data, at offset: Int) -> String {
-        String(decoding: data[offset..<(offset + 4)], as: UTF8.self)
-    }
-
-    @Test func theHeaderIsFortyFourBytesOfCanonicalRIFF() {
-        let wav = PCM16WAV.data(pcm: Data([1, 2, 3, 4, 5, 6]), sampleRate: 24_000)
-        #expect(wav.count == 50)
-        #expect(ascii(wav, at: 0) == "RIFF")
-        #expect(ascii(wav, at: 8) == "WAVE")
-        #expect(ascii(wav, at: 12) == "fmt ")
-        #expect(ascii(wav, at: 36) == "data")
-        #expect(uint32(wav, at: 4) == 42)          // 36 + dataSize
-        #expect(uint32(wav, at: 16) == 16)         // PCM fmt chunk size
-        #expect(uint16(wav, at: 20) == 1)          // uncompressed PCM
-        #expect(uint16(wav, at: 34) == 16)         // bits per sample
-    }
-
-    @Test func theSampleRateAndByteRateAreLittleEndian() {
-        let wav = PCM16WAV.data(pcm: Data([0, 0]), sampleRate: 24_000)
-        #expect(uint16(wav, at: 22) == 1)                  // channels
-        #expect(uint32(wav, at: 24) == 24_000)             // sample rate
-        #expect(uint32(wav, at: 28) == 48_000)             // byte rate = rate * blockAlign
-        #expect(uint16(wav, at: 32) == 2)                  // block align
-        #expect(Array(wav[24..<28]) == [192, 93, 0, 0])
-    }
-
-    @Test func thePayloadIsCopiedVerbatim() {
-        let pcm = Data([0xFF, 0x7F, 0x00, 0x80])
-        let wav = PCM16WAV.data(pcm: pcm, sampleRate: 24_000)
-        #expect(Data(wav[44...]) == pcm)
-        #expect(uint32(wav, at: 40) == 4)
-    }
-
-    @Test func anIncompleteTrailingFrameIsDropped() {
-        let wav = PCM16WAV.data(pcm: Data([1, 2, 3]), sampleRate: 24_000)
-        #expect(wav.count == 46)
-        #expect(uint32(wav, at: 40) == 2)
-        #expect(Data(wav[44...]) == Data([1, 2]))
-    }
-
-    @Test func emptyPCMStillProducesAValidHeader() {
-        let wav = PCM16WAV.data(pcm: Data(), sampleRate: 24_000)
-        #expect(wav.count == 44)
-        #expect(uint32(wav, at: 40) == 0)
-        #expect(uint32(wav, at: 4) == 36)
-    }
-
-    @Test func stereoUpdatesBlockAlignAndByteRate() {
-        let wav = PCM16WAV.data(pcm: Data([1, 2, 3, 4]), sampleRate: 48_000, channels: 2)
-        #expect(uint16(wav, at: 22) == 2)
-        #expect(uint16(wav, at: 32) == 4)
-        #expect(uint32(wav, at: 28) == 192_000)
-        #expect(uint32(wav, at: 40) == 4)
-    }
-}
-```
-
-Create `macos/Tests/MacomprendoTests/Services/GeminiTextChunkerTests.swift`:
+Create `macos/Tests/MacomprendoTests/Services/SpeechTextChunkerTests.swift`:
 
 ```swift
 import Foundation
 import Testing
 @testable import Macomprendo
 
-@Suite struct GeminiTextChunkerTests {
+@Suite struct SpeechTextChunkerTests {
     @Test func shortTextIsOneChunk() {
-        #expect(GeminiTextChunker.chunks(of: "One. Two. Three.", limit: 100) == ["One. Two. Three."])
+        #expect(SpeechTextChunker.chunks(of: "One. Two. Three.", limit: 100) == ["One. Two. Three."])
     }
 
     @Test func blankTextProducesNoChunks() {
-        #expect(GeminiTextChunker.chunks(of: "", limit: 100).isEmpty)
-        #expect(GeminiTextChunker.chunks(of: "   \n\t ", limit: 100).isEmpty)
+        #expect(SpeechTextChunker.chunks(of: "", limit: 100).isEmpty)
+        #expect(SpeechTextChunker.chunks(of: "   \n\t ", limit: 100).isEmpty)
     }
 
-    @Test func sentencesAreGroupedUpToTheByteLimit() {
-        // "One." + " " + "Two." is exactly 9 bytes; adding "Three." would not fit.
-        #expect(GeminiTextChunker.chunks(of: "One. Two. Three.", limit: 9) == ["One. Two.", "Three."])
+    @Test func sentencesAreGroupedUpToTheLimit() {
+        // "One." + " " + "Two." is exactly 9 characters; adding "Three." would not fit.
+        #expect(SpeechTextChunker.chunks(of: "One. Two. Three.", limit: 9) == ["One. Two.", "Three."])
     }
 
-    @Test func chunkingCountsUTF8BytesNotCharacters() {
+    @Test func charactersAreCountedNotUTF8Bytes() {
         let text = "Привет мир. Как дела?"
-        #expect("Привет мир.".utf8.count == 20)
         #expect("Привет мир.".count == 11)
-        // 20 + 1 + 16 = 37 bytes would exceed the limit, so the sentences split.
-        #expect(GeminiTextChunker.chunks(of: text, limit: 21) == ["Привет мир.", "Как дела?"])
-        #expect(GeminiTextChunker.chunks(of: text, limit: 40) == ["Привет мир. Как дела?"])
+        #expect("Привет мир.".utf8.count == 20)      // a byte budget would behave differently
+        #expect("Как дела?".count == 9)
+
+        // 11 + 1 + 9 = 21 characters: fits at 21, splits at 20.
+        #expect(SpeechTextChunker.chunks(of: text, limit: 21) == ["Привет мир. Как дела?"])
+        #expect(SpeechTextChunker.chunks(of: text, limit: 20) == ["Привет мир.", "Как дела?"])
+        // A limit of 11 still holds the whole first sentence, which is 20 bytes.
+        #expect(SpeechTextChunker.chunks(of: "Привет мир.", limit: 11) == ["Привет мир."])
     }
 
     @Test func aSentenceLongerThanTheLimitIsSplitAtWordBoundaries() {
-        #expect(GeminiTextChunker.chunks(of: "alpha beta gamma delta", limit: 12)
+        #expect(SpeechTextChunker.chunks(of: "alpha beta gamma delta", limit: 12)
                 == ["alpha beta", "gamma delta"])
     }
 
     @Test func aWordLongerThanTheLimitIsSplitAtCharacterBoundaries() {
-        #expect(GeminiTextChunker.chunks(of: "aaaaaaaaaaaa", limit: 5) == ["aaaaa", "aaaaa", "aa"])
-        // Cyrillic characters are two bytes each, so a five-byte budget takes two of them.
-        #expect(GeminiTextChunker.chunks(of: "ПриветПриветПривет", limit: 10)
+        #expect(SpeechTextChunker.chunks(of: "aaaaaaaaaaaa", limit: 5) == ["aaaaa", "aaaaa", "aa"])
+        #expect("ПриветПриветПривет".count == 18)
+        #expect(SpeechTextChunker.chunks(of: "ПриветПриветПривет", limit: 5)
                 == ["Приве", "тПрив", "етПри", "вет"])
     }
 
     @Test func noChunkEverExceedsTheLimit() {
         let text = String(repeating: "Мама мыла раму очень тщательно. ", count: 40)
         for limit in [16, 64, 200] {
-            let chunks = GeminiTextChunker.chunks(of: text, limit: limit)
+            let chunks = SpeechTextChunker.chunks(of: text, limit: limit)
             #expect(!chunks.isEmpty)
-            #expect(chunks.allSatisfy { $0.utf8.count <= limit }, "limit \(limit)")
+            #expect(chunks.allSatisfy { $0.count <= limit }, "limit \(limit)")
         }
     }
 
     @Test func sentenceSplittingKeepsClosingQuotesAndBreaksOnNewlines() {
-        #expect(GeminiTextChunker.sentences(in: "He said \"Stop!\" Then left.\nNew line here")
+        #expect(SpeechTextChunker.sentences(in: "He said \"Stop!\" Then left.\nNew line here")
                 == ["He said \"Stop!\"", "Then left.", "New line here"])
     }
 
     @Test func abbreviationsAreRejoinedWhenTheyFitTheLimit() {
         // "Dr." looks like a sentence end, but the pieces are regrouped into one chunk.
-        #expect(GeminiTextChunker.chunks(of: "Dr. Smith went home.", limit: 100)
+        #expect(SpeechTextChunker.chunks(of: "Dr. Smith went home.", limit: 100)
                 == ["Dr. Smith went home."])
     }
 
     @Test func aZeroLimitProducesNoChunks() {
-        #expect(GeminiTextChunker.chunks(of: "anything", limit: 0).isEmpty)
-        #expect(GeminiTextChunker.defaultByteLimit == 3800)
+        #expect(SpeechTextChunker.chunks(of: "anything", limit: 0).isEmpty)
+        #expect(SpeechTextChunker.defaultCharacterLimit == 4096)
     }
 }
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [ ] **Step 3: Run the test to verify it fails**
 
-Run: `swift test --package-path macos --filter "PCM16WAVTests|GeminiTextChunkerTests"`
-Expected: build failure — `error: cannot find 'PCM16WAV' in scope` and
-`error: cannot find 'GeminiTextChunker' in scope`.
+Run: `swift test --package-path macos --filter SpeechTextChunkerTests`
+Expected: build failure — `error: cannot find 'SpeechTextChunker' in scope`.
 
-- [ ] **Step 4: Implement `PCM16WAV`**
+- [ ] **Step 4: Implement the chunker**
 
-Create `macos/Sources/Macomprendo/Providers/PCM16WAV.swift`:
-
-```swift
-import Foundation
-
-/// Wraps already-encoded signed 16-bit little-endian PCM in a canonical 44-byte-header WAV
-/// file (RIFF/WAVE, one 16-byte `fmt ` chunk, one `data` chunk).
-///
-/// `WAVEncoder` is the Float32 sibling: it converts normalised samples for the transcription
-/// upload path. Gemini already returns 16-bit bytes, so they are framed here instead of being
-/// round-tripped through `Float`.
-enum PCM16WAV {
-    private static let bitsPerSample = 16
-
-    /// - Parameters:
-    ///   - pcm: raw little-endian `Int16` samples, interleaved when `channels > 1`.
-    ///     An incomplete trailing frame is dropped, so the header never claims bytes the
-    ///     file does not have.
-    ///   - sampleRate: samples per second, e.g. 24000 for Gemini TTS.
-    static func data(pcm: Data, sampleRate: Int, channels: Int = 1) -> Data {
-        let blockAlign = max(1, channels) * bitsPerSample / 8
-        let dataSize = (pcm.count / blockAlign) * blockAlign
-        let samples = pcm.prefix(dataSize)
-
-        var out = Data(capacity: 44 + dataSize)
-
-        // RIFF header
-        out.append(ascii: "RIFF")
-        out.append(littleEndian: UInt32(36 + dataSize))
-        out.append(ascii: "WAVE")
-
-        // fmt chunk (16-byte PCM variant)
-        out.append(ascii: "fmt ")
-        out.append(littleEndian: UInt32(16))
-        out.append(littleEndian: UInt16(1))                     // PCM, uncompressed
-        out.append(littleEndian: UInt16(max(1, channels)))
-        out.append(littleEndian: UInt32(sampleRate))
-        out.append(littleEndian: UInt32(sampleRate * blockAlign))
-        out.append(littleEndian: UInt16(blockAlign))
-        out.append(littleEndian: UInt16(bitsPerSample))
-
-        // data chunk
-        out.append(ascii: "data")
-        out.append(littleEndian: UInt32(dataSize))
-        out.append(samples)
-
-        return out
-    }
-}
-
-private extension Data {
-    mutating func append(ascii string: String) {
-        append(contentsOf: Array(string.utf8))
-    }
-
-    mutating func append(littleEndian value: UInt32) {
-        append(contentsOf: [
-            UInt8(value & 0xFF),
-            UInt8((value >> 8) & 0xFF),
-            UInt8((value >> 16) & 0xFF),
-            UInt8((value >> 24) & 0xFF)
-        ])
-    }
-
-    mutating func append(littleEndian value: UInt16) {
-        append(contentsOf: [UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF)])
-    }
-}
-```
-
-- [ ] **Step 5: Implement `GeminiTextChunker`**
-
-Create `macos/Sources/Macomprendo/Services/GeminiTextChunker.swift`:
+Create `macos/Sources/Macomprendo/Services/SpeechTextChunker.swift`:
 
 ```swift
 import Foundation
 
-/// Splits text into request-sized pieces for the Gemini TTS endpoint. Pure: no state, no I/O.
+/// Splits text into request-sized pieces for an OpenAI-compatible `/v1/audio/speech` endpoint.
+/// Pure: no state, no I/O.
 ///
 /// Sentences are the preferred boundary, so a chunk seam lands where a speaker would pause.
-/// Sentences are regrouped greedily up to the byte budget, which means an abbreviation that
-/// looks like a sentence end ("Dr.") only affects *where* a seam could fall, never the text.
-/// The limit is counted in UTF-8 bytes, because that is what the API counts and because
-/// Cyrillic costs two bytes per character.
-enum GeminiTextChunker {
-    /// Comfortably under the endpoint's per-request input budget.
-    static let defaultByteLimit = 3800
+/// Sentences are regrouped greedily up to the limit, which means an abbreviation that looks
+/// like a sentence end ("Dr.") only affects *where* a seam could fall, never the text.
+///
+/// The limit is counted in **characters**: OpenAI documents a 4096-character input cap for
+/// this endpoint, so Cyrillic costs the same as Latin here.
+enum SpeechTextChunker {
+    /// The documented `/v1/audio/speech` input cap.
+    static let defaultCharacterLimit = 4096
 
     static let sentenceTerminators: Set<Character> = [".", "!", "?", "…", "。", "！", "？"]
     static let closingCharacters: Set<Character> = ["\"", "'", ")", "]", "»", "”", "’"]
 
-    static func chunks(of text: String, limit: Int = defaultByteLimit) -> [String] {
+    static func chunks(of text: String, limit: Int = defaultCharacterLimit) -> [String] {
         guard limit > 0 else { return [] }
         var chunks: [String] = []
         var current = ""
@@ -1512,7 +1370,7 @@ enum GeminiTextChunker {
             for piece in splitOversized(sentence, limit: limit) {
                 if current.isEmpty {
                     current = piece
-                } else if current.utf8.count + 1 + piece.utf8.count <= limit {
+                } else if current.count + 1 + piece.count <= limit {
                     current += " " + piece
                 } else {
                     chunks.append(current)
@@ -1557,16 +1415,16 @@ enum GeminiTextChunker {
         return sentences
     }
 
-    /// A sentence over the budget is regrouped at word boundaries.
+    /// A sentence over the limit is regrouped at word boundaries.
     static func splitOversized(_ sentence: String, limit: Int) -> [String] {
-        guard sentence.utf8.count > limit else { return [sentence] }
+        guard sentence.count > limit else { return [sentence] }
         var pieces: [String] = []
         var current = ""
         for word in sentence.split(whereSeparator: { $0.isWhitespace }).map(String.init) {
             for fragment in splitWord(word, limit: limit) {
                 if current.isEmpty {
                     current = fragment
-                } else if current.utf8.count + 1 + fragment.utf8.count <= limit {
+                } else if current.count + 1 + fragment.count <= limit {
                     current += " " + fragment
                 } else {
                     pieces.append(current)
@@ -1578,15 +1436,14 @@ enum GeminiTextChunker {
         return pieces
     }
 
-    /// A single word over the budget is cut at grapheme boundaries, so every fragment stays
-    /// valid UTF-8. A single grapheme wider than `limit` is emitted alone and is the one case
-    /// where a fragment can exceed the budget; real limits are thousands of bytes.
+    /// A single word over the limit is cut at grapheme boundaries, so every fragment stays
+    /// valid text.
     static func splitWord(_ word: String, limit: Int) -> [String] {
-        guard word.utf8.count > limit else { return [word] }
+        guard word.count > limit else { return [word] }
         var pieces: [String] = []
         var current = ""
         for character in word {
-            if !current.isEmpty, current.utf8.count + String(character).utf8.count > limit {
+            if current.count == limit {
                 pieces.append(current)
                 current = ""
             }
@@ -1598,384 +1455,10 @@ enum GeminiTextChunker {
 }
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
-
-Run: `swift test --package-path macos --filter "PCM16WAVTests|GeminiTextChunkerTests"`
-Expected: PASS — 16 tests, 0 failures.
-
-- [ ] **Step 7: Regenerate the Xcode project and check for warnings**
-
-```bash
-npm run gen
-find macos/Sources macos/Tests -name '*.swift' -exec touch {} +
-swift build --package-path macos 2>&1 | grep -c "warning:" || true
-```
-Expected: `0`.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add macos/Sources/Macomprendo/Providers/PCM16WAV.swift \
-        macos/Sources/Macomprendo/Services/GeminiTextChunker.swift \
-        macos/Tests/MacomprendoTests/Providers/PCM16WAVTests.swift \
-        macos/Tests/MacomprendoTests/Services/GeminiTextChunkerTests.swift \
-        macos/Macomprendo.xcodeproj
-git commit -m "feat(speech): add 16-bit WAV framing and byte-budget text chunking"
-```
-
----
-
-### Task 6: `GeminiTTSParser`
-
-**Files:**
-- Create: `macos/Sources/Macomprendo/Providers/GeminiTTSParser.swift` (Providers layer)
-- Test: `macos/Tests/MacomprendoTests/Providers/GeminiTTSParserTests.swift`
-
-**Interfaces:**
-- Consumes: `HTTPRequest`, `EndpointURL`, `MacomprendoError`, `PCM16WAV` (Task 5).
-- Produces:
-  ```swift
-  struct GeminiAudio: Equatable, Sendable {
-      var data: Data          // decoded audio bytes
-      var mimeType: String    // e.g. "audio/l16"
-      var sampleRate: Int
-      var channels: Int
-  }
-
-  enum GeminiTTSParser {
-      static let path: String                 // "/v1beta/interactions"
-      static let defaultMimeType: String      // "audio/l16"
-      static let defaultSampleRate: Int       // 24_000
-      static let defaultChannels: Int         // 1
-      static func requestBody(model: String, input: String, voice: String) throws -> Data
-      static func request(baseURL: URL, apiKey: String, model: String, input: String,
-                          voice: String, timeout: TimeInterval) throws -> HTTPRequest
-      static func parse(_ body: Data) throws -> GeminiAudio
-      static func wav(from audio: GeminiAudio) -> Data
-  }
-  ```
-
-**API shape — verified 2026-08-26 against the live docs, do not change without re-verifying.**
-Primary shape is the **Interactions API**, which is what
-<https://ai.google.dev/gemini-api/docs/speech-generation> shows as its only REST sample and which
-the Gemini docs call "generally available … recommended for all the latest features and models".
-
-Request (verbatim from the docs' curl):
-
-```
-POST https://generativelanguage.googleapis.com/v1beta/interactions
-x-goog-api-key: $GEMINI_API_KEY
-Content-Type: application/json
-
-{
-  "model": "gemini-3.1-flash-tts-preview",
-  "input": "Say cheerfully: Have a wonderful day!",
-  "response_format": { "type": "audio" },
-  "generation_config": { "speech_config": [ { "voice": "Kore" } ] }
-}
-```
-
-Response. The SDK exposes `interaction.output_audio`, but that field is **synthesised by the SDK**
-from `steps` (verified in `googleapis/python-genai`,
-`google/genai/_gaos/types/interactions/interaction.py`: "Note: this is added by the SDK", and
-`_populate_output_helpers` walks `steps` in reverse looking for a `model_output` step whose
-`content` holds a `{"type": "audio"}` block). The wire shape is therefore:
-
-```json
-{
-  "id": "int_1",
-  "model": "gemini-3.1-flash-tts-preview",
-  "steps": [
-    { "type": "user_input",   "content": [ { "type": "text", "text": "…" } ] },
-    { "type": "model_output", "content": [
-        { "type": "audio", "data": "<base64>", "mime_type": "audio/l16",
-          "sample_rate": 24000, "channels": 1 } ] }
-  ]
-}
-```
-
-`AudioContent` fields (`type`, `data`, `mime_type`, `sample_rate`, `channels`, `uri`) are all
-optional except `type`, so the parser defaults `mime_type`/`sample_rate`/`channels` to the
-documented 24 kHz mono 16-bit values.
-
-**Contingency, if the endpoint ever stops answering synchronously or the `steps` shape changes:**
-switch to `POST {base}/v1beta/models/{model}:generateContent` with body
-`{"contents":[{"parts":[{"text": input}]}],"generationConfig":{"responseModalities":["AUDIO"],
-"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName": voice}}}}}` and read the audio
-from `candidates[0].content.parts[0].inlineData.data` (mime type in `inlineData.mimeType`, e.g.
-`audio/L16;codec=pcm;rate=24000`). The same key and the same models serve it. **Only this file
-changes**; `GeminiSpeechService` never sees the difference.
-
-- [ ] **Step 1: Verify the working directory**
-
-```bash
-pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
-```
-Expected: clean tree; HEAD is
-`feat(speech): add 16-bit WAV framing and byte-budget text chunking`.
-
-- [ ] **Step 2: Write the failing test**
-
-Create `macos/Tests/MacomprendoTests/Providers/GeminiTTSParserTests.swift`:
-
-```swift
-import Foundation
-import Testing
-@testable import Macomprendo
-
-@Suite struct GeminiTTSParserTests {
-    private let base = URL(string: "https://generativelanguage.googleapis.com")!
-
-    private func response(_ json: String) -> Data { Data(json.utf8) }
-
-    @Test func theRequestTargetsTheInteractionsEndpointWithTheAPIKeyHeader() throws {
-        let request = try GeminiTTSParser.request(baseURL: base,
-                                                  apiKey: "AIzaSECRET",
-                                                  model: "gemini-3.1-flash-tts-preview",
-                                                  input: "Hello",
-                                                  voice: "Kore",
-                                                  timeout: 60)
-        #expect(request.method == "POST")
-        #expect(request.url.absoluteString
-                == "https://generativelanguage.googleapis.com/v1beta/interactions")
-        #expect(request.headers["x-goog-api-key"] == "AIzaSECRET")
-        #expect(request.headers["Content-Type"] == "application/json")
-        #expect(request.timeout == 60)
-        // The key travels in the header only, never in the body.
-        #expect(!String(decoding: request.body ?? Data(), as: UTF8.self).contains("AIzaSECRET"))
-    }
-
-    @Test func theRequestBodyMatchesTheDocumentedInteractionsShape() throws {
-        let body = try GeminiTTSParser.requestBody(model: "gemini-3.1-flash-tts-preview",
-                                                   input: "Hello",
-                                                   voice: "Kore")
-        #expect(String(decoding: body, as: UTF8.self) == """
-            {"generation_config":{"speech_config":[{"voice":"Kore"}]},\
-            "input":"Hello","model":"gemini-3.1-flash-tts-preview",\
-            "response_format":{"type":"audio"}}
-            """)
-    }
-
-    @Test func nonASCIIInputIsEncodedAsRawUTF8() throws {
-        let body = try GeminiTTSParser.requestBody(model: "m", input: "Cheerful: Привет!", voice: "Sulafat")
-        let text = String(decoding: body, as: UTF8.self)
-        #expect(text.contains("\"input\":\"Cheerful: Привет!\""))
-        #expect(!text.contains("\\u"))
-    }
-
-    @Test func audioIsDecodedFromTheLastModelOutputStep() throws {
-        let audio = try GeminiTTSParser.parse(response("""
-            {"id":"int_1","model":"gemini-3.1-flash-tts-preview","steps":[
-              {"type":"user_input","content":[{"type":"text","text":"hi"}]},
-              {"type":"model_output","content":[
-                {"type":"text","text":"ignored"},
-                {"type":"audio","data":"AQIDBA==","mime_type":"audio/l16",
-                 "sample_rate":24000,"channels":1}]}]}
-            """))
-        #expect(audio == GeminiAudio(data: Data([1, 2, 3, 4]),
-                                     mimeType: "audio/l16",
-                                     sampleRate: 24_000,
-                                     channels: 1))
-    }
-
-    @Test func missingFormatFieldsFallBackToTheDocumentedDefaults() throws {
-        let audio = try GeminiTTSParser.parse(response("""
-            {"steps":[{"type":"model_output","content":[{"type":"audio","data":"AQID"}]}]}
-            """))
-        #expect(audio.data == Data([1, 2, 3]))
-        #expect(audio.mimeType == "audio/l16")
-        #expect(audio.sampleRate == 24_000)
-        #expect(audio.channels == 1)
-    }
-
-    @Test func rawPCMIsFramedAsWAVAndWAVIsPassedThrough() {
-        let pcm = GeminiAudio(data: Data([1, 2, 3, 4]), mimeType: "audio/l16",
-                              sampleRate: 24_000, channels: 1)
-        let framed = GeminiTTSParser.wav(from: pcm)
-        #expect(framed.count == 48)
-        #expect(String(decoding: framed.prefix(4), as: UTF8.self) == "RIFF")
-
-        let alreadyWAV = GeminiAudio(data: Data([0x52, 0x49, 0x46, 0x46, 9, 9]),
-                                     mimeType: "audio/wav", sampleRate: 24_000, channels: 1)
-        #expect(GeminiTTSParser.wav(from: alreadyWAV) == alreadyWAV.data)
-    }
-
-    @Test func aResponseWithoutAudioIsMalformed() {
-        for json in ["{}",
-                     #"{"steps":[]}"#,
-                     #"{"steps":[{"type":"model_output","content":[{"type":"text","text":"x"}]}]}"#] {
-            #expect(throws: MacomprendoError.providerStreamMalformed) {
-                _ = try GeminiTTSParser.parse(Data(json.utf8))
-            }
-        }
-    }
-
-    @Test func undecodableOrEmptyAudioIsMalformed() {
-        for json in [#"{"steps":[{"type":"model_output","content":[{"type":"audio","data":"!!!!"}]}]}"#,
-                     #"{"steps":[{"type":"model_output","content":[{"type":"audio","data":""}]}]}"#,
-                     "not json at all"] {
-            #expect(throws: MacomprendoError.providerStreamMalformed) {
-                _ = try GeminiTTSParser.parse(Data(json.utf8))
-            }
-        }
-    }
-}
-```
-
-- [ ] **Step 3: Run the test to verify it fails**
-
-Run: `swift test --package-path macos --filter GeminiTTSParserTests`
-Expected: build failure — `error: cannot find 'GeminiTTSParser' in scope` and
-`error: cannot find 'GeminiAudio' in scope`.
-
-- [ ] **Step 4: Implement the parser**
-
-Create `macos/Sources/Macomprendo/Providers/GeminiTTSParser.swift`:
-
-```swift
-import Foundation
-
-/// The audio block a Gemini TTS response carries.
-struct GeminiAudio: Equatable, Sendable {
-    var data: Data
-    var mimeType: String
-    var sampleRate: Int
-    var channels: Int
-}
-
-/// Builds the Gemini TTS request and reads its response. The whole API shape lives here, so a
-/// change to it touches exactly one file.
-///
-/// Shape (verified 2026-08-26 against https://ai.google.dev/gemini-api/docs/speech-generation
-/// and the generated types in googleapis/python-genai):
-///
-///     POST {base}/v1beta/interactions
-///     x-goog-api-key: <key>
-///     {"model": …, "input": …, "response_format": {"type": "audio"},
-///      "generation_config": {"speech_config": [{"voice": …}]}}
-///
-///     {"steps": [{"type": "model_output",
-///                 "content": [{"type": "audio", "data": "<base64>",
-///                              "mime_type": "audio/l16", "sample_rate": 24000,
-///                              "channels": 1}]}]}
-///
-/// The SDKs' `interaction.output_audio` convenience field is derived from `steps`, not sent on
-/// the wire, so this parser walks `steps` the same way the SDKs do.
-enum GeminiTTSParser {
-    static let path = "/v1beta/interactions"
-    static let defaultMimeType = "audio/l16"
-    static let defaultSampleRate = 24_000
-    static let defaultChannels = 1
-
-    // MARK: - Request
-
-    private struct Body: Encodable {
-        let model: String
-        let input: String
-        let responseFormat: ResponseFormat
-        let generationConfig: GenerationConfig
-
-        enum CodingKeys: String, CodingKey {
-            case model, input
-            case responseFormat = "response_format"
-            case generationConfig = "generation_config"
-        }
-
-        struct ResponseFormat: Encodable { let type: String }
-
-        struct GenerationConfig: Encodable {
-            let speechConfig: [SpeechVoice]
-            enum CodingKeys: String, CodingKey { case speechConfig = "speech_config" }
-        }
-
-        struct SpeechVoice: Encodable { let voice: String }
-    }
-
-    /// Deterministic key order so the body is assertable byte for byte in tests.
-    static func requestBody(model: String, input: String, voice: String) throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(Body(model: model,
-                                       input: input,
-                                       responseFormat: .init(type: "audio"),
-                                       generationConfig: .init(speechConfig: [.init(voice: voice)])))
-    }
-
-    /// The key goes in the `x-goog-api-key` header and nowhere else (invariant 5).
-    static func request(baseURL: URL,
-                        apiKey: String,
-                        model: String,
-                        input: String,
-                        voice: String,
-                        timeout: TimeInterval) throws -> HTTPRequest {
-        HTTPRequest(method: "POST",
-                    url: EndpointURL.join(baseURL, path),
-                    headers: ["Content-Type": "application/json", "x-goog-api-key": apiKey],
-                    body: try requestBody(model: model, input: input, voice: voice),
-                    timeout: timeout)
-    }
-
-    // MARK: - Response
-
-    private struct Response: Decodable {
-        let steps: [Step]?
-
-        struct Step: Decodable {
-            let type: String?
-            let content: [Content]?
-
-            struct Content: Decodable {
-                let type: String?
-                let data: String?
-                let mimeType: String?
-                let sampleRate: Int?
-                let channels: Int?
-
-                enum CodingKeys: String, CodingKey {
-                    case type, data, channels
-                    case mimeType = "mime_type"
-                    case sampleRate = "sample_rate"
-                }
-            }
-        }
-    }
-
-    static func parse(_ body: Data) throws -> GeminiAudio {
-        guard let decoded = try? JSONDecoder().decode(Response.self, from: body) else {
-            throw MacomprendoError.providerStreamMalformed
-        }
-        let audio = (decoded.steps ?? [])
-            .reversed()
-            .filter { $0.type == "model_output" }
-            .compactMap { $0.content?.last { $0.type == "audio" } }
-            .first
-        guard let audio,
-              let encoded = audio.data,
-              let bytes = Data(base64Encoded: encoded, options: [.ignoreUnknownCharacters]),
-              !bytes.isEmpty
-        else { throw MacomprendoError.providerStreamMalformed }
-
-        return GeminiAudio(data: bytes,
-                           mimeType: audio.mimeType ?? defaultMimeType,
-                           sampleRate: audio.sampleRate ?? defaultSampleRate,
-                           channels: audio.channels ?? defaultChannels)
-    }
-
-    /// Playable bytes: a WAV response is already framed, anything else is raw PCM.
-    static func wav(from audio: GeminiAudio) -> Data {
-        audio.mimeType.hasPrefix("audio/wav")
-            ? audio.data
-            : PCM16WAV.data(pcm: audio.data, sampleRate: audio.sampleRate, channels: audio.channels)
-    }
-}
-```
-
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `swift test --package-path macos --filter GeminiTTSParserTests`
-Expected: PASS — 8 tests, 0 failures.
+Run: `swift test --package-path macos --filter SpeechTextChunkerTests`
+Expected: PASS — 10 tests, 0 failures.
 
 - [ ] **Step 6: Regenerate the Xcode project and check for warnings**
 
@@ -1989,10 +1472,287 @@ Expected: `0`.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add macos/Sources/Macomprendo/Providers/GeminiTTSParser.swift \
-        macos/Tests/MacomprendoTests/Providers/GeminiTTSParserTests.swift \
+git add macos/Sources/Macomprendo/Services/SpeechTextChunker.swift \
+        macos/Tests/MacomprendoTests/Services/SpeechTextChunkerTests.swift \
         macos/Macomprendo.xcodeproj
-git commit -m "feat(speech): add the Gemini TTS request builder and response parser"
+git commit -m "feat(speech): add sentence-aware chunking for the speech endpoint"
+```
+
+---
+
+### Task 6: `SpeechRequestBuilder`
+
+**Files:**
+- Create: `macos/Sources/Macomprendo/Providers/SpeechRequestBuilder.swift` (Providers layer)
+- Test: `macos/Tests/MacomprendoTests/Providers/SpeechRequestBuilderTests.swift`
+
+**Interfaces:**
+- Consumes: `HTTPRequest`, `EndpointURL`, `MacomprendoError`.
+- Produces:
+  ```swift
+  enum SpeechRequestBuilder {
+      static let path: String                  // "/audio/speech" (under EndpointURL's /v1)
+      static let responseFormat: String        // "wav"
+      static func endpointName(for baseURL: URL) -> String
+      static func requestBody(model: String, voice: String, input: String,
+                              instructions: String) throws -> Data
+      static func request(baseURL: URL, apiKey: String, model: String, voice: String,
+                          input: String, instructions: String,
+                          timeout: TimeInterval) throws -> HTTPRequest
+      static func audio(from response: HTTPResponse) throws -> Data
+      static func mapped(_ error: MacomprendoError, baseURL: URL) -> MacomprendoError
+  }
+  ```
+
+**API shape — the OpenAI-compatible speech endpoint.** This is the whole contract; there is no
+envelope to parse:
+
+```
+POST {base}/v1/audio/speech
+Authorization: Bearer <key>
+Content-Type: application/json
+
+{"input":"…","instructions":"…","model":"gpt-4o-mini-tts","response_format":"wav","voice":"alloy"}
+```
+
+The **response body is the audio file itself** — no JSON, no base64. `instructions` is omitted
+entirely when the user left the Style field empty (older models reject an unknown field less
+often than an empty one, and omitting it keeps the body identical to a plain `tts-1` request).
+`AVAudioPlayer` sniffs the container in Task 7, so a server that ignores `response_format` and
+returns MP3 still plays (spec open item 1).
+
+URL building goes through the existing `EndpointURL.openAI(_:_:)`, which appends `/v1` only when
+the base does not already end in it. Verified outputs:
+
+| `endpointBaseURL` | request URL | `endpointName` |
+|---|---|---|
+| `https://api.openai.com` | `https://api.openai.com/v1/audio/speech` | `api.openai.com` |
+| `https://api.openai.com/` | `https://api.openai.com/v1/audio/speech` | `api.openai.com` |
+| `https://api.proxyapi.ru/openai` | `https://api.proxyapi.ru/openai/v1/audio/speech` | `api.proxyapi.ru` |
+| `http://localhost:8000/v1` | `http://localhost:8000/v1/audio/speech` | `localhost` |
+
+- [ ] **Step 1: Verify the working directory**
+
+```bash
+pwd
+git -C /Users/frenzy/dev/macomprendo status --short
+git -C /Users/frenzy/dev/macomprendo log --oneline -1
+```
+Expected: clean tree; HEAD is
+`feat(speech): add sentence-aware chunking for the speech endpoint`.
+
+- [ ] **Step 2: Write the failing test**
+
+Create `macos/Tests/MacomprendoTests/Providers/SpeechRequestBuilderTests.swift`:
+
+```swift
+import Foundation
+import Testing
+@testable import Macomprendo
+
+@Suite struct SpeechRequestBuilderTests {
+    private let base = URL(string: "https://api.openai.com")!
+
+    @Test func theRequestTargetsTheAudioSpeechEndpointWithABearerToken() throws {
+        let request = try SpeechRequestBuilder.request(baseURL: base,
+                                                       apiKey: "sk-SECRET",
+                                                       model: "gpt-4o-mini-tts",
+                                                       voice: "alloy",
+                                                       input: "Hello",
+                                                       instructions: "",
+                                                       timeout: 60)
+        #expect(request.method == "POST")
+        #expect(request.url.absoluteString == "https://api.openai.com/v1/audio/speech")
+        #expect(request.headers["Authorization"] == "Bearer sk-SECRET")
+        #expect(request.headers["Content-Type"] == "application/json")
+        #expect(request.timeout == 60)
+        // The key travels in the header only, never in the body.
+        #expect(!String(decoding: request.body ?? Data(), as: UTF8.self).contains("sk-SECRET"))
+    }
+
+    @Test func resellerAndLocalBaseURLsResolveCorrectly() throws {
+        func url(_ string: String) throws -> String {
+            try SpeechRequestBuilder.request(baseURL: URL(string: string)!,
+                                             apiKey: "k", model: "m", voice: "v",
+                                             input: "i", instructions: "", timeout: 10)
+                .url.absoluteString
+        }
+        #expect(try url("https://api.openai.com/") == "https://api.openai.com/v1/audio/speech")
+        #expect(try url("https://api.proxyapi.ru/openai")
+                == "https://api.proxyapi.ru/openai/v1/audio/speech")
+        #expect(try url("http://localhost:8000/v1") == "http://localhost:8000/v1/audio/speech")
+    }
+
+    @Test func theBodyCarriesModelVoiceInputAndFormatAndOmitsEmptyInstructions() throws {
+        let body = try SpeechRequestBuilder.requestBody(model: "gpt-4o-mini-tts",
+                                                        voice: "alloy",
+                                                        input: "Hello",
+                                                        instructions: "   ")
+        #expect(String(decoding: body, as: UTF8.self) == """
+            {"input":"Hello","model":"gpt-4o-mini-tts","response_format":"wav","voice":"alloy"}
+            """)
+    }
+
+    @Test func instructionsAreSentWhenSetAndNonASCIIStaysRawUTF8() throws {
+        let body = try SpeechRequestBuilder.requestBody(model: "gpt-4o-mini-tts",
+                                                        voice: "alloy",
+                                                        input: "Привет!",
+                                                        instructions: "Speak slowly")
+        let text = String(decoding: body, as: UTF8.self)
+        #expect(text == """
+            {"input":"Привет!","instructions":"Speak slowly","model":"gpt-4o-mini-tts",\
+            "response_format":"wav","voice":"alloy"}
+            """)
+        #expect(!text.contains("\\u"))
+    }
+
+    @Test func theEndpointNameIsTheConfiguredHostAndTransportErrorsAreRenamed() {
+        #expect(SpeechRequestBuilder.endpointName(for: base) == "api.openai.com")
+        #expect(SpeechRequestBuilder.endpointName(for: URL(string: "http://localhost:8000")!)
+                == "localhost")
+
+        let renamed = SpeechRequestBuilder.mapped(
+            .providerUnreachable(endpointName: "whatever"),
+            baseURL: URL(string: "https://api.proxyapi.ru/openai")!)
+        #expect(renamed == .providerUnreachable(endpointName: "api.proxyapi.ru"))
+
+        // Anything else passes through untouched, including the silent cancellation case.
+        #expect(SpeechRequestBuilder.mapped(.providerHTTP(status: 401, body: "bad key"), baseURL: base)
+                == .providerHTTP(status: 401, body: "bad key"))
+        #expect(SpeechRequestBuilder.mapped(.cancelled, baseURL: base) == .cancelled)
+    }
+
+    @Test func anEmptyResponseBodyIsMalformed() throws {
+        let audio = try SpeechRequestBuilder.audio(
+            from: HTTPResponse(status: 200, headers: [:], body: Data([0x52, 0x49, 0x46, 0x46])))
+        #expect(audio == Data([0x52, 0x49, 0x46, 0x46]))
+
+        #expect(throws: MacomprendoError.providerStreamMalformed) {
+            _ = try SpeechRequestBuilder.audio(from: HTTPResponse(status: 200, headers: [:], body: Data()))
+        }
+    }
+}
+```
+
+- [ ] **Step 3: Run the test to verify it fails**
+
+Run: `swift test --package-path macos --filter SpeechRequestBuilderTests`
+Expected: build failure — `error: cannot find 'SpeechRequestBuilder' in scope`.
+
+- [ ] **Step 4: Implement the builder**
+
+Create `macos/Sources/Macomprendo/Providers/SpeechRequestBuilder.swift`:
+
+```swift
+import Foundation
+
+/// Builds the request for an OpenAI-compatible `POST /v1/audio/speech` endpoint and names its
+/// failures. The whole API shape lives here, so a change to it touches exactly one file.
+///
+///     POST {base}/v1/audio/speech
+///     Authorization: Bearer <key>
+///     {"input": …, "instructions": …, "model": …, "response_format": "wav", "voice": …}
+///
+/// The response body **is** the audio file — no envelope, no base64. `AVAudioPlayer` sniffs the
+/// container, so a server that ignores `response_format` and returns MP3 still plays.
+enum SpeechRequestBuilder {
+    /// Appended under `EndpointURL.openAI`'s `/v1` prefix.
+    static let path = "/audio/speech"
+    static let responseFormat = "wav"
+
+    /// What the user sees in `providerUnreachable`: the host they configured, not a raw URL.
+    static func endpointName(for baseURL: URL) -> String {
+        baseURL.host() ?? baseURL.absoluteString
+    }
+
+    private struct Body: Encodable {
+        let model: String
+        let voice: String
+        let input: String
+        let responseFormat: String
+        /// Omitted from the JSON entirely when nil, so a server that does not know the field
+        /// sees exactly the body a plain `tts-1` request would send.
+        let instructions: String?
+
+        enum CodingKeys: String, CodingKey {
+            case model, voice, input, instructions
+            case responseFormat = "response_format"
+        }
+    }
+
+    /// Deterministic key order so the body is assertable byte for byte in tests.
+    static func requestBody(model: String,
+                            voice: String,
+                            input: String,
+                            instructions: String) throws -> Data {
+        let trimmed = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(Body(model: model,
+                                       voice: voice,
+                                       input: input,
+                                       responseFormat: responseFormat,
+                                       instructions: trimmed.isEmpty ? nil : trimmed))
+    }
+
+    /// The key goes in the `Authorization` header and nowhere else (invariant 5).
+    static func request(baseURL: URL,
+                        apiKey: String,
+                        model: String,
+                        voice: String,
+                        input: String,
+                        instructions: String,
+                        timeout: TimeInterval) throws -> HTTPRequest {
+        HTTPRequest(method: "POST",
+                    url: EndpointURL.openAI(baseURL, path),
+                    headers: ["Content-Type": "application/json",
+                              "Authorization": "Bearer \(apiKey)"],
+                    body: try requestBody(model: model,
+                                          voice: voice,
+                                          input: input,
+                                          instructions: instructions),
+                    timeout: timeout)
+    }
+
+    /// A 2xx with no bytes is a server that accepted the request and produced nothing; that is
+    /// a malformed response, not silence to play.
+    static func audio(from response: HTTPResponse) throws -> Data {
+        guard !response.body.isEmpty else { throw MacomprendoError.providerStreamMalformed }
+        return response.body
+    }
+
+    /// `HTTPClient` names the host it could not reach from the URL it was handed; re-derive it
+    /// from the configured base so the message matches what the user typed in Settings.
+    static func mapped(_ error: MacomprendoError, baseURL: URL) -> MacomprendoError {
+        if case .providerUnreachable = error {
+            return .providerUnreachable(endpointName: endpointName(for: baseURL))
+        }
+        return error
+    }
+}
+```
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+Run: `swift test --package-path macos --filter SpeechRequestBuilderTests`
+Expected: PASS — 6 tests, 0 failures.
+
+- [ ] **Step 6: Regenerate the Xcode project and check for warnings**
+
+```bash
+npm run gen
+find macos/Sources macos/Tests -name '*.swift' -exec touch {} +
+swift build --package-path macos 2>&1 | grep -c "warning:" || true
+```
+Expected: `0`.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add macos/Sources/Macomprendo/Providers/SpeechRequestBuilder.swift \
+        macos/Tests/MacomprendoTests/Providers/SpeechRequestBuilderTests.swift \
+        macos/Macomprendo.xcodeproj
+git commit -m "feat(speech): add the OpenAI-compatible speech request builder"
 ```
 
 ---
@@ -2011,7 +1771,7 @@ git commit -m "feat(speech): add the Gemini TTS request builder and response par
   ```swift
   @MainActor protocol AudioPlaying: AnyObject {
       var onFinished: (@MainActor () -> Void)? { get set }
-      func play(_ wavData: Data) throws
+      func play(_ audioData: Data) throws
       func stop()
   }
   @MainActor final class AVAudioPlayerPlayer: NSObject, AudioPlaying
@@ -2034,7 +1794,7 @@ git -C /Users/frenzy/dev/macomprendo status --short
 git -C /Users/frenzy/dev/macomprendo log --oneline -1
 ```
 Expected: clean tree; HEAD is
-`feat(speech): add the Gemini TTS request builder and response parser`.
+`feat(speech): add the OpenAI-compatible speech request builder`.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -2062,14 +1822,15 @@ func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
 }
 ```
 
-and append this test at the end of the file:
+and append this test at the **end of the file**, at file scope (these are free `@Test`
+functions, not members of a `@Suite` type):
 
 ```swift
-@Test func theMissingGeminiKeyErrorReadsAsOneSentencePair() {
-    #expect(MacomprendoError.speechKeyMissing.errorDescription == "No Gemini API key.")
+@Test func theMissingSpeechKeyErrorReadsAsOneSentencePair() {
+    #expect(MacomprendoError.speechKeyMissing.errorDescription == "No speech API key.")
     #expect(MacomprendoError.speechKeyMissing.recoverySuggestion == "Add one in Settings ▸ Speech.")
     #expect(ErrorText.describe(MacomprendoError.speechKeyMissing)
-            == "No Gemini API key. Add one in Settings ▸ Speech.")
+            == "No speech API key. Add one in Settings ▸ Speech.")
     // Playback failures are distinct from recording failures.
     #expect(MacomprendoError.audioPlayback("x").errorDescription?.contains("Playing") == true)
 }
@@ -2080,9 +1841,6 @@ and append this test at the end of the file:
 Run: `swift test --package-path macos --filter everyErrorHasDescriptionAndRecovery`
 Expected: build failure — `error: type 'MacomprendoError' has no member 'audioPlayback'` and
 `error: type 'MacomprendoError' has no member 'speechKeyMissing'`.
-
-(These tests are free functions, not members of a `@Suite` type, so there is no suite name to
-filter on — filter on the test function name instead.)
 
 - [ ] **Step 4: Add the error cases**
 
@@ -2100,7 +1858,7 @@ add to `errorDescription` (after the `.audio` arm):
         case .audioPlayback(let reason):
             return "Playing the speech audio failed: \(reason)"
         case .speechKeyMissing:
-            return "No Gemini API key."
+            return "No speech API key."
 ```
 
 and to `recoverySuggestion` (after the `.audio` arm):
@@ -2120,14 +1878,16 @@ Create `macos/Sources/Macomprendo/Services/AudioPlayer.swift`:
 import AVFoundation
 import Foundation
 
-/// Plays one buffer of WAV data at a time and reports when it is done.
+/// Plays one buffer of encoded audio at a time and reports when it is done.
 @MainActor protocol AudioPlaying: AnyObject {
     /// Called on the main actor when the current buffer finishes on its own. It is not called
     /// for `stop()`.
     var onFinished: (@MainActor () -> Void)? { get set }
-    /// Replaces whatever is playing. Throws `MacomprendoError.audioPlayback` when the bytes
-    /// cannot be decoded or the output device refuses to start.
-    func play(_ wavData: Data) throws
+    /// Replaces whatever is playing. `AVAudioPlayer` sniffs the container, so WAV, MP3 and the
+    /// other formats an OpenAI-compatible server may return all work. Throws
+    /// `MacomprendoError.audioPlayback` when the bytes cannot be decoded or the output device
+    /// refuses to start.
+    func play(_ audioData: Data) throws
     func stop()
 }
 
@@ -2138,10 +1898,10 @@ import Foundation
 
     private var player: AVAudioPlayer?
 
-    func play(_ wavData: Data) throws {
+    func play(_ audioData: Data) throws {
         stop()
         do {
-            let player = try AVAudioPlayer(data: wavData)
+            let player = try AVAudioPlayer(data: audioData)
             player.delegate = self
             self.player = player
             guard player.play() else {
@@ -2193,12 +1953,12 @@ import Foundation
     /// `await`. Set to `false` to hold a buffer open and drive it with `finishCurrent()`.
     var finishesImmediately = true
 
-    func play(_ wavData: Data) throws {
+    func play(_ audioData: Data) throws {
         if let error = playError {
             playError = nil
             throw error
         }
-        played.append(wavData)
+        played.append(audioData)
         if finishesImmediately { onFinished?() }
     }
 
@@ -2215,7 +1975,7 @@ Run: `swift test --package-path macos --filter everyErrorHasDescriptionAndRecove
 Expected: PASS — 12 tests, 0 failures (one per argument in the list).
 
 Run: `swift test --package-path macos`
-Expected: `Test run with 520 tests … passed`.
+Expected: `Test run with 512 tests … passed`.
 
 - [ ] **Step 8: Regenerate the Xcode project and check for warnings**
 
@@ -2239,37 +1999,34 @@ git commit -m "feat(speech): add the AudioPlaying seam and playback/key error ca
 
 ---
 
-### Task 8: `GeminiSpeechService`
+### Task 8: `EndpointSpeechService`
 
 **Files:**
-- Create: `macos/Sources/Macomprendo/Services/GeminiSpeechService.swift` (Services layer)
-- Test: `macos/Tests/MacomprendoTests/Services/GeminiSpeechServiceTests.swift`
+- Create: `macos/Sources/Macomprendo/Services/EndpointSpeechService.swift` (Services layer)
+- Test: `macos/Tests/MacomprendoTests/Services/EndpointSpeechServiceTests.swift`
 
 **Interfaces:**
 - Consumes: `SpeechSynthesizing`, `Voice`, `SpeechSettings`, `HTTPClient`, `KeychainStoring`,
-  `AudioPlaying` (Task 7), `GeminiTextChunker` (Task 5), `GeminiTTSParser` (Task 6),
+  `AudioPlaying` (Task 7), `SpeechTextChunker` (Task 5), `SpeechRequestBuilder` (Task 6),
   `MacomprendoError`.
 - Produces:
   ```swift
-  enum GeminiVoices { static let all: [Voice] }        // 30 prebuilt voices, language tag "gemini"
+  enum EndpointVoices { static let all: [Voice] }   // 11 OpenAI built-ins, language "endpoint"
 
-  @MainActor final class GeminiSpeechService: SpeechSynthesizing {
-      static let endpointName: String                  // "Gemini"
-      static let defaultChunkByteLimit: Int            // 3800
+  @MainActor final class EndpointSpeechService: SpeechSynthesizing {
+      static let defaultChunkCharacterLimit: Int       // SpeechTextChunker.defaultCharacterLimit
       static let requestTimeout: TimeInterval          // 60
-      static func stylePrefix(_ style: String) -> String
-      static func mapped(_ error: MacomprendoError) -> MacomprendoError
       static func isCancellation(_ error: Error) -> Bool
       init(http: any HTTPClient,
            keychain: any KeychainStoring,
            player: any AudioPlaying,
-           chunkByteLimit: Int = GeminiSpeechService.defaultChunkByteLimit)
+           chunkCharacterLimit: Int = EndpointSpeechService.defaultChunkCharacterLimit)
       func drain() async                               // async test hook
   }
   ```
 
-> `chunkByteLimit` is injectable purely so the tests can force a multi-chunk queue out of a
-> two-word string instead of building a 4 KB fixture. `AppEnvironment` never passes it.
+> `chunkCharacterLimit` is injectable purely so the tests can force a multi-chunk queue out of a
+> two-word string instead of building a 4096-character fixture. `AppEnvironment` never passes it.
 
 - [ ] **Step 1: Verify the working directory**
 
@@ -2283,7 +2040,7 @@ Expected: clean tree; HEAD is
 
 - [ ] **Step 2: Write the failing test**
 
-Create `macos/Tests/MacomprendoTests/Services/GeminiSpeechServiceTests.swift`:
+Create `macos/Tests/MacomprendoTests/Services/EndpointSpeechServiceTests.swift`:
 
 ```swift
 import Foundation
@@ -2291,50 +2048,51 @@ import Testing
 @testable import Macomprendo
 
 @MainActor
-@Suite struct GeminiSpeechServiceTests {
+@Suite struct EndpointSpeechServiceTests {
     private struct Rig {
-        let service: GeminiSpeechService
+        let service: EndpointSpeechService
         let http: FakeHTTPClient
         let player: FakeAudioPlayer
         let keychain: InMemoryKeychainStore
     }
 
-    /// A one-chunk Interactions response carrying four bytes of PCM.
-    private static let audioResponse = HTTPResponse(status: 200, headers: [:], body: Data("""
-        {"steps":[{"type":"model_output","content":[
-          {"type":"audio","data":"AQIDBA==","mime_type":"audio/l16",
-           "sample_rate":24000,"channels":1}]}]}
-        """.utf8))
+    /// The endpoint answers with raw audio bytes — a WAV header is enough for the fake player.
+    private static let audioResponse = HTTPResponse(status: 200, headers: [:],
+                                                    body: Data([0x52, 0x49, 0x46, 0x46, 0x01, 0x02]))
 
-    /// The default six-byte budget turns "One. Two. Three." into three one-sentence chunks,
-    /// which is what makes the queue observable without a 4 KB fixture.
-    private func rig(withKey: Bool = true, chunkByteLimit: Int = 6) -> Rig {
+    /// The default six-character budget turns "One. Two. Three." into three one-sentence
+    /// chunks, which is what makes the queue observable without a 4096-character fixture.
+    private func rig(withKey: Bool = true, chunkCharacterLimit: Int = 6) -> Rig {
         let http = FakeHTTPClient()
         http.response = Self.audioResponse
         let player = FakeAudioPlayer()
         let keychain = InMemoryKeychainStore()
-        if withKey { try? keychain.set("AIzaSECRET", account: SpeechSettings.geminiKeychainAccount) }
-        return Rig(service: GeminiSpeechService(http: http,
-                                                keychain: keychain,
-                                                player: player,
-                                                chunkByteLimit: chunkByteLimit),
+        if withKey { try? keychain.set("sk-SECRET", account: SpeechSettings.endpointKeychainAccount) }
+        return Rig(service: EndpointSpeechService(http: http,
+                                                  keychain: keychain,
+                                                  player: player,
+                                                  chunkCharacterLimit: chunkCharacterLimit),
                    http: http, player: player, keychain: keychain)
     }
 
-    private func settings(withKey: Bool = true, style: String = "") -> SpeechSettings {
-        SpeechSettings(source: .gemini,
-                       geminiVoice: "Kore",
-                       geminiStyle: style,
-                       geminiAPIKeyRef: withKey ? SpeechSettings.geminiKeychainAccount : nil)
+    private func settings(withKey: Bool = true, instructions: String = "") -> SpeechSettings {
+        SpeechSettings(source: .endpoint,
+                       endpointVoice: "alloy",
+                       endpointInstructions: instructions,
+                       endpointAPIKeyRef: withKey ? SpeechSettings.endpointKeychainAccount : nil)
     }
 
-    private func inputs(_ http: FakeHTTPClient) -> [String] {
-        http.requests.compactMap { request in
+    private func bodies(_ http: FakeHTTPClient) -> [[String: Any]] {
+        http.requests.compactMap { request -> [String: Any]? in
             guard let body = request.body,
                   let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
             else { return nil }
-            return json["input"] as? String
+            return json
         }
+    }
+
+    private func inputs(_ http: FakeHTTPClient) -> [String] {
+        bodies(http).compactMap { $0["input"] as? String }
     }
 
     /// Lets the service's task make progress when it is deliberately left mid-queue.
@@ -2348,8 +2106,9 @@ import Testing
         await r.service.drain()
 
         #expect(inputs(r.http) == ["One.", "Two.", "Three."])
-        #expect(r.player.played.count == 3)
-        #expect(r.player.played.allSatisfy { String(decoding: $0.prefix(4), as: UTF8.self) == "RIFF" })
+        #expect(r.player.played == [Self.audioResponse.body,
+                                    Self.audioResponse.body,
+                                    Self.audioResponse.body])
         #expect(!r.service.isSpeaking)
     }
 
@@ -2428,7 +2187,6 @@ import Testing
         await r.service.drain()
 
         #expect(inputs(r.http).last == "Fresh.")
-        #expect(r.player.played.last != nil)
         #expect(!r.service.isSpeaking)
     }
 
@@ -2449,7 +2207,7 @@ import Testing
 
     @Test func anHTTPFailureStopsPlaybackAndReportsOnce() async {
         let r = rig()
-        r.http.error = MacomprendoError.providerHTTP(status: 401, body: "API key not valid")
+        r.http.error = MacomprendoError.providerHTTP(status: 401, body: "invalid_api_key")
         var errors: [Error] = []
         r.service.onError = { errors.append($0) }
 
@@ -2458,33 +2216,41 @@ import Testing
 
         #expect(errors.count == 1)
         #expect(errors.first as? MacomprendoError
-                == .providerHTTP(status: 401, body: "API key not valid"))
+                == .providerHTTP(status: 401, body: "invalid_api_key"))
         #expect(r.player.played.isEmpty)
         #expect(!r.service.isSpeaking)
     }
 
-    @Test func transportFailuresAreRenamedToTheGeminiEndpoint() async {
+    @Test func transportFailuresAreRenamedToTheConfiguredHost() async {
         let r = rig()
-        r.http.error = MacomprendoError.providerUnreachable(endpointName: "generativelanguage.googleapis.com")
+        r.http.error = MacomprendoError.providerUnreachable(endpointName: "10.0.0.1")
         var errors: [Error] = []
         r.service.onError = { errors.append($0) }
 
-        r.service.speak("Hello.", settings: settings())
+        var configured = settings()
+        configured.endpointBaseURL = URL(string: "https://api.proxyapi.ru/openai")!
+        r.service.speak("Hello.", settings: configured)
         await r.service.drain()
 
-        #expect(errors.first as? MacomprendoError == .providerUnreachable(endpointName: "Gemini"))
+        #expect(errors.first as? MacomprendoError
+                == .providerUnreachable(endpointName: "api.proxyapi.ru"))
     }
 
-    @Test func theStyleIsPrependedToEveryChunkAndPaidForOutOfTheBudget() async {
-        // "Warm: " costs six bytes, leaving ten for the text itself.
-        let r = rig(chunkByteLimit: 16)
-        r.service.speak("One. Two. Three.", settings: settings(style: "  Warm  "))
+    @Test func styleInstructionsTravelWithEveryRequest() async {
+        let r = rig()
+        r.service.speak("One. Two.", settings: settings(instructions: "  Read slowly  "))
         await r.service.drain()
 
-        #expect(inputs(r.http) == ["Warm: One. Two.", "Warm: Three."])
-        #expect(GeminiSpeechService.stylePrefix("") == "")
-        #expect(GeminiSpeechService.stylePrefix("  ") == "")
-        #expect(GeminiSpeechService.stylePrefix("Warm") == "Warm: ")
+        #expect(inputs(r.http) == ["One.", "Two."])
+        #expect(bodies(r.http).compactMap { $0["instructions"] as? String }
+                == ["Read slowly", "Read slowly"])
+
+        // With no style set, the field is absent rather than empty.
+        let plain = rig()
+        plain.service.speak("One.", settings: settings())
+        await plain.service.drain()
+        #expect(bodies(plain.http).count == 1)
+        #expect(bodies(plain.http)[0].keys.contains("instructions") == false)
     }
 
     @Test func blankTextIsNotSpoken() async {
@@ -2496,63 +2262,50 @@ import Testing
         #expect(!r.service.isSpeaking)
     }
 
-    @Test func theVoiceCatalogHoldsThePrebuiltGeminiVoices() {
+    @Test func theVoiceCatalogHoldsTheBuiltInNames() {
         let r = rig()
         let voices = r.service.voices()
-        #expect(voices.count == 30)
-        #expect(voices.map(\.id).contains("Kore"))
-        #expect(voices.map(\.id).contains("Sulafat"))
-        #expect(voices.first?.id == "Zephyr")
-        #expect(voices.allSatisfy { $0.language == "gemini" && $0.quality == "premium" })
-        #expect(Set(voices.map(\.id)).count == 30)
-        #expect(voices.first { $0.id == "Kore" }?.name == "Kore — Firm")
+        #expect(voices.map(\.id) == ["alloy", "ash", "ballad", "coral", "echo", "fable",
+                                     "nova", "onyx", "sage", "shimmer", "verse"])
+        #expect(voices.allSatisfy { $0.language == "endpoint" && $0.quality == "premium" })
+        #expect(voices.allSatisfy { $0.name == $0.id })
+        #expect(voices.map(\.id).contains(SpeechSettings.defaultEndpointVoice))
     }
 }
 ```
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `swift test --package-path macos --filter GeminiSpeechServiceTests`
-Expected: build failure — `error: cannot find 'GeminiSpeechService' in scope`.
+Run: `swift test --package-path macos --filter EndpointSpeechServiceTests`
+Expected: build failure — `error: cannot find 'EndpointSpeechService' in scope`.
 
 - [ ] **Step 4: Implement the service**
 
-Create `macos/Sources/Macomprendo/Services/GeminiSpeechService.swift`:
+Create `macos/Sources/Macomprendo/Services/EndpointSpeechService.swift`:
 
 ```swift
 import Foundation
 
-/// The prebuilt Gemini TTS voices, embedded as data — the API exposes no list endpoint and no
-/// network call is made to populate the picker. Names and style descriptors verified
-/// 2026-08-26 against https://ai.google.dev/gemini-api/docs/speech-generation. Drift is
-/// cosmetic: an unknown name simply produces an HTTP error, surfaced like any other.
-enum GeminiVoices {
+/// OpenAI's built-in voice names, embedded as data — the endpoint exposes no list route and no
+/// network call is made to populate the picker. The Speech tab treats these as *suggestions*
+/// beside a free-form field, because a local server (openedai-speech, Kokoro-FastAPI, an XTTS
+/// wrapper) defines its own names. An unknown name simply returns an HTTP error, surfaced like
+/// any other.
+enum EndpointVoices {
     static let all: [Voice] = [
-        ("Zephyr", "Bright"), ("Puck", "Upbeat"), ("Charon", "Informative"), ("Kore", "Firm"),
-        ("Fenrir", "Excitable"), ("Leda", "Youthful"), ("Orus", "Firm"), ("Aoede", "Breezy"),
-        ("Callirrhoe", "Easy-going"), ("Autonoe", "Bright"), ("Enceladus", "Breathy"),
-        ("Iapetus", "Clear"), ("Umbriel", "Easy-going"), ("Algieba", "Smooth"),
-        ("Despina", "Smooth"), ("Erinome", "Clear"), ("Algenib", "Gravelly"),
-        ("Rasalgethi", "Informative"), ("Laomedeia", "Upbeat"), ("Achernar", "Soft"),
-        ("Alnilam", "Firm"), ("Schedar", "Even"), ("Gacrux", "Mature"),
-        ("Pulcherrima", "Forward"), ("Achird", "Friendly"), ("Zubenelgenubi", "Casual"),
-        ("Vindemiatrix", "Gentle"), ("Sadachbia", "Lively"), ("Sadaltager", "Knowledgeable"),
-        ("Sulafat", "Warm")
-    ].map { name, style in
-        // `id` is the wire name written into `settings.speech.geminiVoice`; `name` is display
-        // only. The "gemini" language tag keeps these out of the system voice groups.
-        Voice(id: name, name: "\(name) — \(style)", language: "gemini", quality: "premium")
+        "alloy", "ash", "ballad", "coral", "echo", "fable",
+        "nova", "onyx", "sage", "shimmer", "verse"
+    ].map { name in
+        Voice(id: name, name: name, language: "endpoint", quality: "premium")
     }
 }
 
-/// Speaks text with Google's Gemini TTS models: one HTTP request per ≤3800-byte chunk, played
-/// back sequentially with a single chunk of prefetch, so chunk N+1 is already in flight while
-/// chunk N plays. The selection text leaves the machine only while this backend is selected
-/// (invariant 9) and is never logged (invariant 6).
-@MainActor final class GeminiSpeechService: SpeechSynthesizing {
-    /// Shown in `providerUnreachable`; the raw host name would be meaningless to a user.
-    static let endpointName = "Gemini"
-    static let defaultChunkByteLimit = 3800
+/// Speaks text through any OpenAI-compatible `/v1/audio/speech` server: one HTTP request per
+/// ≤4096-character chunk, played back sequentially with a single chunk of prefetch, so chunk
+/// N+1 is already in flight while chunk N plays. The selection text leaves the machine only
+/// while this backend is selected (invariant 9) and is never logged (invariant 6).
+@MainActor final class EndpointSpeechService: SpeechSynthesizing {
+    static let defaultChunkCharacterLimit = SpeechTextChunker.defaultCharacterLimit
     /// Synthesising a few thousand characters is slow; far above the 10 s used for metadata.
     static let requestTimeout: TimeInterval = 60
 
@@ -2564,7 +2317,7 @@ enum GeminiVoices {
     private let keychain: any KeychainStoring
     private let player: any AudioPlaying
     /// Injectable only so tests can force a multi-chunk queue out of a short string.
-    private let chunkByteLimit: Int
+    private let chunkCharacterLimit: Int
     private var task: Task<Void, Never>?
     private var playback: CheckedContinuation<Void, Error>?
     /// Bumped by every `speak`/`stop` so a superseded task cannot clobber the new state.
@@ -2573,24 +2326,21 @@ enum GeminiVoices {
     init(http: any HTTPClient,
          keychain: any KeychainStoring,
          player: any AudioPlaying,
-         chunkByteLimit: Int = GeminiSpeechService.defaultChunkByteLimit) {
+         chunkCharacterLimit: Int = EndpointSpeechService.defaultChunkCharacterLimit) {
         self.http = http
         self.keychain = keychain
         self.player = player
-        self.chunkByteLimit = chunkByteLimit
+        self.chunkCharacterLimit = chunkCharacterLimit
     }
 
-    func voices() -> [Voice] { GeminiVoices.all }
+    func voices() -> [Voice] { EndpointVoices.all }
 
     func speak(_ text: String, settings: SpeechSettings) {
         cancelCurrent()
         generation += 1
         let generation = self.generation
 
-        // The style instruction is billed against the same byte budget as the text.
-        let prefix = Self.stylePrefix(settings.geminiStyle)
-        let limit = max(1, chunkByteLimit - prefix.utf8.count)
-        let chunks = GeminiTextChunker.chunks(of: text, limit: limit).map { prefix + $0 }
+        let chunks = SpeechTextChunker.chunks(of: text, limit: chunkCharacterLimit)
         guard !chunks.isEmpty else { return }
 
         setSpeaking(true)
@@ -2613,23 +2363,6 @@ enum GeminiVoices {
 
     /// Awaits the in-flight speech task. Used by tests.
     func drain() async { _ = await task?.value }
-
-    // MARK: - Pure helpers
-
-    /// Gemini TTS has no rate/pitch parameters; the style is a natural-language instruction
-    /// prepended to each chunk.
-    static func stylePrefix(_ style: String) -> String {
-        let trimmed = style.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "" : trimmed + ": "
-    }
-
-    /// `HTTPClient` names the host it could not reach; the user configured "Gemini".
-    static func mapped(_ error: MacomprendoError) -> MacomprendoError {
-        if case .providerUnreachable = error {
-            return .providerUnreachable(endpointName: endpointName)
-        }
-        return error
-    }
 
     static func isCancellation(_ error: Error) -> Bool {
         error is CancellationError || (error as? MacomprendoError) == .cancelled
@@ -2658,10 +2391,11 @@ enum GeminiVoices {
         onStateChange?()
     }
 
-    /// A missing or blank key fails before anything is sent: unlike the LLM endpoints, Gemini
-    /// has no useful unauthenticated behaviour to fall through to.
+    /// A missing or blank key fails before anything is sent. A local server without auth is
+    /// still reachable: save any non-empty placeholder key (documented in Settings ▸ Speech),
+    /// which beats an extra "no auth" toggle.
     private func apiKey(_ settings: SpeechSettings) throws -> String {
-        guard let account = settings.geminiAPIKeyRef,
+        guard let account = settings.endpointAPIKeyRef,
               let key = try? keychain.get(account: account),
               !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { throw MacomprendoError.speechKeyMissing }
@@ -2678,36 +2412,37 @@ enum GeminiVoices {
             next = index + 1 < chunks.count
                 ? fetch(chunks[index + 1], key: key, settings: settings)
                 : nil
-            let wav = try await current.value
+            let audio = try await current.value
             try Task.checkCancellation()
-            try await playAndWait(wav)
+            try await playAndWait(audio)
         }
     }
 
     private func fetch(_ chunk: String, key: String, settings: SpeechSettings) -> Task<Data, Error> {
         let http = self.http
         return Task {
-            let request = try GeminiTTSParser.request(baseURL: settings.geminiBaseURL,
-                                                      apiKey: key,
-                                                      model: settings.geminiModel,
-                                                      input: chunk,
-                                                      voice: settings.geminiVoice,
-                                                      timeout: Self.requestTimeout)
+            let request = try SpeechRequestBuilder.request(baseURL: settings.endpointBaseURL,
+                                                           apiKey: key,
+                                                           model: settings.endpointModel,
+                                                           voice: settings.endpointVoice,
+                                                           input: chunk,
+                                                           instructions: settings.endpointInstructions,
+                                                           timeout: Self.requestTimeout)
             do {
                 let response = try await http.send(request)
-                return GeminiTTSParser.wav(from: try GeminiTTSParser.parse(response.body))
+                return try SpeechRequestBuilder.audio(from: response)
             } catch let error as MacomprendoError {
-                throw Self.mapped(error)
+                throw SpeechRequestBuilder.mapped(error, baseURL: settings.endpointBaseURL)
             }
         }
     }
 
-    private func playAndWait(_ wav: Data) async throws {
+    private func playAndWait(_ audio: Data) async throws {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 playback = continuation
                 player.onFinished = { [weak self] in self?.resumePlayback(throwing: nil) }
-                do { try player.play(wav) } catch { resumePlayback(throwing: error) }
+                do { try player.play(audio) } catch { resumePlayback(throwing: error) }
             }
         } onCancel: {
             Task { @MainActor [weak self] in
@@ -2728,7 +2463,7 @@ enum GeminiVoices {
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `swift test --package-path macos --filter GeminiSpeechServiceTests`
+Run: `swift test --package-path macos --filter EndpointSpeechServiceTests`
 Expected: PASS — 11 tests, 0 failures.
 
 - [ ] **Step 6: Regenerate the Xcode project and check for warnings**
@@ -2743,10 +2478,10 @@ Expected: `0`.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add macos/Sources/Macomprendo/Services/GeminiSpeechService.swift \
-        macos/Tests/MacomprendoTests/Services/GeminiSpeechServiceTests.swift \
+git add macos/Sources/Macomprendo/Services/EndpointSpeechService.swift \
+        macos/Tests/MacomprendoTests/Services/EndpointSpeechServiceTests.swift \
         macos/Macomprendo.xcodeproj
-git commit -m "feat(speech): add the Gemini TTS speech backend"
+git commit -m "feat(speech): add the OpenAI-compatible endpoint speech backend"
 ```
 
 ---
@@ -2761,7 +2496,7 @@ git commit -m "feat(speech): add the Gemini TTS speech backend"
 
 **Interfaces:**
 - Consumes: `SpeechSynthesizing`, `SpeechSource` (Task 4), `AVSpeechService`,
-  `GeminiSpeechService` (Task 8), `AVAudioPlayerPlayer` (Task 7).
+  `EndpointSpeechService` (Task 8), `AVAudioPlayerPlayer` (Task 7).
 - Produces:
   ```swift
   extension SpeechSynthesizing {
@@ -2769,7 +2504,7 @@ git commit -m "feat(speech): add the Gemini TTS speech backend"
   }
 
   @MainActor final class SpeechRouter: SpeechSynthesizing {
-      init(system: any SpeechSynthesizing, gemini: any SpeechSynthesizing)
+      init(system: any SpeechSynthesizing, endpoint: any SpeechSynthesizing)
   }
   ```
 
@@ -2780,7 +2515,8 @@ pwd
 git -C /Users/frenzy/dev/macomprendo status --short
 git -C /Users/frenzy/dev/macomprendo log --oneline -1
 ```
-Expected: clean tree; HEAD is `feat(speech): add the Gemini TTS speech backend`.
+Expected: clean tree; HEAD is
+`feat(speech): add the OpenAI-compatible endpoint speech backend`.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -2796,15 +2532,16 @@ import Testing
     private struct Rig {
         let router: SpeechRouter
         let system: ScriptedSpeech
-        let gemini: ScriptedSpeech
+        let endpoint: ScriptedSpeech
     }
 
     private func rig() -> Rig {
         let system = ScriptedSpeech()
         system.available = [Voice(id: "en.alex", name: "Alex", language: "en-US", quality: "default")]
-        let gemini = ScriptedSpeech()
-        gemini.available = [Voice(id: "Kore", name: "Kore — Firm", language: "gemini", quality: "premium")]
-        return Rig(router: SpeechRouter(system: system, gemini: gemini), system: system, gemini: gemini)
+        let endpoint = ScriptedSpeech()
+        endpoint.available = [Voice(id: "alloy", name: "alloy", language: "endpoint", quality: "premium")]
+        return Rig(router: SpeechRouter(system: system, endpoint: endpoint),
+                   system: system, endpoint: endpoint)
     }
 
     private func settings(_ source: SpeechSource) -> SpeechSettings {
@@ -2815,13 +2552,13 @@ import Testing
         let r = rig()
         r.router.speak("hello", settings: settings(.system))
         #expect(r.system.spoken.map(\.text) == ["hello"])
-        #expect(r.gemini.spoken.isEmpty)
+        #expect(r.endpoint.spoken.isEmpty)
     }
 
-    @Test func speakGoesToTheGeminiBackendWhenSelected() {
+    @Test func speakGoesToTheEndpointBackendWhenSelected() {
         let r = rig()
-        r.router.speak("hello", settings: settings(.gemini))
-        #expect(r.gemini.spoken.map(\.text) == ["hello"])
+        r.router.speak("hello", settings: settings(.endpoint))
+        #expect(r.endpoint.spoken.map(\.text) == ["hello"])
         #expect(r.system.spoken.isEmpty)
         // Switching source mid-utterance must not orphan the other backend's audio.
         #expect(r.system.stopCount == 1)
@@ -2829,18 +2566,18 @@ import Testing
 
     @Test func stopStopsBothBackends() {
         let r = rig()
-        r.router.speak("hello", settings: settings(.gemini))
+        r.router.speak("hello", settings: settings(.endpoint))
         r.router.stop()
         #expect(r.system.stopCount == 2)   // once on speak, once on stop
-        #expect(r.gemini.stopCount == 1)
+        #expect(r.endpoint.stopCount == 1)
     }
 
     @Test func isSpeakingIsTrueWhenEitherBackendSpeaks() {
         let r = rig()
         #expect(!r.router.isSpeaking)
-        r.router.speak("hello", settings: settings(.gemini))
+        r.router.speak("hello", settings: settings(.endpoint))
         #expect(r.router.isSpeaking)
-        r.gemini.finish()
+        r.endpoint.finish()
         #expect(!r.router.isSpeaking)
     }
 
@@ -2849,7 +2586,7 @@ import Testing
         var changes = 0
         r.router.onStateChange = { changes += 1 }
         r.system.finish()
-        r.gemini.finish()
+        r.endpoint.finish()
         #expect(changes == 2)
     }
 
@@ -2858,7 +2595,7 @@ import Testing
         var errors: [Error] = []
         r.router.onError = { errors.append($0) }
         r.system.failWith(MacomprendoError.audioPlayback("x"))
-        r.gemini.failWith(MacomprendoError.speechKeyMissing)
+        r.endpoint.failWith(MacomprendoError.speechKeyMissing)
         #expect(errors.count == 2)
         #expect(errors.last as? MacomprendoError == .speechKeyMissing)
     }
@@ -2866,9 +2603,9 @@ import Testing
     @Test func voicesForASourceIgnoreTheCurrentSelection() {
         let r = rig()
         #expect(r.router.voices(for: .system).map(\.id) == ["en.alex"])
-        #expect(r.router.voices(for: .gemini).map(\.id) == ["Kore"])
+        #expect(r.router.voices(for: .endpoint).map(\.id) == ["alloy"])
         // A plain backend only knows its own catalog, whatever source is asked for.
-        #expect(r.gemini.voices(for: .system).map(\.id) == ["Kore"])
+        #expect(r.endpoint.voices(for: .system).map(\.id) == ["alloy"])
     }
 }
 ```
@@ -2915,19 +2652,19 @@ import Foundation
     var onError: (@MainActor (Error) -> Void)?
 
     private let system: any SpeechSynthesizing
-    private let gemini: any SpeechSynthesizing
+    private let endpoint: any SpeechSynthesizing
 
-    init(system: any SpeechSynthesizing, gemini: any SpeechSynthesizing) {
+    init(system: any SpeechSynthesizing, endpoint: any SpeechSynthesizing) {
         self.system = system
-        self.gemini = gemini
+        self.endpoint = endpoint
         // Fan-in: both backends report through the router's single pair of hooks.
-        for backend in [system, gemini] {
+        for backend in [system, endpoint] {
             backend.onStateChange = { [weak self] in self?.onStateChange?() }
             backend.onError = { [weak self] error in self?.onError?(error) }
         }
     }
 
-    var isSpeaking: Bool { system.isSpeaking || gemini.isSpeaking }
+    var isSpeaking: Bool { system.isSpeaking || endpoint.isSpeaking }
 
     /// The neutral catalog. Settings ▸ Speech asks for a specific source with `voices(for:)`.
     func voices() -> [Voice] { system.voices() }
@@ -2937,17 +2674,17 @@ import Foundation
     func speak(_ text: String, settings: SpeechSettings) {
         // Stopping the other backend first means switching the source mid-utterance cannot
         // leave orphaned audio playing behind the new one.
-        backend(for: settings.source == .gemini ? .system : .gemini).stop()
+        backend(for: settings.source == .endpoint ? .system : .endpoint).stop()
         backend(for: settings.source).speak(text, settings: settings)
     }
 
     func stop() {
         system.stop()
-        gemini.stop()
+        endpoint.stop()
     }
 
     private func backend(for source: SpeechSource) -> any SpeechSynthesizing {
-        source == .gemini ? gemini : system
+        source == .endpoint ? endpoint : system
     }
 }
 ```
@@ -2960,9 +2697,9 @@ In `macos/Sources/Macomprendo/App/AppEnvironment.swift`, replace the line
 ```swift
             speech: SpeechRouter(
                 system: AVSpeechService(),
-                gemini: GeminiSpeechService(http: http,
-                                            keychain: keychain,
-                                            player: AVAudioPlayerPlayer())),
+                endpoint: EndpointSpeechService(http: http,
+                                                keychain: keychain,
+                                                player: AVAudioPlayerPlayer())),
 ```
 
 `AppEnvironment.fake()` is **not** changed: tests keep injecting `ScriptedSpeech`, which is why
@@ -2993,12 +2730,12 @@ git add macos/Sources/Macomprendo/Services/SpeechRouter.swift \
         macos/Sources/Macomprendo/App/AppEnvironment.swift \
         macos/Tests/MacomprendoTests/Services/SpeechRouterTests.swift \
         macos/Macomprendo.xcodeproj
-git commit -m "feat(speech): route speech to the system or Gemini backend per settings"
+git commit -m "feat(speech): route speech to the system or endpoint backend per settings"
 ```
 
 ---
 
-### Task 10: Settings ▸ Speech — source picker and the Gemini section
+### Task 10: Settings ▸ Speech — source picker and the endpoint section
 
 **Files:**
 - Modify: `macos/Sources/Macomprendo/UI/Settings/SpeechTab.swift` (UI layer)
@@ -3014,9 +2751,9 @@ git commit -m "feat(speech): route speech to the system or Gemini backend per se
   @MainActor final class SpeechTabModel: ObservableObject {
       struct VoiceGroup: Identifiable, Equatable { … }          // unchanged
       static let sampleText: String                              // unchanged
-      static let geminiPrivacyCaption: String
+      static let endpointPrivacyCaption: String
       @Published private(set) var groups: [VoiceGroup]
-      @Published private(set) var geminiVoices: [Voice]
+      @Published private(set) var endpointVoices: [Voice]
       @Published var apiKeyField: String
       @Published private(set) var keyStatus: String
       var source: SpeechSource { get set }
@@ -3042,7 +2779,7 @@ git -C /Users/frenzy/dev/macomprendo status --short
 git -C /Users/frenzy/dev/macomprendo log --oneline -1
 ```
 Expected: clean tree; HEAD is
-`feat(speech): route speech to the system or Gemini backend per settings`.
+`feat(speech): route speech to the system or endpoint backend per settings`.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -3061,9 +2798,9 @@ import Testing
         Voice(id: "v.en1", name: "Ava", language: "en-US", quality: "enhanced"),
     ]
 
-    private let geminiCatalog = [
-        Voice(id: "Kore", name: "Kore — Firm", language: "gemini", quality: "premium"),
-        Voice(id: "Puck", name: "Puck — Upbeat", language: "gemini", quality: "premium"),
+    private let endpointCatalog = [
+        Voice(id: "alloy", name: "alloy", language: "endpoint", quality: "premium"),
+        Voice(id: "sage", name: "sage", language: "endpoint", quality: "premium"),
     ]
 
     private func model(speech: ScriptedSpeech = ScriptedSpeech(),
@@ -3089,7 +2826,7 @@ import Testing
 
     @Test func reloadPublishesTheServiceVoices() {
         let speech = ScriptedSpeech()
-        speech.availableBySource = [.system: voices, .gemini: geminiCatalog]
+        speech.availableBySource = [.system: voices, .endpoint: endpointCatalog]
         let tab = model(speech: speech)
         #expect(tab.groups.count == 2)
 
@@ -3112,24 +2849,24 @@ import Testing
         #expect(speech.spoken[0].settings.rate == 0.7)
     }
 
-    // MARK: the Gemini source
+    // MARK: the endpoint source
 
     @Test func theSourceBindingWritesThroughToSettings() {
         let holder = ScriptedSettingsHolder()
         let tab = model(holder: holder)
         #expect(tab.source == .system)
 
-        tab.source = .gemini
+        tab.source = .endpoint
 
-        #expect(holder.settings.speech.source == .gemini)
-        #expect(tab.source == .gemini)
+        #expect(holder.settings.speech.source == .endpoint)
+        #expect(tab.source == .endpoint)
     }
 
-    @Test func geminiVoicesComeFromTheGeminiSource() {
+    @Test func endpointVoicesComeFromTheEndpointSource() {
         let speech = ScriptedSpeech()
-        speech.availableBySource = [.system: voices, .gemini: geminiCatalog]
+        speech.availableBySource = [.system: voices, .endpoint: endpointCatalog]
         let tab = model(speech: speech)
-        #expect(tab.geminiVoices.map(\.id) == ["Kore", "Puck"])
+        #expect(tab.endpointVoices.map(\.id) == ["alloy", "sage"])
         #expect(tab.groups.flatMap { $0.voices.map(\.id) }.sorted() == ["v.en1", "v.en2", "v.fr"])
     }
 
@@ -3138,44 +2875,42 @@ import Testing
         let keychain = InMemoryKeychainStore()
         let tab = model(holder: holder, keychain: keychain)
 
-        tab.apiKeyField = "  AIzaSECRET  "
+        tab.apiKeyField = "  sk-SECRET  "
         tab.saveAPIKey()
 
-        #expect(try keychain.get(account: SpeechSettings.geminiKeychainAccount) == "AIzaSECRET")
-        #expect(holder.settings.speech.geminiAPIKeyRef == SpeechSettings.geminiKeychainAccount)
+        #expect(try keychain.get(account: SpeechSettings.endpointKeychainAccount) == "sk-SECRET")
+        #expect(holder.settings.speech.endpointAPIKeyRef == SpeechSettings.endpointKeychainAccount)
         #expect(tab.hasAPIKey())
     }
 
     @Test func savingAnEmptyKeyDeletesItAndClearsTheReference() throws {
         let holder = ScriptedSettingsHolder()
         let keychain = InMemoryKeychainStore()
-        try keychain.set("AIzaOLD", account: SpeechSettings.geminiKeychainAccount)
-        holder.settings.speech.geminiAPIKeyRef = SpeechSettings.geminiKeychainAccount
+        try keychain.set("sk-OLD", account: SpeechSettings.endpointKeychainAccount)
+        holder.settings.speech.endpointAPIKeyRef = SpeechSettings.endpointKeychainAccount
         let tab = model(holder: holder, keychain: keychain)
 
         tab.apiKeyField = "   "
         tab.saveAPIKey()
 
-        #expect(try keychain.get(account: SpeechSettings.geminiKeychainAccount) == nil)
-        #expect(holder.settings.speech.geminiAPIKeyRef == nil)
+        #expect(try keychain.get(account: SpeechSettings.endpointKeychainAccount) == nil)
+        #expect(holder.settings.speech.endpointAPIKeyRef == nil)
         #expect(!tab.hasAPIKey())
     }
 
     @Test func theAPIKeyFieldIsClearedAfterSaving() {
         let tab = model()
-        tab.apiKeyField = "AIzaSECRET"
+        tab.apiKeyField = "sk-SECRET"
         tab.saveAPIKey()
 
         #expect(tab.apiKeyField.isEmpty)
         #expect(!tab.keyStatus.isEmpty)
-        #expect(!tab.keyStatus.contains("AIza"))
+        #expect(!tab.keyStatus.contains("sk-"))
     }
 
-    @Test func thePrivacyCaptionNamesGoogleAndTheFreeTier() {
-        #expect(SpeechTabModel.geminiPrivacyCaption == """
-            Selected text is sent to Google when this source is active. On the free API tier \
-            Google may use submitted text to improve its products.
-            """)
+    @Test func thePrivacyCaptionNamesTheConfiguredServer() {
+        #expect(SpeechTabModel.endpointPrivacyCaption
+                == "Selected text is sent to the configured server when this source is active.")
     }
 }
 ```
@@ -3220,13 +2955,11 @@ import SwiftUI
 
     static let sampleText = "Macomprendo can read your selected text out loud."
 
-    static let geminiPrivacyCaption = """
-        Selected text is sent to Google when this source is active. On the free API tier \
-        Google may use submitted text to improve its products.
-        """
+    static let endpointPrivacyCaption =
+        "Selected text is sent to the configured server when this source is active."
 
     @Published private(set) var groups: [VoiceGroup] = []
-    @Published private(set) var geminiVoices: [Voice] = []
+    @Published private(set) var endpointVoices: [Voice] = []
     /// Write-only: the stored key is never read back into memory (invariant 5).
     @Published var apiKeyField = ""
     @Published private(set) var keyStatus = ""
@@ -3255,29 +2988,29 @@ import SwiftUI
 
     func reload() {
         groups = Self.group(speech.voices(for: .system))
-        geminiVoices = speech.voices(for: .gemini)
+        endpointVoices = speech.voices(for: .endpoint)
     }
 
-    /// For the Gemini source this performs a real network call and therefore doubles as the
+    /// For the endpoint source this performs a real network call and therefore doubles as the
     /// connection test; failures arrive as a toast through `SpeakController`'s `onError` hook.
     func preview() {
         speech.speak(Self.sampleText, settings: holder.settings.speech)
     }
 
     func hasAPIKey() -> Bool {
-        holder.settings.speech.geminiAPIKeyRef != nil
+        holder.settings.speech.endpointAPIKeyRef != nil
     }
 
     func saveAPIKey() {
-        let account = SpeechSettings.geminiKeychainAccount
+        let account = SpeechSettings.endpointKeychainAccount
         let key = apiKeyField.trimmingCharacters(in: .whitespacesAndNewlines)
         if key.isEmpty {
             try? keychain.delete(account: account)
-            holder.settings.speech.geminiAPIKeyRef = nil
+            holder.settings.speech.endpointAPIKeyRef = nil
             keyStatus = "Key removed."
         } else {
             try? keychain.set(key, account: account)
-            holder.settings.speech.geminiAPIKeyRef = account
+            holder.settings.speech.endpointAPIKeyRef = account
             keyStatus = "Key saved to the Keychain."
         }
         apiKeyField = ""
@@ -3310,7 +3043,7 @@ struct SpeechTab: View {
             if app.settings.speech.source == .system {
                 systemSection
             } else {
-                geminiSection
+                endpointSection
             }
 
             HStack {
@@ -3349,7 +3082,8 @@ struct SpeechTab: View {
             }
             .frame(minHeight: 200)
 
-            // Rate, pitch and volume are AVSpeechSynthesizer parameters; Gemini TTS has none.
+            // Rate, pitch and volume are AVSpeechSynthesizer parameters; the endpoint takes
+            // free-form "Style instructions" instead.
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                 GridRow {
                     Text("Rate")
@@ -3367,17 +3101,25 @@ struct SpeechTab: View {
         }
     }
 
-    private var geminiSection: some View {
+    private var endpointSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Voice").font(.headline)
-            List(selection: geminiVoiceSelection) {
-                ForEach(model.geminiVoices) { voice in
-                    Text(voice.name).tag(voice.id)
-                }
-            }
-            .frame(minHeight: 160)
-
             Form {
+                TextField("Base URL", text: baseURLSelection,
+                          prompt: Text("https://api.openai.com"))
+                TextField("Model", text: $app.settings.speech.endpointModel)
+
+                // Free-form: local servers (openedai-speech, Kokoro-FastAPI) define their own
+                // names, so the built-ins are offered as a menu rather than a closed picker.
+                HStack {
+                    TextField("Voice", text: $app.settings.speech.endpointVoice)
+                    Menu("Built-in") {
+                        ForEach(model.endpointVoices) { voice in
+                            Button(voice.name) { app.settings.speech.endpointVoice = voice.id }
+                        }
+                    }
+                    .fixedSize()
+                }
+
                 SecureField("API key", text: $model.apiKeyField)
                     .onSubmit { model.saveAPIKey() }
                 HStack {
@@ -3388,13 +3130,15 @@ struct SpeechTab: View {
                         Text("A key is saved.").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                TextField("Style", text: $app.settings.speech.geminiStyle,
+                Text("A local server without authentication still needs a non-empty key here.")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                TextField("Style instructions", text: $app.settings.speech.endpointInstructions,
                           prompt: Text("e.g. Read this cheerfully"))
-                TextField("Model", text: $app.settings.speech.geminiModel)
             }
             .formStyle(.grouped)
 
-            Text(SpeechTabModel.geminiPrivacyCaption)
+            Text(SpeechTabModel.endpointPrivacyCaption)
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -3410,9 +3154,13 @@ struct SpeechTab: View {
                 set: { app.settings.speech.voiceID = $0 })
     }
 
-    private var geminiVoiceSelection: Binding<String?> {
-        Binding(get: { app.settings.speech.geminiVoice },
-                set: { app.settings.speech.geminiVoice = $0 ?? "Kore" })
+    /// Keeps the last valid URL when the user is mid-edit and the text does not parse.
+    private var baseURLSelection: Binding<String> {
+        Binding(get: { app.settings.speech.endpointBaseURL.absoluteString },
+                set: { newValue in
+                    guard let url = URL(string: newValue) else { return }
+                    app.settings.speech.endpointBaseURL = url
+                })
     }
 }
 ```
@@ -3431,7 +3179,7 @@ Run: `swift test --package-path macos --filter SpeechTabModelTests`
 Expected: PASS — 10 tests, 0 failures.
 
 Run: `swift test --package-path macos`
-Expected: `Test run with 544 tests … passed`.
+Expected: `Test run with 536 tests … passed`.
 
 - [ ] **Step 8: Check for warnings**
 
@@ -3448,7 +3196,7 @@ git add macos/Sources/Macomprendo/UI/Settings/SpeechTab.swift \
         macos/Sources/Macomprendo/App/AppModel.swift \
         macos/Tests/MacomprendoTests/Fakes/ScriptedSpeech.swift \
         macos/Tests/MacomprendoTests/UI/SpeechTabModelTests.swift
-git commit -m "feat(settings): add a speech source picker and the Gemini section"
+git commit -m "feat(settings): add a speech source picker and the endpoint section"
 ```
 
 ---
@@ -3470,7 +3218,7 @@ git -C /Users/frenzy/dev/macomprendo status --short
 git -C /Users/frenzy/dev/macomprendo log --oneline -1
 ```
 Expected: clean tree; HEAD is
-`feat(settings): add a speech source picker and the Gemini section`.
+`feat(settings): add a speech source picker and the endpoint section`.
 
 - [ ] **Step 2: Append the smoke-test sections**
 
@@ -3500,23 +3248,28 @@ Content ▸ System Voice ▸ Manage Voices…).
 - [ ] Remove every Russian voice from the system, then repeat the mixed selection: it still
       reads without crashing, using the configured voice throughout.
 
-## Gemini speech source (hotkey #3, ⌥S)
+## Endpoint speech source (hotkey #3, ⌥S)
 
-Setup: a Google AI Studio API key. Settings ▸ Speech ▸ Speech source = "Gemini".
+Setup: Settings ▸ Speech ▸ Speech source = "Endpoint", and either an OpenAI-compatible API key
+(OpenAI itself or a reseller such as `https://api.proxyapi.ru/openai`) or a local server on
+`http://localhost:8000`.
 
 - [ ] With no key saved, press Preview: a toast reads
-      "No Gemini API key. Add one in Settings ▸ Speech." and nothing plays.
-- [ ] Paste a **wrong** key, press "Save key", press Preview: a toast names the HTTP status
-      returned by Google; nothing plays; the app stays responsive.
+      "No speech API key. Add one in Settings ▸ Speech." and nothing plays.
+- [ ] Paste a **wrong** key, press "Save key", press Preview: a toast names the HTTP status the
+      server returned; nothing plays; the app stays responsive.
 - [ ] Paste the real key and press "Save key": the field clears immediately, the caption reads
       "Key saved to the Keychain.", and the key is **not** visible anywhere in the UI.
-      Confirm with Keychain Access that an item `speech.gemini` exists for service
+      Confirm with Keychain Access that an item `speech.endpoint` exists for service
       `com.dzamataev.macomprendo`.
-- [ ] Press Preview: the sample sentence plays in the selected voice within a few seconds.
-- [ ] Change the voice in the list and press Preview again: the voice audibly changes.
-- [ ] Type "Read this slowly and sadly" into Style and press Preview: the delivery changes.
-      Clear the Style field and press Preview: normal delivery returns.
-- [ ] The rate/pitch/volume sliders are **not** shown while Gemini is selected; switch back to
+- [ ] Press Preview: the sample sentence plays in the configured voice within a few seconds.
+- [ ] Pick a different name from the "Built-in" menu and press Preview: the voice audibly
+      changes. Type a name the server does not know and press Preview: a toast names the HTTP
+      error.
+- [ ] Type "Read this slowly and sadly" into Style instructions and press Preview with
+      `gpt-4o-mini-tts`: the delivery changes. Clear the field and press Preview: normal
+      delivery returns.
+- [ ] The rate/pitch/volume sliders are **not** shown while Endpoint is selected; switch back to
       "System voices" and they reappear.
 - [ ] Select a mixed Russian/English paragraph in TextEdit and press ⌥S: it is read by one
       natural voice that switches languages mid-sentence without changing timbre.
@@ -3526,14 +3279,16 @@ Setup: a Google AI Studio API key. Settings ▸ Speech ▸ Speech source = "Gemi
       continuous, in order, with only a short gap between chunks.
 - [ ] Press ⌥S again mid-audio: playback stops within a second, the HUD disappears, and **no**
       error toast appears.
-- [ ] Turn Wi-Fi off and press ⌥S: a toast reads `Could not reach "Gemini".` with its recovery
-      suggestion. Turn Wi-Fi back on.
-- [ ] Switch the source back to "System voices" while Gemini audio is playing: the Gemini audio
-      stops; the next ⌥S uses a system voice.
+- [ ] Turn Wi-Fi off and press ⌥S: a toast reads `Could not reach "<your host>".` — the host
+      you typed into Base URL, not a raw URL — with its recovery suggestion. Turn Wi-Fi back on.
+- [ ] Point Base URL at a local server that returns MP3 instead of WAV (openedai-speech with
+      `response_format` ignored): audio still plays.
+- [ ] Switch the source back to "System voices" while endpoint audio is playing: the endpoint
+      audio stops; the next ⌥S uses a system voice.
 - [ ] Clear the API key field and press "Save key": the caption reads "Key removed." and the
       Keychain item is gone.
 - [ ] Open Console.app filtered on subsystem `com.dzamataev.macomprendo` and repeat a ⌥S with
-      Gemini selected: **no** log line contains the selected text or the API key.
+      the endpoint source selected: **no** log line contains the selected text or the API key.
 ```
 
 - [ ] **Step 3: Update the changelog**
@@ -3545,10 +3300,11 @@ In `CHANGELOG.md`, add these bullets at the end of the `### Added` list under `#
   script boundaries and read by a matching system voice per stretch, so Russian and
   English in one paragraph are both intelligible. A single foreign word no longer
   switches the voice.
-- Optional Gemini speech source: with a Google AI Studio API key, Settings ▸ Speech can
-  read selections with Google's Gemini TTS voices, which code-switch naturally. Choose
-  from 30 prebuilt voices and add an optional style instruction. The key is stored in the
-  login Keychain, and selected text is sent to Google only while this source is active.
+- Optional endpoint speech source: Settings ▸ Speech can now read selections through any
+  OpenAI-compatible `/v1/audio/speech` server — OpenAI, a reseller, or a local TTS server —
+  whose voices code-switch naturally. Base URL, model, voice and free-form style
+  instructions are all editable; the API key is stored in the login Keychain, and selected
+  text is sent to the configured server only while this source is active.
 ```
 
 - [ ] **Step 4: Run the full suite and a release build**
@@ -3556,7 +3312,7 @@ In `CHANGELOG.md`, add these bullets at the end of the `### Added` list under `#
 ```bash
 swift test --package-path macos
 ```
-Expected: `Test run with 544 tests … passed`.
+Expected: `Test run with 536 tests … passed`.
 
 ```bash
 npm run test:scripts
@@ -3599,31 +3355,30 @@ git commit -m "docs: add smoke tests and changelog for mixed-language speech"
 | Spec item | Task |
 |---|---|
 | Goal 1 — mixed Cyrillic/Latin intelligible with system voices, offline, free | 1, 2 |
-| Goal 2 — optional Gemini-TTS source | 4–10 |
+| Goal 2 — optional endpoint speech source, OpenAI-compatible `/v1/audio/speech` | 4–10 |
 | Goal 3 — `SpeakController`, "Speaking…" HUD and hotkey #3 unchanged | 9 (router behind the same protocol; Tasks 3/9 re-run `SpeakControllerTests`/`TextFeaturesTests` unchanged) |
-| Goal 4 — failures user-visible with recovery text; text sent to Google only when selected | 3, 7, 8, 9 |
+| Goal 4 — failures user-visible with recovery text; text sent to the network only when the endpoint source is selected | 3, 7, 8, 9 |
 | Part A — `LanguageSegmenter`, `ScriptClass`, `TextRun`, `runs(in:minRunLength:)`, default 20 | 1 |
-| Part A — neutral attachment, min-run merging, unknown scripts never crash or flip the voice | 1 |
+| Part A — neutral attachment, min-run merging, non-Cyrillic/Latin scripts never crash or flip the voice | 1 |
 | Part A — `AVSpeechService.speak` one-utterance fast path, per-run queueing, `fallbackVoice(for:in:)` with premium > enhanced > default, rate/pitch/volume on every utterance, `isSpeaking` until the last utterance finishes | 2 |
-| Part B step 1 — chunking at sentence boundaries into ≤3800 UTF-8 bytes, word-boundary split for oversize sentences | 5 |
-| Part B step 2 — POST to the Interactions API with `x-goog-api-key`, isolated in `GeminiTTSParser` | 6 |
-| Part B step 3 — base64 PCM decode + WAV wrapping in a `PCM16WAV` sibling of `WAVEncoder` | 5, 6 |
-| Part B step 4 — `AudioPlaying`/`AVAudioPlayerPlayer`, sequential playback with single prefetch | 7, 8 |
+| Part B step 1 — sentence-boundary chunking at ≤4096 characters, word-boundary split for oversize sentences | 5 |
+| Part B step 2 — `POST {base}/v1/audio/speech`, `Authorization: Bearer`, JSON body, `instructions` omitted when empty, isolated in `SpeechRequestBuilder` | 6 |
+| Part B step 3 — the response body *is* the audio; no PCM/WAV conversion helper | 6, 7 (no decoding type exists in this plan at all — the bytes go straight from `HTTPResponse.body` to `AudioPlaying.play`) |
+| Part B step 4 — `AudioPlaying.play(_ audioData:)` / `AVAudioPlayerPlayer`, sequential playback with single prefetch | 7, 8 |
 | Part B step 5 — `stop()` cancels the task and the player; `isSpeaking` lifecycle | 8 |
-| Part B step 6 — fixed prebuilt voice catalog, no network call | 8 |
-| Part B — style prefix ("`<style>: <text>`") | 8 |
+| Part B step 6 — the 11 built-in voice names as `Voice` values plus a free-form field | 8, 10 |
+| Part B — `endpointInstructions` sent as the standard `instructions` field | 6, 8 |
 | Protocol change — `SpeechSynthesizing.onError`, `SpeakController` toast, `ScriptedSpeech.failWith(_:)` | 3 |
-| Router — both backends, per-call dispatch, `stop()` stops both, callback fan-in, `voices(for:)` | 9 |
+| Router — both backends, dispatch on `settings.source`, `stop()` stops both, callback fan-in, `voices(for:)` as a requirement with an extension default | 9 |
 | Router — `AppEnvironment.live()` builds it, `fake()` untouched | 9 |
 | Settings schema — six new fields, all `decodeIfPresent ?? default` | 4 |
-| Settings schema — key only in the Keychain under `speech.gemini` | 4, 8, 10 |
-| UI — source picker, system section unchanged, Gemini voice picker, SecureField, Style field, Preview, sliders hidden, privacy caption | 10 |
-| Errors — missing key, HTTP mapping to endpoint name "Gemini", silent cancellation, one error per queue | 7, 8 |
-| Testing — segmenter, static helpers, chunker, parser, service with fakes, router, migration, `SpeakControllerTests` unchanged | 1–10 |
+| Settings schema — key only in the Keychain under `speech.endpoint`; base URL user-editable | 4, 8, 10 |
+| UI — source picker, system section unchanged, Base URL / Model / free-form Voice with built-in menu / SecureField / Style instructions / Preview, sliders hidden, privacy caption | 10 |
+| Errors — missing key copy, HTTP mapping to the configured host, `audioPlayback`, silent cancellation, one error per queue | 6, 7, 8 |
+| Testing — segmenter, static helpers, chunker, request builder, service with fakes, router, migration, `SpeakControllerTests` unchanged | 1–10 |
 | Testing — hardware/network-bound paths in SMOKE_TEST.md | 11 |
-| Open item 1 — re-verify the API shape against live docs | 6 (verified 2026-08-26; sources cited in the task) |
-| Open item 2 — `generateContent` contingency documented | 6 |
-| Open item 3 — embed the current voice names | 8 (30, not 27) |
+| Open item 1 — servers that ignore `response_format` and return MP3 | 7 (`AVAudioPlayer` sniffs the container; documented on the protocol), 11 (smoke check) |
+| Open item 2 — the voice list is cosmetic; an unknown name returns an HTTP error | 8, 10, 11 |
 
 **Test-count ledger**
 
@@ -3634,46 +3389,48 @@ git commit -m "docs: add smoke tests and changelog for mixed-language speech"
 | 2 | `SpeechSegmentationTests` | 11 | 486 |
 | 3 | `SpeechServiceTests` (+1), `SpeakControllerTests` (+2) | 3 | 489 |
 | 4 | `SettingsTests` (+4) | 4 | 493 |
-| 5 | `PCM16WAVTests` (6), `GeminiTextChunkerTests` (10) | 16 | 509 |
-| 6 | `GeminiTTSParserTests` | 8 | 517 |
-| 7 | `MacomprendoErrorTests` (+2 parameterised cases, +1 test) | 3 | 520 |
-| 8 | `GeminiSpeechServiceTests` | 11 | 531 |
-| 9 | `SpeechRouterTests` | 7 | 538 |
-| 10 | `SpeechTabModelTests` (+6) | 6 | 544 |
-| 11 | — | 0 | **544** |
+| 5 | `SpeechTextChunkerTests` | 10 | 503 |
+| 6 | `SpeechRequestBuilderTests` | 6 | 509 |
+| 7 | `MacomprendoErrorTests` (+2 parameterised cases, +1 test) | 3 | 512 |
+| 8 | `EndpointSpeechServiceTests` | 11 | 523 |
+| 9 | `SpeechRouterTests` | 7 | 530 |
+| 10 | `SpeechTabModelTests` (+6) | 6 | 536 |
+| 11 | — | 0 | **536** |
 
-**Verified third-party facts** (checked 2026-08-26, not recalled):
+Six new suite files: `LanguageSegmenterTests`, `SpeechSegmentationTests`,
+`SpeechTextChunkerTests`, `SpeechRequestBuilderTests`, `EndpointSpeechServiceTests`,
+`SpeechRouterTests`. `SettingsTests.swift` and `MacomprendoErrorTests.swift` hold **free `@Test`
+functions**, not `@Suite` types — that is why Tasks 4 and 7 filter on a test-function name rather
+than a suite name.
+
+**Verified facts** (checked 2026-08-26, not recalled):
 
 - `Unicode.Scalar.Properties` has **no** `script` member — compiling
   `print(("п" as Unicode.Scalar).properties.script)` fails with
   `error: value of type 'Unicode.Scalar.Properties' has no member 'script'`. Task 1 uses
-  `isAlphabetic` + block ranges instead of the spec's suggestion.
-- Gemini TTS REST endpoint, headers and request body: the single REST sample on
-  <https://ai.google.dev/gemini-api/docs/speech-generation> (Task 6 quotes it verbatim).
-- Gemini TTS response wire shape: `steps[].content[]` with `{"type":"audio", "data",
-  "mime_type", "sample_rate", "channels"}`, derived from
-  `googleapis/python-genai` `google/genai/_gaos/types/interactions/{interaction,audiocontent,
-  modeloutputstep}.py` — `output_audio` is documented there as "added by the SDK" and is computed
-  by walking `steps`, so it is **not** a wire field.
-- TTS model IDs `gemini-3.1-flash-tts-preview`, `gemini-2.5-flash-preview-tts`,
-  `gemini-2.5-pro-preview-tts` (<https://ai.google.dev/gemini-api/docs/models>).
-- The prebuilt voice list has **30** entries, quoted with their style descriptors in Task 8.
+  `isAlphabetic` + block ranges, which is also what the amended spec now says.
+- `EndpointURL.openAI(_:_:)` resolves all four base-URL shapes in Task 6's table, and
+  `URL.host()` yields `api.openai.com` / `api.proxyapi.ru` / `localhost` for them.
+- The exact JSON `JSONEncoder` emits with `[.sortedKeys, .withoutEscapingSlashes]` for the
+  request body, with and without `instructions`, and the fact that non-ASCII input is emitted as
+  raw UTF-8 rather than `\u` escapes (Task 6 asserts both literals).
+- `SpeechTextChunker`'s **character** accounting: `"Привет мир."` is 11 characters and 20 UTF-8
+  bytes, so `limit: 21` keeps `"Привет мир. Как дела?"` whole while `limit: 20` splits it — the
+  test that distinguishes character from byte budgeting. Every chunker expectation in Task 5 and
+  every fixture in Task 8 (`limit: 6` → `["One.", "Two.", "Three."]`) is a recorded prototype
+  output.
+- `LanguageSegmenter.runs`, `AVSpeechService.fallbackVoice` and the chunker were prototyped and
+  executed before this plan was written; the expectations are recordings, not predictions.
+- `EndpointSpeechService`, `AVSpeechService` and `SpeechRouter` as written compile clean under
+  `swiftc -swift-version 6 -strict-concurrency=complete` with zero warnings, including the
+  `withTaskCancellationHandler` + `withCheckedThrowingContinuation` pairing and the
+  MainActor-isolated default arguments in the test helpers.
 - xcodegen 2.46.0 is installed at `/opt/homebrew/bin/xcodegen`.
 - Baseline suite: `Test run with 464 tests in 55 suites passed`.
-- The exact JSON emitted by `JSONEncoder` with `[.sortedKeys, .withoutEscapingSlashes]` for the
-  request body, and the fact that non-ASCII input is emitted as raw UTF-8 rather than `\u`
-  escapes (Task 6's `theRequestBodyMatchesTheDocumentedInteractionsShape` asserts the literal).
-- `LanguageSegmenter.runs`, `GeminiTextChunker.chunks`, `PCM16WAV.data`,
-  `AVSpeechService.fallbackVoice` and `GeminiTTSParser.parse` were all prototyped and executed
-  before this plan was written; every expected value in the tests above is a recorded output, not
-  a prediction.
-- `GeminiSpeechService`, `AVSpeechService` and `SpeechRouter` as written compile clean under
-  `swiftc -swift-version 6 -strict-concurrency=complete` with zero warnings.
 
 **Deliberate deviations** are listed in full under "Interface additions beyond the shared map"
-above: the `script` property replacement, the settings-free `SpeechRouter`, `voices(for:)` as a
-protocol requirement with a default, 30 voices instead of 27, `gemini-3.1-flash-tts-preview` as
-the default model plus a Model text field, `GeminiTextChunker` as its own type rather than
-`GeminiSpeechService.chunks(of:limit:)`, and Preview errors arriving as a HUD toast rather than
-an inline label. Update `docs/superpowers/specs/2026-08-26-mixed-language-speech.md` to match
-once the plan is executed, rather than letting the code drift away from it.
+above: the `script`-property replacement, the merge-into-the-longer-neighbour rule, the split of
+the missing-key sentence into description + recovery, the write-only API key field, the
+injectable `chunkCharacterLimit`, and using `EndpointURL.openAI` for URL building. Update
+`docs/superpowers/specs/2026-08-26-mixed-language-speech.md` to match once the plan is executed,
+rather than letting the code drift away from it.
