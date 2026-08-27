@@ -15,11 +15,16 @@
 import path from 'node:path';
 import os from 'node:os';
 import { parseArgs } from 'node:util';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
-  ROOT, MACOS_DIR, DIST_DIR, APP_NAME, EXECUTABLE_NAME, BUNDLE_ID,
+  ROOT, MACOS_DIR, PROJECT_YML, DIST_DIR, APP_NAME, EXECUTABLE_NAME, BUNDLE_ID,
   DEPLOYMENT_TARGET, INFO_PLIST_SRC, ICON_SRC, ENTITLEMENTS_SRC, LICENSE_PATH,
 } from './lib/paths.mjs';
+import { run as realRun } from './lib/run.mjs';
+import { log as realLog } from './lib/log.mjs';
+import { realFsOps, realIO } from './lib/fs.mjs';
+import { readVersion } from './lib/version.mjs';
 
 const SUPPORTED_ARCHS = ['arm64', 'x86_64'];
 
@@ -222,4 +227,115 @@ export function describeStep(step) {
     case 'chmod': return `chmod 755 ${step.path}`;
     default: throw new Error(`Unknown step type: ${step.type}`);
   }
+}
+
+export async function executePlan(steps, { run, fsOps, log, dryRun }) {
+  const outputs = [];
+  for (const step of steps) {
+    const description = describeStep(step);
+    if (dryRun) {
+      log.info(description);
+      continue;
+    }
+    log.step(description);
+    switch (step.type) {
+      case 'rm': await fsOps.rmrf(step.path); break;
+      case 'mkdir': await fsOps.mkdirp(step.path); break;
+      case 'copy': await fsOps.copyPath(step.from, step.to); break;
+      case 'chmod': await fsOps.chmodExec(step.path); break;
+      case 'exec': {
+        const result = await run(step.cmd, step.args, { cwd: ROOT, capture: step.capture === true });
+        if (step.capture === true) outputs.push((result.stdout ?? '').trim());
+        break;
+      }
+      default: throw new Error(`Unknown step type: ${step.type}`);
+    }
+  }
+  return { outputs };
+}
+
+export async function resolveContext(options, { run, fsOps, io }) {
+  const version = options.version ?? readVersion(await io.readFile(PROJECT_YML));
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error(`Could not read a valid X.Y.Z MARKETING_VERSION (got "${version}").`);
+  }
+  const buildNumber = options.buildNumber ?? version;
+
+  const binPaths = {};
+  for (const arch of options.archs) {
+    const triple = tripleFor(arch, options.deploymentTarget);
+    if (options.dryRun) {
+      binPaths[arch] = predictBinPath(ROOT, triple, options.configuration);
+    } else {
+      const shown = await run('swift', [
+        'build', '--package-path', MACOS_DIR,
+        '-c', options.configuration, '--triple', triple, '--show-bin-path',
+      ], { cwd: ROOT, capture: true });
+      binPaths[arch] = shown.stdout.trim();
+    }
+  }
+
+  const primaryBin = binPaths[options.archs[0]];
+  const resourceBundles = await fsOps.listBundles(primaryBin);
+  const frameworks = await fsOps.listFrameworks(primaryBin);
+  return { version, buildNumber, binPaths, resourceBundles, frameworks };
+}
+
+export async function main(argv, deps = {}) {
+  const {
+    run = realRun, log = realLog, fsOps = realFsOps, io = realIO,
+  } = deps;
+
+  let options;
+  try {
+    options = parseBuildArgs(argv);
+  } catch (error) {
+    log.error(error.message);
+    return 2;
+  }
+
+  if (options.help) {
+    log.info([
+      'Usage: npm run build -- [options]',
+      '',
+      '  --arch <list>            arm64, x86_64, or "arm64,x86_64" (default: host arch)',
+      '  --sign <identity>        codesign identity; "-" for ad-hoc (default: -)',
+      '  --configuration <name>   release | debug (default: release)',
+      '  --deployment-target <v>  macOS deployment target (default: 14.0)',
+      '  --entitlements <path>    entitlements plist for hardened-runtime signing',
+      '  --version <X.Y.Z>        override MARKETING_VERSION from macos/project.yml',
+      '  --build-number <n>       CFBundleVersion (default: the version)',
+      '  --dist <dir>             output directory (default: dist/)',
+      '  --dry-run                print the plan without building',
+    ].join('\n'));
+    return 0;
+  }
+
+  try {
+    const context = await resolveContext(options, { run, fsOps, io });
+    const steps = planBuild(options, context);
+    if (context.resourceBundles.length === 0) {
+      log.warn('No SwiftPM resource bundle found next to the executable. The app target '
+        + 'declares resources (vendored Phosphor SVGs), so this usually means the build '
+        + 'did not run or the resources were dropped from macos/Package.swift.');
+    }
+    const { outputs } = await executePlan(steps, { run, fsOps, log, dryRun: options.dryRun });
+    if (options.dryRun) {
+      log.info(`Dry run complete: ${steps.length} steps planned for ${bundleLayout(options.dist).app}`);
+      return 0;
+    }
+    log.info(`Built ${bundleLayout(options.dist).app}`);
+    log.info(`Version: ${context.version} (${context.buildNumber})`);
+    log.info(`Bundle identifier: ${BUNDLE_ID}`);
+    log.info(`Architectures: ${outputs.at(-1) ?? 'unknown'}`);
+    log.info(options.sign === '-' ? 'Signed ad hoc for local use.' : `Signed with ${options.sign}`);
+    return 0;
+  } catch (error) {
+    log.error(error.message);
+    return 1;
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = await main(process.argv.slice(2));
 }

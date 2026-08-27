@@ -4,8 +4,10 @@ import path from 'node:path';
 
 import {
   parseBuildArgs, tripleFor, predictBinPath, bundleLayout, planBuild, describeStep,
+  executePlan, resolveContext, main,
 } from '../build-app.mjs';
-import { ROOT, DIST_DIR, BUNDLE_ID } from '../lib/paths.mjs';
+import { ROOT, DIST_DIR, BUNDLE_ID, PROJECT_YML } from '../lib/paths.mjs';
+import { makeFakeRun, makeFakeFsOps, makeFakeIO, makeFakeLog } from './helpers/fake-run.mjs';
 
 test('parseBuildArgs defaults to the host architecture and an ad-hoc signature', () => {
   const options = parseBuildArgs([]);
@@ -199,4 +201,117 @@ test('describeStep renders every step type as one readable line', () => {
   assert.equal(describeStep({ type: 'mkdir', path: '/a' }), 'mkdir -p /a');
   assert.equal(describeStep({ type: 'copy', from: '/a', to: '/b' }), 'cp -R /a /b');
   assert.equal(describeStep({ type: 'chmod', path: '/a' }), 'chmod 755 /a');
+});
+
+const PROJECT_YML_TEXT = `name: Macomprendo
+targets:
+  Macomprendo:
+    settings:
+      base:
+        MARKETING_VERSION: "1.2.3"
+        PRODUCT_BUNDLE_IDENTIFIER: com.dzamataev.macomprendo
+`;
+
+test('executePlan performs each step through the injected boundaries', async () => {
+  const run = makeFakeRun([{}, { stdout: 'x86_64 arm64' }]);
+  const fsOps = makeFakeFsOps();
+  const result = await executePlan([
+    { type: 'rm', path: '/out/app' },
+    { type: 'mkdir', path: '/out/app/Contents' },
+    { type: 'copy', from: '/a', to: '/b' },
+    { type: 'chmod', path: '/b' },
+    { type: 'exec', cmd: 'codesign', args: ['--force', '/out/app'] },
+    { type: 'exec', cmd: 'lipo', args: ['-archs', '/b'], capture: true },
+  ], { run, fsOps, log: makeFakeLog(), dryRun: false });
+
+  assert.deepEqual(fsOps.events, [
+    ['rmrf', '/out/app'],
+    ['mkdirp', '/out/app/Contents'],
+    ['copyPath', '/a', '/b'],
+    ['chmodExec', '/b'],
+  ]);
+  assert.deepEqual(run.lines(), ['codesign --force /out/app', 'lipo -archs /b']);
+  assert.deepEqual(result.outputs, ['x86_64 arm64']);
+});
+
+test('executePlan in dry-run mode touches nothing and logs every step', async () => {
+  const run = makeFakeRun();
+  const fsOps = makeFakeFsOps();
+  const log = makeFakeLog();
+  await executePlan([
+    { type: 'rm', path: '/out/app' },
+    { type: 'exec', cmd: 'codesign', args: ['--force', '/out/app'] },
+  ], { run, fsOps, log, dryRun: true });
+
+  assert.deepEqual(fsOps.events, []);
+  assert.deepEqual(run.calls, []);
+  assert.deepEqual(log.lines, ['info: rm -rf /out/app', 'info: codesign --force /out/app']);
+});
+
+test('resolveContext predicts bin paths and skips swift in dry-run mode', async () => {
+  const run = makeFakeRun();
+  const fsOps = makeFakeFsOps();
+  fsOps.bundles = ['Macomprendo_Macomprendo.bundle'];
+  fsOps.frameworks = ['whisper.framework'];
+  const io = makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT });
+  const options = parseBuildArgs(['--arch', 'arm64,x86_64', '--dry-run']);
+
+  const context = await resolveContext(options, { run, fsOps, io });
+
+  assert.equal(context.version, '1.2.3');
+  assert.equal(context.buildNumber, '1.2.3');
+  assert.deepEqual(run.calls, []);
+  assert.ok(context.binPaths.arm64.endsWith('macos/.build/arm64-apple-macosx14.0/release'));
+  assert.deepEqual(context.resourceBundles, ['Macomprendo_Macomprendo.bundle']);
+  assert.deepEqual(context.frameworks, ['whisper.framework']);
+});
+
+test('resolveContext asks SwiftPM for the real bin path outside dry-run mode', async () => {
+  const run = makeFakeRun([{ stdout: '/repo/macos/.build/arm64-apple-macosx14.0/release\n' }]);
+  const fsOps = makeFakeFsOps();
+  const io = makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT });
+  const options = parseBuildArgs(['--arch', 'arm64']);
+
+  const context = await resolveContext(options, { run, fsOps, io });
+
+  assert.equal(context.binPaths.arm64, '/repo/macos/.build/arm64-apple-macosx14.0/release');
+  assert.ok(run.lines()[0].includes('--show-bin-path'));
+});
+
+test('resolveContext honours explicit --version and --build-number', async () => {
+  const io = makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT });
+  const context = await resolveContext(
+    parseBuildArgs(['--arch', 'arm64', '--dry-run', '--version', '9.9.9', '--build-number', '42']),
+    { run: makeFakeRun(), fsOps: makeFakeFsOps(), io },
+  );
+  assert.equal(context.version, '9.9.9');
+  assert.equal(context.buildNumber, '42');
+});
+
+test('main --dry-run prints the plan and exits zero without running anything', async () => {
+  const run = makeFakeRun();
+  const fsOps = makeFakeFsOps();
+  const log = makeFakeLog();
+  const io = makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT });
+
+  const code = await main(['--arch', 'arm64,x86_64', '--dry-run'], { run, fsOps, log, io });
+
+  assert.equal(code, 0);
+  assert.deepEqual(run.calls, []);
+  assert.deepEqual(
+    fsOps.events.filter((e) => e[0] !== 'listBundles' && e[0] !== 'listFrameworks'), []);
+  assert.ok(log.lines.some((l) => l.includes('--triple arm64-apple-macosx14.0')));
+  assert.ok(log.lines.some((l) => l.includes('--triple x86_64-apple-macosx14.0')));
+  assert.ok(log.lines.some((l) => l.includes('lipo -create')));
+});
+
+test('main reports a bad argument as exit code 2 without spawning anything', async () => {
+  const run = makeFakeRun();
+  const log = makeFakeLog();
+  const code = await main(['--arch', 'ppc'], {
+    run, fsOps: makeFakeFsOps(), log, io: makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT }),
+  });
+  assert.equal(code, 2);
+  assert.deepEqual(run.calls, []);
+  assert.ok(log.lines.some((l) => l.startsWith('error: Unsupported architecture "ppc"')));
 });
