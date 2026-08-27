@@ -31,3 +31,7 @@ DerivedData/
 
 # Generated during icon creation, never committed
 macos/AppBundle/AppIcon.iconset/
+
+# Agent scratch — isolated worktrees and SDD ledgers
+.claude/worktrees/
+.superpowers/
