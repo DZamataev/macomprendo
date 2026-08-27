@@ -155,3 +155,40 @@ test('preflight surfaces a failed gh auth check', async () => {
   await assert.rejects(preflight('1.2.4', { run, log: makeFakeLog(), root: '/repo' }),
     /gh is not authenticated; run: gh auth login/);
 });
+
+test('preflight refuses a signal-killed git status', async () => {
+  const calls = [];
+  const run = async (cmd, args = [], options = {}) => {
+    const line = [cmd, ...args].join(' ');
+    calls.push({ cmd, args, options, line });
+    if (line === 'git status --porcelain') {
+      throw new Error('git status --porcelain was killed with SIGKILL');
+    }
+    const table = {
+      'git rev-parse --show-toplevel': { stdout: '/repo' },
+      'git branch --show-current': { stdout: 'main' },
+      'gh auth status': { stdout: 'Logged in' },
+    };
+    const hit = table[line];
+    if (hit === undefined) return { stdout: '', stderr: '', code: 0 };
+    return { stdout: hit.stdout ?? '', stderr: '', code: 0 };
+  };
+  run.calls = calls;
+  run.lines = () => calls.map((c) => c.line);
+  await assert.rejects(preflight('1.2.4', { run, log: makeFakeLog(), root: '/repo' }),
+    /was killed with SIGKILL/);
+});
+
+test('preflight distinguishes gh missing from gh auth failures', async () => {
+  const runEnoent = preflightRun({ 'gh auth status': { throws: 'spawn ENOENT' } });
+  await assert.rejects(preflight('1.2.4', { run: runEnoent, log: makeFakeLog(), root: '/repo' }),
+    /gh is not installed/);
+
+  const runAuthFail = preflightRun({ 'gh auth status': { throws: 'gh: not logged in' } });
+  await assert.rejects(preflight('1.2.4', { run: runAuthFail, log: makeFakeLog(), root: '/repo' }),
+    /gh is not authenticated; run: gh auth login/);
+
+  const runOtherError = preflightRun({ 'gh auth status': { throws: 'network error' } });
+  await assert.rejects(preflight('1.2.4', { run: runOtherError, log: makeFakeLog(), root: '/repo' }),
+    /network error/);
+});

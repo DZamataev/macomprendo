@@ -106,8 +106,14 @@ export async function preflight(version, { run, log, root = ROOT }) {
 
   try {
     await run('gh', ['auth', 'status'], { cwd: root });
-  } catch {
-    throw new Error('gh is not authenticated; run: gh auth login');
+  } catch (error) {
+    if (error.message.includes('ENOENT') || error.message.includes('spawn')) {
+      throw new Error('gh is not installed; run: brew install gh');
+    }
+    if (error.message.includes('not logged in') || error.message.includes('not authenticated')) {
+      throw new Error('gh is not authenticated; run: gh auth login');
+    }
+    throw error;
   }
 
   await run('git', ['fetch', 'origin', 'main', '--tags'], { cwd: root });
