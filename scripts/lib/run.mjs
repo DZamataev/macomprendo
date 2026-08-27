@@ -13,6 +13,7 @@ export async function run(cmd, args = [], options = {}) {
     capture = false,
     dryRun = false,
     check = true,
+    input,
     log = defaultLog,
   } = options;
 
@@ -23,12 +24,16 @@ export async function run(cmd, args = [], options = {}) {
     const child = spawn(cmd, args, {
       cwd,
       env,
-      stdio: capture ? ["ignore", "pipe", "pipe"] : ["ignore", "inherit", "inherit"],
+      stdio: capture ? ["pipe", "pipe", "pipe"] : input ? ["pipe", "inherit", "inherit"] : ["ignore", "inherit", "inherit"],
     });
     let stdout = "";
     let stderr = "";
     child.stdout?.on("data", (d) => { stdout += d.toString(); });
     child.stderr?.on("data", (d) => { stderr += d.toString(); });
+    if (input !== undefined && child.stdin) {
+      child.stdin.write(input);
+      child.stdin.end();
+    }
     child.on("error", reject);
     child.on("close", (code, signal) => {
       if (check && (code !== 0 || (code === null && signal))) {
