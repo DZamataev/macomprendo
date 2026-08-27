@@ -182,3 +182,69 @@ test('main --dry-run prints the plan and spawns nothing beyond identity discover
   assert.deepEqual(deps.run.lines(), ['security find-identity -v -p codesigning']);
   assert.ok(deps.log.lines.some((l) => l.includes('notarytool submit')));
 });
+
+test('main reports a killed identity check instead of the missing-certificate message', async () => {
+  const calls = [];
+  const run = async (cmd, args = []) => {
+    const line = [cmd, ...args].join(' ');
+    calls.push(line);
+    if (cmd === 'security') return { stdout: '', stderr: '', code: null, signal: 'SIGKILL' };
+    return { stdout: '', stderr: '', code: 0 };
+  };
+  const log = makeFakeLog();
+  const deps = {
+    run,
+    log,
+    fsOps: makeFakeFsOps(),
+    io: makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT }),
+    sha256: async () => 'a'.repeat(64),
+  };
+
+  const code = await main(['--dist', '/out'], deps);
+
+  assert.equal(code, 1);
+  assert.deepEqual(calls, ['security find-identity -v -p codesigning']);
+  const message = log.lines.join('\n');
+  assert.ok(message.includes('killed'));
+  assert.ok(message.includes('SIGKILL'));
+  assert.equal(message.includes('Developer ID Application'), false);
+});
+
+test('main reports a killed notary-log fetch instead of claiming a log was written', async () => {
+  const calls = [];
+  const run = async (cmd, args = []) => {
+    const line = [cmd, ...args].join(' ');
+    calls.push(line);
+    if (line === 'security find-identity -v -p codesigning') {
+      return { stdout: SECURITY_OUTPUT, stderr: '', code: 0 };
+    }
+    if (line.startsWith('xcrun notarytool submit')) {
+      return {
+        stdout: '{"id":"def-456","status":"Invalid","message":"Processing complete"}',
+        stderr: '',
+        code: 0,
+      };
+    }
+    if (line.startsWith('xcrun notarytool log')) {
+      return { stdout: '', stderr: '', code: null, signal: 'SIGKILL' };
+    }
+    return { stdout: '', stderr: '', code: 0 };
+  };
+  const log = makeFakeLog();
+  const deps = {
+    run,
+    log,
+    fsOps: makeFakeFsOps(),
+    io: makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT }),
+    sha256: async () => 'a'.repeat(64),
+  };
+
+  const code = await main(['--dist', '/out'], deps);
+
+  assert.equal(code, 1);
+  assert.equal(calls.some((l) => l.startsWith('xcrun stapler')), false);
+  const message = log.lines.join('\n');
+  assert.ok(message.includes('killed'));
+  assert.ok(message.includes('SIGKILL'));
+  assert.equal(message.includes('Notary log written'), false);
+});
