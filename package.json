@@ -9,6 +9,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "audit": "node scripts/audit-public-repo.mjs",
     "build": "node scripts/build-app.mjs",
     "configure-notary": "node scripts/configure-notarization.mjs",
     "fetch-model-hashes": "node scripts/fetch-model-hashes.mjs",
