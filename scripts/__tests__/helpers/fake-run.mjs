@@ -38,6 +38,7 @@ export function makeFakeFsOps(existing = []) {
     async copyPath(from, to) { events.push(['copyPath', from, to]); present.add(to); },
     async chmodExec(file) { events.push(['chmodExec', file]); },
     async pathExists(p) { return present.has(p); },
+    async isDirectory(p) { return present.has(p); },
     async listBundles(dir) { events.push(['listBundles', dir]); return this.bundles ?? []; },
     async listFrameworks(dir) { events.push(['listFrameworks', dir]); return this.frameworks ?? []; },
     async move(from, to) { events.push(['move', from, to]); present.delete(from); present.add(to); },

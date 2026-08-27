@@ -103,6 +103,15 @@ export async function pathExists(p) {
   }
 }
 
+export async function isDirectory(p) {
+  try {
+    const stats = await fs.stat(p);
+    return stats.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export async function listDirsWithSuffix(dir, suffix) {
   let entries;
   try {
@@ -122,7 +131,7 @@ export const listBundles = (dir) => listDirsWithSuffix(dir, ".bundle");
 export const listFrameworks = (dir) => listDirsWithSuffix(dir, ".framework");
 
 export const realFsOps = {
-  mkdirp, rmrf, copyPath, chmodExec, pathExists,
+  mkdirp, rmrf, copyPath, chmodExec, pathExists, isDirectory,
   listBundles, listFrameworks, move, mkdtemp: makeTempDir,
 };
 

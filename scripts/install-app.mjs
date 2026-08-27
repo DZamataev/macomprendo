@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { ROOT, DIST_DIR, APP_NAME, EXECUTABLE_NAME, appPath } from './lib/paths.mjs';
+import { ROOT, DIST_DIR, APP_NAME, EXECUTABLE_NAME, BUNDLE_ID, appPath } from './lib/paths.mjs';
 import { run as realRun } from './lib/run.mjs';
 import { log as realLog } from './lib/log.mjs';
 import { realFsOps } from './lib/fs.mjs';
@@ -41,8 +41,23 @@ export function planInstall({ installDir, workDir, source }) {
   ];
 }
 
-async function runningPIDs(run, pattern) {
-  const result = await run('pgrep', ['-f', pattern], { capture: true, check: false });
+// `run(..., { check: false })` still throws on a spawn error, but resolves rather than
+// rejects when the child exits non-zero OR is killed by a signal — see scripts/lib/run.mjs.
+// A signal kill reports `code: null` with `signal` set, and looks exactly like a clean
+// "no output" result unless callers check for it explicitly. Treating a killed probe as a
+// confirmed negative answer is the bug this guards against.
+function isSignalKill(result) {
+  return result.code === null && Boolean(result.signal);
+}
+
+async function runningPIDs(run, pattern, log) {
+  const result = await run('pgrep', ['-f', pattern], { capture: true, check: false, log });
+  if (isSignalKill(result)) {
+    throw new Error(
+      'Could not determine whether Macomprendo is running: pgrep was killed with '
+      + `${result.signal}. Run the installer again.`,
+    );
+  }
   return (result.stdout ?? '').split('\n').map((p) => p.trim()).filter((p) => p !== '');
 }
 
@@ -74,11 +89,17 @@ export async function main(argv, deps = {}) {
     log.error(`Install directory does not exist: ${options.installDir}`);
     return 1;
   }
+  if (!(await fsOps.isDirectory(options.installDir))) {
+    log.error(`Install directory is not a directory: ${options.installDir}`);
+    return 1;
+  }
 
   const destination = path.join(options.installDir, APP_NAME);
   const pattern = executablePattern(destination);
   let workDir = null;
   let backup = null;
+  let backedUp = false;
+  let swapped = false;
   let installed = false;
 
   try {
@@ -87,16 +108,15 @@ export async function main(argv, deps = {}) {
     backup = path.join(workDir, `previous-${APP_NAME}`);
 
     for (const step of planInstall({ installDir: options.installDir, workDir, source })) {
-      log.step([step.cmd, ...step.args].join(' '));
-      await run(step.cmd, step.args, { cwd: root });
+      await run(step.cmd, step.args, { cwd: root, log });
     }
 
-    let pids = await runningPIDs(run, pattern);
+    let pids = await runningPIDs(run, pattern, log);
     if (pids.length > 0) {
       log.info('Closing the installed app before updating it…');
-      for (const pid of pids) await run('kill', ['-TERM', pid], { check: false });
+      for (const pid of pids) await run('kill', ['-TERM', pid], { check: false, log });
       for (let attempt = 0; attempt < 20; attempt += 1) {
-        pids = await runningPIDs(run, pattern);
+        pids = await runningPIDs(run, pattern, log);
         if (pids.length === 0) break;
         await sleep(250);
       }
@@ -106,41 +126,82 @@ export async function main(argv, deps = {}) {
     }
 
     if (await fsOps.pathExists(destination)) {
+      // Something is already at the destination — confirm it is actually Macomprendo
+      // before treating it as disposable. A differently-signed app sharing the name, a
+      // half-written remnant, or an unrelated folder must be refused, not backed up and
+      // silently replaced.
+      const identity = await run(
+        '/usr/libexec/PlistBuddy',
+        ['-c', 'Print :CFBundleIdentifier', path.join(destination, 'Contents', 'Info.plist')],
+        { capture: true, check: false, log },
+      );
+      if (isSignalKill(identity)) {
+        throw new Error(
+          `Could not verify the app already at ${destination}: PlistBuddy was killed with `
+          + `${identity.signal}. Run the installer again.`,
+        );
+      }
+      const identifier = (identity.stdout ?? '').trim();
+      if (identifier !== BUNDLE_ID) {
+        throw new Error(
+          `Refusing to replace ${destination}: it is not Macomprendo `
+          + `(found bundle identifier "${identifier || 'none'}"). Remove it manually, or `
+          + 'install to a different --install-dir.',
+        );
+      }
       await fsOps.move(destination, backup);
+      backedUp = true;
     } else {
       backup = null;
     }
+
     await fsOps.move(staged, destination);
+    swapped = true;
+
+    await run('codesign', ['--verify', '--deep', '--strict', destination], { cwd: root, log });
     installed = true;
 
-    await run('codesign', ['--verify', '--deep', '--strict', destination], { cwd: root });
     const version = await run('/usr/libexec/PlistBuddy',
       ['-c', 'Print :CFBundleShortVersionString', path.join(destination, 'Contents', 'Info.plist')],
-      { capture: true });
+      { capture: true, log });
     log.info(`Installed Macomprendo ${(version.stdout ?? '').trim()} at ${destination}`);
 
     if (options.open) {
-      await run('open', [destination]);
+      await run('open', [destination], { log });
       log.info('Launched the updated app.');
     }
     return 0;
   } catch (error) {
     log.error(error.message);
-    if (!installed && backup !== null && (await fsOps.pathExists(backup))) {
+    if (!installed && (swapped || backedUp)) {
       try {
-        await fsOps.move(backup, destination);
-        log.info('Restored the previously installed app.');
+        if (await fsOps.pathExists(destination)) {
+          // The swap already put a copy at the destination before something about it
+          // failed to verify — it is disposable (the build output in dist/ is still
+          // there), so clear it before restoring, rather than leaving it live.
+          await fsOps.rmrf(destination);
+        }
+        if (backedUp) {
+          await fsOps.move(backup, destination);
+          log.info('Restored the previously installed app.');
+        } else {
+          log.info('Removed the unverified update; there was no previous app to restore.');
+        }
       } catch (restoreError) {
-        log.error(`Automatic restore failed; the previous app remains at ${backup}: ${restoreError.message}`);
+        const remaining = backedUp ? ` The previous app remains at ${backup}.` : '';
+        log.error(`Automatic restore failed.${remaining} ${restoreError.message}`);
         return 1;
       }
     }
     return 1;
   } finally {
-    // Remove the staging directory whenever the destination is in place — either the new
-    // app was installed, or the backup was successfully restored. If the destination is
-    // missing, the backup is the only copy left and must survive for manual recovery.
-    if (workDir !== null && (await fsOps.pathExists(destination))) {
+    // Clean up the staging directory once it is safe to: the new app was installed and
+    // verified, or a pre-swap failure left the original destination untouched. A
+    // post-swap failure — the staged app was already moved into place before something
+    // about it failed to verify — leaves the staging directory (and anything left in it)
+    // for manual inspection instead of erasing the evidence.
+    const safeToCleanUp = installed || (!swapped && (await fsOps.pathExists(destination)));
+    if (workDir !== null && safeToCleanUp) {
       await fsOps.rmrf(workDir);
     }
   }

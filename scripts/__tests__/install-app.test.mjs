@@ -49,7 +49,12 @@ function installDeps({ running = false, existing = true } = {}) {
         ? { stdout: '4242\n', stderr: '', code: 0 }
         : { stdout: '', stderr: '', code: 1 };
     }
-    if (cmd === '/usr/libexec/PlistBuddy') return { stdout: '0.1.0\n', stderr: '', code: 0 };
+    if (cmd === '/usr/libexec/PlistBuddy') {
+      if (args.includes('Print :CFBundleIdentifier')) {
+        return { stdout: 'com.dzamataev.macomprendo\n', stderr: '', code: 0 };
+      }
+      return { stdout: '0.1.0\n', stderr: '', code: 0 };
+    }
     return { stdout: '', stderr: '', code: 0 };
   };
   run.calls = calls;
@@ -110,5 +115,103 @@ test('main restores the backup when the swap fails', async () => {
     '/Applications/.macomprendo-update.AB12/previous-Macomprendo.app',
     '/Applications/Macomprendo.app',
   ]);
+  assert.ok(deps.log.lines.some((l) => l.includes('Restored the previously installed app')));
+});
+
+test('main installs fresh when no previous app exists', async () => {
+  const deps = installDeps({ existing: false });
+  const code = await main([], deps);
+
+  assert.equal(code, 0);
+  assert.deepEqual(deps.fsOps.moves, [
+    ['/Applications/.macomprendo-update.AB12/Macomprendo.app', '/Applications/Macomprendo.app'],
+  ]);
+  assert.ok(deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/.macomprendo-update.AB12'));
+});
+
+test('main refuses when the install directory is not a directory', async () => {
+  const deps = installDeps();
+  deps.fsOps.isDirectory = async (p) => p !== '/Applications';
+
+  const code = await main([], deps);
+
+  assert.equal(code, 1);
+  assert.equal(deps.fsOps.moves.length, 0);
+  assert.ok(deps.log.lines.some((l) => l.includes('not a directory')));
+});
+
+test('main refuses to proceed when pgrep cannot be trusted (signal-killed)', async () => {
+  const deps = installDeps();
+  const originalRun = deps.run;
+  deps.run = async (cmd, args = [], options = {}) => {
+    if (cmd === 'pgrep') return { stdout: '', stderr: '', code: null, signal: 'SIGKILL' };
+    return originalRun(cmd, args, options);
+  };
+
+  const code = await main([], deps);
+
+  assert.equal(code, 1);
+  assert.equal(deps.fsOps.moves.length, 0);
+  assert.ok(deps.log.lines.some((l) => l.includes('Could not determine whether Macomprendo is running')));
+});
+
+test('main refuses when it cannot verify the existing destination (PlistBuddy signal-killed)', async () => {
+  const deps = installDeps();
+  const originalRun = deps.run;
+  deps.run = async (cmd, args = [], options = {}) => {
+    if (cmd === '/usr/libexec/PlistBuddy' && args.includes('Print :CFBundleIdentifier')) {
+      return { stdout: '', stderr: '', code: null, signal: 'SIGKILL' };
+    }
+    return originalRun(cmd, args, options);
+  };
+
+  const code = await main([], deps);
+
+  assert.equal(code, 1);
+  assert.equal(deps.fsOps.moves.length, 0);
+  assert.ok(deps.log.lines.some((l) => l.includes('Could not verify the app already at')));
+});
+
+test('main refuses to replace a destination that is not Macomprendo', async () => {
+  const deps = installDeps();
+  const originalRun = deps.run;
+  deps.run = async (cmd, args = [], options = {}) => {
+    if (cmd === '/usr/libexec/PlistBuddy' && args.includes('Print :CFBundleIdentifier')) {
+      return { stdout: 'com.example.other\n', stderr: '', code: 0 };
+    }
+    return originalRun(cmd, args, options);
+  };
+
+  const code = await main([], deps);
+
+  assert.equal(code, 1);
+  assert.equal(deps.fsOps.moves.length, 0);
+  assert.ok(deps.fsOps.present.has('/Applications/Macomprendo.app'));
+  assert.ok(deps.log.lines.some((l) => l.includes('Refusing to replace')));
+});
+
+test('main restores the backup and preserves the staging dir when the post-swap verify fails', async () => {
+  const deps = installDeps();
+  const originalRun = deps.run;
+  let codesignCalls = 0;
+  deps.run = async (cmd, args = [], options = {}) => {
+    if (cmd === 'codesign') {
+      codesignCalls += 1;
+      if (codesignCalls === 3) {
+        throw new Error('codesign --verify --deep --strict /Applications/Macomprendo.app exited with 1');
+      }
+    }
+    return originalRun(cmd, args, options);
+  };
+
+  const code = await main([], deps);
+
+  assert.equal(code, 1);
+  assert.deepEqual(deps.fsOps.moves.at(-1), [
+    '/Applications/.macomprendo-update.AB12/previous-Macomprendo.app',
+    '/Applications/Macomprendo.app',
+  ]);
+  assert.ok(deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/Macomprendo.app'));
+  assert.ok(!deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/.macomprendo-update.AB12'));
   assert.ok(deps.log.lines.some((l) => l.includes('Restored the previously installed app')));
 });
