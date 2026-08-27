@@ -97,10 +97,46 @@ test('main rejects a malformed APPLE_TEAM_ID before prompting for anything', asy
   assert.equal(io.text(), '');
 });
 
-test('promptSecret closes the readline interface on input error', async () => {
+test('promptSecret restores terminal echo and closes the interface on input error', async () => {
   const io = fakeTTY();
   const answer = promptSecret('App-specific password: ', io);
   const inputError = new Error('Input stream error');
   io.input.destroy(inputError);
   await assert.rejects(answer, inputError);
+  // Verify the newline was written to restore echo visibility
+  assert.ok(io.text().includes('\n'), 'newline should be written to restore echo on error');
+});
+
+test('main returns 0 and warns when identity check throws after store-credentials succeeds', async () => {
+  const io = fakeTTY();
+
+  // Custom fake run: succeeds on store-credentials, throws on find-identity
+  let callCount = 0;
+  const customRun = async (cmd, args, options = {}) => {
+    callCount += 1;
+    if (callCount === 1) {
+      // First call: store-credentials succeeds
+      return { stdout: '', stderr: '', code: 0 };
+    }
+    if (callCount === 2) {
+      // Second call: find-identity throws (simulating spawn/other error)
+      throw new Error('security command failed');
+    }
+  };
+  customRun.calls = [];
+
+  const log = makeFakeLog();
+
+  const done = main([], {
+    run: customRun,
+    log,
+    io,
+    env: { NOTARY_APPLE_ID: 'dev@example.com' },
+  });
+  io.input.write('password\n');
+  const code = await done;
+
+  assert.equal(code, 0, 'should return 0 when store-credentials succeeds, even if identity check throws');
+  assert.ok(log.lines.some((l) => l.includes('credentials are ready')), 'should log that credentials were stored');
+  assert.ok(log.lines.some((l) => l.startsWith('warn: ') && l.includes('Could not check')), 'should warn about identity check failure');
 });

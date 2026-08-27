@@ -24,7 +24,7 @@ export async function run(cmd, args = [], options = {}) {
     const child = spawn(cmd, args, {
       cwd,
       env,
-      stdio: [input ? "pipe" : "ignore", capture ? "pipe" : "inherit", capture ? "pipe" : "inherit"],
+      stdio: [input !== undefined ? "pipe" : "ignore", capture ? "pipe" : "inherit", capture ? "pipe" : "inherit"],
     });
     let stdout = "";
     let stderr = "";
