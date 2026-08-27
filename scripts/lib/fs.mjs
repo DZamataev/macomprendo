@@ -86,6 +86,14 @@ export async function chmodExec(file) {
   await fs.chmod(file, 0o755);
 }
 
+export async function move(from, to) {
+  await fs.rename(from, to);
+}
+
+export async function makeTempDir(prefix) {
+  return fs.mkdtemp(prefix);
+}
+
 export async function pathExists(p) {
   try {
     await fs.access(p);
@@ -114,7 +122,8 @@ export const listBundles = (dir) => listDirsWithSuffix(dir, ".bundle");
 export const listFrameworks = (dir) => listDirsWithSuffix(dir, ".framework");
 
 export const realFsOps = {
-  mkdirp, rmrf, copyPath, chmodExec, pathExists, listBundles, listFrameworks,
+  mkdirp, rmrf, copyPath, chmodExec, pathExists,
+  listBundles, listFrameworks, move, mkdtemp: makeTempDir,
 };
 
 export const realIO = {

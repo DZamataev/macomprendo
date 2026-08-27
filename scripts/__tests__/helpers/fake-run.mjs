@@ -40,6 +40,13 @@ export function makeFakeFsOps(existing = []) {
     async pathExists(p) { return present.has(p); },
     async listBundles(dir) { events.push(['listBundles', dir]); return this.bundles ?? []; },
     async listFrameworks(dir) { events.push(['listFrameworks', dir]); return this.frameworks ?? []; },
+    async move(from, to) { events.push(['move', from, to]); present.delete(from); present.add(to); },
+    async mkdtemp(prefix) {
+      const dir = `${prefix}${Math.random().toString(36).slice(2, 8)}`;
+      events.push(['mkdtemp', prefix]);
+      present.add(dir);
+      return dir;
+    },
     bundles: [],
     frameworks: [],
   };

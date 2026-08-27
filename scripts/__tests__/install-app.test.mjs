@@ -1,0 +1,114 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { parseInstallArgs, executablePattern, planInstall, main } from '../install-app.mjs';
+import { makeFakeRun, makeFakeFsOps, makeFakeLog } from './helpers/fake-run.mjs';
+
+test('parseInstallArgs defaults to /Applications and opening the app', () => {
+  assert.deepEqual(parseInstallArgs([], {}), { installDir: '/Applications', open: true, help: false });
+});
+
+test('parseInstallArgs honours --no-open, --install-dir and MACOS_INSTALL_DIR', () => {
+  assert.equal(parseInstallArgs(['--no-open'], {}).open, false);
+  assert.equal(parseInstallArgs(['--install-dir', '~/Apps/'], {}).installDir, '~/Apps');
+  assert.equal(parseInstallArgs([], { MACOS_INSTALL_DIR: '/Volumes/Dev/Apps' }).installDir,
+    '/Volumes/Dev/Apps');
+  assert.equal(parseInstallArgs(['--install-dir', '/Custom'], { MACOS_INSTALL_DIR: '/Ignored' }).installDir,
+    '/Custom');
+});
+
+test('executablePattern anchors on the installed executable and escapes regex characters', () => {
+  assert.equal(
+    executablePattern('/Applications/Macomprendo.app'),
+    '^/Applications/Macomprendo\\.app/Contents/MacOS/Macomprendo([[:space:]]|$)',
+  );
+});
+
+test('planInstall builds, stages, swaps and verifies', () => {
+  const lines = planInstall({
+    installDir: '/Applications',
+    workDir: '/Applications/.macomprendo-update.AB12',
+    source: '/repo/dist/Macomprendo.app',
+  }).map((s) => (s.type === 'exec' ? [s.cmd, ...s.args].join(' ') : `${s.type} ${s.from ?? s.path} ${s.to ?? ''}`.trim()));
+
+  assert.deepEqual(lines, [
+    'node scripts/build-app.mjs',
+    'codesign --verify --deep --strict /repo/dist/Macomprendo.app',
+    'ditto /repo/dist/Macomprendo.app /Applications/.macomprendo-update.AB12/Macomprendo.app',
+    'codesign --verify --deep --strict /Applications/.macomprendo-update.AB12/Macomprendo.app',
+  ]);
+});
+
+function installDeps({ running = false, existing = true } = {}) {
+  const calls = [];
+  const run = async (cmd, args = [], options = {}) => {
+    const line = [cmd, ...args].join(' ');
+    calls.push({ cmd, args, options, line });
+    if (cmd === 'pgrep') {
+      return running && calls.filter((c) => c.cmd === 'pgrep').length <= 1
+        ? { stdout: '4242\n', stderr: '', code: 0 }
+        : { stdout: '', stderr: '', code: 1 };
+    }
+    if (cmd === '/usr/libexec/PlistBuddy') return { stdout: '0.1.0\n', stderr: '', code: 0 };
+    return { stdout: '', stderr: '', code: 0 };
+  };
+  run.calls = calls;
+  run.lines = () => calls.map((c) => c.line);
+
+  const fsOps = makeFakeFsOps([
+    '/Applications',
+    ...(existing ? ['/Applications/Macomprendo.app'] : []),
+    '/repo/dist/Macomprendo.app',
+  ]);
+  fsOps.moves = [];
+  fsOps.move = async (from, to) => { fsOps.moves.push([from, to]); fsOps.present.delete(from); fsOps.present.add(to); };
+  fsOps.mkdtemp = async (prefix) => `${prefix}AB12`;
+  // env: {} keeps MACOS_INSTALL_DIR from the developer's shell out of the test.
+  return { run, fsOps, log: makeFakeLog(), env: {}, source: '/repo/dist/Macomprendo.app' };
+}
+
+test('main installs over an existing copy and opens it', async () => {
+  const deps = installDeps();
+  const code = await main([], deps);
+
+  assert.equal(code, 0);
+  assert.deepEqual(deps.fsOps.moves, [
+    ['/Applications/Macomprendo.app', '/Applications/.macomprendo-update.AB12/previous-Macomprendo.app'],
+    ['/Applications/.macomprendo-update.AB12/Macomprendo.app', '/Applications/Macomprendo.app'],
+  ]);
+  assert.ok(deps.run.lines().includes('open /Applications/Macomprendo.app'));
+  assert.ok(deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/.macomprendo-update.AB12'));
+});
+
+test('main --no-open leaves the app closed', async () => {
+  const deps = installDeps();
+  await main(['--no-open'], deps);
+  assert.equal(deps.run.lines().some((l) => l.startsWith('open ')), false);
+});
+
+test('main terminates a running copy before swapping', async () => {
+  const deps = installDeps({ running: true });
+  const code = await main([], deps);
+  assert.equal(code, 0);
+  assert.ok(deps.run.lines().includes('kill -TERM 4242'));
+});
+
+test('main restores the backup when the swap fails', async () => {
+  const deps = installDeps();
+  let swaps = 0;
+  const originalMove = deps.fsOps.move;
+  deps.fsOps.move = async (from, to) => {
+    swaps += 1;
+    if (swaps === 2) throw new Error('Resource busy');
+    return originalMove(from, to);
+  };
+
+  const code = await main([], deps);
+
+  assert.equal(code, 1);
+  assert.deepEqual(deps.fsOps.moves.at(-1), [
+    '/Applications/.macomprendo-update.AB12/previous-Macomprendo.app',
+    '/Applications/Macomprendo.app',
+  ]);
+  assert.ok(deps.log.lines.some((l) => l.includes('Restored the previously installed app')));
+});
