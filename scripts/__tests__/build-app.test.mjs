@@ -153,14 +153,45 @@ test('planBuild stamps the version, build number and bundle identifier with Plis
   ]);
 });
 
-test('planBuild ad-hoc signs by default', () => {
+test('planBuild ad-hoc signs by default when there is nothing to embed', () => {
   const signs = planFixture().filter((s) => s.type === 'exec' && s.cmd === 'codesign');
   assert.deepEqual(signs[0].args, ['--force', '--sign', '-', '/out/Macomprendo.app']);
   assert.deepEqual(signs.at(-1).args,
     ['--verify', '--deep', '--strict', '--verbose=2', '/out/Macomprendo.app']);
+  // No resource bundle ever gets its own signature, ad-hoc or otherwise.
+  assert.equal(signs.some((s) => s.args.some((a) => a.includes('.bundle'))), false);
 });
 
-test('planBuild signs nested code then the app with hardened runtime for a real identity', () => {
+test('planBuild ad-hoc signs nested frameworks before the app', () => {
+  const steps = planFixture({ context: { frameworks: ['whisper.framework'] } });
+  const signs = steps.filter((s) => s.type === 'exec' && s.cmd === 'codesign');
+  assert.deepEqual(signs[0].args,
+    ['--force', '--sign', '-', '/out/Macomprendo.app/Contents/Frameworks/whisper.framework']);
+  assert.deepEqual(signs[1].args, ['--force', '--sign', '-', '/out/Macomprendo.app']);
+  assert.deepEqual(signs[2].args,
+    ['--verify', '--deep', '--strict', '--verbose=2', '/out/Macomprendo.app']);
+  assert.equal(signs.length, 3);
+});
+
+test('planBuild signs only the app for a real identity when there is nothing to embed', () => {
+  const steps = planFixture({
+    argv: ['--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)'],
+  });
+  const signs = steps.filter((s) => s.type === 'exec' && s.cmd === 'codesign');
+  assert.deepEqual(signs[0].args, [
+    '--force', '--options', 'runtime', '--timestamp',
+    '--entitlements', path.join(ROOT, 'macos/AppBundle/Macomprendo.entitlements'),
+    '--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)',
+    '/out/Macomprendo.app',
+  ]);
+  assert.deepEqual(signs[1].args,
+    ['--verify', '--deep', '--strict', '--verbose=2', '/out/Macomprendo.app']);
+  assert.equal(signs.length, 2);
+  // No resource bundle ever gets its own signature, real identity or otherwise.
+  assert.equal(signs.some((s) => s.args.some((a) => a.includes('.bundle'))), false);
+});
+
+test('planBuild signs nested frameworks then the app with hardened runtime for a real identity', () => {
   const steps = planFixture({
     argv: ['--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)'],
     context: { frameworks: ['whisper.framework'] },
@@ -173,17 +204,16 @@ test('planBuild signs nested code then the app with hardened runtime for a real 
   ]);
   assert.deepEqual(signs[1].args, [
     '--force', '--options', 'runtime', '--timestamp',
-    '--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)',
-    '/out/Macomprendo.app/Contents/Resources/Macomprendo_Macomprendo.bundle',
-  ]);
-  assert.deepEqual(signs[2].args, [
-    '--force', '--options', 'runtime', '--timestamp',
     '--entitlements', path.join(ROOT, 'macos/AppBundle/Macomprendo.entitlements'),
     '--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)',
     '/out/Macomprendo.app',
   ]);
-  assert.deepEqual(signs[3].args,
+  assert.deepEqual(signs[2].args,
     ['--verify', '--deep', '--strict', '--verbose=2', '/out/Macomprendo.app']);
+  assert.equal(signs.length, 3);
+  // The bundle SwiftPM emits for our own resources has no Info.plist and cannot be
+  // signed as its own target — it must never get a codesign step of its own.
+  assert.equal(signs.some((s) => s.args.some((a) => a.includes('Macomprendo_Macomprendo.bundle'))), false);
 });
 
 test('planBuild ends by reporting the architectures actually produced', () => {

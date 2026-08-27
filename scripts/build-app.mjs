@@ -173,10 +173,23 @@ export function planBuild(options, context) {
 
   steps.push({ type: 'chmod', path: layout.executable });
 
+  // Nested *code* is signed innermost-out, then the app; resource bundles are data,
+  // not code, and are sealed as part of the app's own signature instead of getting a
+  // signature of their own — Macomprendo_Macomprendo.bundle has no Info.plist (it is
+  // declared `.copy(...)` in macos/Package.swift, not `.process(...)`), so codesign
+  // does not even accept it as a signable target on its own. --deep is intentionally
+  // never used for signing (only for the --verify step below): it is deprecated for
+  // that purpose and would silently paper over exactly this class of ordering bug.
   if (options.sign === '-') {
+    for (const framework of frameworks) {
+      steps.push({
+        type: 'exec',
+        cmd: 'codesign',
+        args: ['--force', '--sign', '-', path.join(layout.frameworks, framework)],
+      });
+    }
     steps.push({ type: 'exec', cmd: 'codesign', args: ['--force', '--sign', '-', layout.app] });
   } else {
-    // Nested code must be signed before the enclosing bundle, innermost first.
     for (const framework of frameworks) {
       steps.push({
         type: 'exec',
@@ -185,17 +198,6 @@ export function planBuild(options, context) {
           '--force', '--options', 'runtime', '--timestamp',
           '--sign', options.sign,
           path.join(layout.frameworks, framework),
-        ],
-      });
-    }
-    for (const bundle of resourceBundles) {
-      steps.push({
-        type: 'exec',
-        cmd: 'codesign',
-        args: [
-          '--force', '--options', 'runtime', '--timestamp',
-          '--sign', options.sign,
-          path.join(layout.resources, bundle),
         ],
       });
     }
