@@ -6,7 +6,11 @@ permissions:
 on:
   push:
     tags:
-      - 'v*'
+      - 'v[0-9]*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify-and-build:
@@ -25,6 +29,23 @@ jobs:
 
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Verify the tag matches the release version
+        run: |
+          node -e '
+          import("node:fs/promises").then(async (fs) => {
+            const { readVersion } = await import("./scripts/lib/version.mjs");
+            const { PROJECT_YML } = await import("./scripts/lib/paths.mjs");
+            const version = readVersion(await fs.readFile(PROJECT_YML, "utf8"));
+            const tag = process.env.GITHUB_REF_NAME;
+            const expected = `v${version}`;
+            if (tag !== expected) {
+              console.error(`Tag ${tag} does not match MARKETING_VERSION ${version} in macos/project.yml (expected ${expected}).`);
+              process.exit(1);
+            }
+            console.log(`Tag ${tag} matches MARKETING_VERSION ${version}.`);
+          });
+          '
 
       - name: Run Node script tests
         run: npm run test:scripts

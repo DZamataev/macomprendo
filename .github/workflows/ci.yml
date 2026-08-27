@@ -86,5 +86,5 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      - name: Verify the app build plan
-        run: npm run build -- --arch arm64,x86_64 --dry-run
+      - name: Build an unsigned arm64 app bundle
+        run: npm run build -- --arch arm64
