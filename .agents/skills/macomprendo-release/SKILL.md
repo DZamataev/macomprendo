@@ -1,56 +1,124 @@
 ---
 name: macomprendo-release
-description: Use when cutting a Macomprendo release — version bump, build, sign, notarize, staple and publish, plus the prerequisites that must be in place first.
+description: Use when building, signing, notarizing, installing, or publishing a Macomprendo release, or when a release command fails
 ---
 
-# Releasing Macomprendo
+# Macomprendo Release
+
+Every release action is an npm script backed by a Node ES module in `scripts/`. There are no
+shell scripts. Full prose runbook: `DISTRIBUTING.md`. Manual checklist: `docs/SMOKE_TEST.md`.
 
 ## Prerequisites
 
-- A **Developer ID Application** certificate for team `68QJJA7HK9` in the login keychain.
-  Check with `security find-identity -v -p codesigning`. An *Apple Development*
-  certificate is enough for local dev builds but **cannot** be notarized.
-- A notarytool keychain profile. `node scripts/configure-notarization.mjs` creates it from
-  an App Store Connect API key; it stores the credentials in the keychain, never in the
-  repo.
-- A clean working tree on `main` with CI green.
+- macOS 14+ with Xcode command-line tools, Node 20+, `npm ci` run once.
+- `xcodegen` if `macos/project.yml` changes; `gh` authenticated (`gh auth login`) for releases.
+- A **Developer ID Application** certificate for team `68QJJA7HK9`, in the login keychain with
+  its private key — this already exists on the maintainer's machine. Confirm with
+  `security find-identity -v -p codesigning`; an *Apple Development* certificate is not enough,
+  it cannot be notarized.
+- Notarization credentials, stored once with `npm run configure-notary`. It prompts for the
+  Apple ID and an app-specific password (create one at appleid.apple.com → Sign-In and
+  Security → App-Specific Passwords) and stores them in the login Keychain under the profile
+  `macomprendo-notary`. The password is typed into a muted prompt and reaches `notarytool`
+  only through its stdin — never a command-line argument — so it never appears in `ps`, shell
+  history, or this repository.
+- The whisper model catalog's `sha256` fields
+  (`macos/Sources/Macomprendo/Services/ModelCatalog.swift`) are still empty. Model downloads
+  work today but are not checksum-verified. Before a release ships checksum-verified model
+  downloads, run `npm run fetch-model-hashes -- --download` (downloads ~6 GB to compute the
+  digests) and commit the rewritten catalog.
 
-## The sequence
+## Commands
 
-```bash
-npm run test:scripts
-npm run test:swift
-node scripts/release.mjs --bump patch      # or minor | major | 1.2.3
+```sh
+npm run build                                      # host arch, ad-hoc signed -> dist/Macomprendo.app
+npm run build -- --arch arm64,x86_64               # universal, ad-hoc signed
+npm run build -- --dry-run                         # print the step plan, change nothing
+npm run build -- --arch arm64,x86_64 --sign "Developer ID Application: Denis Zamataev (68QJJA7HK9)"
+
+npm run configure-notary                           # one-time: store the app-specific password
+NOTARY_APPLE_ID="you@example.com" npm run configure-notary
+
+npm run notarize                                   # universal signed build -> submit -> staple -> zip + sha256
+npm run notarize -- --dry-run
+npm run notarize -- --sign "Developer ID Application: Denis Zamataev (68QJJA7HK9)"
+
+npm run install-app                                # build + atomic install into /Applications
+npm run install-app -- --no-open
+MACOS_INSTALL_DIR="$HOME/Applications" npm run install-app
+
+npm run audit                                      # refuse to publish secrets / machine paths
+npm run release -- --dry-run patch                 # resolve version, validate changelog, print plan
+npm run release -- --dry-run --notarize patch      # same, with the notarize step in the plan
+npm run release -- patch                           # real release, notes only, with confirmation
+npm run release -- --notarize patch                # real release, notarized build attached
+npm run release -- 1.0.0 --yes                     # explicit version, no confirmation prompt
+
+npm run fetch-model-hashes -- --download           # refresh whisper model SHA-256 digests
 ```
 
-`release.mjs` performs, in order:
+## Order of operations for a real release
 
-1. Refuse to continue on a dirty tree or a red test run.
-2. Bump `MARKETING_VERSION` in `macos/project.yml`, then propagate it to the committed
-   `.xcodeproj` and to a new `CHANGELOG.md` section (`lib/version.mjs` does the rewriting).
-3. `node scripts/build-app.mjs` — `swift build` per architecture, `lipo` into a universal
-   binary, assemble the `.app` around `macos/AppBundle/`, stamp the version with
-   PlistBuddy, and codesign with the hardened runtime and
-   `macos/AppBundle/Macomprendo.entitlements`.
-4. `node scripts/notarize-app.mjs` — zip, `notarytool submit --wait`, `stapler staple`,
-   `stapler validate`, then re-zip the stapled app and record its SHA-256.
-5. Commit, tag `v<version>`, and `gh release create` with the stapled zip attached.
+1. Write the entries under `## [Unreleased]` in `CHANGELOG.md`. **This is load-bearing:**
+   `release.mjs` refuses to run without them, and their content becomes the GitHub release
+   notes verbatim (`gh release create … --notes-file`).
+2. `npm run audit`
+3. `npm run release -- --dry-run patch` (or `--dry-run --notarize patch` if this release will
+   attach a build) — check the resolved version, the release notes, and the printed plan.
+4. Work through the release checklist in `docs/SMOKE_TEST.md`.
+5. Run the real release:
+   - `npm run release -- patch` — publishes release notes only, no binary attached.
+   - `npm run release -- --notarize patch` — builds, signs, and notarizes a fresh universal
+     app for the version just bumped, and attaches its ZIP to the GitHub release.
 
-Each script accepts `--dry-run`; use it first.
+**Do not run `npm run notarize` on its own and then release separately — that order cannot
+produce a correctly-versioned artifact.** `notarize-app.mjs` names and stamps the ZIP (and the
+app's own `Info.plist` inside it) with whatever `MARKETING_VERSION` is in `macos/project.yml`
+*at the moment it runs*, and `release.mjs` refuses to accept a version that is not newer than
+the one currently declared — so there is no way to pre-bump the file yourself before
+notarizing. `--notarize` is the only path that runs correctly: it inserts the notarize step
+into the release plan *after* the version bump has already rewritten `macos/project.yml` and
+`CHANGELOG.md`, and *before* the release commit, so the ZIP that gets attached carries the
+version that ends up tagged. `--notarize` also makes the release far slower — it is a real
+network round trip to Apple, with a default 60-minute wait.
 
-## Verifying the artefact
+## Facts that trip people up
 
-```bash
-codesign --verify --deep --strict --verbose=2 dist/Macomprendo.app
-spctl --assess --type execute --verbose dist/Macomprendo.app   # expect: accepted, source=Notarized Developer ID
-xcrun stapler validate dist/Macomprendo.app
-```
+- Version source of truth is `MARKETING_VERSION` in `macos/project.yml`. The release script
+  mirrors it into `macos/Macomprendo.xcodeproj/project.pbxproj`. Never edit the pbxproj by hand
+  — run `npm run gen` after changing `project.yml`.
+- Git tags are `vX.Y.Z`; changelog headings are `## [X.Y.Z] - YYYY-MM-DD`; the release commit
+  message is `chore(release): X.Y.Z`.
+- Bundle id `com.dzamataev.macomprendo`, team `68QJJA7HK9`, notary profile `macomprendo-notary`.
+- Ad-hoc (`--sign -`, the default) is fine locally. Notarization needs a **Developer ID
+  Application** certificate; an *Apple Development* certificate cannot be notarized.
+- The build copies every `*.bundle` SwiftPM emits into `Contents/Resources` (that is where the
+  vendored Phosphor icons live) and every dynamic `*.framework` into `Contents/Frameworks`.
+  whisper.cpp is a prebuilt xcframework, so there are no ggml Metal bundles to copy. If the build
+  warns "No SwiftPM resource bundle found", stop and fix it before shipping.
+- CI never notarizes: no Apple secrets are assumed to exist in the repository.
+- **No real notarization has ever been run against this toolchain.** No submission has ever
+  reached Apple, nothing has ever been stapled, and no Gatekeeper acceptance check has ever
+  passed for real. `--dry-run` and the test suite (against faked `codesign`/`notarytool`/
+  `spctl`/`git`/`gh` binaries) prove the *steps* are the right ones; they do not prove Apple
+  accepts what gets submitted. Treat the first `--notarize` release as the first real exercise
+  of that path, and budget time in case it surfaces something only Apple's servers can tell you
+  about.
 
-Then run through `docs/SMOKE_TEST.md` on a machine that has never seen the app: all five
-hotkeys, both permission prompts, and a settings round-trip.
+## When something fails
 
-## If notarization is rejected
+If a step after the confirmation prompt fails mid-release (files already rewritten, a commit
+already made, a tag already pushed…), `release.mjs` prints a state block naming exactly which
+of those irreversible steps already happened and the command that undoes each one. Read that
+block before retrying or touching anything by hand.
 
-`xcrun notarytool log <submission-id> --keychain-profile <profile>` prints the reason.
-The usual causes are a missing hardened runtime, an unsigned nested binary (the whisper
-framework must be signed too), or entitlements the certificate does not allow.
+| Symptom | Fix |
+|---|---|
+| `No "Developer ID Application" certificate…` | Follow DISTRIBUTING.md → prerequisites; check `security find-identity -v -p codesigning` |
+| `Could not authenticate with notarytool` | Re-run `npm run configure-notary` |
+| Notarization not `Accepted` | Read `dist/notary-log-<id>.json`; it names the offending binary and reason |
+| `The working tree is not clean; commit or stash…` | Commit or stash, then retry the release |
+| `Tag vX.Y.Z already exists on the remote` | Choose a higher version, or delete the tag if it was a mistake |
+| `CHANGELOG.md has no entries under "## [Unreleased]"` | Write the release notes in `CHANGELOG.md` first |
+| `…project.pbxproj declares MARKETING_VERSION … but … was expected` | Run `npm run gen` and commit the regenerated project |
+| Audit flags a `/Users/<name>` path | Replace it with `~/`, `<repo>`, or `/Users/test` |
