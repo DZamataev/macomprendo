@@ -20,7 +20,8 @@
     "test:swift": "swift test --package-path macos"
   },
   "dependencies": {
-    "picocolors": "1.1.1"
+    "picocolors": "1.1.1",
+    "yaml": "2.6.1"
   },
   "devDependencies": {
     "@phosphor-icons/core": "2.1.1"
