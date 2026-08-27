@@ -247,6 +247,12 @@ Every box must be ticked before `npm run release`.
 - [ ] `ls dist/Macomprendo.app/Contents/Resources` contains `AppIcon.icns`, `LICENSE`,
       `Macomprendo_Macomprendo.bundle` (the vendored Phosphor icons), and
       `KeyboardShortcuts_KeyboardShortcuts.bundle`.
+- [ ] `find dist/Macomprendo.app/Contents/Resources/Macomprendo_Macomprendo.bundle -type f | wc -l`
+      prints a number greater than zero. This is the actual proof the vendored Phosphor SVGs
+      shipped inside the built app — nothing about the running app's *appearance* proves it (the
+      menubar icon is a hardcoded SF Symbol, not drawn from this bundle, and a missing bundle
+      degrades every other icon silently to a similar-looking SF Symbol instead of failing
+      visibly; see the "Icons in Settings" row below).
 - [ ] `ls dist/Macomprendo.app/Contents/Frameworks` contains `whisper.framework` — whisper is
       dynamically linked (confirm with
       `otool -L dist/Macomprendo.app/Contents/MacOS/Macomprendo | grep whisper`), so this
@@ -272,9 +278,11 @@ prerequisites, installed in the login keychain.
 - [ ] Expanding the ZIP on a Mac that has never seen the app opens it with no Gatekeeper warning.
 
 > **This block has never been executed for real.** Everything above is covered by unit tests
-> against a faked `notarytool`/`codesign`/`spctl`, and `--dry-run` proves the planned commands
-> are the right ones, but an actual submission to Apple's notary service — network round-trip,
-> real "Accepted" status, a genuine staple and a live Gatekeeper check — has not happened yet.
+> against a faked `notarytool`/`codesign`/`spctl`, and `--dry-run` prints the exact same steps
+> that a real run would execute (both share one generated step list), but that only proves the
+> *steps* are right — not that Apple's notary service accepts what gets submitted. An actual
+> submission — network round-trip, real "Accepted" status, a genuine staple and a live
+> Gatekeeper check — has not happened yet.
 > The first time an operator runs `npm run notarize` (standalone, or via
 > `npm run release -- --notarize <bump>`) for real, tick every box above deliberately instead of
 > assuming the tests already proved it.
@@ -289,10 +297,19 @@ prerequisites, installed in the login keychain.
 
 ### Manual verification (human only — no agent can perform these)
 
-- [ ] **Menubar icon appears.** After installing a build and launching it, a waveform icon is
-      visible in the menubar. This is the only proof that `Macomprendo_Macomprendo.bundle` (the
-      vendored Phosphor SVG icons — see DISTRIBUTING.md and ADR-0008) was actually found at
-      runtime; a missing bundle renders a blank or missing status item instead of failing loudly.
+- [ ] **Icons in Settings look like Phosphor glyphs, not system symbols.** Open Settings and
+      look at any tab with icons (Hotkeys, Providers, Models…). Every icon in the app is drawn
+      by `Icon.swift`, which loads a vendored Phosphor SVG from `Macomprendo_Macomprendo.bundle`
+      (see ADR-0008) — Phosphor's glyphs have a noticeably different weight and shape from
+      Apple's SF Symbols. If the SVG can't be found, `Icon.swift` falls back **silently** to a
+      similar but not identical SF Symbol (`AppIcon.fallbackSymbol`) — no error, no log line, and
+      the app keeps running normally. So this row is a judgement call about how the icons *look*,
+      not a pass/fail the app itself reports, and a "yes, they look like Phosphor icons" here is
+      the closest a human glance gets to confirming the bundle loaded — it is not conclusive on
+      its own (use the `find`/`wc -l` check in Build artifact for that). The menubar's own status
+      item is not evidence either way: it is deliberately hardcoded to the SF Symbol `waveform`
+      (`MenuBarExtra("Macomprendo", systemImage: "waveform")` in `MacomprendoApp.swift`), per
+      CLAUDE.md invariant 12 — it never draws from this bundle, with or without it present.
 - [ ] **Dictation produces a transcript.** Press the dictation hotkey once, say a sentence, and
       confirm text is inserted. This is the only proof that the whisper xcframework
       (`whisper.framework`, dynamically linked — see ADR-0007) actually loaded and ran on this

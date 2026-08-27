@@ -104,11 +104,17 @@ slice is **dynamically linked** — the executable's load commands reference
 `Contents/Frameworks` and signed as nested code in its own right. Its Metal resources travel
 inside the framework, so there are no separate ggml resource bundles to copy.
 
-Resource bundles are **not** signed individually: `Macomprendo_Macomprendo.bundle` and
-`KeyboardShortcuts_KeyboardShortcuts.bundle` have no `Info.plist` (SwiftPM emits them as
-plain resource directories, not signable bundles) and `codesign` rejects them as a signing
-target on their own. They are sealed by the app's own signature instead — signing frameworks
-before the enclosing app is still required, because frameworks *are* nested code.
+Resource bundles are **not** signed individually — not because `codesign` always refuses
+them, but because they are *resources*, not nested code, and are sealed by the app's own
+signature instead. The two bundles here aren't even alike: `Macomprendo_Macomprendo.bundle`
+is declared `.copy(...)` (not `.process(...)`) in `macos/Package.swift`, so SwiftPM emits it
+as a plain directory with **no** `Info.plist`, and `codesign` genuinely refuses it as a
+signing target ("bundle format unrecognized, invalid, or unsuitable" — confirmed by signing
+it directly). `KeyboardShortcuts_KeyboardShortcuts.bundle` comes from the KeyboardShortcuts
+package's own `.process(...)`-declared resources, **does** have an `Info.plist`, and
+`codesign` accepts it individually without complaint. Neither is signed on its own regardless
+— only nested *code* needs its own signature before the enclosing app, and `whisper.framework`
+is the only nested code here.
 
 Re-run the discovery after any whisper xcframework bump or any change to the app target's
 resources or dependencies:
@@ -133,9 +139,14 @@ $BIN/whisper.framework
 whisper is dynamically linked, so `whisper.framework` is copied and signed; both `.bundle`
 directories are copied unsigned and sealed by the app's signature.
 
-A missing `.bundle` is a hard failure — the app would ship without its icons, and the build
-script warns about it. Missing `.framework` entries are only a problem when `otool -L` says
-the whisper slice is dynamic.
+`build-app.mjs` only hard-fails when **no** resource bundle at all is found next to the
+executable (`resourceBundles.length === 0`) — it does not check that any *specific* bundle
+(such as `Macomprendo_Macomprendo.bundle`) is among them. If `KeyboardShortcuts_KeyboardShortcuts.bundle`
+were still present but ours had somehow stopped being emitted, the build would succeed and warn
+about nothing; the app would simply ship without its icons. The `find … | wc -l` check in
+`docs/SMOKE_TEST.md`'s release checklist is what actually verifies *our* bundle specifically.
+Missing `.framework` entries are only a problem when `otool -L` says the whisper slice is
+dynamic.
 
 ## 3. Notarize and package
 
@@ -172,9 +183,12 @@ identities are installed), `--profile <name>`, `--timeout 30m`.
 
 **A real notarization run — an actual submission to Apple, stapling, and a Gatekeeper
 acceptance check — has never been executed against this toolchain.** Everything above is
-verified by `scripts/__tests__/notarize-app.test.mjs` against a faked `notarytool`, and by
-`--dry-run` printing the right plan; the network round-trip to Apple's notary service itself
-is unverified until an operator with the certificate runs it for real.
+verified by `scripts/__tests__/notarize-app.test.mjs` against a faked `notarytool`, and
+`--dry-run` prints the exact same step list `planNotarize` builds for a real run (both branches
+consume the one array); but that only proves the *steps* are the ones that would run, not that
+Apple's notary service accepts what gets submitted. The network round-trip to Apple itself —
+a real "Accepted" status, a genuine staple, a live Gatekeeper acceptance — is unverified until
+an operator with the certificate runs it for real.
 
 ## 4. Release
 
