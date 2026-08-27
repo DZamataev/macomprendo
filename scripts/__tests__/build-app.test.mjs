@@ -158,6 +158,7 @@ test('planBuild ad-hoc signs by default when there is nothing to embed', () => {
   assert.deepEqual(signs[0].args, ['--force', '--sign', '-', '/out/Macomprendo.app']);
   assert.deepEqual(signs.at(-1).args,
     ['--verify', '--deep', '--strict', '--verbose=2', '/out/Macomprendo.app']);
+  assert.equal(signs.length, 2);
   // No resource bundle ever gets its own signature, ad-hoc or otherwise.
   assert.equal(signs.some((s) => s.args.some((a) => a.includes('.bundle'))), false);
 });
@@ -296,16 +297,43 @@ test('resolveContext predicts bin paths and skips swift in dry-run mode', async 
   assert.deepEqual(context.frameworks, ['whisper.framework']);
 });
 
-test('resolveContext asks SwiftPM for the real bin path outside dry-run mode', async () => {
-  const run = makeFakeRun([{ stdout: '/repo/macos/.build/arm64-apple-macosx14.0/release\n' }]);
+test('resolveContext builds for real before asking SwiftPM for the bin path outside dry-run mode', async () => {
+  const run = makeFakeRun([{}, { stdout: '/repo/macos/.build/arm64-apple-macosx14.0/release\n' }]);
   const fsOps = makeFakeFsOps();
+  fsOps.bundles = ['Macomprendo_Macomprendo.bundle'];
   const io = makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT });
   const options = parseBuildArgs(['--arch', 'arm64']);
 
   const context = await resolveContext(options, { run, fsOps, io });
 
   assert.equal(context.binPaths.arm64, '/repo/macos/.build/arm64-apple-macosx14.0/release');
-  assert.ok(run.lines()[0].includes('--show-bin-path'));
+  // --show-bin-path only prints a path, it never builds — the real build must run
+  // first, or a fresh .build directory would leave listBundles/listFrameworks with
+  // nothing to find.
+  assert.equal(run.lines().length, 2);
+  assert.ok(!run.lines()[0].includes('--show-bin-path'), run.lines()[0]);
+  assert.ok(run.lines()[1].includes('--show-bin-path'), run.lines()[1]);
+});
+
+test('resolveContext fails when a real build finds no resource bundle', async () => {
+  const run = makeFakeRun([{}, { stdout: '/repo/macos/.build/arm64-apple-macosx14.0/release\n' }]);
+  const fsOps = makeFakeFsOps(); // fsOps.bundles stays [] — nothing found next to the executable
+  const io = makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT });
+  const options = parseBuildArgs(['--arch', 'arm64']);
+
+  await assert.rejects(
+    () => resolveContext(options, { run, fsOps, io }),
+    /Macomprendo_Macomprendo\.bundle/,
+  );
+});
+
+test('resolveContext does not fail on an empty resource-bundle list in dry-run mode', async () => {
+  const io = makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT });
+  const context = await resolveContext(
+    parseBuildArgs(['--arch', 'arm64', '--dry-run']),
+    { run: makeFakeRun(), fsOps: makeFakeFsOps(), io },
+  );
+  assert.deepEqual(context.resourceBundles, []);
 });
 
 test('resolveContext honours explicit --version and --build-number', async () => {
@@ -333,6 +361,18 @@ test('main --dry-run prints the plan and exits zero without running anything', a
   assert.ok(log.lines.some((l) => l.includes('--triple arm64-apple-macosx14.0')));
   assert.ok(log.lines.some((l) => l.includes('--triple x86_64-apple-macosx14.0')));
   assert.ok(log.lines.some((l) => l.includes('lipo -create')));
+});
+
+test('main returns a non-zero exit when a real build finds no resource bundle', async () => {
+  const run = makeFakeRun([{}, { stdout: '/repo/macos/.build/arm64-apple-macosx14.0/release\n' }]);
+  const fsOps = makeFakeFsOps(); // bundles stays [] — a broken/empty .build directory
+  const log = makeFakeLog();
+  const io = makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT });
+
+  const code = await main(['--arch', 'arm64'], { run, fsOps, log, io });
+
+  assert.equal(code, 1);
+  assert.ok(log.lines.some((l) => l.startsWith('error:') && l.includes('Macomprendo_Macomprendo.bundle')));
 });
 
 test('main reports a bad argument as exit code 2 without spawning anything', async () => {

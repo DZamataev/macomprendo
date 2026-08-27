@@ -15,7 +15,7 @@
 import path from 'node:path';
 import os from 'node:os';
 import { parseArgs } from 'node:util';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
 import {
   ROOT, MACOS_DIR, PROJECT_YML, DIST_DIR, APP_NAME, EXECUTABLE_NAME, BUNDLE_ID,
@@ -275,6 +275,17 @@ export async function resolveContext(options, { run, fsOps, io }) {
     if (options.dryRun) {
       binPaths[arch] = predictBinPath(ROOT, triple, options.configuration);
     } else {
+      // `--show-bin-path` only prints where SwiftPM would put its output — it never
+      // builds anything. On a fresh clone (or after `rm -rf macos/.build`) that means
+      // the directory it names does not exist yet, so the listBundles/listFrameworks
+      // calls below would silently come back empty and the app would be assembled
+      // without its icons bundle or whisper.framework. So build for real first, with
+      // the exact same invocation planBuild's own build step issues; executePlan then
+      // runs that step again as a harmless incremental no-op.
+      await run('swift', [
+        'build', '--package-path', MACOS_DIR,
+        '-c', options.configuration, '--triple', triple,
+      ], { cwd: ROOT });
       const shown = await run('swift', [
         'build', '--package-path', MACOS_DIR,
         '-c', options.configuration, '--triple', triple, '--show-bin-path',
@@ -286,6 +297,16 @@ export async function resolveContext(options, { run, fsOps, io }) {
   const primaryBin = binPaths[options.archs[0]];
   const resourceBundles = await fsOps.listBundles(primaryBin);
   const frameworks = await fsOps.listFrameworks(primaryBin);
+
+  if (!options.dryRun && resourceBundles.length === 0) {
+    throw new Error(
+      'swift build produced no SwiftPM resource bundle next to the executable '
+      + `(expected at least Macomprendo_Macomprendo.bundle in ${primaryBin}). `
+      + 'The app target declares resources (vendored Phosphor SVGs) — this usually '
+      + 'means macos/Package.swift dropped them, or the build silently failed.',
+    );
+  }
+
   return { version, buildNumber, binPaths, resourceBundles, frameworks };
 }
 

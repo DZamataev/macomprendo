@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdtemp, writeFile, mkdir, stat, readFile, symlink, readlink, lstat,
+  mkdtemp, writeFile, mkdir, stat, readFile, symlink, readlink, lstat, chmod,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -61,6 +61,41 @@ test('copyPath preserves a relative symlink target instead of resolving it absol
 
   // The relative targets must still resolve inside the copy, standing on their own.
   assert.equal(await readFile(path.join(dir, 'dst/Headers/foo.h'), 'utf8'), 'int foo;');
+});
+
+test('copyPath preserves the source directory\'s permission bits', async () => {
+  const dir = await scratch();
+  await mkdir(path.join(dir, 'src'), { recursive: true });
+  await chmod(path.join(dir, 'src'), 0o700); // umask on mkdir would otherwise loosen this
+  await copyPath(path.join(dir, 'src'), path.join(dir, 'dst'));
+  assert.equal((await stat(path.join(dir, 'dst'))).mode & 0o777, 0o700);
+});
+
+test('copyPath copies a symlink passed as the copy root, not just a nested one', async () => {
+  const dir = await scratch();
+  await mkdir(path.join(dir, 'real'), { recursive: true });
+  await writeFile(path.join(dir, 'real/note.txt'), 'hi');
+  await symlink('real', path.join(dir, 'link'));
+
+  await copyPath(path.join(dir, 'link'), path.join(dir, 'dst-link'));
+
+  const st = await lstat(path.join(dir, 'dst-link'));
+  assert.equal(st.isSymbolicLink(), true);
+  assert.equal(await readlink(path.join(dir, 'dst-link')), 'real');
+  // The relative target still resolves from the copy's own location.
+  assert.equal(await readFile(path.join(dir, 'dst-link/note.txt'), 'utf8'), 'hi');
+});
+
+test('copyPath copies a broken symlink (dangling target) without following it', async () => {
+  const dir = await scratch();
+  await mkdir(path.join(dir, 'src'), { recursive: true });
+  await symlink('does-not-exist', path.join(dir, 'src/dangling'));
+
+  await copyPath(path.join(dir, 'src'), path.join(dir, 'dst'));
+
+  const st = await lstat(path.join(dir, 'dst/dangling'));
+  assert.equal(st.isSymbolicLink(), true);
+  assert.equal(await readlink(path.join(dir, 'dst/dangling')), 'does-not-exist');
 });
 
 test('chmodExec makes a file executable', async () => {

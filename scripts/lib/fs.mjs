@@ -65,6 +65,9 @@ async function copyEntry(from, to) {
   }
   if (st.isDirectory()) {
     await fs.mkdir(to, { recursive: true });
+    // fs.mkdir applies the process umask, not the source directory's mode — fs.cp used
+    // to preserve it, so match that here rather than silently loosening permissions.
+    await fs.chmod(to, st.mode & 0o777);
     const entries = await fs.readdir(from, { withFileTypes: true });
     for (const entry of entries) {
       await copyEntry(path.join(from, entry.name), path.join(to, entry.name));
