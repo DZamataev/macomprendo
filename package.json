@@ -9,6 +9,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "build": "node scripts/build-app.mjs",
     "fetch-model-hashes": "node scripts/fetch-model-hashes.mjs",
     "gen": "xcodegen generate --spec macos/project.yml",
     "icon": "node scripts/make-placeholder-icon.mjs",
