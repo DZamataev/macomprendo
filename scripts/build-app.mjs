@@ -79,7 +79,13 @@ export function tripleFor(arch, deploymentTarget) {
 }
 
 export function predictBinPath(root, triple, configuration) {
-  return path.join(root, 'macos', '.build', triple, configuration);
+  // SwiftPM's --show-bin-path drops the deployment-target version suffix from the
+  // triple when naming .build's per-triple directory (arm64-apple-macosx14.0 builds
+  // land in .build/arm64-apple-macosx/release, not .build/arm64-apple-macosx14.0/...).
+  // tripleFor's version-qualified triple is still what --triple itself needs; only the
+  // directory name it predicts here has to match what SwiftPM actually emits on disk.
+  const buildDir = triple.replace(/^(.*-apple-macosx)[0-9][0-9.]*$/, '$1');
+  return path.join(root, 'macos', '.build', buildDir, configuration);
 }
 
 export function bundleLayout(distDir) {

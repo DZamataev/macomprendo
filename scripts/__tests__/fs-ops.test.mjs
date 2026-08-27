@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, mkdir, stat, readFile } from 'node:fs/promises';
+import {
+  mkdtemp, writeFile, mkdir, stat, readFile, symlink, readlink, lstat,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -34,6 +36,31 @@ test('copyPath copies files and directories recursively', async () => {
   await writeFile(path.join(dir, 'src/inner/note.txt'), 'hello');
   await copyPath(path.join(dir, 'src'), path.join(dir, 'dst'));
   assert.equal(await readFile(path.join(dir, 'dst/inner/note.txt'), 'utf8'), 'hello');
+});
+
+test('copyPath preserves a relative symlink target instead of resolving it absolute', async () => {
+  const dir = await scratch();
+  // Mirror a macOS .framework's versioned-symlink layout:
+  //   src/Versions/A/Headers/foo.h
+  //   src/Versions/Current -> A                       (relative)
+  //   src/Headers          -> Versions/Current/Headers (relative)
+  await mkdir(path.join(dir, 'src/Versions/A/Headers'), { recursive: true });
+  await writeFile(path.join(dir, 'src/Versions/A/Headers/foo.h'), 'int foo;');
+  await symlink('A', path.join(dir, 'src/Versions/Current'));
+  await symlink('Versions/Current/Headers', path.join(dir, 'src/Headers'));
+
+  await copyPath(path.join(dir, 'src'), path.join(dir, 'dst'));
+
+  const currentLink = await lstat(path.join(dir, 'dst/Versions/Current'));
+  assert.equal(currentLink.isSymbolicLink(), true);
+  assert.equal(await readlink(path.join(dir, 'dst/Versions/Current')), 'A');
+
+  const headersLink = await lstat(path.join(dir, 'dst/Headers'));
+  assert.equal(headersLink.isSymbolicLink(), true);
+  assert.equal(await readlink(path.join(dir, 'dst/Headers')), 'Versions/Current/Headers');
+
+  // The relative targets must still resolve inside the copy, standing on their own.
+  assert.equal(await readFile(path.join(dir, 'dst/Headers/foo.h'), 'utf8'), 'int foo;');
 });
 
 test('chmodExec makes a file executable', async () => {

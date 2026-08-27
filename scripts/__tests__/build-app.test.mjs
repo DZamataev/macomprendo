@@ -50,7 +50,7 @@ test('tripleFor builds an SPM triple', () => {
 test('predictBinPath mirrors the SwiftPM build layout', () => {
   assert.equal(
     predictBinPath('/repo', 'arm64-apple-macosx14.0', 'release'),
-    '/repo/macos/.build/arm64-apple-macosx14.0/release',
+    '/repo/macos/.build/arm64-apple-macosx/release',
   );
 });
 
@@ -261,7 +261,7 @@ test('resolveContext predicts bin paths and skips swift in dry-run mode', async 
   assert.equal(context.version, '1.2.3');
   assert.equal(context.buildNumber, '1.2.3');
   assert.deepEqual(run.calls, []);
-  assert.ok(context.binPaths.arm64.endsWith('macos/.build/arm64-apple-macosx14.0/release'));
+  assert.ok(context.binPaths.arm64.endsWith('macos/.build/arm64-apple-macosx/release'));
   assert.deepEqual(context.resourceBundles, ['Macomprendo_Macomprendo.bundle']);
   assert.deepEqual(context.frameworks, ['whisper.framework']);
 });
