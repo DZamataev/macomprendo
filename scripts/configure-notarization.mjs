@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // One-time setup: store an Apple app-specific password in the login Keychain so that
 // notarize-app.mjs can submit builds without any secret in the repository or in argv.
-import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
 import { NOTARY_PROFILE, TEAM_ID } from './lib/paths.mjs';
 import { run as realRun } from './lib/run.mjs';
 import { log as realLog } from './lib/log.mjs';
+import { prompt } from './lib/prompt.mjs';
 
 const TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/;
+const NOT_INTERACTIVE = 'stdin closed before an answer was given; '
+  + 'set NOTARY_APPLE_ID (and pipe the password) or run this in an interactive terminal.';
 
 export function validateTeamID(id) {
   if (typeof id !== 'string' || !TEAM_ID_PATTERN.test(id)) {
@@ -17,32 +19,12 @@ export function validateTeamID(id) {
   return id;
 }
 
-function ask(query, { input, output }, muted) {
-  return new Promise((resolve, reject) => {
-    const rl = createInterface({ input, output, terminal: true });
-    output.write(query);
-    if (muted) rl._writeToOutput = () => {};
-    const cleanup = () => {
-      rl.close();
-      if (muted) output.write('\n');
-    };
-    rl.on('error', (err) => {
-      cleanup();
-      reject(err);
-    });
-    rl.question('', (answer) => {
-      cleanup();
-      resolve(answer.trim());
-    });
-  });
-}
-
 export function promptLine(query, io) {
-  return ask(query, io, false);
+  return prompt(query, io, { eofMessage: NOT_INTERACTIVE });
 }
 
 export function promptSecret(query, io) {
-  return ask(query, io, true);
+  return prompt(query, io, { muted: true, eofMessage: NOT_INTERACTIVE });
 }
 
 export function planStoreCredentials({ profile, appleID, teamID }) {

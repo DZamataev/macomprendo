@@ -97,6 +97,20 @@ test('main rejects a malformed APPLE_TEAM_ID before prompting for anything', asy
   assert.equal(io.text(), '');
 });
 
+test('main fails fast instead of hanging when stdin is not interactive', async () => {
+  const io = fakeTTY();
+  const run = makeFakeRun();
+  const log = makeFakeLog();
+
+  const done = main([], { run, log, io, env: {} });
+  io.input.end();
+  const code = await done;
+
+  assert.equal(code, 1);
+  assert.deepEqual(run.calls, []);
+  assert.ok(log.lines.some((l) => l.includes('stdin closed before an answer was given')));
+});
+
 test('promptSecret restores terminal echo and closes the interface on input error', async () => {
   const io = fakeTTY();
   const answer = promptSecret('App-specific password: ', io);
