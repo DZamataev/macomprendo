@@ -29,6 +29,39 @@ test('findUnsafePaths rejects Xcode user state, keys, profiles and notary logs',
   assert.equal(flagged.length, 17);
 });
 
+// `.keychain-db` has been the actual default macOS keychain format since Sierra, and is the
+// standard name CI scripts give a temporary signing keychain — the `.keychain$` anchor alone
+// misses it entirely.
+test('findUnsafePaths rejects both .keychain and .keychain-db spellings', () => {
+  const flagged = findUnsafePaths(['login.keychain', 'build.keychain-db']).map((hit) => hit.path);
+  assert.deepEqual(flagged, ['login.keychain', 'build.keychain-db']);
+});
+
+// The classifier must be at least as defensive as shouldScanContent, which already
+// lowercases before comparing extensions.
+test('findUnsafePaths rejects secret filenames regardless of case', () => {
+  const flagged = findUnsafePaths([
+    'secrets/cert.P12',
+    'secrets/key.PEM',
+    'profiles/dev.MOBILEPROVISION',
+  ]).map((hit) => hit.path);
+  assert.deepEqual(flagged, ['secrets/cert.P12', 'secrets/key.PEM', 'profiles/dev.MOBILEPROVISION']);
+});
+
+// ssh-keygen's default names carry no extension at all.
+test('findUnsafePaths rejects extension-less SSH private keys', () => {
+  const flagged = findUnsafePaths([
+    'id_rsa',
+    '.ssh/id_ed25519',
+    'keys/id_dsa',
+    'backup/id_ecdsa',
+  ]).map((hit) => hit.path);
+  assert.deepEqual(flagged, ['id_rsa', '.ssh/id_ed25519', 'keys/id_dsa', 'backup/id_ecdsa']);
+  // A filename that merely starts with "id_" but isn't one of the four algorithms must
+  // not be flagged.
+  assert.deepEqual(findUnsafePaths(['id_rsa.pub', 'scripts/id_notes.md']), []);
+});
+
 test('findUnsafePaths allows the ordinary repository contents', () => {
   assert.deepEqual(findUnsafePaths([
     'README.md',
@@ -54,6 +87,14 @@ test('shouldScanContent skips assets and the audit files themselves', () => {
   assert.equal(shouldScanContent('scripts/__tests__/audit-public-repo.test.mjs'), false);
 });
 
+// The `.svg` skip is scoped to the vendored icons directory, not the format: a design-tool
+// SVG export elsewhere in the repo routinely embeds an absolute path in generator metadata
+// and must still be scanned.
+test('shouldScanContent scans SVGs outside the vendored icons directory', () => {
+  assert.equal(shouldScanContent('docs/images/exported-icon.svg'), true);
+  assert.equal(shouldScanContent('macos/Sources/Macomprendo/Resources/Icons/microphone.svg'), false);
+});
+
 test('findHomePaths reports machine-specific home directories with line and column', () => {
   const text = 'ok line\nopen /Users/alice/dev/macomprendo\nfine\n';
   assert.deepEqual(findHomePaths(text, { file: 'docs/x.md' }), [
@@ -72,7 +113,11 @@ test('findHomePaths allows the sanctioned placeholder homes', () => {
   assert.equal(findHomePaths('/Users/testuser/x', { file: 'a' }).length, 1);
 });
 
-function auditDeps({ files, contents = {}, gitleaks = false }) {
+// `failLines` lets a test make one specific command fail the way scripts/lib/run.mjs's
+// real `check: true` (the default) fails a non-zero exit: it rejects with a plain
+// `Error(message)` — no custom properties — which is exactly what `main`'s outer
+// try/catch is written to handle for `git diff --check` and the Gitleaks calls.
+function auditDeps({ files, contents = {}, gitleaks = false, failLines = {} }) {
   const table = {
     'git ls-files --cached --others --exclude-standard': { stdout: files.join('\n') },
     'git diff --check': { stdout: '' },
@@ -81,6 +126,7 @@ function auditDeps({ files, contents = {}, gitleaks = false }) {
   const run = async (cmd, args = [], options = {}) => {
     const line = [cmd, ...args].join(' ');
     calls.push({ cmd, args, options, line });
+    if (failLines[line] !== undefined) throw new Error(failLines[line]);
     if (line === 'command -v gitleaks' || (cmd === 'which' && args[0] === 'gitleaks')) {
       return { stdout: gitleaks ? '/usr/local/bin/gitleaks' : '', stderr: '', code: gitleaks ? 0 : 1 };
     }
@@ -136,6 +182,117 @@ test('main notes when gitleaks is unavailable but still passes', async () => {
   const code = await main([], deps);
   assert.equal(code, 0);
   assert.ok(deps.log.lines.some((l) => l.includes('Gitleaks is not installed')));
+});
+
+test('main fails when git diff --check finds trailing whitespace or a conflict marker', async () => {
+  const deps = auditDeps({
+    files: ['README.md'],
+    contents: { 'README.md': 'x' },
+    failLines: { 'git diff --check': 'git diff --check exited with 2\nREADME.md:1: trailing whitespace.' },
+  });
+  const code = await main([], deps);
+  assert.equal(code, 1);
+  assert.ok(deps.log.lines.some((l) => l.includes('trailing whitespace')));
+  // Gitleaks must never run once the whitespace check has already failed the audit.
+  assert.equal(deps.run.lines().some((l) => l.startsWith('gitleaks')), false);
+});
+
+test('main fails when Gitleaks finds a secret in the working tree', async () => {
+  const deps = auditDeps({
+    files: ['README.md'],
+    contents: { 'README.md': 'x' },
+    gitleaks: true,
+    failLines: {
+      'gitleaks detect --source . --no-git --redact --no-banner':
+        'gitleaks detect --source . --no-git --redact --no-banner exited with 1',
+    },
+  });
+  const code = await main([], deps);
+  assert.equal(code, 1);
+  assert.ok(deps.log.lines.some((l) => l.includes('gitleaks detect --source . --no-git')));
+  // The history scan must never run once the working-tree scan has already failed.
+  assert.equal(
+    deps.run.lines().some((l) => l === 'gitleaks detect --source . --redact --no-banner'),
+    false,
+  );
+});
+
+// Distinguishing ENOENT (fine to skip — the file vanished mid-run) from every other read
+// failure (permission denied, I/O error, ...) is the fail-closed property that matters
+// most for this specific loop: silently skipping any other failure would let an unreadable
+// file sail through the audit undetected.
+test('main refuses publication when a tracked file cannot be read for a reason other than ENOENT', async () => {
+  const files = ['README.md', 'docs/locked.md'];
+  const table = {
+    'git ls-files --cached --others --exclude-standard': { stdout: files.join('\n') },
+    'git diff --check': { stdout: '' },
+  };
+  const calls = [];
+  const run = async (cmd, args = [], options = {}) => {
+    const line = [cmd, ...args].join(' ');
+    calls.push({ cmd, args, options, line });
+    if (cmd === 'which' && args[0] === 'gitleaks') return { stdout: '', stderr: '', code: 1 };
+    const hit = table[line];
+    return { stdout: hit?.stdout ?? '', stderr: '', code: 0 };
+  };
+  run.calls = calls;
+  run.lines = () => calls.map((c) => c.line);
+  const io = {
+    async readFile(p) {
+      if (p.endsWith('docs/locked.md')) {
+        throw Object.assign(new Error('EACCES: permission denied, open \'docs/locked.md\''), { code: 'EACCES' });
+      }
+      return 'x';
+    },
+  };
+  const log = makeFakeLog();
+
+  const code = await main([], { run, io, log, root: '' });
+  assert.equal(code, 1);
+  assert.ok(log.lines.some((l) => l.includes('docs/locked.md') && l.includes('EACCES')));
+  assert.ok(!log.lines.some((l) => l.includes('Public repository audit passed')));
+});
+
+// A file that vanished mid-run (ENOENT) is not a finding — there is nothing left to scan —
+// and must not fail the audit on its own.
+test('main tolerates a tracked file that vanished (ENOENT) between listing and reading', async () => {
+  const deps = auditDeps({
+    files: ['README.md', 'docs/deleted-mid-run.md'],
+    contents: { 'README.md': 'x' },
+  });
+  const code = await main([], deps);
+  assert.equal(code, 0);
+  assert.ok(deps.log.lines.some((l) => l.includes('Public repository audit passed')));
+});
+
+// A git-tracked symlink to a directory (e.g. `.claude/skills -> ../.agents/skills`, see
+// AGENTS.md) makes `fs.readFile` follow the link and hit EISDIR. That must not fail the
+// audit: the real files under the target are tracked and scanned at their own paths.
+test('main tolerates EISDIR from a tracked symlink whose target is a directory', async () => {
+  const files = ['README.md', '.claude/skills'];
+  const table = {
+    'git ls-files --cached --others --exclude-standard': { stdout: files.join('\n') },
+    'git diff --check': { stdout: '' },
+  };
+  const run = async (cmd, args = []) => {
+    const line = [cmd, ...args].join(' ');
+    if (cmd === 'which' && args[0] === 'gitleaks') return { stdout: '', stderr: '', code: 1 };
+    const hit = table[line];
+    return { stdout: hit?.stdout ?? '', stderr: '', code: 0 };
+  };
+  const io = {
+    async readFile(p) {
+      if (p.endsWith('.claude/skills')) {
+        throw Object.assign(new Error('EISDIR: illegal operation on a directory, read'), { code: 'EISDIR' });
+      }
+      return 'x';
+    },
+  };
+  const log = makeFakeLog();
+
+  const code = await main([], { run, io, log, root: '' });
+  assert.equal(code, 0);
+  assert.ok(log.lines.some((l) => l.includes('Public repository audit passed')));
 });
 
 // --- Carried-forward requirement: every `{ check: false }` call site must distinguish a
