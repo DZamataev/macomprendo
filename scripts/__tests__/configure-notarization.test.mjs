@@ -96,3 +96,11 @@ test('main rejects a malformed APPLE_TEAM_ID before prompting for anything', asy
   assert.deepEqual(run.calls, []);
   assert.equal(io.text(), '');
 });
+
+test('promptSecret closes the readline interface on input error', async () => {
+  const io = fakeTTY();
+  const answer = promptSecret('App-specific password: ', io);
+  const inputError = new Error('Input stream error');
+  io.input.destroy(inputError);
+  await assert.rejects(answer, inputError);
+});

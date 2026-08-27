@@ -22,10 +22,16 @@ function ask(query, { input, output }, muted) {
     const rl = createInterface({ input, output, terminal: true });
     output.write(query);
     if (muted) rl._writeToOutput = () => {};
-    rl.on('error', reject);
-    rl.question('', (answer) => {
+    const cleanup = () => {
       rl.close();
       if (muted) output.write('\n');
+    };
+    rl.on('error', (err) => {
+      cleanup();
+      reject(err);
+    });
+    rl.question('', (answer) => {
+      cleanup();
       resolve(answer.trim());
     });
   });
@@ -74,15 +80,20 @@ export async function main(argv, deps = {}) {
 
     log.info(`Notarization credentials are ready under profile "${profile}".`);
 
-    const identities = await run('security', ['find-identity', '-v', '-p', 'codesigning'], {
-      capture: true, check: false,
-    });
-    if (!(identities.stdout ?? '').includes('Developer ID Application:')) {
-      log.warn('No "Developer ID Application" certificate is installed for this Mac. '
-        + `Create one for team ${teamID} at developer.apple.com > Certificates, install it in `
-        + 'Keychain Access with its private key, then run: npm run notarize');
-    } else {
-      log.info('Next: npm run notarize');
+    try {
+      const identities = await run('security', ['find-identity', '-v', '-p', 'codesigning'], {
+        capture: true, check: false,
+      });
+      if (!(identities.stdout ?? '').includes('Developer ID Application:')) {
+        log.warn('No "Developer ID Application" certificate is installed for this Mac. '
+          + `Create one for team ${teamID} at developer.apple.com > Certificates, install it in `
+          + 'Keychain Access with its private key, then run: npm run notarize');
+      } else {
+        log.info('Next: npm run notarize');
+      }
+    } catch (identityCheckError) {
+      log.warn('Could not check for Developer ID Application certificate (continuing anyway). '
+        + `Create one for team ${teamID} at developer.apple.com > Certificates if needed, then run: npm run notarize`);
     }
     return 0;
   } catch (error) {
