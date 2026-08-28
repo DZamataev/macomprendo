@@ -20,6 +20,15 @@ import Testing
         SpeechSettings(voiceID: voiceID, rate: 0.5, pitch: 1, volume: 1)
     }
 
+    private func settings(_ voiceID: String?,
+                          map: [String: String] = [:],
+                          segmentation: Bool = true) -> SpeechSettings {
+        var s = SpeechSettings(voiceID: voiceID, rate: 0.5, pitch: 1, volume: 1)
+        s.voiceByLanguage = map
+        s.segmentationEnabled = segmentation
+        return s
+    }
+
     // MARK: fallbackVoice
 
     @Test func cyrillicFallbackPrefersRussianThenQuality() {
@@ -52,32 +61,38 @@ import Testing
     @Test func singleScriptTextStaysOneUtterance() {
         let plan = AVSpeechService.utterancePlan(text: latinPart,
                                                  settings: settings("en.alex"),
-                                                 voices: voices)
+                                                 voices: voices,
+                                                 detector: ScriptedLanguageDetector())
         #expect(plan == [UtterancePlan(text: latinPart, voiceID: "en.alex")])
     }
 
     @Test func mixedScriptTextSwitchesVoicePerRun() {
         let plan = AVSpeechService.utterancePlan(text: cyrillicPart + latinPart,
                                                  settings: settings("en.alex"),
-                                                 voices: voices)
+                                                 voices: voices,
+                                                 detector: ScriptedLanguageDetector())
         #expect(plan == [UtterancePlan(text: cyrillicPart, voiceID: "ru.milena.enhanced"),
                          UtterancePlan(text: latinPart, voiceID: "en.alex")])
     }
 
     @Test func aMissingFallbackVoiceKeepsTheConfiguredVoice() {
+        // Every run resolves to the configured voice (no Cyrillic voice is installed to
+        // switch to), so the plan collapses back to a single utterance holding the original
+        // text — byte for byte what the service did before segmentation existed.
         let englishOnly = voices.filter { $0.language.hasPrefix("en") }
         let plan = AVSpeechService.utterancePlan(text: cyrillicPart + latinPart,
                                                  settings: settings("en.alex"),
-                                                 voices: englishOnly)
-        #expect(plan.map(\.voiceID) == ["en.alex", "en.alex"])
-        #expect(plan.map(\.text) == [cyrillicPart, latinPart])
+                                                 voices: englishOnly,
+                                                 detector: ScriptedLanguageDetector())
+        #expect(plan == [UtterancePlan(text: cyrillicPart + latinPart, voiceID: "en.alex")])
     }
 
     @Test func textIsSplitEvenWhenNoVoiceIsConfigured() {
         // No configured voice means the configured script is assumed Latin.
         let plan = AVSpeechService.utterancePlan(text: cyrillicPart + latinPart,
                                                  settings: settings(nil),
-                                                 voices: voices)
+                                                 voices: voices,
+                                                 detector: ScriptedLanguageDetector())
         #expect(plan == [UtterancePlan(text: cyrillicPart, voiceID: "ru.milena.enhanced"),
                          UtterancePlan(text: latinPart, voiceID: nil)])
     }
@@ -88,7 +103,8 @@ import Testing
         // instead of mangling the text under the configured English voice.
         let plan = AVSpeechService.utterancePlan(text: cyrillicPart,
                                                  settings: settings("en.alex"),
-                                                 voices: voices)
+                                                 voices: voices,
+                                                 detector: ScriptedLanguageDetector())
         #expect(plan == [UtterancePlan(text: cyrillicPart, voiceID: "ru.milena.enhanced")])
     }
 
@@ -98,14 +114,16 @@ import Testing
         let text = "Я купил новый Zoom вчера в магазине рядом с домом."
         let plan = AVSpeechService.utterancePlan(text: text,
                                                  settings: settings("ru.milena"),
-                                                 voices: voices)
+                                                 voices: voices,
+                                                 detector: ScriptedLanguageDetector())
         #expect(plan == [UtterancePlan(text: text, voiceID: "ru.milena")])
     }
 
     @Test func neutralOnlyTextStaysOneUtterance() {
         let plan = AVSpeechService.utterancePlan(text: "123 456 …",
                                                  settings: settings("en.alex"),
-                                                 voices: voices)
+                                                 voices: voices,
+                                                 detector: ScriptedLanguageDetector())
         #expect(plan == [UtterancePlan(text: "123 456 …", voiceID: "en.alex")])
     }
 
@@ -117,9 +135,96 @@ import Testing
         let text = "Источник «Endpoint» (Settings ▸ Speech ▸ Speech source = Endpoint):"
         let plan = AVSpeechService.utterancePlan(text: text,
                                                  settings: settings("en.alex"),
-                                                 voices: voices)
+                                                 voices: voices,
+                                                 detector: ScriptedLanguageDetector())
         #expect(plan == [UtterancePlan(text: "Источник «", voiceID: "ru.milena.enhanced"),
                          UtterancePlan(text: "Endpoint» (Settings ▸ Speech ▸ Speech source = Endpoint):",
                                        voiceID: "en.alex")])
+    }
+
+    // MARK: language-mapped voices
+
+    @Test func segmentationOffProducesExactlyOneUtteranceWithTheDefaultVoice() {
+        let text = cyrillicPart + latinPart
+        let plan = AVSpeechService.utterancePlan(
+            text: text,
+            settings: settings("en.alex", segmentation: false),
+            voices: voices,
+            detector: ScriptedLanguageDetector(["anything": "ru"]))
+        #expect(plan == [UtterancePlan(text: text, voiceID: "en.alex")])
+    }
+
+    @Test func aMappedLanguageWinsOverTheAutomaticFallback() {
+        let runs = LanguageSegmenter.runs(in: cyrillicPart + latinPart)
+        let detector = ScriptedLanguageDetector(Dictionary(uniqueKeysWithValues: runs.map {
+            ($0.text, $0.script == .cyrillic ? "ru" : "en")
+        }))
+        let plan = AVSpeechService.utterancePlan(
+            text: cyrillicPart + latinPart,
+            settings: settings("en.alex", map: ["ru": "ru.milena"]),
+            voices: voices,
+            detector: detector)
+        // Without the map the Cyrillic run would take the enhanced Milena via fallbackVoice.
+        #expect(plan.first(where: { $0.text.contains("русское") })?.voiceID == "ru.milena")
+    }
+
+    @Test func anUnmappedLanguageStillUsesTheAutomaticFallback() {
+        let runs = LanguageSegmenter.runs(in: cyrillicPart + latinPart)
+        let detector = ScriptedLanguageDetector(Dictionary(uniqueKeysWithValues: runs.map {
+            ($0.text, $0.script == .cyrillic ? "ru" : "en")
+        }))
+        let plan = AVSpeechService.utterancePlan(
+            text: cyrillicPart + latinPart,
+            settings: settings("en.alex"),
+            voices: voices,
+            detector: detector)
+        #expect(plan.first(where: { $0.text.contains("русское") })?.voiceID == "ru.milena.enhanced")
+    }
+
+    @Test func aMappedVoiceThatIsNotInstalledIsIgnored() {
+        let runs = LanguageSegmenter.runs(in: cyrillicPart + latinPart)
+        let detector = ScriptedLanguageDetector(Dictionary(uniqueKeysWithValues: runs.map {
+            ($0.text, $0.script == .cyrillic ? "ru" : "en")
+        }))
+        let plan = AVSpeechService.utterancePlan(
+            text: cyrillicPart + latinPart,
+            settings: settings("en.alex", map: ["ru": "ru.uninstalled"]),
+            voices: voices,
+            detector: detector)
+        #expect(plan.first(where: { $0.text.contains("русское") })?.voiceID == "ru.milena.enhanced")
+    }
+
+    /// "Привет." is a 6-letter Cyrillic run, and Cyrillic runs never merge into a Latin
+    /// neighbour — so it survives as its own run and is below the threshold, while the long
+    /// Latin run is above it. Asserting both halves is what makes this test fail against a
+    /// broken threshold instead of passing vacuously on an empty question list.
+    @Test func onlyRunsLongEnoughToBeTrustworthyAreSentToTheDetector() {
+        let detector = ScriptedLanguageDetector()
+        _ = AVSpeechService.utterancePlan(
+            text: "Привет. This is a reasonably long English sentence here.",
+            settings: settings("en.alex", map: ["ru": "ru.milena"]),
+            voices: voices,
+            detector: detector)
+        #expect(detector.asked.count == 1)
+        #expect(detector.asked.first?.contains("reasonably") == true)
+        #expect(detector.asked.allSatisfy {
+            LanguageSegmenter.letterCount($0) >= AVSpeechService.minDetectionLetters
+        })
+    }
+
+    @Test func aPlanThatResolvesToOneVoiceCollapsesToTheOriginalText() {
+        let text = "Now a long English sentence follows here and continues."
+        let plan = AVSpeechService.utterancePlan(
+            text: text,
+            settings: settings("en.alex"),
+            voices: voices,
+            detector: ScriptedLanguageDetector([text: "en"]))
+        #expect(plan == [UtterancePlan(text: text, voiceID: "en.alex")])
+    }
+
+    @Test func emptyTextProducesNoUtterances() {
+        #expect(AVSpeechService.utterancePlan(text: "", settings: settings("en.alex"),
+                                              voices: voices,
+                                              detector: ScriptedLanguageDetector()).isEmpty)
     }
 }

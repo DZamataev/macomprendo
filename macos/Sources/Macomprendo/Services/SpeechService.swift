@@ -48,8 +48,10 @@ extension SpeechSynthesizing {
     /// `didFinish`/`didCancel` callbacks for anything not in this list belong to a superseded
     /// call and are ignored, so a stop-then-speak race cannot clear the new speaking state.
     private var queued: [AVSpeechUtterance] = []
+    private let detector: any LanguageDetecting
 
-    override init() {
+    init(detector: any LanguageDetecting = NLLanguageDetector()) {
+        self.detector = detector
         super.init()
         synthesizer.delegate = self
     }
@@ -104,30 +106,56 @@ extension SpeechSynthesizing {
             .first
     }
 
-    /// What to enqueue for `text`. When every run matches the configured voice's script the
-    /// result is a single utterance holding the original text — byte for byte what the
+    /// A run shorter than this many letters is not sent to the detector: `NLLanguageRecognizer`
+    /// guesses on short input, and a wrong guess picks a worse voice than the script-based
+    /// fallback would.
+    nonisolated static let minDetectionLetters = 12
+
+    /// What to enqueue for `text`.
+    ///
+    /// When segmentation is switched off, or when every run resolves to the configured voice,
+    /// the result is a single utterance holding the original text — byte for byte what the
     /// service did before segmentation existed.
     nonisolated static func utterancePlan(
         text: String,
         settings: SpeechSettings,
         voices: [Voice],
+        detector: any LanguageDetecting,
         minRunLength: Int = LanguageSegmenter.defaultMinRunLength
     ) -> [UtterancePlan] {
         guard !text.isEmpty else { return [] }
-        let configured = voices.first { $0.id == settings.voiceID }
-        let configuredScript = configured.map { LanguageSegmenter.script(ofLanguage: $0.language) } ?? .latin
-        let runs = LanguageSegmenter.runs(in: text, minRunLength: minRunLength)
-        let needsSwitching = runs.contains { $0.script != .neutral && $0.script != configuredScript }
-        guard needsSwitching else {
+        guard settings.segmentationEnabled else {
             return [UtterancePlan(text: text, voiceID: settings.voiceID)]
         }
-        return runs.map { run in
-            guard run.script != .neutral, run.script != configuredScript else {
-                return UtterancePlan(text: run.text, voiceID: settings.voiceID)
-            }
-            return UtterancePlan(text: run.text,
-                                 voiceID: fallbackVoice(for: run.script, in: voices)?.id ?? settings.voiceID)
+        let configured = voices.first { $0.id == settings.voiceID }
+        let configuredScript = configured.map { LanguageSegmenter.script(ofLanguage: $0.language) } ?? .latin
+        let plan = LanguageSegmenter.runs(in: text, minRunLength: minRunLength).map { run in
+            UtterancePlan(text: run.text,
+                          voiceID: voiceID(for: run, settings: settings, voices: voices,
+                                           configuredScript: configuredScript, detector: detector))
         }
+        guard plan.contains(where: { $0.voiceID != settings.voiceID }) else {
+            return [UtterancePlan(text: text, voiceID: settings.voiceID)]
+        }
+        return plan
+    }
+
+    /// The user's mapping wins wherever they made one; everything else keeps the automatic
+    /// per-script pick that shipped with segmentation.
+    nonisolated static func voiceID(for run: TextRun,
+                                    settings: SpeechSettings,
+                                    voices: [Voice],
+                                    configuredScript: ScriptClass,
+                                    detector: any LanguageDetecting) -> String? {
+        guard run.script != .neutral else { return settings.voiceID }
+        if LanguageSegmenter.letterCount(run.text) >= minDetectionLetters,
+           let language = detector.dominantLanguage(of: run.text),
+           let mapped = settings.voiceByLanguage[language],
+           voices.contains(where: { $0.id == mapped }) {
+            return mapped
+        }
+        if run.script == configuredScript { return settings.voiceID }
+        return fallbackVoice(for: run.script, in: voices)?.id ?? settings.voiceID
     }
 
     func voices() -> [Voice] {
@@ -140,7 +168,8 @@ extension SpeechSynthesizing {
     func speak(_ text: String, settings: SpeechSettings) {
         queued.removeAll()
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
-        let plan = Self.utterancePlan(text: text, settings: settings, voices: voices())
+        let plan = Self.utterancePlan(text: text, settings: settings, voices: voices(),
+                                      detector: detector)
         guard !plan.isEmpty else {
             setSpeaking(false)
             return
