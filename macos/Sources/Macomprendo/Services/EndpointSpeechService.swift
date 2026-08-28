@@ -41,6 +41,12 @@ enum EndpointVoices {
     /// network request running to completion (or the 60 s timeout) with its result discarded.
     private var inFlightFetch: Task<Data, Error>?
     private var playback: CheckedContinuation<Void, Error>?
+    /// `speak` returns before the first chunk has been synthesised, so a pause can land
+    /// while the audio is still in flight. `player.pause()` is a no-op then — there is
+    /// nothing playing yet — so `playAndWait` holds the finished chunk back instead of
+    /// starting it, or the pause the user asked for would be silently ignored and the
+    /// sound would start anyway.
+    private var heldAudio: Data?
     /// Bumped by every `speak`/`stop` so a superseded task cannot clobber the new state.
     private var generation = 0
 
@@ -100,8 +106,13 @@ enum EndpointVoices {
 
     func resume() {
         guard isPaused else { return }
-        player.resume()
         isPaused = false
+        if let audio = heldAudio {
+            heldAudio = nil
+            do { try player.play(audio) } catch { resumePlayback(throwing: error) }
+        } else {
+            player.resume()
+        }
         onStateChange?()
     }
 
@@ -119,6 +130,10 @@ enum EndpointVoices {
         task = nil
         inFlightFetch?.cancel()
         inFlightFetch = nil
+        // The job being cancelled owns any chunk it was holding back for a pause; a superseded
+        // `speak()`/`stop()` must not let a stale buffer surface as though it belonged to
+        // whatever runs next.
+        heldAudio = nil
         resumePlayback(throwing: MacomprendoError.cancelled)
         player.stop()
     }
@@ -205,6 +220,9 @@ enum EndpointVoices {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 playback = continuation
                 player.onFinished = { [weak self] in self?.resumePlayback(throwing: nil) }
+                // Paused before this chunk finished fetching: hold it rather than starting it.
+                // `resume()` plays it from here; the continuation stays pending until then.
+                guard !isPaused else { heldAudio = audio; return }
                 do { try player.play(audio) } catch { resumePlayback(throwing: error) }
             }
         } onCancel: {

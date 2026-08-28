@@ -9,6 +9,11 @@ import Foundation
     private(set) var isPaused = false
     private(set) var pauseCount = 0
     private(set) var resumeCount = 0
+    /// Mirrors `AVAudioPlayer.isPlaying`, so `pause()` can guard on it exactly like
+    /// `AVAudioPlayerPlayer` does — a `pause()` before any buffer has actually started
+    /// playing must be a no-op here too, or a test using this fake could pass while the
+    /// real backend leaves the sound playing (see `EndpointSpeechServiceTests`).
+    private(set) var isPlaying = false
 
     /// Thrown by the next `play(_:)` call, then cleared.
     var playError: Error?
@@ -24,24 +29,36 @@ import Foundation
             throw error
         }
         played.append(audioData)
-        if finishesImmediately { onFinished?() }
+        isPlaying = true
+        if finishesImmediately {
+            isPlaying = false
+            onFinished?()
+        }
     }
 
     func stop() {
         stopCount += 1
         isPaused = false
+        isPlaying = false
     }
 
     func pause() {
+        guard isPlaying else { return }
         pauseCount += 1
         isPaused = true
+        isPlaying = false
     }
 
     func resume() {
+        guard isPaused else { return }
         resumeCount += 1
         isPaused = false
+        isPlaying = true
     }
 
     /// Simulates the current buffer reaching its end.
-    func finishCurrent() { onFinished?() }
+    func finishCurrent() {
+        isPlaying = false
+        onFinished?()
+    }
 }

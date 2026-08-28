@@ -291,20 +291,40 @@ import Testing
         #expect(!r.service.isSpeaking)
     }
 
-    @Test func pauseAndResumeDriveThePlayerAndReportState() {
+    /// `speak()` returns before the unstructured fetch `Task` has had any chance to run, so
+    /// `pause()` must not be exercised until chunk 0 is genuinely playing — otherwise this test
+    /// would pass whether or not the backend actually paused anything (see
+    /// `FakeAudioPlayer.isPlaying`, and the no-op-until-playing bug this suite now guards
+    /// against below).
+    @Test func pauseAndResumeDriveThePlayerAndReportState() async {
         let r = rig()
+        r.player.finishesImmediately = false
         r.service.speak("One. Two. Three.", settings: settings())
+        await settle()
+        #expect(r.player.played.count == 1)   // chunk 0 is genuinely playing
+
         r.service.pause()
         #expect(r.player.pauseCount == 1)
         #expect(r.service.isPaused)
+
         r.service.resume()
         #expect(r.player.resumeCount == 1)
         #expect(!r.service.isPaused)
+
+        // Drain the rest of the queue so no continuation is left dangling.
+        r.player.finishCurrent()
+        await settle()
+        r.player.finishCurrent()
+        await settle()
+        r.player.finishCurrent()
+        await r.service.drain()
     }
 
-    @Test func stoppingWhilePausedClearsThePausedState() {
+    @Test func stoppingWhilePausedClearsThePausedState() async {
         let r = rig()
+        r.player.finishesImmediately = false
         r.service.speak("One. Two. Three.", settings: settings())
+        await settle()
         r.service.pause()
         r.service.stop()
         #expect(!r.service.isPaused)
@@ -316,6 +336,36 @@ import Testing
         r.service.pause()
         #expect(r.player.pauseCount == 0)
         #expect(!r.service.isPaused)
+    }
+
+    /// The bug this guards against: `speak()` sets `isSpeaking` synchronously and returns, but
+    /// the first chunk's audio is not fetched until the unstructured `Task` runs — a network
+    /// round trip. `pause()` called in that window used to set `isPaused` and call
+    /// `player.pause()`, which is a no-op because nothing is playing yet; when the fetch then
+    /// landed, playback started anyway while the service kept reporting `isPaused == true`.
+    @Test func pausingWhileTheFirstChunkIsStillBeingFetchedHoldsPlaybackUntilResume() async {
+        let r = rig()
+        r.http.isGated = true
+
+        r.service.speak("Hello.", settings: settings())
+        for _ in 0..<50 {
+            if !r.http.requests.isEmpty { break }
+            await Task.yield()
+        }
+        #expect(r.http.requests.count == 1)   // the fetch is genuinely in flight, not queued
+
+        r.service.pause()
+        #expect(r.service.isPaused)
+
+        r.http.releaseGate(at: 0)
+        await settle()
+
+        // The chunk finished fetching while paused: it must not have started playing.
+        #expect(r.player.played.isEmpty)
+
+        r.service.resume()
+        await settle()
+        #expect(r.player.played == [Self.audioResponse.body])
     }
 
     @Test func theVoiceCatalogHoldsTheBuiltInNames() {
