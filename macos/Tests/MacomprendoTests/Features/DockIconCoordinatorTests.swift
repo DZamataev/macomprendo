@@ -30,11 +30,12 @@ import Testing
         coordinator.open(.settings)
         coordinator.open(.onboarding)
         coordinator.close(.settings)
-        // The second `true` is `close` re-asserting visibility while an owner remains.
-        #expect(policy.calls == [true, true])
+        // No policy call at all: the icon was already visible and must stay visible. Calling
+        // the policy again would re-run NSApp.activate and steal focus.
+        #expect(policy.calls == [true])
         #expect(coordinator.owners == [.onboarding])
         coordinator.close(.onboarding)
-        #expect(policy.calls == [true, true, false])
+        #expect(policy.calls == [true, false])
     }
 
     @Test func openingTheSameOwnerTwiceCallsThePolicyOnce() {

@@ -17,16 +17,19 @@ import Foundation
         self.policy = policy
     }
 
+    /// The policy is called ONLY on a real visibility transition, in both directions.
+    /// `NSAppActivationPolicy.setDockIconVisible(true)` also calls
+    /// `NSApp.activate(ignoringOtherApps:)`, so re-asserting visibility while another owner
+    /// is still open would yank focus to this app at the moment the user closed a window —
+    /// while they were working in a different app entirely.
     func open(_ owner: Owner) {
         let wasEmpty = owners.isEmpty
-        guard owners.insert(owner).inserted else { return }
-        // Only the empty→non-empty transition needs to show the icon; a second owner
-        // joining one that already has it showing is a no-op for the policy.
-        if wasEmpty { policy.setDockIconVisible(true) }
+        guard owners.insert(owner).inserted, wasEmpty else { return }
+        policy.setDockIconVisible(true)
     }
 
     func close(_ owner: Owner) {
-        guard owners.remove(owner) != nil else { return }
-        policy.setDockIconVisible(!owners.isEmpty)
+        guard owners.remove(owner) != nil, owners.isEmpty else { return }
+        policy.setDockIconVisible(false)
     }
 }
