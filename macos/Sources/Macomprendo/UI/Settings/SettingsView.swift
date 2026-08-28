@@ -13,8 +13,6 @@ struct SettingsView: View {
                 .tabItem { Label { Text("Speech") } icon: { Icon(.speak, size: 16) } }
             PromptsTab(model: AppRoot.model.promptsTabModel, app: AppRoot.model)
                 .tabItem { Label { Text("Refine & Summarize") } icon: { Icon(.presets, size: 16) } }
-            ModelsTab()
-                .tabItem { Label { Text("Models") } icon: { Icon(.download, size: 16) } }
             ProvidersTab()
                 .tabItem { Label { Text("Providers") } icon: { Icon(.endpoint, size: 16) } }
         }
