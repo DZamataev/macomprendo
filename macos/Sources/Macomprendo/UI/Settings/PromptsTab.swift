@@ -56,6 +56,14 @@ import SwiftUI
 
     // MARK: Selection & editing
 
+    /// Persists the choice: the Quick Panel reads the same `Settings.promptLanguage`.
+    func setLanguage(_ newValue: PromptLanguage) {
+        guard newValue != language else { return }
+        language = newValue
+        holder.settings.promptLanguage = newValue.code
+        select(presets.first?.id)
+    }
+
     func select(_ id: UUID?) {
         selectedID = id
         draft = id.flatMap { holder.settings.preset(id: $0) }
@@ -179,12 +187,25 @@ struct PromptsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("Feature", selection: $model.kind) {
-                ForEach(PresetKind.allCases, id: \.self) { kind in
-                    Text(kind.displayName).tag(kind)
+            HStack(spacing: 12) {
+                Picker("Feature", selection: $model.kind) {
+                    ForEach(PresetKind.allCases, id: \.self) { kind in
+                        Text(kind.displayName).tag(kind)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .frame(width: 240)
+
+                Picker("Language", selection: Binding(get: { model.language },
+                                                      set: { model.setLanguage($0) })) {
+                    ForEach(PromptLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
+                .frame(width: 220)
+
+                Spacer()
             }
-            .pickerStyle(.segmented)
 
             endpointRow
 

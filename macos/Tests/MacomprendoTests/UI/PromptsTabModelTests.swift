@@ -165,4 +165,34 @@ import Testing
         #expect(holder.settings.summarizeLLM?.model == "qwen2.5:1.5b")
         #expect(holder.settings.refineLLM?.model == "llama3.2")
     }
+
+    @Test func switchingLanguageShowsThatLanguagesPresetsAndPersistsTheChoice() {
+        let holder = ScriptedSettingsHolder.seeded()
+        holder.settings.promptLanguage = "en"
+        let model = PromptsTabModel(holder: holder, llm: { _ in throw FeatureConfigError.noPreset(.refine) })
+        #expect(model.presets.allSatisfy { $0.language == "en" })
+
+        model.setLanguage(.russian)
+        #expect(holder.settings.promptLanguage == "ru")
+        #expect(model.presets.count == 8)
+        #expect(model.presets.allSatisfy { $0.language == "ru" })
+        #expect(model.selectedID == FactoryPresets.presetID(role: .cleanUp, language: .russian))
+    }
+
+    @Test func addingAPresetStampsTheShownLanguage() {
+        let holder = ScriptedSettingsHolder.seeded()
+        let model = PromptsTabModel(holder: holder, llm: { _ in throw FeatureConfigError.noPreset(.refine) })
+        model.setLanguage(.german)
+        model.add()
+        #expect(model.draft?.language == "de")
+        #expect(holder.settings.presets(of: .refine, language: "de").count == 9)
+    }
+
+    @Test func restoringFactoryPresetsCoversEveryLanguage() throws {
+        let holder = ScriptedSettingsHolder.seeded()
+        try holder.settings.deletePreset(id: FactoryPresets.presetID(role: .tldr, language: .french))
+        let model = PromptsTabModel(holder: holder, llm: { _ in throw FeatureConfigError.noPreset(.refine) })
+        model.restoreFactory()
+        #expect(holder.settings.preset(id: FactoryPresets.presetID(role: .tldr, language: .french)) != nil)
+    }
 }
