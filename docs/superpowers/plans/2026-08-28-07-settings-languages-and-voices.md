@@ -3065,6 +3065,12 @@ and set `isPaused = false` at the top of `play(_:)` and in `stop()`.
 ```swift
     private(set) var isPaused = false
 
+    /// `speak` returns before the first chunk has been synthesised, so a pause can land while
+    /// the audio is still in flight. `player.pause()` is a no-op then — there is nothing
+    /// playing yet — so `playAndWait` must hold the finished chunk back instead of starting
+    /// it, or the pause the user asked for is silently ignored and the sound starts anyway.
+    private var heldAudio: Data?
+
     func pause() {
         guard isSpeaking, !isPaused else { return }
         player.pause()
@@ -3074,8 +3080,13 @@ and set `isPaused = false` at the top of `play(_:)` and in `stop()`.
 
     func resume() {
         guard isPaused else { return }
-        player.resume()
         isPaused = false
+        if let audio = heldAudio {
+            heldAudio = nil
+            do { try player.play(audio) } catch { resumePlayback(throwing: error) }
+        } else {
+            player.resume()
+        }
         onStateChange?()
     }
 ```
