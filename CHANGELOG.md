@@ -79,7 +79,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with no way back except the menubar.
 - The Quick Panel can now read its own text aloud: Refine's Original and
   Refined panes and Summarize's summary each get a Speak/Pause/Resume control
-  plus Stop while playing, independent of the Speak selection hotkey.
+  plus Stop while playing, independent of the Speak selection hotkey. Closing
+  the panel stops a read the panel started — its controls go with it — while a
+  read started with the Speak hotkey keeps its HUD and keeps playing.
 - The menubar menu now shows each action's current hotkey beside its
   checkmark; an unbound action reads "not set".
 - Refine and Summarize now have a working language, switchable from Settings ▸
