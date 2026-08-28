@@ -51,16 +51,17 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .translate: .init(name: "Translate", template: """
-                Translate the following text into {language}. Preserve the tone and the formatting.
+                Target language: {chosen_language}
+                Translate the following text into that language. Preserve the tone and the formatting.
                 {instruction}
 
                 {text}
                 """),
             .translateAndOrganize: .init(name: "Translate & organize", template: """
-                Translate the following text into English, then organize the result: group \
-                related points together, add short headings or a list where they make the text \
-                easier to follow, and remove repetition. Do not invent facts and do not drop \
-                information.
+                Target language: {chosen_language}
+                Translate the following text into that language, then organize the result: group related \
+                points together, add short headings or a list where they make the text easier to follow, and \
+                remove repetition. Do not invent facts and do not drop information.
                 {instruction}
 
                 {text}
@@ -93,29 +94,33 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .briefTranslated: .init(name: "Brief, translated", template: """
-                Summarize the following text in two or three sentences. Write the summary in {language}, \
-                whatever language the text itself is in.
+                Target language: {chosen_language}
+                Summarize the following text in two or three sentences, written in that language, whatever \
+                language the text itself is in.
                 {instruction}
 
                 {text}
                 """),
             .bulletsTranslated: .init(name: "Bullets, translated", template: """
+                Target language: {chosen_language}
                 Summarize the following text as at most six concise bullet points, one line each, each \
-                starting with "- ". Write them in {language}, whatever language the text itself is in.
+                starting with "- ". Write them in that language, whatever language the text itself is in.
                 {instruction}
 
                 {text}
                 """),
             .tldrTranslated: .init(name: "TL;DR, translated", template: """
-                Give a one-sentence TL;DR of the following text, written in {language}, whatever language \
+                Target language: {chosen_language}
+                Give a one-sentence TL;DR of the following text, written in that language, whatever language \
                 the text itself is in.
                 {instruction}
 
                 {text}
                 """),
             .keyActionsTranslated: .init(name: "Key actions, translated", template: """
-                List the concrete action items in the following text as a numbered list, written in \
-                {language}, whatever language the text itself is in. If there are none, answer exactly "No \
+                Target language: {chosen_language}
+                List the concrete action items in the following text as a numbered list, written in that \
+                language, whatever language the text itself is in. If there are none, answer exactly "No \
                 action items."
                 {instruction}
 

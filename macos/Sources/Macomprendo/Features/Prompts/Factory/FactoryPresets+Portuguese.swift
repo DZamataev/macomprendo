@@ -52,15 +52,17 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .translate: .init(name: "Traduzir", template: """
-                Traduza o texto a seguir para {language}. Preserve o tom e a formatação.
+                Língua de destino: {chosen_language}
+                Traduza o texto seguinte para essa língua. Preserve o tom e a formatação.
                 {instruction}
 
                 {text}
                 """),
             .translateAndOrganize: .init(name: "Traduzir e organizar", template: """
-                Traduza o texto a seguir para português e, em seguida, organize o resultado: \
-                agrupe pontos relacionados, adicione títulos curtos ou uma lista onde isso facilite \
-                a leitura, e remova repetições. Não invente fatos nem omita informações.
+                Língua de destino: {chosen_language}
+                Traduza o texto seguinte para essa língua e depois organize o resultado: agrupe os pontos \
+                relacionados, acrescente títulos curtos ou uma lista onde facilitem a leitura, e remova \
+                repetições. Não invente factos nem perca informação.
                 {instruction}
 
                 {text}
@@ -93,27 +95,31 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .briefTranslated: .init(name: "Resumo, com tradução", template: """
-                Resuma o texto seguinte em duas ou três frases. Escreva o resumo em {language}, seja qual \
-                for a língua do texto.
+                Língua de destino: {chosen_language}
+                Resuma o texto seguinte em duas ou três frases, nessa língua, seja qual for a língua do \
+                texto.
                 {instruction}
 
                 {text}
                 """),
             .bulletsTranslated: .init(name: "Tópicos, com tradução", template: """
+                Língua de destino: {chosen_language}
                 Resuma o texto seguinte em no máximo seis tópicos concisos, um por linha, cada um começando \
-                com "- ". Escreva-os em {language}, seja qual for a língua do texto.
+                com "- ". Escreva-os nessa língua, seja qual for a língua do texto.
                 {instruction}
 
                 {text}
                 """),
             .tldrTranslated: .init(name: "TL;DR, com tradução", template: """
-                Dê um TL;DR de uma frase do texto seguinte, em {language}, seja qual for a língua do texto.
+                Língua de destino: {chosen_language}
+                Dê um TL;DR de uma frase do texto seguinte, nessa língua, seja qual for a língua do texto.
                 {instruction}
 
                 {text}
                 """),
             .keyActionsTranslated: .init(name: "Ações, com tradução", template: """
-                Liste as tarefas concretas do texto seguinte numa lista numerada, em {language}, seja qual \
+                Língua de destino: {chosen_language}
+                Liste as tarefas concretas do texto seguinte numa lista numerada, nessa língua, seja qual \
                 for a língua do texto. Se não houver nenhuma, responda exatamente "Sem tarefas."
                 {instruction}
 

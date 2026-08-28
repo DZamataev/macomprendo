@@ -62,6 +62,25 @@ import SwiftUI
     // MARK: Selection & editing
 
     /// Persists the choice: the Quick Panel reads the same `Settings.promptLanguage`.
+    /// What the translating presets translate into. Lives beside the prompt language but is
+    /// independent of it: one says which language the prompts are written in, the other which
+    /// language their output should be in.
+    var translationTarget: TranslationTarget {
+        get { holder.settings.translationTarget }
+        set {
+            guard holder.settings.translationTarget != newValue else { return }
+            objectWillChange.send()
+            holder.settings.translationTarget = newValue
+        }
+    }
+
+    /// How one option reads in the picker. The system option names the language it currently
+    /// resolves to, so "follow the system" is not a guess.
+    func translationTargetLabel(_ target: TranslationTarget) -> String {
+        target.pickerLabel(promptLanguage: holder.settings.promptLanguage,
+                           systemLanguageCode: TranslationTarget.currentSystemLanguageCode)
+    }
+
     func setLanguage(_ newValue: PromptLanguage) {
         guard newValue != language else { return }
         objectWillChange.send()
@@ -142,8 +161,11 @@ import SwiftUI
         testOutput = ""
         testError = nil
         isTesting = true
-        let prompt = PromptRenderer.render(draft, text: Self.sampleText,
-                                           instruction: nil, language: nil)
+        let prompt = PromptRenderer.render(
+            draft, text: Self.sampleText, instruction: nil, language: nil,
+            chosenLanguage: holder.settings.translationTarget.resolvedName(
+                promptLanguage: holder.settings.promptLanguage,
+                systemLanguageCode: TranslationTarget.currentSystemLanguageCode))
         let kind = self.kind
         testTask = Task { [weak self] in
             await self?.runTestStream(prompt: prompt, kind: kind, generation: generation)
@@ -208,6 +230,15 @@ struct PromptsTab: View {
                     }
                 }
                 .frame(width: 220)
+
+                Picker("Translate into", selection: Binding(get: { model.translationTarget },
+                                                            set: { model.translationTarget = $0 })) {
+                    ForEach(TranslationTarget.allOptions, id: \.self) { target in
+                        Text(model.translationTargetLabel(target)).tag(target)
+                    }
+                }
+                .frame(width: 260)
+                .help("Substituted as {chosen_language} in the translating presets.")
 
                 Spacer()
             }

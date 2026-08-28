@@ -24,12 +24,16 @@ enum FactoryPresets {
             }
         }
 
-        /// Whether this role writes its output in `{language}` — the OS language — rather than
-        /// in the language of the text it was given.
-        var translatesToTheOSLanguage: Bool {
+        /// Whether this role produces its output in the translation target the user chose in
+        /// Settings, and therefore carries `{chosen_language}`.
+        ///
+        /// The placeholder sits on its own "target language" line rather than inside a sentence:
+        /// a language name inlined into Russian or German would need a grammatical case the
+        /// substitution cannot know, so «Целевой язык: German» is used instead of «на German».
+        var translatesToTheChosenLanguage: Bool {
             switch self {
-            case .translate, .briefTranslated, .bulletsTranslated, .tldrTranslated,
-                 .keyActionsTranslated:
+            case .translate, .translateAndOrganize, .briefTranslated, .bulletsTranslated,
+                 .tldrTranslated, .keyActionsTranslated:
                 true
             default:
                 false

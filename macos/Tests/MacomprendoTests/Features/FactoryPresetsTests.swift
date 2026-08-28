@@ -61,23 +61,52 @@ import Testing
         }
     }
 
-    /// `{language}` is the OS language, so exactly the roles that promise to write in it may
-    /// carry it. Every other template either preserves the original language or names its
-    /// target literally, and `translatesToTheOSLanguage` is the single list both sides agree on.
-    @Test func onlyTheTranslatingRolesUseTheLanguagePlaceholder() {
+    /// Exactly the roles that promise to write in the chosen target may carry
+    /// `{chosen_language}`; every other template preserves the language of the text it is given.
+    /// `translatesToTheChosenLanguage` is the single list the templates and the tests agree on.
+    @Test func onlyTheTranslatingRolesUseTheChosenLanguagePlaceholder() {
         for language in PromptLanguage.allCases {
             for role in FactoryPresets.Role.allCases {
                 let template = language.content.entries[role]!.template
-                #expect(template.contains("{language}") == role.translatesToTheOSLanguage,
+                #expect(template.contains("{chosen_language}") == role.translatesToTheChosenLanguage,
                         "\(language.code)/\(role.rawValue)")
             }
         }
     }
 
-    @Test func theTranslatingRolesAreTranslateAndTheFourSummarizeVariants() {
-        #expect(Set(FactoryPresets.Role.allCases.filter(\.translatesToTheOSLanguage))
-                == [.translate, .briefTranslated, .bulletsTranslated, .tldrTranslated,
-                    .keyActionsTranslated])
+    /// `{language}` — the language of the Mac — is still a supported placeholder for prompts the
+    /// user writes, but no factory template uses it any more: they all follow the chosen target.
+    @Test func noFactoryTemplateStillUsesTheOSLanguagePlaceholder() {
+        for language in PromptLanguage.allCases {
+            for role in FactoryPresets.Role.allCases {
+                #expect(!language.content.entries[role]!.template.contains("{language}"),
+                        "\(language.code)/\(role.rawValue)")
+            }
+        }
+    }
+
+    @Test func theTranslatingRolesAreTheTwoRefineOnesAndTheFourSummarizeOnes() {
+        #expect(Set(FactoryPresets.Role.allCases.filter(\.translatesToTheChosenLanguage))
+                == [.translate, .translateAndOrganize, .briefTranslated, .bulletsTranslated,
+                    .tldrTranslated, .keyActionsTranslated])
+    }
+
+    /// The four translated summarize roles target the preset's OWN language, named literally in
+    /// each template. They must therefore differ from their untranslated siblings — otherwise the
+    /// language instruction was lost — and must carry no `{language}`, which the placeholder test
+    /// above already enforces.
+    @Test func theTranslatedSummarizeRolesDifferFromTheirUntranslatedSiblings() {
+        let pairs: [(FactoryPresets.Role, FactoryPresets.Role)] = [
+            (.brief, .briefTranslated), (.bullets, .bulletsTranslated),
+            (.tldr, .tldrTranslated), (.keyActions, .keyActionsTranslated)
+        ]
+        for language in PromptLanguage.allCases {
+            for (plain, translated) in pairs {
+                let a = language.content.entries[plain]!.template
+                let b = language.content.entries[translated]!.template
+                #expect(a != b, "\(language.code)/\(translated.rawValue) matches its plain sibling")
+            }
+        }
     }
 
     @Test func everyTranslatedSetIsWrittenNativelyAndKeepsItsNames() {

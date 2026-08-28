@@ -51,15 +51,17 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .translate: .init(name: "Traducir", template: """
-                Traduce el siguiente texto al {language}. Conserva el tono y el formato.
+                Idioma de destino: {chosen_language}
+                Traduce el siguiente texto a ese idioma. Conserva el tono y el formato.
                 {instruction}
 
                 {text}
                 """),
             .translateAndOrganize: .init(name: "Traducir y organizar", template: """
-                Traduce el siguiente texto al español y luego organiza el resultado: agrupa los \
-                puntos relacionados, añade títulos breves o una lista donde faciliten la lectura, \
-                y elimina las repeticiones. No inventes datos ni omitas información.
+                Idioma de destino: {chosen_language}
+                Traduce el siguiente texto a ese idioma y luego organiza el resultado: agrupa los puntos \
+                relacionados, añade títulos breves o una lista donde faciliten la lectura, y elimina las \
+                repeticiones. No inventes datos ni omitas información.
                 {instruction}
 
                 {text}
@@ -92,28 +94,32 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .briefTranslated: .init(name: "Breve, con traducción", template: """
-                Resume el siguiente texto en dos o tres frases. Escribe el resumen en {language}, sea cual \
-                sea el idioma del texto.
+                Idioma de destino: {chosen_language}
+                Resume el siguiente texto en dos o tres frases, en ese idioma, sea cual sea el idioma del \
+                texto.
                 {instruction}
 
                 {text}
                 """),
             .bulletsTranslated: .init(name: "Viñetas, con traducción", template: """
+                Idioma de destino: {chosen_language}
                 Resume el siguiente texto en un máximo de seis viñetas concisas, una por línea, cada una \
-                empezando por "- ". Escríbelas en {language}, sea cual sea el idioma del texto.
+                empezando por "- ". Escríbelas en ese idioma, sea cual sea el idioma del texto.
                 {instruction}
 
                 {text}
                 """),
             .tldrTranslated: .init(name: "TL;DR, con traducción", template: """
-                Da un TL;DR de una sola frase del siguiente texto, en {language}, sea cual sea el idioma del \
+                Idioma de destino: {chosen_language}
+                Da un TL;DR de una sola frase del siguiente texto, en ese idioma, sea cual sea el idioma del \
                 texto.
                 {instruction}
 
                 {text}
                 """),
             .keyActionsTranslated: .init(name: "Acciones clave, con traducción", template: """
-                Enumera las tareas concretas del siguiente texto en una lista numerada, en {language}, sea \
+                Idioma de destino: {chosen_language}
+                Enumera las tareas concretas del siguiente texto en una lista numerada, en ese idioma, sea \
                 cual sea el idioma del texto. Si no hay ninguna, responde exactamente "No hay tareas."
                 {instruction}
 

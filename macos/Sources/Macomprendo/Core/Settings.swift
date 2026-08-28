@@ -146,6 +146,8 @@ struct Settings: Codable, Sendable, Equatable {
     var presets: [PromptPreset]
     /// The working language for Refine & Summarize.
     var promptLanguage: String
+    /// What the translating presets translate into, substituted as `{chosen_language}`.
+    var translationTarget: TranslationTarget
     /// Languages whose factory presets have already been seeded.
     var seededPromptLanguages: [String]
     /// The factory-set version this document was last topped up to. See
@@ -170,6 +172,7 @@ struct Settings: Codable, Sendable, Equatable {
             speech: SpeechSettings(),
             presets: [],
             promptLanguage: PromptLanguage.systemDefault.code,
+            translationTarget: .systemLanguage,
             seededPromptLanguages: [],
             seededFactoryVersion: 0,
             defaultPresetIDs: [:],
@@ -214,6 +217,8 @@ extension Settings {
         speech = try c.decodeIfPresent(SpeechSettings.self, forKey: .speech) ?? d.speech
         presets = try c.decodeIfPresent([PromptPreset].self, forKey: .presets) ?? d.presets
         promptLanguage = try c.decodeIfPresent(String.self, forKey: .promptLanguage) ?? d.promptLanguage
+        translationTarget = try c.decodeIfPresent(TranslationTarget.self, forKey: .translationTarget)
+            ?? d.translationTarget
         seededPromptLanguages = try c.decodeIfPresent([String].self, forKey: .seededPromptLanguages)
             ?? d.seededPromptLanguages
         seededFactoryVersion = try c.decodeIfPresent(Int.self, forKey: .seededFactoryVersion)

@@ -83,9 +83,13 @@ import Foundation
             return
         }
 
-        let prompt = PromptRenderer.render(preset, text: source,
-                                           instruction: instruction,
-                                           language: RefineController.uiLanguageName())
+        let prompt = PromptRenderer.render(
+            preset, text: source,
+            instruction: instruction,
+            language: RefineController.uiLanguageName(),
+            chosenLanguage: holder.settings.translationTarget.resolvedName(
+                promptLanguage: holder.settings.promptLanguage,
+                systemLanguageCode: TranslationTarget.currentSystemLanguageCode))
         do {
             let target = try llm()
             for try await delta in target.provider.chat(prompt.messages, model: target.model,

@@ -46,14 +46,15 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .translate: .init(name: "翻译", template: """
-                将以下文本翻译成{language}。保留语气和排版格式。
+                目标语言：{chosen_language}
+                把以下文本翻译成该语言。保留语气和排版格式。
                 {instruction}
 
                 {text}
                 """),
             .translateAndOrganize: .init(name: "翻译并整理", template: """
-                将以下文本翻译成中文，然后整理结果：把相关的要点归到一起，在有助于阅读的地方加上\
-                简短的小标题或列表，并删除重复的内容。不要编造事实，也不要遗漏信息。
+                目标语言：{chosen_language}
+                把以下文本翻译成该语言，然后整理结果：把相关内容归到一起，在有助于阅读的地方加上简短小标题或列表，删除重复。不要编造事实，也不要遗漏信息。
                 {instruction}
 
                 {text}
@@ -85,25 +86,29 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .briefTranslated: .init(name: "简述并翻译", template: """
-                无论原文是什么语言，都用{language}把以下文本概括为两三句话。
+                目标语言：{chosen_language}
+                无论原文是什么语言，都用该语言把以下文本概括为两三句话。
                 {instruction}
 
                 {text}
                 """),
             .bulletsTranslated: .init(name: "要点并翻译", template: """
-                把以下文本概括为最多六条要点，每条一行，每条以“- ”开头。无论原文是什么语言，都用{language}撰写。
+                目标语言：{chosen_language}
+                把以下文本概括为最多六条要点，每条一行，每条以“- ”开头。无论原文是什么语言，都用该语言撰写。
                 {instruction}
 
                 {text}
                 """),
             .tldrTranslated: .init(name: "一句话总结并翻译", template: """
-                无论原文是什么语言，都用{language}用一句话总结以下文本。
+                目标语言：{chosen_language}
+                无论原文是什么语言，都用该语言用一句话总结以下文本。
                 {instruction}
 
                 {text}
                 """),
             .keyActionsTranslated: .init(name: "待办事项并翻译", template: """
-                把以下文本中的具体待办事项整理成编号列表。无论原文是什么语言，都用{language}书写。如果没有，就原样回答“没有待办事项。”
+                目标语言：{chosen_language}
+                把以下文本中的具体待办事项整理成编号列表。无论原文是什么语言，都用该语言书写。如果没有，就原样回答“没有待办事项。”
                 {instruction}
 
                 {text}
