@@ -615,7 +615,11 @@ In `macos/Sources/Macomprendo/Features/Prompts/FactoryPresets.swift`, pass
     static func seed(into settings: inout Settings) {
         for language in PromptLanguage.allCases
         where !settings.seededPromptLanguages.contains(language.code) {
-            for preset in presets(for: language) { settings.addPreset(preset) }
+            let seeded = presets(for: language)
+            // A language with no content is not "seeded": marking it so would permanently
+            // suppress its presets once the content arrives.
+            guard !seeded.isEmpty else { continue }
+            for preset in seeded { settings.addPreset(preset) }
             settings.seededPromptLanguages.append(language.code)
         }
     }
@@ -861,29 +865,18 @@ extension PromptLanguage {
     var content: FactoryPresetContent {
         switch self {
         case .english: .english
-        case .russian: .russian
-        case .spanish: .spanish
-        case .german: .german
-        case .french: .french
-        case .portuguese: .portuguese
-        case .chinese: .chinese
+        // Only English has content in this task. Task 4 splits `.russian` out and Task 5 the
+        // remaining five, so the build stays green at every step and no language is ever
+        // left without content.
+        case .russian, .spanish, .german, .french, .portuguese, .chinese: .english
         }
     }
 }
 ```
 
-Note: this switch will not compile until Tasks 4 and 5 add the other six statics. Add the six
-`case` lines in this task and take the build red only between Step 3 and Step 5 — Step 5
-provides English and the remaining six are added in Tasks 4 and 5. To keep this task's build
-green, temporarily map the six unwritten languages to `.english`:
-
-```swift
-        case .russian, .spanish, .german, .french, .portuguese, .chinese: .english
-```
-
-Task 4 replaces `.russian` with its own case, Task 5 the remaining five. The
-`everyLanguageCoversEveryRole` test passes throughout; `onlyTranslateUsesTheLanguagePlaceholder`
-also passes, because English satisfies it.
+Write exactly the switch above — do not add the other six cases yet, they have nothing to
+point at. The `everyLanguageCoversEveryRole` test passes throughout, and
+`onlyTranslateUsesTheLanguagePlaceholder` passes too because English satisfies it.
 
 - [ ] **Step 4: Rewrite `FactoryPresets` as the assembler**
 
@@ -967,7 +960,11 @@ enum FactoryPresets {
     static func seed(into settings: inout Settings) {
         for language in PromptLanguage.allCases
         where !settings.seededPromptLanguages.contains(language.code) {
-            for preset in presets(for: language) { settings.addPreset(preset) }
+            let seeded = presets(for: language)
+            // A language with no content is not "seeded": marking it so would permanently
+            // suppress its presets once the content arrives.
+            guard !seeded.isEmpty else { continue }
+            for preset in seeded { settings.addPreset(preset) }
             settings.seededPromptLanguages.append(language.code)
         }
     }
@@ -1557,6 +1554,7 @@ git commit -m "feat(settings): pick the prompt language in Refine & Summarize"
   `macos/Sources/Macomprendo/UI/QuickPanel/SummaryLayout.swift`
 - Modify: `macos/Sources/Macomprendo/Resources/Icons/icons.json`,
   `macos/Sources/Macomprendo/UI/Components/Icon.swift`
+- Modify: `macos/Tests/MacomprendoTests/App/TextFeaturesTests.swift:40,45`
 - Test: `macos/Tests/MacomprendoTests/Features/RefineControllerTests.swift`,
   `macos/Tests/MacomprendoTests/Features/SummarizeControllerTests.swift`
 
@@ -1646,6 +1644,10 @@ Do exactly the same in `SummarizeController`, with `.summarize` in the `defaultP
 
 In `TextFeatures.live`, replace `settings: { model.settings }` with `holder: model` for both
 controllers. `SpeakController` keeps its `settings:` closure — it is not changed by this task.
+
+`macos/Tests/MacomprendoTests/App/TextFeaturesTests.swift` also builds both controllers, at
+lines 40 and 45: replace `settings: { holder.settings }` with `holder: holder` there. Line 47
+builds the `SpeakController` and stays as it is.
 
 - [ ] **Step 4: Add the globe icon**
 
@@ -2156,14 +2158,22 @@ add a `settings(_:map:segmentation:)` overload):
         #expect(plan.first(where: { $0.text.contains("русское") })?.voiceID == "ru.milena.enhanced")
     }
 
-    @Test func shortRunsAreNeverSentToTheDetector() {
+    /// "Привет." is a 6-letter Cyrillic run, and Cyrillic runs never merge into a Latin
+    /// neighbour — so it survives as its own run and is below the threshold, while the long
+    /// Latin run is above it. Asserting both halves is what makes this test fail against a
+    /// broken threshold instead of passing vacuously on an empty question list.
+    @Test func onlyRunsLongEnoughToBeTrustworthyAreSentToTheDetector() {
         let detector = ScriptedLanguageDetector()
         _ = AVSpeechService.utterancePlan(
-            text: "Привет мир hi",
+            text: "Привет. This is a reasonably long English sentence here.",
             settings: settings("en.alex", map: ["ru": "ru.milena"]),
             voices: voices,
             detector: detector)
-        #expect(detector.asked.allSatisfy { LanguageSegmenter.letterCount($0) >= AVSpeechService.minDetectionLetters })
+        #expect(detector.asked.count == 1)
+        #expect(detector.asked.first?.contains("reasonably") == true)
+        #expect(detector.asked.allSatisfy {
+            LanguageSegmenter.letterCount($0) >= AVSpeechService.minDetectionLetters
+        })
     }
 
     @Test func aPlanThatResolvesToOneVoiceCollapsesToTheOriginalText() {
