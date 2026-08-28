@@ -17,8 +17,8 @@ import Testing
     @Test func startsOnRefineWithTheFirstPresetSelected() {
         let (model, _, _) = make()
         #expect(model.kind == .refine)
-        #expect(model.presets.count == 7)
-        #expect(model.selectedID == FactoryPresets.ID.cleanUp)
+        #expect(model.presets.count == 8)
+        #expect(model.selectedID == FactoryPresets.presetID(role: .cleanUp, language: .english))
         #expect(model.draft?.name == "Clean up")
         #expect(model.problems.isEmpty)
     }
@@ -27,14 +27,14 @@ import Testing
         let (model, _, _) = make()
         model.kind = .summarize
         #expect(model.presets.count == 4)
-        #expect(model.selectedID == FactoryPresets.ID.brief)
+        #expect(model.selectedID == FactoryPresets.presetID(role: .brief, language: .english))
     }
 
     @Test func editingTheDraftAndSavingWritesThrough() {
         let (model, holder, _) = make()
         model.draft?.name = "Tidy up"
         model.save()
-        #expect(holder.settings.preset(id: FactoryPresets.ID.cleanUp)?.name == "Tidy up")
+        #expect(holder.settings.preset(id: FactoryPresets.presetID(role: .cleanUp, language: .english))?.name == "Tidy up")
     }
 
     @Test func validationProblemsAreRepublishedOnSave() {
@@ -47,7 +47,7 @@ import Testing
     @Test func addCreatesACustomPresetOfTheCurrentKindAndSelectsIt() {
         let (model, holder, _) = make()
         model.add()
-        #expect(holder.settings.presets(of: .refine, language: "en").count == 8)
+        #expect(holder.settings.presets(of: .refine, language: "en").count == 9)
         #expect(model.draft?.isFactory == false)
         #expect(model.draft?.id == model.selectedID)
         #expect(model.presets.last?.id == model.selectedID)
@@ -56,17 +56,17 @@ import Testing
     @Test func duplicateCopiesTheSelectionAsANonFactoryPreset() {
         let (model, holder, _) = make()
         model.duplicate()
-        #expect(holder.settings.presets(of: .refine, language: "en").count == 8)
+        #expect(holder.settings.presets(of: .refine, language: "en").count == 9)
         #expect(model.draft?.name == "Clean up copy")
         #expect(model.draft?.isFactory == false)
-        #expect(model.draft?.userTemplate == FactoryPresets.refine()[0].userTemplate)
+        #expect(model.draft?.userTemplate == FactoryPresetContent.english.entries[.cleanUp]!.template)
     }
 
     @Test func deleteRemovesTheSelectionAndSelectsAnother() {
         let (model, holder, _) = make()
         model.delete()
-        #expect(holder.settings.preset(id: FactoryPresets.ID.cleanUp) == nil)
-        #expect(model.selectedID == FactoryPresets.ID.formal)
+        #expect(holder.settings.preset(id: FactoryPresets.presetID(role: .cleanUp, language: .english)) == nil)
+        #expect(model.selectedID == FactoryPresets.presetID(role: .formal, language: .english))
         #expect(model.lastError == nil)
     }
 
@@ -81,22 +81,22 @@ import Testing
     @Test func moveReordersWithinTheKind() {
         let (model, _, _) = make()
         model.move(from: IndexSet(integer: 6), to: 0)     // Translate to the top
-        #expect(model.presets.first?.id == FactoryPresets.ID.translate)
+        #expect(model.presets.first?.id == FactoryPresets.presetID(role: .translate, language: .english))
     }
 
     @Test func makeDefaultUpdatesSettings() {
         let (model, holder, _) = make()
-        model.select(FactoryPresets.ID.formal)
+        model.select(FactoryPresets.presetID(role: .formal, language: .english))
         model.makeDefault()
-        #expect(holder.settings.defaultPresetID(for: .refine, language: "en") == FactoryPresets.ID.formal)
+        #expect(holder.settings.defaultPresetID(for: .refine, language: "en") == FactoryPresets.presetID(role: .formal, language: .english))
     }
 
     @Test func restoreFactoryReaddsDeletedFactoryPresets() {
         let (model, holder, _) = make()
         model.delete()                                   // removes Clean up
         model.restoreFactory()
-        #expect(holder.settings.preset(id: FactoryPresets.ID.cleanUp) != nil)
-        #expect(holder.settings.presets(of: .refine, language: "en").count == 7)
+        #expect(holder.settings.preset(id: FactoryPresets.presetID(role: .cleanUp, language: .english)) != nil)
+        #expect(holder.settings.presets(of: .refine, language: "en").count == 8)
     }
 
     @Test func testWithSampleTextStreamsIntoTheOutputBox() async {

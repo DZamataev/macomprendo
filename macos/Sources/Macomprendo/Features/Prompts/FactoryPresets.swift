@@ -1,116 +1,73 @@
 import Foundation
 
-/// The presets shipped with the app. They are seeded once into `Settings.presets` and are
-/// ordinary user data afterwards: editable, reorderable and deletable. The IDs are fixed so
-/// `restoreMissing(into:)` can tell "deleted factory preset" from "custom preset".
+/// The presets shipped with the app. They are seeded once per language into `Settings.presets`
+/// and are ordinary user data afterwards: editable, reorderable and deletable.
+///
+/// A preset's UUID is derived from its role and language rather than written by hand, so
+/// `restoreMissing(into:)` can still tell "deleted factory preset" from "custom preset" across
+/// seven languages. English is slot `0000`, which keeps the eleven IDs that shipped before
+/// languages existed at exactly the values they had.
 enum FactoryPresets {
-    static let systemPrompt = """
-        You are a careful writing assistant. Process the user's text exactly as instructed. \
-        Return only the resulting text — no commentary, no explanation, no quotation marks \
-        around the output and no markdown code fences.
-        """
+    enum Role: String, CaseIterable, Sendable {
+        case cleanUp, formal, casual, shorten, expand, fixGrammar, translate, translateAndOrganize
+        case brief, bullets, tldr, keyActions
 
-    enum ID {
-        static let cleanUp = UUID(uuidString: "F0000000-0000-0000-0000-000000000001")!
-        static let formal = UUID(uuidString: "F0000000-0000-0000-0000-000000000002")!
-        static let casual = UUID(uuidString: "F0000000-0000-0000-0000-000000000003")!
-        static let shorten = UUID(uuidString: "F0000000-0000-0000-0000-000000000004")!
-        static let expand = UUID(uuidString: "F0000000-0000-0000-0000-000000000005")!
-        static let fixGrammar = UUID(uuidString: "F0000000-0000-0000-0000-000000000006")!
-        static let translate = UUID(uuidString: "F0000000-0000-0000-0000-000000000007")!
-        static let brief = UUID(uuidString: "F0000000-0000-0000-0000-000000000101")!
-        static let bullets = UUID(uuidString: "F0000000-0000-0000-0000-000000000102")!
-        static let tldr = UUID(uuidString: "F0000000-0000-0000-0000-000000000103")!
-        static let keyActions = UUID(uuidString: "F0000000-0000-0000-0000-000000000104")!
+        var kind: PresetKind {
+            switch self {
+            case .cleanUp, .formal, .casual, .shorten, .expand, .fixGrammar, .translate,
+                 .translateAndOrganize:
+                .refine
+            case .brief, .bullets, .tldr, .keyActions:
+                .summarize
+            }
+        }
+
+        /// The twelve hex digits this role contributes to a factory preset's UUID.
+        var slot: String {
+            switch self {
+            case .cleanUp: "000000000001"
+            case .formal: "000000000002"
+            case .casual: "000000000003"
+            case .shorten: "000000000004"
+            case .expand: "000000000005"
+            case .fixGrammar: "000000000006"
+            case .translate: "000000000007"
+            case .translateAndOrganize: "000000000008"
+            case .brief: "000000000101"
+            case .bullets: "000000000102"
+            case .tldr: "000000000103"
+            case .keyActions: "000000000104"
+            }
+        }
     }
 
-    static let defaultRefineID = ID.cleanUp
-    static let defaultSummarizeID = ID.brief
-
-    static func all() -> [PromptPreset] { refine() + summarize() }
-
-    static func refine() -> [PromptPreset] {
-        [
-            make(ID.cleanUp, .refine, 0, "Clean up", """
-                Clean up the following text. Remove filler words, false starts and stutters, and \
-                fix punctuation and capitalization. Keep the meaning, the tone and the original language.
-                {instruction}
-
-                {text}
-                """),
-            make(ID.formal, .refine, 1, "Formal", """
-                Rewrite the following text in a formal, professional register. Keep the meaning \
-                and the original language.
-                {instruction}
-
-                {text}
-                """),
-            make(ID.casual, .refine, 2, "Casual", """
-                Rewrite the following text in a relaxed, conversational register. Keep the meaning \
-                and the original language.
-                {instruction}
-
-                {text}
-                """),
-            make(ID.shorten, .refine, 3, "Shorten", """
-                Rewrite the following text so it is significantly shorter while keeping every \
-                important point. Keep the original language.
-                {instruction}
-
-                {text}
-                """),
-            make(ID.expand, .refine, 4, "Expand", """
-                Expand the following text with more detail and clearer structure. Do not invent \
-                facts. Keep the original language.
-                {instruction}
-
-                {text}
-                """),
-            make(ID.fixGrammar, .refine, 5, "Fix grammar", """
-                Correct spelling, grammar and punctuation in the following text. Change nothing \
-                else — keep the wording, the tone and the original language.
-                {instruction}
-
-                {text}
-                """),
-            make(ID.translate, .refine, 6, "Translate", """
-                Translate the following text into {language}. Preserve the tone and the formatting.
-                {instruction}
-
-                {text}
-                """),
-        ]
+    /// Deterministic and total: both slots are compile-time constants of the right width, so
+    /// the string always parses.
+    static func presetID(role: Role, language: PromptLanguage) -> UUID {
+        UUID(uuidString: "F0000000-0000-0000-\(language.slot)-\(role.slot)")!
     }
 
-    static func summarize() -> [PromptPreset] {
-        [
-            make(ID.brief, .summarize, 0, "Brief", """
-                Summarize the following text in two or three sentences.
-                {instruction}
+    static func all() -> [PromptPreset] {
+        PromptLanguage.allCases.flatMap { presets(for: $0) }
+    }
 
-                {text}
-                """),
-            make(ID.bullets, .summarize, 1, "Bullets", """
-                Summarize the following text as at most six concise bullet points, one line each, \
-                each starting with "- ".
-                {instruction}
-
-                {text}
-                """),
-            make(ID.tldr, .summarize, 2, "TL;DR", """
-                Give a one-sentence TL;DR of the following text.
-                {instruction}
-
-                {text}
-                """),
-            make(ID.keyActions, .summarize, 3, "Key actions", """
-                List the concrete action items in the following text as a numbered list. \
-                If there are none, answer exactly "No action items."
-                {instruction}
-
-                {text}
-                """),
-        ]
+    /// One language's twelve presets, `sortOrder` restarting at 0 for each kind.
+    static func presets(for language: PromptLanguage) -> [PromptPreset] {
+        let content = language.content
+        var orders: [PresetKind: Int] = [:]
+        return Role.allCases.compactMap { role in
+            guard let entry = content.entries[role] else { return nil }
+            let order = orders[role.kind, default: 0]
+            orders[role.kind] = order + 1
+            return PromptPreset(id: presetID(role: role, language: language),
+                                kind: role.kind,
+                                language: language.code,
+                                name: entry.name,
+                                systemPrompt: content.systemPrompt,
+                                userTemplate: entry.template,
+                                isFactory: true,
+                                sortOrder: order)
+        }
     }
 
     /// Seeds every language that has not been seeded yet. Adding a language later is one new
@@ -149,17 +106,5 @@ enum FactoryPresets {
                 }
             }
         }
-    }
-
-    /// Replaced by the Role × Language assembler in Task 3.
-    static func presets(for language: PromptLanguage) -> [PromptPreset] {
-        language == .english ? all() : []
-    }
-
-    private static func make(_ id: UUID, _ kind: PresetKind, _ order: Int,
-                             _ name: String, _ template: String) -> PromptPreset {
-        PromptPreset(id: id, kind: kind, language: PromptLanguage.english.code, name: name,
-                     systemPrompt: systemPrompt, userTemplate: template, isFactory: true,
-                     sortOrder: order)
     }
 }

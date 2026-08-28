@@ -173,7 +173,8 @@ import Testing
         var settings = Settings.default
         settings.promptLanguage = "ru"
         settings.seededPromptLanguages = ["en", "ru"]
-        settings.defaultPresetIDs = [Settings.presetKey(.refine, "ru"): FactoryPresets.ID.cleanUp]
+        settings.defaultPresetIDs = [Settings.presetKey(.refine, "ru"):
+            FactoryPresets.presetID(role: .cleanUp, language: .russian)]
         settings.speech.voiceByLanguage = ["ru": "ru.milena", "en": "en.alex"]
         settings.speech.segmentationEnabled = false
         settings.speech.auditionOnSelect = false

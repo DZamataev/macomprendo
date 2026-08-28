@@ -71,7 +71,7 @@ import SwiftUI
 
     func add() {
         let new = PromptPreset(id: UUID(), kind: kind, language: language.code, name: "New preset",
-                               systemPrompt: FactoryPresets.systemPrompt,
+                               systemPrompt: language.content.systemPrompt,
                                userTemplate: "{instruction}\n\n{text}",
                                isFactory: false, sortOrder: 0)
         let stored = holder.settings.addPreset(new)

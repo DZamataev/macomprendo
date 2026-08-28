@@ -129,7 +129,7 @@ import Testing
         let data = try #require(store.load())
         let stored = try Settings.migrate(data)
         #expect(stored.seededPromptLanguages.contains("en"))
-        #expect(stored.presets.count == 11)
+        #expect(stored.presets.count == 12 * PromptLanguage.allCases.count)
     }
 
     @Test func changingSettingsWritesThemToTheStore() throws {

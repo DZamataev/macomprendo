@@ -52,7 +52,7 @@ import Testing
 
         #expect(rig.controller.summary == "Short summary")
         #expect(!rig.controller.isStreaming)
-        #expect(rig.controller.selectedPresetID == FactoryPresets.ID.brief)
+        #expect(rig.controller.selectedPresetID == FactoryPresets.presetID(role: .brief, language: .english))
     }
 
     @Test func theBriefPresetTemplateIsUsed() async {
@@ -69,7 +69,7 @@ import Testing
         rig.controller.start(text: "a long article")
         await rig.controller.drain()
 
-        rig.controller.selectedPresetID = FactoryPresets.ID.bullets
+        rig.controller.selectedPresetID = FactoryPresets.presetID(role: .bullets, language: .english)
         rig.controller.rerun()
         await rig.controller.drain()
 

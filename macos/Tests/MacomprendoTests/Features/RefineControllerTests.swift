@@ -84,7 +84,7 @@ import Testing
         #expect(call?.messages.first?.role == .system)
         #expect(call?.messages.last?.content.contains("keep it short") == true)
         #expect(call?.messages.last?.content.contains("raw text") == true)
-        #expect(rig.controller.selectedPresetID == FactoryPresets.ID.cleanUp)
+        #expect(rig.controller.selectedPresetID == FactoryPresets.presetID(role: .cleanUp, language: .english))
     }
 
     @Test func changingThePresetAndRerunningSendsANewRequest() async {
@@ -92,7 +92,7 @@ import Testing
         rig.controller.start(source: .selection("raw text"))
         await rig.controller.drain()
 
-        rig.controller.selectedPresetID = FactoryPresets.ID.shorten
+        rig.controller.selectedPresetID = FactoryPresets.presetID(role: .shorten, language: .english)
         rig.controller.instruction = "two sentences"
         rig.controller.rerun()
         await rig.controller.drain()
