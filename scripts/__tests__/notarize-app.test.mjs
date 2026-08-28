@@ -47,7 +47,9 @@ test('parseSubmission survives non-JSON output', () => {
 });
 
 test('parseNotarizeArgs defaults to the shared profile and a one-hour timeout', () => {
-  const options = parseNotarizeArgs([]);
+  // env: {} keeps NOTARYTOOL_PROFILE from the developer's (or release machine's) shell out
+  // of the test — see install-app.test.mjs's installDeps() for the same reasoning.
+  const options = parseNotarizeArgs([], {});
   assert.equal(options.sign, null);
   assert.equal(options.profile, 'macomprendo-notary');
   assert.equal(options.timeout, '60m');
@@ -134,6 +136,9 @@ function notarizeDeps({ submitJSON, identities = SECURITY_OUTPUT }) {
     io: makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT }),
     log: makeFakeLog(),
     sha256: async () => 'a'.repeat(64),
+    // env: {} keeps NOTARYTOOL_PROFILE from the developer's (or release machine's) shell
+    // out of the test — these tests assert the default profile name.
+    env: {},
   };
 }
 
@@ -198,6 +203,7 @@ test('main reports a killed identity check instead of the missing-certificate me
     fsOps: makeFakeFsOps(),
     io: makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT }),
     sha256: async () => 'a'.repeat(64),
+    env: {},
   };
 
   const code = await main(['--dist', '/out'], deps);
@@ -237,6 +243,7 @@ test('main reports a killed notary-log fetch instead of claiming a log was writt
     fsOps: makeFakeFsOps(),
     io: makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT }),
     sha256: async () => 'a'.repeat(64),
+    env: {},
   };
 
   const code = await main(['--dist', '/out'], deps);

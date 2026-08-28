@@ -14,7 +14,7 @@ import { describeStep } from './build-app.mjs';
 
 const IDENTITY_PATTERN = /"(Developer ID Application:[^"]+)"/;
 
-export function parseNotarizeArgs(argv) {
+export function parseNotarizeArgs(argv, env = process.env) {
   const { values } = parseArgs({
     args: argv,
     allowPositionals: false,
@@ -29,7 +29,7 @@ export function parseNotarizeArgs(argv) {
   });
   return {
     sign: values.sign ?? null,
-    profile: values.profile ?? process.env.NOTARYTOOL_PROFILE ?? NOTARY_PROFILE,
+    profile: values.profile ?? env.NOTARYTOOL_PROFILE ?? NOTARY_PROFILE,
     timeout: values.timeout ?? '60m',
     dist: values.dist ?? DIST_DIR,
     dryRun: values['dry-run'],
@@ -121,11 +121,12 @@ const MISSING_IDENTITY_HELP = [
 export async function main(argv, deps = {}) {
   const {
     run = realRun, log = realLog, fsOps = realFsOps, io = realIO, sha256 = realSha256,
+    env = process.env,
   } = deps;
 
   let options;
   try {
-    options = parseNotarizeArgs(argv);
+    options = parseNotarizeArgs(argv, env);
   } catch (error) {
     log.error(error.message);
     return 2;
