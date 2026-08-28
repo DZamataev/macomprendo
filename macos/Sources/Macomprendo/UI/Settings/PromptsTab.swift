@@ -9,9 +9,6 @@ import SwiftUI
     @Published var kind: PresetKind = .refine {
         didSet { if kind != oldValue { select(presets.first?.id) } }
     }
-    /// The working language for this tab, changed only through `setLanguage(_:)` below, which
-    /// also persists it to `Settings.promptLanguage` and re-selects a preset in the new list.
-    @Published private(set) var language: PromptLanguage = .english
     @Published private(set) var selectedID: UUID?
     @Published var draft: PromptPreset?
     @Published private(set) var problems: [String] = []
@@ -31,8 +28,15 @@ import SwiftUI
          llm: @escaping @MainActor (PresetKind) throws -> LLMTarget) {
         self.holder = holder
         self.llm = llm
-        language = PromptLanguage.resolve(languageCode: holder.settings.promptLanguage)
         select(holder.settings.presets(of: kind, language: language.code).first?.id)
+    }
+
+    /// The working language, re-read from `Settings.promptLanguage` on every access rather than
+    /// cached: the Quick Panel's globe menu writes the same setting, so a copy taken in `init`
+    /// would leave this tab listing another language's presets. `setLanguage(_:)` is still the
+    /// only writer here.
+    var language: PromptLanguage {
+        PromptLanguage.resolve(languageCode: holder.settings.promptLanguage)
     }
 
     var presets: [PromptPreset] { holder.settings.presets(of: kind, language: language.code) }
@@ -60,7 +64,7 @@ import SwiftUI
     /// Persists the choice: the Quick Panel reads the same `Settings.promptLanguage`.
     func setLanguage(_ newValue: PromptLanguage) {
         guard newValue != language else { return }
-        language = newValue
+        objectWillChange.send()
         holder.settings.promptLanguage = newValue.code
         select(presets.first?.id)
     }

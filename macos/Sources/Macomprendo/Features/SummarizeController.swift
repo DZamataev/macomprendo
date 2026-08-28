@@ -1,7 +1,10 @@
 import Foundation
 
 /// Hotkey #4. Selected text in, streamed summary out, Copy or Replace selection.
-@MainActor final class SummarizeController: ObservableObject {
+@MainActor final class SummarizeController: ObservableObject, PromptLanguageSwitching {
+    let presetKind = PresetKind.summarize
+    var settingsHolder: any SettingsHolding { holder }
+
     @Published var source: String = ""
     @Published var summary: String = ""
     @Published var isStreaming: Bool = false
@@ -37,28 +40,12 @@ import Foundation
         self.holder = holder
     }
 
-    /// The working language for the whole Refine & Summarize feature. Writing it moves the
-    /// selection to the new language's default preset and reruns, so one click reprocesses the
-    /// same text with the other language's prompt set.
-    var promptLanguage: String {
-        get { holder.settings.promptLanguage }
-        set {
-            guard holder.settings.promptLanguage != newValue else { return }
-            objectWillChange.send()
-            holder.settings.promptLanguage = newValue
-            selectedPresetID = holder.settings.defaultPreset(for: .summarize, language: newValue)?.id
-            rerun()
-        }
-    }
-
     func start(text: String) {
         target = tracker.capture()
         source = text.trimmingCharacters(in: .whitespacesAndNewlines)
         summary = ""
         error = nil
-        if selectedPresetID == nil {
-            selectedPresetID = holder.settings.defaultPreset(for: .summarize, language: holder.settings.promptLanguage)?.id
-        }
+        refreshSelectedPreset()
         panel.present(layout: .summary)
         rerun()
     }
@@ -85,15 +72,7 @@ import Foundation
 
     private func runStream(generation: Int) async {
         defer { if generation == streamGeneration { isStreaming = false } }
-        let current = holder.settings
-
-        let chosen: PromptPreset?
-        if let id = selectedPresetID, let found = current.preset(id: id), found.kind == .summarize {
-            chosen = found
-        } else {
-            chosen = current.defaultPreset(for: .summarize, language: current.promptLanguage)
-        }
-        guard let preset = chosen else {
+        guard let preset = activePreset else {
             error = ErrorText.describe(FeatureConfigError.noPreset(.summarize))
             return
         }

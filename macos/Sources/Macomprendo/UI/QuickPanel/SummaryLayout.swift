@@ -36,14 +36,17 @@ struct SummaryLayout: View {
             .fixedSize()
             .help("Prompt language")
 
-            Picker("", selection: $controller.selectedPresetID) {
+            // Bound through `selectPreset(_:)` rather than `$controller.selectedPresetID` plus
+            // `.onChange`: that also fired for the programmatic write the globe menu makes, so
+            // every language switch started two streams and cancelled the first.
+            Picker("", selection: Binding(get: { controller.selectedPresetID },
+                                          set: { controller.selectPreset($0) })) {
                 ForEach(presets) { preset in
                     Text(preset.name).tag(Optional(preset.id))
                 }
             }
             .labelsHidden()
             .frame(width: 160)
-            .onChange(of: controller.selectedPresetID) { _, _ in controller.rerun() }
 
             TextField("Extra instruction (⌘↩ to run again)", text: $controller.instruction)
                 .textFieldStyle(.roundedBorder)

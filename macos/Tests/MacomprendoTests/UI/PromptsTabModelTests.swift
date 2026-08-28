@@ -179,6 +179,21 @@ import Testing
         #expect(model.selectedID == FactoryPresets.presetID(role: .cleanUp, language: .russian))
     }
 
+    /// The Quick Panel's globe menu writes the same `Settings.promptLanguage`, so a language
+    /// cached in this model would leave the tab listing the other language's presets.
+    @Test func aLanguageSwitchedInThePanelIsPickedUpByTheTab() {
+        let holder = ScriptedSettingsHolder.seeded()
+        holder.settings.promptLanguage = "en"
+        let model = PromptsTabModel(holder: holder, llm: { _ in throw FeatureConfigError.noPreset(.refine) })
+        #expect(model.language == .english)
+
+        holder.settings.promptLanguage = "ru"      // the Quick Panel, behind the tab's back
+
+        #expect(model.language == .russian)
+        #expect(model.presets.allSatisfy { $0.language == "ru" })
+        #expect(model.defaultPresetID == FactoryPresets.presetID(role: .cleanUp, language: .russian))
+    }
+
     @Test func addingAPresetStampsTheShownLanguage() {
         let holder = ScriptedSettingsHolder.seeded()
         let model = PromptsTabModel(holder: holder, llm: { _ in throw FeatureConfigError.noPreset(.refine) })

@@ -11,7 +11,10 @@ enum RefineSide: Equatable, Sendable {
 }
 
 /// Hotkeys #2 (Dictate & Refine) and #5 (Refine selection).
-@MainActor final class RefineController: ObservableObject {
+@MainActor final class RefineController: ObservableObject, PromptLanguageSwitching {
+    let presetKind = PresetKind.refine
+    var settingsHolder: any SettingsHolding { holder }
+
     @Published var original: String = ""
     @Published var refined: String = ""
     @Published var isStreaming: Bool = false
@@ -73,20 +76,6 @@ enum RefineSide: Equatable, Sendable {
         }
     }
 
-    /// The working language for the whole Refine & Summarize feature. Writing it moves the
-    /// selection to the new language's default preset and reruns, so one click reprocesses the
-    /// same text with the other language's prompt set.
-    var promptLanguage: String {
-        get { holder.settings.promptLanguage }
-        set {
-            guard holder.settings.promptLanguage != newValue else { return }
-            objectWillChange.send()
-            holder.settings.promptLanguage = newValue
-            selectedPresetID = holder.settings.defaultPreset(for: .refine, language: newValue)?.id
-            rerun()
-        }
-    }
-
     // MARK: Starting
 
     /// Hold/toggle routing for hotkey #2.
@@ -110,9 +99,7 @@ enum RefineSide: Equatable, Sendable {
         original = text.trimmingCharacters(in: .whitespacesAndNewlines)
         refined = ""
         error = nil
-        if selectedPresetID == nil {
-            selectedPresetID = holder.settings.defaultPreset(for: .refine, language: holder.settings.promptLanguage)?.id
-        }
+        refreshSelectedPreset()
         panel.present(layout: .refine)
         rerun()
     }
@@ -146,15 +133,7 @@ enum RefineSide: Equatable, Sendable {
 
     private func runStream(generation: Int) async {
         defer { if generation == streamGeneration { isStreaming = false } }
-        let current = holder.settings
-
-        let chosen: PromptPreset?
-        if let id = selectedPresetID, let found = current.preset(id: id), found.kind == .refine {
-            chosen = found
-        } else {
-            chosen = current.defaultPreset(for: .refine, language: current.promptLanguage)
-        }
-        guard let preset = chosen else {
+        guard let preset = activePreset else {
             error = ErrorText.describe(FeatureConfigError.noPreset(.refine))
             return
         }
