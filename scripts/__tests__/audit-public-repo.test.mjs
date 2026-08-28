@@ -299,8 +299,11 @@ test('main tolerates EISDIR from a tracked symlink whose target is a directory',
 // signal-killed child from a clean non-zero exit. `hasGitleaks` is the only such site here
 // (`which gitleaks` with `check: false`). Per scripts/lib/run.mjs, a signal-killed child
 // under check:false does NOT throw — it resolves with `code: null, signal: 'SIGKILL'` and
-// (normally) empty stdout. This reproduces that exact shape, not a friendlier fake.
-test('main treats a signal-killed "which gitleaks" as not-installed rather than crashing', async () => {
+// (normally) empty stdout — indistinguishable from "gitleaks is not installed" unless the
+// caller checks explicitly. Treating it as a confirmed negative would report a passing
+// audit despite never having actually asked whether Gitleaks is installed. This reproduces
+// that exact shape, not a friendlier fake, and asserts the audit fails closed instead.
+test('main fails closed when "which gitleaks" is signal-killed, rather than reporting a clean audit', async () => {
   const files = ['README.md'];
   const contents = { 'README.md': 'x' };
   const table = {
@@ -326,8 +329,12 @@ test('main treats a signal-killed "which gitleaks" as not-installed rather than 
   const deps = { run, io: makeFakeIO(contents), log: makeFakeLog(), root: '' };
 
   const code = await main([], deps);
-  assert.equal(code, 0);
-  assert.ok(deps.log.lines.some((l) => l.includes('Gitleaks is not installed')));
+  assert.equal(code, 1);
+  assert.ok(deps.log.lines.some((l) => l.includes('SIGKILL')),
+    'the failure must name the signal that killed the probe');
+  assert.equal(deps.log.lines.some((l) => l.includes('Gitleaks is not installed')), false,
+    'a signal-killed probe must never be reported as a confirmed "not installed"');
+  assert.equal(deps.log.lines.some((l) => l.includes('Public repository audit passed')), false);
   assert.equal(deps.run.lines().some((l) => l.startsWith('gitleaks detect')), false);
 });
 

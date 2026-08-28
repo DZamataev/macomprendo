@@ -2,8 +2,11 @@
 // This file is NOT a test file (node --test only collects *.test.mjs here).
 
 /**
- * @param {Array<{ stdout?: string, stderr?: string, code?: number, throws?: string }>} script
+ * @param {Array<{ stdout?: string, stderr?: string, code?: number, throws?: string, signal?: string }>} script
  *        One entry per expected call, consumed in order. Missing entries behave as success.
+ *        `signal` reproduces a signal-killed child exactly as scripts/lib/run.mjs resolves
+ *        one: under `check: false` it resolves with `code: null, signal`; under the default
+ *        `check: true` it rejects, the same as any other non-zero exit.
  */
 export function makeFakeRun(script = []) {
   let index = 0;
@@ -12,6 +15,17 @@ export function makeFakeRun(script = []) {
     calls.push({ cmd, args, options, line: [cmd, ...args].join(' ') });
     const next = script[index] ?? {};
     index += 1;
+    if (next.signal) {
+      const stdout = next.stdout ?? '';
+      const stderr = next.stderr ?? '';
+      if (options.check === false) return { stdout, stderr, code: null, signal: next.signal };
+      const error = new Error(
+        `${cmd} ${args.join(' ')} was killed with ${next.signal}${stderr ? `\n${stderr}` : ''}`,
+      );
+      error.stdout = stdout;
+      error.stderr = stderr;
+      throw error;
+    }
     if (next.throws) {
       const error = new Error(next.throws);
       error.exitCode = next.code ?? 1;

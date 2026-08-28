@@ -154,3 +154,27 @@ test('main returns 0 and warns when identity check throws after store-credential
   assert.ok(log.lines.some((l) => l.includes('credentials are ready')), 'should log that credentials were stored');
   assert.ok(log.lines.some((l) => l.startsWith('warn: ') && l.includes('Could not check')), 'should warn about identity check failure');
 });
+
+// `security find-identity` runs with `check: false`, so a signal-killed probe resolves
+// (code: null, signal set) rather than throwing — it must not be read as "no certificate
+// found" (identities.stdout is empty either way and would satisfy that same `!includes`
+// check). This is the sixth `{ check: false }` call site in the toolchain; the other five
+// already distinguish a signal kill from a clean result, and so must this one.
+test('main warns naming the signal, not a missing certificate, when find-identity is signal-killed', async () => {
+  const io = fakeTTY();
+  const run = makeFakeRun([{}, { signal: 'SIGKILL' }]);
+  const log = makeFakeLog();
+
+  const done = main([], { run, log, io, env: { NOTARY_APPLE_ID: 'dev@example.com' } });
+  io.input.write('password\n');
+  const code = await done;
+
+  assert.equal(code, 0);
+  assert.ok(log.lines.some((l) => l.startsWith('warn: ') && l.includes('SIGKILL')),
+    'the warning must name the signal that killed the probe');
+  assert.equal(
+    log.lines.some((l) => l.includes('No "Developer ID Application" certificate is installed')),
+    false,
+    'a signal-killed probe must never be reported as a confirmed "certificate missing"',
+  );
+});

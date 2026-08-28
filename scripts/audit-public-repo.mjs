@@ -59,6 +59,10 @@ export const ASSET_EXTENSIONS = new Set([
   '.metallib', '.dylib', '.a', '.o', '.xcframework', '.xcuserstate',
 ]);
 
+// Both files below genuinely contain non-allowlisted `/Users/<name>` fixtures (this file's
+// own home-path regex, and that test's illustrative hits) — excluding them from the content
+// scan is what lets the audit pass at all. Do not paste a real home path into either file
+// believing it will be caught: it will not be scanned.
 export const CONTENT_SCAN_EXCLUDES = new Set([
   'scripts/audit-public-repo.mjs',
   'scripts/__tests__/audit-public-repo.test.mjs',
@@ -95,6 +99,13 @@ export function findHomePaths(text, { file, allow = DEFAULT_ALLOWED_HOMES }) {
 
 async function hasGitleaks(run) {
   const result = await run('which', ['gitleaks'], { capture: true, check: false, cwd: ROOT });
+  // A signal-killed `which` resolves under check:false with code: null and empty stdout —
+  // indistinguishable from "not installed" unless checked explicitly. Reporting that as a
+  // confirmed negative would let the audit pass having never actually asked the question.
+  if (result.code === null) {
+    throw new Error(`which gitleaks was killed (signal ${result.signal}); `
+      + 'cannot tell whether Gitleaks is installed.');
+  }
   return (result.stdout ?? '').trim() !== '';
 }
 

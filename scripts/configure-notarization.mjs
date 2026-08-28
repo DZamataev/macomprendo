@@ -66,7 +66,15 @@ export async function main(argv, deps = {}) {
       const identities = await run('security', ['find-identity', '-v', '-p', 'codesigning'], {
         capture: true, check: false,
       });
-      if (!(identities.stdout ?? '').includes('Developer ID Application:')) {
+      // A signal-killed probe resolves under check:false with code: null and empty stdout —
+      // the same shape as "no certificate found" unless checked explicitly. This is advisory
+      // (the operator can always re-check with `security find-identity`), so a warning naming
+      // the signal is enough here; it must not claim the certificate is actually missing.
+      if (identities.code === null) {
+        log.warn(`Could not check for a Developer ID Application certificate: security `
+          + `find-identity was killed (signal ${identities.signal}). Create one for team `
+          + `${teamID} at developer.apple.com > Certificates if needed, then run: npm run notarize`);
+      } else if (!(identities.stdout ?? '').includes('Developer ID Application:')) {
         log.warn('No "Developer ID Application" certificate is installed for this Mac. '
           + `Create one for team ${teamID} at developer.apple.com > Certificates, install it in `
           + 'Keychain Access with its private key, then run: npm run notarize');
