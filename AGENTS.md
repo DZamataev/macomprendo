@@ -30,6 +30,7 @@ npm run gen            # xcodegen generate --spec macos/project.yml
 npm run sync-agents    # repair the AGENTS.md / skills symlinks
 npm run sync-icons     # vendor the Phosphor SVGs listed in Resources/Icons/icons.json
 npm run icon           # regenerate the placeholder macos/AppBundle/AppIcon.icns
+npm run reset-permissions  # clear this app's Accessibility/Microphone TCC grants
 swift build --package-path macos
 xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
   -configuration Release -destination 'generic/platform=macOS' \

@@ -19,6 +19,12 @@ struct OnboardingView: View {
         .padding(24)
         .frame(width: 560, height: 460)
         .task { await viewModel.refresh() }
+        // Granting a permission happens in System Settings, which the wizard cannot observe.
+        // Coming back to the app is the moment the answer may have changed, so re-read it then
+        // — otherwise the step keeps showing a status that stopped being true.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await viewModel.refresh() }
+        }
     }
 
     private var header: some View {
@@ -38,14 +44,18 @@ struct OnboardingView: View {
                      title: "Allow the microphone",
                      detail: "Macomprendo records only while you hold the dictation hotkey.") {
                 statusRow(viewModel.micStatus)
-                Button("Allow microphone…") { Task { await viewModel.requestMicrophone() } }
+                permissionButtons(grantTitle: "Allow microphone…") {
+                    await viewModel.requestMicrophone()
+                }
             }
         case .accessibility:
             stepBody(icon: .hotkeys,
                      title: "Allow accessibility",
                      detail: "Needed to paste the transcript into the app you were typing in.") {
                 statusRow(viewModel.accessibilityStatus)
-                Button("Allow accessibility…") { Task { await viewModel.requestAccessibility() } }
+                permissionButtons(grantTitle: "Allow accessibility…") {
+                    await viewModel.requestAccessibility()
+                }
             }
         case .model:
             stepBody(icon: .download,
@@ -115,6 +125,24 @@ struct OnboardingView: View {
                 Label { Text("Not asked yet.") } icon: { Icon(.remove, size: 14) }
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// macOS shows its permission prompt only once per app; after that the grant button is
+    /// inert and the switch lives in System Settings. "Check again" is what turns a grant made
+    /// over there into something this window can see, and the caption says so, because a button
+    /// that silently does nothing reads as a hang.
+    private func permissionButtons(grantTitle: String,
+                                   grant: @escaping () async -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button(grantTitle) { Task { await grant() } }
+                Button("Check again") { Task { await viewModel.refresh() } }
+            }
+            Text("macOS asks only once. If you turned it on in System Settings, use Check again.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

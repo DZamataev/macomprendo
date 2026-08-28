@@ -95,6 +95,20 @@ SwiftPM/llbuild incremental-build issue, not a `build-app.mjs` bug — it surfac
 who has been doing ordinary single-architecture dev builds and then runs the universal build
 for the first time.
 
+**"Accessibility access is granted in System Settings, but the app says it is not":** an
+ad-hoc signed build has no stable code identity — no Team ID, no certificate chain — so macOS
+records the privacy grant against that build's code hash. Every rebuild changes the hash, the
+grant stops applying, and `AXIsProcessTrusted()` returns false while System Settings still
+shows the toggle switched on, because that list is drawn by bundle id and path. The app is
+then genuinely untrusted: it cannot read the selection or paste. Two ways out, and the first
+is the real fix:
+
+- Sign with the Developer ID identity — its designated requirement is stable across rebuilds,
+  so the grant survives them: `npm run build -- --sign "Developer ID Application: …"`.
+- Clear the stale grant and start over: quit the app, run `npm run reset-permissions`, launch,
+  and grant again. Necessary once after switching from ad-hoc to a real identity, since the
+  old record does not match the new one either.
+
 ### What the build copies into the bundle
 
 `swift build` leaves sidecars next to the executable, and `scripts/build-app.mjs` discovers

@@ -65,11 +65,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   publishes a GitHub release, optionally attaching a notarized build with `--notarize`;
   `npm run install-app` builds and atomically installs into `/Applications` with a
   restorable backup; `npm run audit` refuses to publish credentials, Xcode user state, or
-  machine-specific paths. All of it is covered by `node:test` unit tests.
+  machine-specific paths; `npm run reset-permissions` clears the app's Accessibility and
+  Microphone grants so the next launch asks again, refusing to run while the app is open.
+  All of it is covered by `node:test` unit tests.
 - Documentation: this README, `DISTRIBUTING.md`, `docs/ARCHITECTURE.md`,
   `docs/SMOKE_TEST.md`, `PRIVACY.md`, and ADR-0001 through ADR-0008.
 
 ### Fixed
+- The onboarding permission steps no longer show a stale answer: they re-read
+  the permission whenever the app comes back to the front, and a "Check again"
+  button re-reads it on demand. macOS shows its permission prompt only once, so
+  after the first time the grant button did nothing visible and a permission
+  turned on in System Settings was never noticed — the step looked stuck.
 - The menubar's "Settings…" item now activates the app before opening the
   Settings window, so it reliably comes to the front instead of opening behind
   everything else on an `LSUIElement` app.

@@ -67,6 +67,31 @@ import Testing
         #expect(permissions.openedPanes == [.accessibility])
     }
 
+    /// The wizard cannot observe System Settings, so a permission granted there only reaches
+    /// it through a re-check — the "Check again" button, or the app regaining focus. Without
+    /// one the step stays stuck on a status that stopped being true, which is what made a
+    /// granted permission look denied.
+    @Test func aPermissionGrantedOutsideTheAppIsPickedUpByTheNextRecheck() async {
+        let permissions = FakePermissions()
+        permissions.statuses[.microphone] = .granted
+        permissions.statuses[.accessibility] = .denied
+        permissions.requestResults[.accessibility] = .denied
+        let viewModel = makeModel(permissions: permissions)
+
+        await viewModel.requestAccessibility()
+        #expect(viewModel.accessibilityStatus == .denied)
+        #expect(viewModel.canContinue == false)
+
+        // The user grants it in System Settings and comes back.
+        permissions.statuses[.accessibility] = .granted
+        let stepBeforeRecheck = viewModel.step
+        await viewModel.refresh()
+
+        #expect(viewModel.accessibilityStatus == .granted)
+        #expect(viewModel.canContinue == true)
+        #expect(viewModel.step == stepBeforeRecheck, "a re-check must not move the user off the step")
+    }
+
     @Test func downloadingTheSelectedModelReportsProgressThenCompletion() async {
         let models = StubModelManager()
         models.downloadFractions = [0.5, 1.0]
