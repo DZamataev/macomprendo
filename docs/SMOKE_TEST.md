@@ -256,7 +256,7 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
 
 | Step | Expected |
 |---|---|
-| Rebind "Refine selection" in Settings ▸ Hotkeys, then open the menubar menu | The new shortcut is shown beside the action; unbound actions read "not set" |
+| Rebind "Refine selection" in Settings ▸ Hotkeys, then open the menubar menu | Each row reads "<action> — <shortcut>" with the new shortcut; an unbound action reads "not set". The shortcut is inline, not right-aligned like a native menu key equivalent — that is a platform constraint, not a defect. **Read the rows, do not just check the menu opens:** the shortcut once went missing here silently, and only opening the menu can catch it. |
 | Settings ▸ Dictation | The speech-model list is here and the Models tab is gone |
 | Settings ▸ Speech, pick a voice under "Voice per language" | A short phrase is heard immediately in that voice and in that language |
 | Turn off "Play a sample when a voice is selected", pick another voice | Nothing is heard |
