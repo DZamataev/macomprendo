@@ -196,11 +196,15 @@ export async function main(argv, deps = {}) {
     return 1;
   } finally {
     // Clean up the staging directory once it is safe to: the new app was installed and
-    // verified, or a pre-swap failure left the original destination untouched. A
-    // post-swap failure — the staged app was already moved into place before something
-    // about it failed to verify — leaves the staging directory (and anything left in it)
-    // for manual inspection instead of erasing the evidence.
-    const safeToCleanUp = installed || (!swapped && (await fsOps.pathExists(destination)));
+    // verified, or the swap never happened (a pre-swap failure — whether or not there was
+    // a previous app at the destination — leaves nothing precious in the staging
+    // directory). A post-swap failure — the staged app was already moved into place before
+    // something about it failed to verify — leaves the staging directory (and anything left
+    // in it, such as an unrestored backup) for manual inspection instead of erasing the
+    // evidence. `pathExists(destination)` used to stand in for "the swap never happened",
+    // but on a first-time install the destination never existed either way, so a pre-swap
+    // failure there was wrongly kept forever.
+    const safeToCleanUp = installed || !swapped;
     if (workDir !== null && safeToCleanUp) {
       await fsOps.rmrf(workDir);
     }

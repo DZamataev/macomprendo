@@ -129,6 +129,38 @@ test('main installs fresh when no previous app exists', async () => {
   assert.ok(deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/.macomprendo-update.AB12'));
 });
 
+// The `finally` guard used to read `installed || (!swapped && pathExists(destination))`,
+// which conflates "the destination is untouched" with "the destination exists". On a
+// first-time install (no previous app, so `destination` never existed) that fails before
+// the swap, both halves are false, so the staging directory was kept forever — even though
+// nothing precious is in it: the swap never happened, so there is no surviving copy to
+// protect. It must be cleaned up exactly like the "existing app, pre-swap failure" case.
+test('main cleans up the staging directory when a pre-swap step fails on a fresh install', async () => {
+  const deps = installDeps({ existing: false });
+  const originalRun = deps.run;
+  let codesignCalls = 0;
+  deps.run = async (cmd, args = [], options = {}) => {
+    if (cmd === 'codesign') {
+      codesignCalls += 1;
+      if (codesignCalls === 2) {
+        throw new Error(
+          'codesign --verify --deep --strict /Applications/.macomprendo-update.AB12/Macomprendo.app exited with 1',
+        );
+      }
+    }
+    return originalRun(cmd, args, options);
+  };
+
+  const code = await main([], deps);
+
+  assert.equal(code, 1);
+  assert.equal(deps.fsOps.moves.length, 0);
+  assert.ok(
+    deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/.macomprendo-update.AB12'),
+    'a pre-swap failure on a fresh install must not leak the staging directory',
+  );
+});
+
 test('main refuses when the install directory is not a directory', async () => {
   const deps = installDeps();
   deps.fsOps.isDirectory = async (p) => p !== '/Applications';
