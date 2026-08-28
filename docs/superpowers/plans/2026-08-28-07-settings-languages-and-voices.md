@@ -630,7 +630,12 @@ In `macos/Sources/Macomprendo/Features/Prompts/FactoryPresets.swift`, pass
         let existing = Set(settings.presets.map(\.id))
         for factory in all() where !existing.contains(factory.id) { settings.addPreset(factory) }
         for language in PromptLanguage.allCases {
-            if !settings.seededPromptLanguages.contains(language.code) {
+            // Same rule as `seed`: a language only counts as seeded once it actually holds
+            // presets. Marking an empty language seeded would suppress its content forever.
+            let hasPresets = PresetKind.allCases.contains {
+                !settings.presets(of: $0, language: language.code).isEmpty
+            }
+            if hasPresets, !settings.seededPromptLanguages.contains(language.code) {
                 settings.seededPromptLanguages.append(language.code)
             }
             for kind in PresetKind.allCases {
@@ -975,7 +980,12 @@ enum FactoryPresets {
         let existing = Set(settings.presets.map(\.id))
         for factory in all() where !existing.contains(factory.id) { settings.addPreset(factory) }
         for language in PromptLanguage.allCases {
-            if !settings.seededPromptLanguages.contains(language.code) {
+            // Same rule as `seed`: a language only counts as seeded once it actually holds
+            // presets. Marking an empty language seeded would suppress its content forever.
+            let hasPresets = PresetKind.allCases.contains {
+                !settings.presets(of: $0, language: language.code).isEmpty
+            }
+            if hasPresets, !settings.seededPromptLanguages.contains(language.code) {
                 settings.seededPromptLanguages.append(language.code)
             }
             for kind in PresetKind.allCases {
