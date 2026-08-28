@@ -3577,14 +3577,27 @@ In `AGENTS.md` (never `CLAUDE.md` — it is a symlink), update the project map: 
 `Features/Prompts` row mentions `Factory/` holding one content file per language, and the
 Settings-tab list drops "Models".
 
-- [ ] **Step 5: Verify**
+- [ ] **Step 5: Strip this plan's task numbers out of shipped code**
+
+Plan task numbers are meaningless once the branch merges. Run
+
+```bash
+grep -rn "Task [0-9]" macos/Sources/Macomprendo
+```
+
+and rewrite every comment this branch introduced so it says what the code does instead of which
+task added it — at minimum `UI/Settings/PromptsTab.swift:12`, whose comment still says "Its
+writer arrives in Task 6" although `setLanguage` is forty lines below it. Leave the older
+`Plan N` references alone: they predate this branch and rewriting them is not this plan's work.
+
+- [ ] **Step 6: Verify**
 
 Run: `npm run test:swift && npm run test:scripts && npm run gen && git diff --exit-code macos/Macomprendo.xcodeproj`
 Expected: everything green and `npm run gen` a no-op.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add CHANGELOG.md docs AGENTS.md
+git add CHANGELOG.md docs AGENTS.md macos/Sources/Macomprendo
 git commit -m "docs: record the settings rework"
 ```
