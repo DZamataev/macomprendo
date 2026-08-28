@@ -19,8 +19,8 @@ import Testing
     private func makeRig(deltas: [String] = ["Hello", " there"],
                          failure: MacomprendoError? = nil,
                          delayPerDelta: Duration = .zero,
-                         configured: Bool = true) -> Rig {
-        let holder = ScriptedSettingsHolder.seeded()
+                         configured: Bool = true,
+                         holder: ScriptedSettingsHolder = .seeded()) -> Rig {
         let host = ScriptedPanelHost()
         let panel = QuickPanelController(holder: holder)
         panel.attach(host)
@@ -51,7 +51,7 @@ import Testing
             inserter: inserter,
             tracker: ScriptedTracker(),
             toaster: toaster,
-            settings: { holder.settings })
+            holder: holder)
 
         return Rig(controller: controller, panel: panel, host: host, pasteboard: pasteboard,
                    inserter: inserter, toaster: toaster, recorder: recorder, holder: holder,
@@ -216,5 +216,36 @@ import Testing
         #expect(rig.toaster.hideCount == 1)
         #expect(rig.toaster.messages.contains { $0.contains("Nothing heard") })
         #expect(!rig.panel.isVisible)
+    }
+
+    @Test func switchingLanguagePersistsItPicksTheNewDefaultAndReruns() async {
+        let holder = ScriptedSettingsHolder.seeded()
+        holder.settings.promptLanguage = "en"
+        let rig = makeRig(holder: holder)
+        rig.controller.start(source: .selection("hello"))
+        await rig.controller.drain()
+        let runsBefore = rig.recorder.calls.count
+
+        rig.controller.promptLanguage = "ru"
+        await rig.controller.drain()
+
+        #expect(holder.settings.promptLanguage == "ru")
+        #expect(rig.controller.selectedPresetID
+                == FactoryPresets.presetID(role: .cleanUp, language: .russian))
+        #expect(rig.recorder.calls.count > runsBefore)
+        let sent = rig.recorder.calls.last!.messages
+        #expect(sent.contains { $0.content.contains("Приведи следующий текст в порядок") })
+    }
+
+    @Test func settingTheSameLanguageDoesNotRerun() async {
+        let holder = ScriptedSettingsHolder.seeded()
+        holder.settings.promptLanguage = "ru"
+        let rig = makeRig(holder: holder)
+        rig.controller.start(source: .selection("привет"))
+        await rig.controller.drain()
+        let runs = rig.recorder.calls.count
+        rig.controller.promptLanguage = "ru"
+        await rig.controller.drain()
+        #expect(rig.recorder.calls.count == runs)
     }
 }

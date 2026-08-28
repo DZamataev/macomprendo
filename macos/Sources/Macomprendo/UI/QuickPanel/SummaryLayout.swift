@@ -24,6 +24,17 @@ struct SummaryLayout: View {
             Icon(.summarize, size: 14)
                 .foregroundStyle(.secondary)
 
+            Menu {
+                ForEach(PromptLanguage.allCases) { language in
+                    Button(language.displayName) { controller.promptLanguage = language.code }
+                }
+            } label: {
+                Icon(.globe, size: 14)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Prompt language")
+
             Picker("", selection: $controller.selectedPresetID) {
                 ForEach(presets) { preset in
                     Text(preset.name).tag(Optional(preset.id))

@@ -20,6 +20,17 @@ struct RefineLayout: View {
 
     private var toolbar: some View {
         HStack(spacing: 8) {
+            Menu {
+                ForEach(PromptLanguage.allCases) { language in
+                    Button(language.displayName) { controller.promptLanguage = language.code }
+                }
+            } label: {
+                Icon(.globe, size: 14)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Prompt language")
+
             Picker("", selection: $controller.selectedPresetID) {
                 ForEach(presets) { preset in
                     Text(preset.name).tag(Optional(preset.id))

@@ -117,7 +117,7 @@ extension TextFeatures {
             inserter: env.inserter,
             tracker: env.tracker,
             toaster: hud,
-            settings: { model.settings })
+            holder: model)
 
         let summarize = SummarizeController(
             llm: { try model.llmTarget(for: .summarize) },
@@ -126,7 +126,7 @@ extension TextFeatures {
             inserter: env.inserter,
             tracker: env.tracker,
             toaster: hud,
-            settings: { model.settings })
+            holder: model)
 
         let speak = SpeakController(speech: env.speech, toaster: hud, settings: { model.settings })
 
