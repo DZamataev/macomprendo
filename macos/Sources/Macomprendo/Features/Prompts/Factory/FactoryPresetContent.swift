@@ -18,10 +18,11 @@ extension PromptLanguage {
         switch self {
         case .english: .english
         case .russian: .russian
-        // Task 5 splits out the remaining five languages (.spanish, .german, .french,
-        // .portuguese, .chinese), so the build stays green at every step and no language is
-        // ever left without content.
-        case .spanish, .german, .french, .portuguese, .chinese: .english
+        case .spanish: .spanish
+        case .german: .german
+        case .french: .french
+        case .portuguese: .portuguese
+        case .chinese: .chinese
         }
     }
 }

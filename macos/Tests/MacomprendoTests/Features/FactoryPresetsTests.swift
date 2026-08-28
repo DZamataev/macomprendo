@@ -73,15 +73,36 @@ import Testing
         }
     }
 
-    @Test func russianContentIsWrittenInRussian() {
-        let content = PromptLanguage.russian.content
-        #expect(content.systemPrompt != PromptLanguage.english.content.systemPrompt)
-        for role in FactoryPresets.Role.allCases {
-            let entry = content.entries[role]!
-            #expect(entry.template.contains(where: { LanguageSegmenter.script(of: $0) == .cyrillic }),
-                    "ru/\(role.rawValue) has no Cyrillic text")
+    @Test func everyTranslatedSetIsWrittenNativelyAndKeepsItsNames() {
+        let expectedTranslateAndOrganize: [PromptLanguage: String] = [
+            .russian: "Перевести и систематизировать",
+            .spanish: "Traducir y organizar",
+            .german: "Übersetzen und ordnen",
+            .french: "Traduire et organiser",
+            .portuguese: "Traduzir e organizar",
+            .chinese: "翻译并整理"
+        ]
+        for (language, name) in expectedTranslateAndOrganize {
+            let content = language.content
+            #expect(content.systemPrompt != PromptLanguage.english.content.systemPrompt,
+                    "\(language.code) still uses the English system prompt")
+            #expect(content.entries[.translateAndOrganize]!.name == name)
+            for role in FactoryPresets.Role.allCases {
+                let english = PromptLanguage.english.content.entries[role]!.template
+                #expect(content.entries[role]!.template != english,
+                        "\(language.code)/\(role.rawValue) is still the English template")
+            }
         }
-        #expect(content.entries[.translateAndOrganize]!.name == "Перевести и систематизировать")
+    }
+
+    @Test func everyTemplateKeepsThePlaceholderBlockVerbatim() {
+        for language in PromptLanguage.allCases {
+            for role in FactoryPresets.Role.allCases {
+                let template = language.content.entries[role]!.template
+                #expect(template.hasSuffix("{instruction}\n\n{text}"),
+                        "\(language.code)/\(role.rawValue) does not end with the placeholder block")
+            }
+        }
     }
 
     @Test func rolesSplitEightRefineAndFourSummarize() {
