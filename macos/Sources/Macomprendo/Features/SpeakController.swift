@@ -86,6 +86,17 @@ enum SpeakSource: Hashable, Sendable {
         isPaused = speech.isPaused
     }
 
+    /// Stops a read that a Quick Panel pane started, and only that. Called when the panel is
+    /// dismissed — by Esc, or as part of Insert / Replace selection, which dismiss on their way
+    /// out. Dismissing is a "done here" gesture, and a panel-initiated read deliberately shows
+    /// no HUD (see `speak(_:from:)`), so letting it continue would leave audio playing with no
+    /// visible control and no way to stop it but ⌥S. A `.hotkey` read owns the HUD and the
+    /// hotkey, so one that merely overlaps the panel is left alone.
+    func stopPanelPlayback() {
+        guard let active, active != .hotkey else { return }
+        stop()
+    }
+
     func stop() {
         speech.stop()
         isSpeaking = false

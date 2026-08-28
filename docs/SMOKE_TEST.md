@@ -267,6 +267,9 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
 | Press pause on the Endpoint source before the first chunk has finished synthesising, then resume | Nothing plays until resume; resume then plays that first chunk from the start, instead of it being dropped or played twice |
 | Start Speak in the Original pane, then press Speak in the Refined pane | Original's control reverts to its idle icon; only the Refined text plays — never both at once |
 | Press Stop while a pane is reading | Playback stops immediately and the control reverts to its idle Speak icon |
+| Start a read in a pane, then dismiss the panel (Esc, Insert, or Replace selection) | Playback stops with the panel — it has no controls and no HUD once the panel is gone |
+| Press ⌥S to read a selection, open the Quick Panel over it, then dismiss the panel | The hotkey read keeps playing and keeps its "Speaking…" HUD; only ⌥S stops it |
+| Pause the Original pane's read, then press Speak in the Refined pane | The refined text is heard — a `speak` issued while the synthesizer sits paused must not be swallowed |
 | While the panel is reading, press ⌥S | Playback stops; the selection is not re-read (one hotkey press never starts a second, overlapping read) |
 | Switch the language in the panel's globe menu | The preset list becomes that language's and the text is reprocessed |
 

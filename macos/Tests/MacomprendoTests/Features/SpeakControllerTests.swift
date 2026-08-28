@@ -50,6 +50,40 @@ import Testing
         #expect(toaster.messages.count == 1)
     }
 
+    /// Dismissing the panel — with Esc, or as part of Insert / Replace selection — is a "done
+    /// here" gesture. A panel-initiated read has no controls left once the panel is gone and
+    /// deliberately shows no HUD, so it stops with the panel.
+    @Test func dismissingThePanelStopsAReadThePanelStarted() {
+        let (controller, speech, _) = make()
+        controller.speak("refined text", from: .refineRefined)
+        #expect(controller.isSpeaking)
+
+        controller.stopPanelPlayback()
+
+        #expect(speech.stopCount == 1)
+        #expect(!controller.isSpeaking)
+        #expect(controller.active == nil)
+    }
+
+    /// A hotkey read that merely overlaps the panel owns the HUD and ⌥S, so it is left alone.
+    @Test func dismissingThePanelLeavesAHotkeyReadAlone() async {
+        let (controller, speech, _) = make()
+        await controller.toggle(text: { "selection" })
+        #expect(controller.active == .hotkey)
+
+        controller.stopPanelPlayback()
+
+        #expect(speech.stopCount == 0)
+        #expect(controller.isSpeaking)
+        #expect(controller.active == .hotkey)
+    }
+
+    @Test func dismissingThePanelWhileNothingPlaysIsANoOp() {
+        let (controller, speech, _) = make()
+        controller.stopPanelPlayback()
+        #expect(speech.stopCount == 0)
+    }
+
     @Test func finishingNaturallyClearsTheSpeakingFlag() async {
         let (controller, speech, _) = make()
         await controller.toggle(text: { "hello" })
