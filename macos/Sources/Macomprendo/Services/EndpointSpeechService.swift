@@ -24,6 +24,7 @@ enum EndpointVoices {
     static let requestTimeout: TimeInterval = 60
 
     private(set) var isSpeaking = false
+    private(set) var isPaused = false
     var onStateChange: (@MainActor () -> Void)?
     var onError: (@MainActor (Error) -> Void)?
 
@@ -57,6 +58,7 @@ enum EndpointVoices {
 
     func speak(_ text: String, settings: SpeechSettings) {
         cancelCurrent()
+        isPaused = false
         generation += 1
         let generation = self.generation
 
@@ -85,7 +87,22 @@ enum EndpointVoices {
     func stop() {
         generation += 1
         cancelCurrent()
+        isPaused = false
         setSpeaking(false)
+    }
+
+    func pause() {
+        guard isSpeaking, !isPaused else { return }
+        player.pause()
+        isPaused = true
+        onStateChange?()
+    }
+
+    func resume() {
+        guard isPaused else { return }
+        player.resume()
+        isPaused = false
+        onStateChange?()
     }
 
     /// Awaits the in-flight speech task. Used by tests.

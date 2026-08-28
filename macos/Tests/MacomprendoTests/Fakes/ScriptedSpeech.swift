@@ -8,6 +8,7 @@ import Foundation
     }
 
     var isSpeaking = false
+    var isPaused = false
     var onStateChange: (@MainActor () -> Void)?
     var onError: (@MainActor (Error) -> Void)?
     var available: [Voice] = []
@@ -16,6 +17,8 @@ import Foundation
     var availableBySource: [SpeechSource: [Voice]] = [:]
     private(set) var spoken: [Spoken] = []
     private(set) var stopCount = 0
+    private(set) var pauseCount = 0
+    private(set) var resumeCount = 0
 
     func voices() -> [Voice] { available }
 
@@ -24,18 +27,33 @@ import Foundation
     func speak(_ text: String, settings: SpeechSettings) {
         spoken.append(Spoken(text: text, settings: settings))
         isSpeaking = true
+        isPaused = false
         onStateChange?()
     }
 
     func stop() {
         stopCount += 1
         isSpeaking = false
+        isPaused = false
+        onStateChange?()
+    }
+
+    func pause() {
+        pauseCount += 1
+        isPaused = true
+        onStateChange?()
+    }
+
+    func resume() {
+        resumeCount += 1
+        isPaused = false
         onStateChange?()
     }
 
     /// Simulates the synthesizer reaching the end of the utterance.
     func finish() {
         isSpeaking = false
+        isPaused = false
         onStateChange?()
     }
 
@@ -43,6 +61,7 @@ import Foundation
     /// state change first (hides the HUD), error second (shows the toast).
     func failWith(_ error: Error) {
         isSpeaking = false
+        isPaused = false
         onStateChange?()
         onError?(error)
     }

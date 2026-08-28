@@ -82,4 +82,33 @@ import Testing
         // A plain backend only knows its own catalog, whatever source is asked for.
         #expect(r.endpoint.voices(for: .system).map(\.id) == ["alloy"])
     }
+
+    @Test func pauseAndResumeGoToTheBackendThatIsSpeaking() {
+        let system = ScriptedSpeech()
+        let endpoint = ScriptedSpeech()
+        let router = SpeechRouter(system: system, endpoint: endpoint)
+        var settings = SpeechSettings()
+        settings.source = .endpoint
+
+        router.speak("hello", settings: settings)
+        router.pause()
+        #expect(endpoint.pauseCount == 1)
+        #expect(system.pauseCount == 0)
+
+        endpoint.isPaused = true
+        #expect(router.isPaused)
+
+        router.resume()
+        #expect(endpoint.resumeCount == 1)
+        #expect(system.resumeCount == 0)
+    }
+
+    @Test func pausingBeforeAnythingIsSpokenTargetsTheSystemBackend() {
+        let system = ScriptedSpeech()
+        let endpoint = ScriptedSpeech()
+        let router = SpeechRouter(system: system, endpoint: endpoint)
+        router.pause()
+        #expect(system.pauseCount == 1)
+        #expect(endpoint.pauseCount == 0)
+    }
 }

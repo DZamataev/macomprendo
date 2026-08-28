@@ -11,6 +11,9 @@ import Foundation
 
     private let system: any SpeechSynthesizing
     private let endpoint: any SpeechSynthesizing
+    /// The source of the most recent `speak`. `pause`/`resume` carry no settings, so this is
+    /// the only way to know which backend owns the current utterance.
+    private var activeSource: SpeechSource = .system
 
     init(system: any SpeechSynthesizing, endpoint: any SpeechSynthesizing) {
         self.system = system
@@ -23,6 +26,7 @@ import Foundation
     }
 
     var isSpeaking: Bool { system.isSpeaking || endpoint.isSpeaking }
+    var isPaused: Bool { system.isPaused || endpoint.isPaused }
 
     /// The neutral catalog. Settings ▸ Speech asks for a specific source with `voices(for:)`.
     func voices() -> [Voice] { system.voices() }
@@ -30,6 +34,7 @@ import Foundation
     func voices(for source: SpeechSource) -> [Voice] { backend(for: source).voices() }
 
     func speak(_ text: String, settings: SpeechSettings) {
+        activeSource = settings.source
         // Stopping the other backend first means switching the source mid-utterance cannot
         // leave orphaned audio playing behind the new one. Unconditional — this relies on
         // both backends' stop()/setSpeaking guarding on no-op-when-already-idle so calling
@@ -43,6 +48,10 @@ import Foundation
         system.stop()
         endpoint.stop()
     }
+
+    func pause() { backend(for: activeSource).pause() }
+
+    func resume() { backend(for: activeSource).resume() }
 
     private func backend(for source: SpeechSource) -> any SpeechSynthesizing {
         source == .endpoint ? endpoint : system

@@ -29,6 +29,13 @@ struct UtterancePlan: Equatable, Sendable {
     func voices(for source: SpeechSource) -> [Voice]
     func speak(_ text: String, settings: SpeechSettings)
     func stop()
+    /// True only while speech has been started and then paused. `isSpeaking` stays true, so a
+    /// paused utterance is still the one in-flight job (invariant 7).
+    var isPaused: Bool { get }
+    /// No-op when nothing is speaking, or when already paused.
+    func pause()
+    /// No-op when not paused.
+    func resume()
 }
 
 extension SpeechSynthesizing {
@@ -39,6 +46,7 @@ extension SpeechSynthesizing {
 @MainActor final class AVSpeechService: NSObject, SpeechSynthesizing {
     private let synthesizer = AVSpeechSynthesizer()
     private(set) var isSpeaking = false
+    var isPaused: Bool { synthesizer.isPaused }
     var onStateChange: (@MainActor () -> Void)?
     /// Required by `SpeechSynthesizing`; local synthesis has no failure channel, so this is
     /// stored and never invoked.
@@ -193,6 +201,20 @@ extension SpeechSynthesizing {
         queued.removeAll()
         synthesizer.stopSpeaking(at: .immediate)
         setSpeaking(false)
+    }
+
+    func pause() {
+        guard synthesizer.isSpeaking, !synthesizer.isPaused else { return }
+        // `.word` rather than `.immediate` so the current word finishes: resuming mid-word
+        // restarts the word and sounds like a stutter.
+        synthesizer.pauseSpeaking(at: .word)
+        onStateChange?()
+    }
+
+    func resume() {
+        guard synthesizer.isPaused else { return }
+        synthesizer.continueSpeaking()
+        onStateChange?()
     }
 
     fileprivate func setSpeaking(_ value: Bool) {

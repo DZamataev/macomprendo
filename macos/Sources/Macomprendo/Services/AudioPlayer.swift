@@ -12,17 +12,23 @@ import Foundation
     /// refuses to start.
     func play(_ audioData: Data) throws
     func stop()
+    var isPaused: Bool { get }
+    /// No-op when nothing is playing. Keeps the playhead so `resume()` continues.
+    func pause()
+    func resume()
 }
 
 /// Thin `AVAudioPlayer` wrapper. Hardware-bound glue with no logic of its own, so it carries no
 /// unit test and is covered by `docs/SMOKE_TEST.md` instead (invariant 3).
 @MainActor final class AVAudioPlayerPlayer: NSObject, AudioPlaying {
     var onFinished: (@MainActor () -> Void)?
+    private(set) var isPaused = false
 
     private var player: AVAudioPlayer?
 
     func play(_ audioData: Data) throws {
         stop()
+        isPaused = false
         do {
             let player = try AVAudioPlayer(data: audioData)
             player.delegate = self
@@ -41,6 +47,19 @@ import Foundation
         player?.stop()
         player?.delegate = nil
         player = nil
+        isPaused = false
+    }
+
+    func pause() {
+        guard let player, player.isPlaying else { return }
+        player.pause()
+        isPaused = true
+    }
+
+    func resume() {
+        guard let player, isPaused else { return }
+        player.play()
+        isPaused = false
     }
 }
 

@@ -291,6 +291,33 @@ import Testing
         #expect(!r.service.isSpeaking)
     }
 
+    @Test func pauseAndResumeDriveThePlayerAndReportState() {
+        let r = rig()
+        r.service.speak("One. Two. Three.", settings: settings())
+        r.service.pause()
+        #expect(r.player.pauseCount == 1)
+        #expect(r.service.isPaused)
+        r.service.resume()
+        #expect(r.player.resumeCount == 1)
+        #expect(!r.service.isPaused)
+    }
+
+    @Test func stoppingWhilePausedClearsThePausedState() {
+        let r = rig()
+        r.service.speak("One. Two. Three.", settings: settings())
+        r.service.pause()
+        r.service.stop()
+        #expect(!r.service.isPaused)
+        #expect(!r.service.isSpeaking)
+    }
+
+    @Test func pausingWhenIdleIsANoOp() {
+        let r = rig()
+        r.service.pause()
+        #expect(r.player.pauseCount == 0)
+        #expect(!r.service.isPaused)
+    }
+
     @Test func theVoiceCatalogHoldsTheBuiltInNames() {
         let r = rig()
         let voices = r.service.voices()

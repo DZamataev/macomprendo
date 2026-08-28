@@ -6,6 +6,9 @@ import Foundation
 
     private(set) var played: [Data] = []
     private(set) var stopCount = 0
+    private(set) var isPaused = false
+    private(set) var pauseCount = 0
+    private(set) var resumeCount = 0
 
     /// Thrown by the next `play(_:)` call, then cleared.
     var playError: Error?
@@ -15,6 +18,7 @@ import Foundation
     var finishesImmediately = true
 
     func play(_ audioData: Data) throws {
+        isPaused = false
         if let error = playError {
             playError = nil
             throw error
@@ -23,7 +27,20 @@ import Foundation
         if finishesImmediately { onFinished?() }
     }
 
-    func stop() { stopCount += 1 }
+    func stop() {
+        stopCount += 1
+        isPaused = false
+    }
+
+    func pause() {
+        pauseCount += 1
+        isPaused = true
+    }
+
+    func resume() {
+        resumeCount += 1
+        isPaused = false
+    }
 
     /// Simulates the current buffer reaching its end.
     func finishCurrent() { onFinished?() }
