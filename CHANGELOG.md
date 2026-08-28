@@ -40,8 +40,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   factory prompt presets (Clean up, Formal, Casual, Shorten, Expand, Fix
   grammar, Translate for Refine; Brief, Bullets, TL;DR, Key actions for
   Summarize).
-- Speech settings tab: pick a voice grouped by language, adjust rate, pitch
-  and volume, and preview the current settings against a sample sentence.
+- Speech settings tab: pick a default voice grouped by language, map a
+  separate voice to each language for mixed-script text (with a toggle to
+  turn that switching off), adjust rate, pitch and volume, edit the preview
+  text and preview it on demand, and optionally audition a voice with a
+  short phrase in its own language as soon as it is selected.
 - Speak selection now switches system voices mid-utterance for mixed-script
   text, so a Cyrillic run inside an otherwise Latin sentence (and vice versa)
   is read in a matching installed voice instead of the configured one

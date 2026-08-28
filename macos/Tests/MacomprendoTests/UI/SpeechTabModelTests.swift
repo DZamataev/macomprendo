@@ -22,14 +22,86 @@ import Testing
         SpeechTabModel(speech: speech, holder: holder, keychain: keychain)
     }
 
+    private let catalog = [
+        Voice(id: "en.alex", name: "Alex", language: "en-US", quality: "default"),
+        Voice(id: "en.daniel", name: "Daniel", language: "en-GB", quality: "enhanced"),
+        Voice(id: "ru.milena", name: "Milena", language: "ru-RU", quality: "default"),
+        Voice(id: "uk.lesya", name: "Lesya", language: "uk-UA", quality: "premium")
+    ]
+
+    private func make(voices: [Voice])
+        -> (SpeechTabModel, ScriptedSpeech, ScriptedSettingsHolder) {
+        let speech = ScriptedSpeech()
+        speech.available = voices
+        speech.availableBySource[.system] = voices
+        let holder = ScriptedSettingsHolder()
+        return (SpeechTabModel(speech: speech, holder: holder, keychain: InMemoryKeychainStore()),
+                speech, holder)
+    }
+
     // MARK: existing behaviour
 
     @Test func voicesAreGroupedByLanguageAndSortedByName() {
         let groups = SpeechTabModel.group(voices)
-        #expect(groups.map(\.language) == ["en-US", "fr-FR"])
+        #expect(groups.map(\.language) == ["en", "fr"])
         #expect(groups[0].voices.map(\.name) == ["Alex", "Ava"])
         #expect(groups[0].displayName.contains("English"))
         #expect(groups[1].voices.map(\.name) == ["Amélie"])
+    }
+
+    @Test func regionalVariantsShareOneLanguageGroup() {
+        let groups = SpeechTabModel.group(catalog)
+        #expect(groups.map(\.language).sorted() == ["en", "ru", "uk"])
+        let english = groups.first { $0.language == "en" }!
+        #expect(english.voices.map(\.id) == ["en.alex", "en.daniel"])
+    }
+
+    @Test func baseCodeStripsRegionAndScript() {
+        #expect(SpeechTabModel.baseCode("ru-RU") == "ru")
+        #expect(SpeechTabModel.baseCode("zh-Hans-CN") == "zh")
+        #expect(SpeechTabModel.baseCode("EN") == "en")
+    }
+
+    @Test func mappingAVoiceToALanguagePersistsAndClearingRemovesTheKey() {
+        let (model, _, holder) = make(voices: catalog)
+        model.setVoice("ru.milena", forLanguage: "ru")
+        #expect(holder.settings.speech.voiceByLanguage == ["ru": "ru.milena"])
+        model.setVoice(nil, forLanguage: "ru")
+        #expect(holder.settings.speech.voiceByLanguage.isEmpty)
+    }
+
+    @Test func selectingAVoiceAuditionsItWithSegmentationOff() {
+        let (model, speech, holder) = make(voices: catalog)
+        holder.settings.speech.auditionOnSelect = true
+        holder.settings.speech.source = .endpoint
+        model.setVoice("ru.milena", forLanguage: "ru")
+        #expect(speech.spoken.count == 1)
+        let spoken = speech.spoken[0]
+        #expect(spoken.text == "Вот так звучит мой голос.")
+        #expect(spoken.settings.voiceID == "ru.milena")
+        #expect(spoken.settings.source == .system)
+        #expect(spoken.settings.segmentationEnabled == false)
+    }
+
+    @Test func auditionIsSilentWhenTheToggleIsOff() {
+        let (model, speech, holder) = make(voices: catalog)
+        holder.settings.speech.auditionOnSelect = false
+        model.setDefaultVoice("en.alex")
+        #expect(holder.settings.speech.voiceID == "en.alex")
+        #expect(speech.spoken.isEmpty)
+    }
+
+    @Test func anUnknownLanguageIsAuditionedWithTheVoicesOwnName() {
+        let (model, _, _) = make(voices: catalog)
+        #expect(model.auditionPhrase(for: "uk.lesya") == "Lesya")
+        #expect(model.auditionPhrase(for: "en.alex") == "This is how I sound.")
+    }
+
+    @Test func previewSpeaksTheEditablePreviewText() {
+        let (model, speech, holder) = make(voices: catalog)
+        holder.settings.speech.previewText = "проверка check"
+        model.preview()
+        #expect(speech.spoken.map(\.text) == ["проверка check"])
     }
 
     @Test func groupingAnEmptyListYieldsNoGroups() {
@@ -56,7 +128,7 @@ import Testing
         tab.preview()
 
         #expect(speech.spoken.count == 1)
-        #expect(speech.spoken[0].text == SpeechTabModel.sampleText)
+        #expect(speech.spoken[0].text == SpeechSettings.defaultPreviewText)
         #expect(speech.spoken[0].settings.voiceID == "v.en1")
         #expect(speech.spoken[0].settings.rate == 0.7)
     }
