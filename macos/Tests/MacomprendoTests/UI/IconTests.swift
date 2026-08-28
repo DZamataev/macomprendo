@@ -18,6 +18,13 @@ func everyIconLoadsAsATemplateImage(icon: AppIcon) throws {
     #expect(image.size == NSSize(width: 16, height: 16))
 }
 
+@Test func playbackIconsAreVendored() {
+    #expect(AppIcon.pause.resourceURL() != nil)
+    #expect(AppIcon.play.resourceURL() != nil)
+    #expect(AppIcon.stop.resourceURL() != nil)
+    #expect(AppIcon.globe.resourceURL() != nil)
+}
+
 @Test func iconRawValuesAreUnique() {
     #expect(Set(AppIcon.allCases.map(\.rawValue)).count == AppIcon.allCases.count)
 }

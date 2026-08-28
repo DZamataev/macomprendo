@@ -5,6 +5,7 @@
   { "name": "speaker-high", "weight": "regular" },
   { "name": "stop", "weight": "regular" },
   { "name": "play", "weight": "regular" },
+  { "name": "pause", "weight": "regular" },
   { "name": "sparkle", "weight": "regular" },
   { "name": "text-aa", "weight": "regular" },
   { "name": "clipboard-text", "weight": "regular" },

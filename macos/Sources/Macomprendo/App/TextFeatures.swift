@@ -140,7 +140,7 @@ extension TextFeatures {
         // The panel's content needs the controllers, so the window is built last and attached.
         if let makeHost = env.quickPanelHost {
             quickPanel.attach(makeHost(QuickPanelView(panel: quickPanel, refine: refine,
-                                                      summarize: summarize, app: model)))
+                                                      summarize: summarize, speak: speak, app: model)))
         }
         return features
     }

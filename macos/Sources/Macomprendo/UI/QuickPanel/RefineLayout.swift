@@ -1,9 +1,53 @@
 import SwiftUI
 
+/// Play / Pause / Resume plus Stop for one text in the Quick Panel. Seeking is deliberately
+/// absent: `AVSpeechSynthesizer` exposes no position, so a scrubber could not behave the same
+/// on both speech sources (see the spec's Part 6).
+struct SpeechControls: View {
+    @ObservedObject var speak: SpeakController
+    let source: SpeakSource
+    let text: () -> String
+
+    private var isActive: Bool { speak.active == source }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button {
+                if isActive {
+                    speak.pauseOrResume()
+                } else {
+                    speak.speak(text(), from: source)
+                }
+            } label: {
+                Icon(icon, size: 14)
+            }
+            .help(helpText)
+
+            if isActive {
+                Button { speak.stop() } label: {
+                    Icon(.stop, size: 14)
+                }
+                .help("Stop reading")
+            }
+        }
+    }
+
+    private var icon: AppIcon {
+        guard isActive else { return .speak }
+        return speak.isPaused ? .play : .pause
+    }
+
+    private var helpText: String {
+        guard isActive else { return "Read aloud" }
+        return speak.isPaused ? "Resume reading" : "Pause reading"
+    }
+}
+
 /// Original | Refined side by side, both editable, with per-side Copy and Insert.
 struct RefineLayout: View {
     @ObservedObject var controller: RefineController
     let presets: [PromptPreset]
+    @ObservedObject var speak: SpeakController
 
     var body: some View {
         VStack(spacing: 0) {
@@ -11,9 +55,9 @@ struct RefineLayout: View {
             Divider()
             if let error = controller.error { errorBanner(error) }
             HStack(spacing: 0) {
-                pane(title: "Original", text: $controller.original, side: .original)
+                pane(title: "Original", text: $controller.original, side: .original, source: .refineOriginal)
                 Divider()
-                pane(title: "Refined", text: $controller.refined, side: .refined)
+                pane(title: "Refined", text: $controller.refined, side: .refined, source: .refineRefined)
             }
         }
     }
@@ -77,11 +121,12 @@ struct RefineLayout: View {
         .background(Color.red.opacity(0.08))
     }
 
-    private func pane(title: String, text: Binding<String>, side: RefineSide) -> some View {
+    private func pane(title: String, text: Binding<String>, side: RefineSide, source: SpeakSource) -> some View {
         VStack(spacing: 0) {
             HStack {
                 Text(title).font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                SpeechControls(speak: speak, source: source, text: { text.wrappedValue })
                 Button { controller.copy(side) } label: {
                     Icon(.copy, size: 14)
                 }

@@ -4,6 +4,7 @@ import SwiftUI
 struct SummaryLayout: View {
     @ObservedObject var controller: SummarizeController
     let presets: [PromptPreset]
+    @ObservedObject var speak: SpeakController
 
     var body: some View {
         VStack(spacing: 0) {
@@ -86,6 +87,7 @@ struct SummaryLayout: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
+            SpeechControls(speak: speak, source: .summary, text: { controller.summary })
             Button { controller.copy() } label: {
                 Label { Text("Copy") } icon: {
                     Icon(.copy, size: 14)

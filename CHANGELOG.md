@@ -77,6 +77,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   open, and disappears when both are closed, so either window can be brought
   back to the front (⌘Tab, the Dock) instead of vanishing behind other apps
   with no way back except the menubar.
+- The Quick Panel can now read its own text aloud: Refine's Original and
+  Refined panes and Summarize's summary each get a Speak/Pause/Resume control
+  plus Stop while playing, independent of the Speak selection hotkey.
 
 ### Fixed
 - The onboarding permission steps no longer show a stale answer: they re-read
