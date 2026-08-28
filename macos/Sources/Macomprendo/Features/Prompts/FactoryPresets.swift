@@ -11,14 +11,38 @@ enum FactoryPresets {
     enum Role: String, CaseIterable, Sendable {
         case cleanUp, formal, casual, shorten, expand, fixGrammar, translate, translateAndOrganize
         case brief, bullets, tldr, keyActions
+        case briefTranslated, bulletsTranslated, tldrTranslated, keyActionsTranslated
 
         var kind: PresetKind {
             switch self {
             case .cleanUp, .formal, .casual, .shorten, .expand, .fixGrammar, .translate,
                  .translateAndOrganize:
                 .refine
-            case .brief, .bullets, .tldr, .keyActions:
+            case .brief, .bullets, .tldr, .keyActions,
+                 .briefTranslated, .bulletsTranslated, .tldrTranslated, .keyActionsTranslated:
                 .summarize
+            }
+        }
+
+        /// Whether this role writes its output in `{language}` — the OS language — rather than
+        /// in the language of the text it was given.
+        var translatesToTheOSLanguage: Bool {
+            switch self {
+            case .translate, .briefTranslated, .bulletsTranslated, .tldrTranslated,
+                 .keyActionsTranslated:
+                true
+            default:
+                false
+            }
+        }
+
+        /// The factory-set version that introduced this role. `seed(into:)` tops a document up
+        /// with roles newer than the version it recorded, which is what lets a shipped set grow
+        /// without resurrecting a preset the user deleted on purpose.
+        var introducedIn: Int {
+            switch self {
+            case .briefTranslated, .bulletsTranslated, .tldrTranslated, .keyActionsTranslated: 1
+            default: 0
             }
         }
 
@@ -37,9 +61,17 @@ enum FactoryPresets {
             case .bullets: "000000000102"
             case .tldr: "000000000103"
             case .keyActions: "000000000104"
+            case .briefTranslated: "000000000105"
+            case .bulletsTranslated: "000000000106"
+            case .tldrTranslated: "000000000107"
+            case .keyActionsTranslated: "000000000108"
             }
         }
     }
+
+    /// The newest `Role.introducedIn`. Bump this — and the role's `introducedIn` — whenever a
+    /// role is added, or already-seeded documents will never receive it.
+    static let currentVersion = Role.allCases.map(\.introducedIn).max() ?? 0
 
     /// Deterministic and total: both slots are compile-time constants of the right width, so
     /// the string always parses.
@@ -105,6 +137,29 @@ enum FactoryPresets {
             }
             settings.seededPromptLanguages.append(language.code)
         }
+
+        // Top-up: a document seeded by an older build lists every language, so the loop above
+        // skips it entirely and would never deliver a role added since. Only roles NEWER than
+        // the recorded version are added, which is what keeps a factory preset the user deleted
+        // on purpose from coming back.
+        if settings.seededFactoryVersion < currentVersion {
+            for language in PromptLanguage.allCases
+            where settings.seededPromptLanguages.contains(language.code) {
+                for preset in presets(for: language)
+                where !existing.contains(preset.id)
+                    && role(ofSlot: preset.id)?.introducedIn ?? 0 > settings.seededFactoryVersion {
+                    settings.addPreset(preset)
+                    existing.insert(preset.id)
+                }
+            }
+        }
+        settings.seededFactoryVersion = currentVersion
+    }
+
+    /// The role a factory preset's UUID encodes, or nil for a custom preset.
+    static func role(ofSlot id: UUID) -> Role? {
+        let slot = String(id.uuidString.suffix(12)).lowercased()
+        return Role.allCases.first { $0.slot.lowercased() == slot }
     }
 
     /// Re-adds factory presets the user deleted, in every language, and repairs a dangling

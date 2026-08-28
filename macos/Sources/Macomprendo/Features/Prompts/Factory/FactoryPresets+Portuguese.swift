@@ -92,5 +92,32 @@ extension FactoryPresetContent {
 
                 {text}
                 """),
+            .briefTranslated: .init(name: "Resumo, com tradução", template: """
+                Resuma o texto seguinte em duas ou três frases. Escreva o resumo em {language}, seja qual \
+                for a língua do texto.
+                {instruction}
+
+                {text}
+                """),
+            .bulletsTranslated: .init(name: "Tópicos, com tradução", template: """
+                Resuma o texto seguinte em no máximo seis tópicos concisos, um por linha, cada um começando \
+                com "- ". Escreva-os em {language}, seja qual for a língua do texto.
+                {instruction}
+
+                {text}
+                """),
+            .tldrTranslated: .init(name: "TL;DR, com tradução", template: """
+                Dê um TL;DR de uma frase do texto seguinte, em {language}, seja qual for a língua do texto.
+                {instruction}
+
+                {text}
+                """),
+            .keyActionsTranslated: .init(name: "Ações, com tradução", template: """
+                Liste as tarefas concretas do texto seguinte numa lista numerada, em {language}, seja qual \
+                for a língua do texto. Se não houver nenhuma, responda exatamente "Sem tarefas."
+                {instruction}
+
+                {text}
+                """),
         ])
 }

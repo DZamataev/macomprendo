@@ -92,5 +92,34 @@ extension FactoryPresetContent {
 
                 {text}
                 """),
+            .briefTranslated: .init(name: "Brief, translated", template: """
+                Summarize the following text in two or three sentences. Write the summary in {language}, \
+                whatever language the text itself is in.
+                {instruction}
+
+                {text}
+                """),
+            .bulletsTranslated: .init(name: "Bullets, translated", template: """
+                Summarize the following text as at most six concise bullet points, one line each, each \
+                starting with "- ". Write them in {language}, whatever language the text itself is in.
+                {instruction}
+
+                {text}
+                """),
+            .tldrTranslated: .init(name: "TL;DR, translated", template: """
+                Give a one-sentence TL;DR of the following text, written in {language}, whatever language \
+                the text itself is in.
+                {instruction}
+
+                {text}
+                """),
+            .keyActionsTranslated: .init(name: "Key actions, translated", template: """
+                List the concrete action items in the following text as a numbered list, written in \
+                {language}, whatever language the text itself is in. If there are none, answer exactly "No \
+                action items."
+                {instruction}
+
+                {text}
+                """),
         ])
 }

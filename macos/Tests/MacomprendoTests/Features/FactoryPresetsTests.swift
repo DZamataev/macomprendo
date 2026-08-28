@@ -15,8 +15,8 @@ import Testing
 
     @Test func roleSlotsAreTwelveHexDigitsAndUnique() {
         let slots = FactoryPresets.Role.allCases.map(\.slot)
-        #expect(slots.count == 12)
-        #expect(Set(slots).count == 12)
+        #expect(slots.count == 16)
+        #expect(Set(slots).count == 16)
         #expect(slots.allSatisfy { $0.count == 12 && $0.allSatisfy(\.isHexDigit) })
     }
 
@@ -50,7 +50,7 @@ import Testing
     @Test func everyPresetIsValidAndCarriesItsLanguage() {
         for language in PromptLanguage.allCases {
             let presets = FactoryPresets.presets(for: language)
-            #expect(presets.count == 12)
+            #expect(presets.count == 16)
             for preset in presets {
                 #expect(preset.language == language.code)
                 #expect(preset.isFactory)
@@ -61,16 +61,23 @@ import Testing
         }
     }
 
-    /// The OS language is only meaningful for plain Translate. Every other template either
-    /// preserves the original language or names its target literally.
-    @Test func onlyTranslateUsesTheLanguagePlaceholder() {
+    /// `{language}` is the OS language, so exactly the roles that promise to write in it may
+    /// carry it. Every other template either preserves the original language or names its
+    /// target literally, and `translatesToTheOSLanguage` is the single list both sides agree on.
+    @Test func onlyTheTranslatingRolesUseTheLanguagePlaceholder() {
         for language in PromptLanguage.allCases {
             for role in FactoryPresets.Role.allCases {
                 let template = language.content.entries[role]!.template
-                #expect(template.contains("{language}") == (role == .translate),
+                #expect(template.contains("{language}") == role.translatesToTheOSLanguage,
                         "\(language.code)/\(role.rawValue)")
             }
         }
+    }
+
+    @Test func theTranslatingRolesAreTranslateAndTheFourSummarizeVariants() {
+        #expect(Set(FactoryPresets.Role.allCases.filter(\.translatesToTheOSLanguage))
+                == [.translate, .briefTranslated, .bulletsTranslated, .tldrTranslated,
+                    .keyActionsTranslated])
     }
 
     @Test func everyTranslatedSetIsWrittenNativelyAndKeepsItsNames() {
@@ -105,15 +112,15 @@ import Testing
         }
     }
 
-    @Test func rolesSplitEightRefineAndFourSummarize() {
+    @Test func rolesSplitEightRefineAndEightSummarize() {
         #expect(FactoryPresets.Role.allCases.filter { $0.kind == .refine }.count == 8)
-        #expect(FactoryPresets.Role.allCases.filter { $0.kind == .summarize }.count == 4)
+        #expect(FactoryPresets.Role.allCases.filter { $0.kind == .summarize }.count == 8)
     }
 
     @Test func sortOrderRestartsAtZeroForEachKind() {
         let presets = FactoryPresets.presets(for: .english)
         #expect(presets.filter { $0.kind == .refine }.map(\.sortOrder) == Array(0..<8))
-        #expect(presets.filter { $0.kind == .summarize }.map(\.sortOrder) == Array(0..<4))
+        #expect(presets.filter { $0.kind == .summarize }.map(\.sortOrder) == Array(0..<8))
     }
 
     @Test func seedFillsEveryLanguageOnceAndSetsPerLanguageDefaults() {
@@ -121,7 +128,7 @@ import Testing
         s.presets = []
         s.seededPromptLanguages = []
         FactoryPresets.seed(into: &s)
-        #expect(s.presets.count == 12 * PromptLanguage.allCases.count)
+        #expect(s.presets.count == 16 * PromptLanguage.allCases.count)
         #expect(s.seededPromptLanguages == PromptLanguage.allCases.map(\.code))
         for language in PromptLanguage.allCases {
             #expect(s.defaultPreset(for: .refine, language: language.code)?.id
@@ -150,7 +157,7 @@ import Testing
 
         let english = s.presets.filter { $0.language == "en" }
         #expect(Set(english.map(\.id)).count == english.count)
-        #expect(english.count == 12)
+        #expect(english.count == FactoryPresets.Role.allCases.count)
         #expect(s.seededPromptLanguages.contains("en"))
         // The role that did not exist before this branch arrives without claiming the default
         // the pre-branch document never stored.
@@ -176,7 +183,7 @@ import Testing
 
         let ids = s.presets.map(\.id)
         #expect(Set(ids).count == ids.count)
-        #expect(s.presets.count == 12 * PromptLanguage.allCases.count)
+        #expect(s.presets.count == 16 * PromptLanguage.allCases.count)
         // A default that was already stored is never re-pointed by seeding.
         #expect(s.defaultPresetIDs == defaultsBefore)
     }
@@ -191,6 +198,84 @@ import Testing
         #expect(s.preset(id: victim) == nil)
         FactoryPresets.restoreMissing(into: &s)
         #expect(s.preset(id: victim)?.language == "ru")
-        #expect(s.presets.count == 12 * PromptLanguage.allCases.count)
+        #expect(s.presets.count == 16 * PromptLanguage.allCases.count)
+    }
+}
+
+/// Adding a role to the factory set has to reach documents that were already seeded, without
+/// resurrecting a factory preset the user deliberately deleted. `seededFactoryVersion` plus
+/// `Role.introducedIn` is what separates those two cases.
+@MainActor
+@Suite struct FactorySetVersioningTests {
+    /// A document as an older build left it: every language listed, but only the roles that
+    /// existed at `version`. Built by seeding the current set and removing what came later,
+    /// so it stays honest if roles are added again.
+    private func seededAtVersion(_ version: Int) -> Settings {
+        var s = Settings.default
+        s.presets = []
+        s.seededPromptLanguages = []
+        s.seededFactoryVersion = 0
+        FactoryPresets.seed(into: &s)
+        let laterRoles = FactoryPresets.Role.allCases.filter { $0.introducedIn > version }
+        let stale = Set(PromptLanguage.allCases.flatMap { language in
+            laterRoles.map { FactoryPresets.presetID(role: $0, language: language) }
+        })
+        s.presets.removeAll { stale.contains($0.id) }
+        s.seededFactoryVersion = version
+        return s
+    }
+
+    @Test func aFreshInstallRecordsTheCurrentFactoryVersion() {
+        var s = Settings.default
+        s.presets = []
+        s.seededPromptLanguages = []
+        s.seededFactoryVersion = 0
+        FactoryPresets.seed(into: &s)
+        #expect(s.seededFactoryVersion == FactoryPresets.currentVersion)
+        #expect(s.presets.count == FactoryPresets.Role.allCases.count * PromptLanguage.allCases.count)
+    }
+
+    @Test func rolesAddedSinceTheRecordedVersionAreSeededIntoAnAlreadySeededDocument() {
+        var s = seededAtVersion(0)
+        let before = s.presets.count
+        let newRoles = FactoryPresets.Role.allCases.filter { $0.introducedIn > 0 }
+        #expect(!newRoles.isEmpty, "this test is vacuous unless some role is newer than version 0")
+        #expect(before == (FactoryPresets.Role.allCases.count - newRoles.count) * PromptLanguage.allCases.count)
+
+        FactoryPresets.seed(into: &s)
+
+        #expect(s.seededFactoryVersion == FactoryPresets.currentVersion)
+        #expect(s.presets.count == FactoryPresets.Role.allCases.count * PromptLanguage.allCases.count)
+        for language in PromptLanguage.allCases {
+            for role in newRoles {
+                #expect(s.preset(id: FactoryPresets.presetID(role: role, language: language)) != nil,
+                        "\(language.code)/\(role.rawValue) was not topped up")
+            }
+        }
+    }
+
+    @Test func aDeletedOlderPresetIsNotResurrectedByTheTopUp() throws {
+        var s = seededAtVersion(0)
+        let victim = FactoryPresets.presetID(role: .bullets, language: .russian)
+        try s.deletePreset(id: victim)
+        FactoryPresets.seed(into: &s)
+        #expect(s.preset(id: victim) == nil, "the top-up must not undo a deliberate deletion")
+        #expect(s.preset(id: FactoryPresets.presetID(role: .briefTranslated, language: .russian)) != nil)
+    }
+
+    @Test func theTopUpIsIdempotent() {
+        var s = seededAtVersion(0)
+        FactoryPresets.seed(into: &s)
+        let after = s
+        FactoryPresets.seed(into: &s)
+        #expect(s == after)
+    }
+
+    @Test func theTopUpLeavesTheChosenDefaultsAlone() {
+        var s = seededAtVersion(0)
+        let chosen = FactoryPresets.presetID(role: .tldr, language: .german)
+        s.setDefaultPreset(id: chosen, for: .summarize, language: "de")
+        FactoryPresets.seed(into: &s)
+        #expect(s.defaultPresetID(for: .summarize, language: "de") == chosen)
     }
 }

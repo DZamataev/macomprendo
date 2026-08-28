@@ -84,5 +84,29 @@ extension FactoryPresetContent {
 
                 {text}
                 """),
+            .briefTranslated: .init(name: "简述并翻译", template: """
+                无论原文是什么语言，都用{language}把以下文本概括为两三句话。
+                {instruction}
+
+                {text}
+                """),
+            .bulletsTranslated: .init(name: "要点并翻译", template: """
+                把以下文本概括为最多六条要点，每条一行，每条以“- ”开头。无论原文是什么语言，都用{language}撰写。
+                {instruction}
+
+                {text}
+                """),
+            .tldrTranslated: .init(name: "一句话总结并翻译", template: """
+                无论原文是什么语言，都用{language}用一句话总结以下文本。
+                {instruction}
+
+                {text}
+                """),
+            .keyActionsTranslated: .init(name: "待办事项并翻译", template: """
+                把以下文本中的具体待办事项整理成编号列表。无论原文是什么语言，都用{language}书写。如果没有，就原样回答“没有待办事项。”
+                {instruction}
+
+                {text}
+                """),
         ])
 }

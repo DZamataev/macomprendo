@@ -94,5 +94,35 @@ extension FactoryPresetContent {
 
                 {text}
                 """),
+            .briefTranslated: .init(name: "Kurzfassung, mit Übersetzung", template: """
+                Fasse den folgenden Text in zwei bis drei Sätzen zusammen. Schreibe die Zusammenfassung auf \
+                {language}, unabhängig davon, in welcher Sprache der Text verfasst ist.
+                {instruction}
+
+                {text}
+                """),
+            .bulletsTranslated: .init(name: "Stichpunkte, mit Übersetzung", template: """
+                Fasse den folgenden Text in höchstens sechs knappen Stichpunkten zusammen, je einer pro \
+                Zeile, jeder beginnend mit „- “. Schreibe sie auf {language}, unabhängig von der Sprache des \
+                Textes.
+                {instruction}
+
+                {text}
+                """),
+            .tldrTranslated: .init(name: "TL;DR, mit Übersetzung", template: """
+                Gib ein TL;DR des folgenden Textes in einem Satz, auf {language}, unabhängig von der Sprache \
+                des Textes.
+                {instruction}
+
+                {text}
+                """),
+            .keyActionsTranslated: .init(name: "Aufgaben, mit Übersetzung", template: """
+                Liste die konkreten Aufgaben aus dem folgenden Text als nummerierte Liste auf {language} \
+                auf, unabhängig von der Sprache des Textes. Gibt es keine, antworte exakt mit „Keine \
+                Aufgaben.“
+                {instruction}
+
+                {text}
+                """),
         ])
 }

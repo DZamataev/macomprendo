@@ -26,7 +26,8 @@ import Testing
     @Test func switchingKindSelectsThatKindsFirstPreset() {
         let (model, _, _) = make()
         model.kind = .summarize
-        #expect(model.presets.count == 4)
+        #expect(model.presets.count
+                == FactoryPresets.Role.allCases.filter { $0.kind == .summarize }.count)
         #expect(model.selectedID == FactoryPresets.presetID(role: .brief, language: .english))
     }
 

@@ -148,6 +148,9 @@ struct Settings: Codable, Sendable, Equatable {
     var promptLanguage: String
     /// Languages whose factory presets have already been seeded.
     var seededPromptLanguages: [String]
+    /// The factory-set version this document was last topped up to. See
+    /// `FactoryPresets.currentVersion`.
+    var seededFactoryVersion: Int
     /// Key: `Settings.presetKey(kind, language)`.
     var defaultPresetIDs: [String: UUID]
     /// Key: screen identifier, value: the remembered Quick Panel frame.
@@ -168,6 +171,7 @@ struct Settings: Codable, Sendable, Equatable {
             presets: [],
             promptLanguage: PromptLanguage.systemDefault.code,
             seededPromptLanguages: [],
+            seededFactoryVersion: 0,
             defaultPresetIDs: [:],
             quickPanelFrames: [:]
         )
@@ -212,6 +216,8 @@ extension Settings {
         promptLanguage = try c.decodeIfPresent(String.self, forKey: .promptLanguage) ?? d.promptLanguage
         seededPromptLanguages = try c.decodeIfPresent([String].self, forKey: .seededPromptLanguages)
             ?? d.seededPromptLanguages
+        seededFactoryVersion = try c.decodeIfPresent(Int.self, forKey: .seededFactoryVersion)
+            ?? d.seededFactoryVersion
         defaultPresetIDs = try c.decodeIfPresent([String: UUID].self, forKey: .defaultPresetIDs)
             ?? d.defaultPresetIDs
         quickPanelFrames = try c.decodeIfPresent([String: CGRect].self, forKey: .quickPanelFrames) ?? d.quickPanelFrames

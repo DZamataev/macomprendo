@@ -270,6 +270,10 @@ F0000000-0000-0000-<language slot>-<role slot>
 | `bullets` | summarize | `000000000102` |
 | `tldr` | summarize | `000000000103` |
 | `keyActions` | summarize | `000000000104` |
+| `briefTranslated` | summarize | `000000000105` |
+| `bulletsTranslated` | summarize | `000000000106` |
+| `tldrTranslated` | summarize | `000000000107` |
+| `keyActionsTranslated` | summarize | `000000000108` |
 
 | Language | Code | Slot |
 |---|---|---|
@@ -299,7 +303,10 @@ Content rules:
 
 - Every role except the two translating ones states, in its own language, that the original
   language of the text must be preserved.
-- `translate` is the only template that keeps the `{language}` placeholder, and it resolves to
+- The four `…Translated` summarize roles write their output in `{language}` — the OS language —
+  whatever language the text is in, and are otherwise word for word their untranslated siblings.
+  `Role.translatesToTheOSLanguage` is the single list the templates and the tests agree on.
+- `translate` and those four are the only templates that keep the `{language}` placeholder, and it resolves to
   the **OS** language rather than to `promptLanguage`. This is intentional, not an oversight:
   Translate means "put this into the language I read my Mac in", which is the one target that
   needs no further input; the preset whose target is the working language is
@@ -311,6 +318,20 @@ Content rules:
   приведи в порядок структуру".
 - `{instruction}` and `{text}` behave exactly as today. `PromptRenderer` and its validation
   are unchanged.
+
+### Growing the set after it has shipped
+
+A document seeded by an earlier build lists every language, so the per-language loop skips it and
+would never deliver a role added later. `Settings.seededFactoryVersion` closes that: each `Role`
+records the `introducedIn` version that added it, `FactoryPresets.currentVersion` is the newest of
+those, and `seed(into:)` tops a document up with **only** the roles newer than the version it
+recorded. Adding all missing factory presets instead would resurrect one the user deleted on
+purpose — which is the whole reason `seededPromptLanguages` exists — so the version comparison,
+not mere absence, is what admits a preset.
+
+Adding a role therefore means three edits: the enum case with its slot, `introducedIn` set to the
+next version, and its content in all seven files. `restoreMissing(into:)` stays what it was: the
+on-demand repair behind the "Restore factory presets" button, which does add everything missing.
 
 ### Seeding
 
