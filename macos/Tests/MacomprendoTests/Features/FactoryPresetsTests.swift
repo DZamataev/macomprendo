@@ -32,12 +32,12 @@ import Testing
     @Test func seedOnlyRunsOnceAndSetsDefaults() {
         var s = Settings.default
         s.presets = []
-        s.presetsSeeded = false
+        s.seededPromptLanguages = []
         FactoryPresets.seed(into: &s)
         #expect(s.presets.count == 11)
-        #expect(s.presetsSeeded)
-        #expect(s.defaultRefinePresetID == FactoryPresets.ID.cleanUp)
-        #expect(s.defaultSummarizePresetID == FactoryPresets.ID.brief)
+        #expect(s.seededPromptLanguages.contains("en"))
+        #expect(s.defaultPresetID(for: .refine, language: "en") == FactoryPresets.ID.cleanUp)
+        #expect(s.defaultPresetID(for: .summarize, language: "en") == FactoryPresets.ID.brief)
 
         s.presets.removeAll { $0.id == FactoryPresets.ID.formal }
         FactoryPresets.seed(into: &s)                 // second call is a no-op
@@ -47,9 +47,9 @@ import Testing
     @Test func restoreMissingReaddsFactoryPresetsWithoutTouchingCustomOnes() {
         var s = Settings.default
         s.presets = []
-        s.presetsSeeded = false
+        s.seededPromptLanguages = []
         FactoryPresets.seed(into: &s)
-        let custom = s.addPreset(PromptPreset(id: UUID(), kind: .refine, name: "Mine",
+        let custom = s.addPreset(PromptPreset(id: UUID(), kind: .refine, language: "en", name: "Mine",
                                               systemPrompt: "s", userTemplate: "{text}",
                                               isFactory: false, sortOrder: 0))
         s.presets.removeAll { $0.id == FactoryPresets.ID.casual }
@@ -61,16 +61,16 @@ import Testing
         #expect(s.preset(id: FactoryPresets.ID.tldr) != nil)
         #expect(s.preset(id: custom.id)?.name == "Mine")
         #expect(s.presets.filter { $0.id == custom.id }.count == 1)
-        #expect(s.presets(of: .refine).last?.id == FactoryPresets.ID.casual)   // appended at the end
+        #expect(s.presets(of: .refine, language: "en").last?.id == FactoryPresets.ID.casual)   // appended at the end
     }
 
     @Test func restoreMissingRepairsADanglingDefault() {
         var s = Settings.default
         s.presets = []
-        s.presetsSeeded = false
+        s.seededPromptLanguages = []
         FactoryPresets.seed(into: &s)
-        s.defaultRefinePresetID = UUID()
+        s.defaultPresetIDs[Settings.presetKey(.refine, "en")] = UUID()
         FactoryPresets.restoreMissing(into: &s)
-        #expect(s.defaultRefinePresetID == FactoryPresets.ID.cleanUp)
+        #expect(s.defaultPresetID(for: .refine, language: "en") == FactoryPresets.ID.cleanUp)
     }
 }

@@ -9,6 +9,8 @@ import SwiftUI
     @Published var kind: PresetKind = .refine {
         didSet { if kind != oldValue { select(presets.first?.id) } }
     }
+    /// The working language for this tab. Its writer arrives in Task 6.
+    @Published private(set) var language: PromptLanguage = .english
     @Published private(set) var selectedID: UUID?
     @Published var draft: PromptPreset?
     @Published private(set) var problems: [String] = []
@@ -28,12 +30,13 @@ import SwiftUI
          llm: @escaping @MainActor (PresetKind) throws -> LLMTarget) {
         self.holder = holder
         self.llm = llm
-        select(holder.settings.presets(of: kind).first?.id)
+        language = PromptLanguage.resolve(languageCode: holder.settings.promptLanguage)
+        select(holder.settings.presets(of: kind, language: language.code).first?.id)
     }
 
-    var presets: [PromptPreset] { holder.settings.presets(of: kind) }
+    var presets: [PromptPreset] { holder.settings.presets(of: kind, language: language.code) }
 
-    var defaultPresetID: UUID? { holder.settings.defaultPresetID(for: kind) }
+    var defaultPresetID: UUID? { holder.settings.defaultPresetID(for: kind, language: language.code) }
 
     /// The endpoint + model chosen for the current feature.
     var selection: LLMSelection? {
@@ -67,7 +70,7 @@ import SwiftUI
     }
 
     func add() {
-        let new = PromptPreset(id: UUID(), kind: kind, name: "New preset",
+        let new = PromptPreset(id: UUID(), kind: kind, language: language.code, name: "New preset",
                                systemPrompt: FactoryPresets.systemPrompt,
                                userTemplate: "{instruction}\n\n{text}",
                                isFactory: false, sortOrder: 0)
@@ -79,6 +82,7 @@ import SwiftUI
         guard let source = draft else { return }
         var copy = source
         copy.id = UUID()
+        copy.language = language.code
         copy.name = source.name + " copy"
         copy.isFactory = false
         let stored = holder.settings.addPreset(copy)
@@ -105,7 +109,7 @@ import SwiftUI
 
     func makeDefault() {
         guard let id = selectedID else { return }
-        holder.settings.setDefaultPreset(id: id, for: kind)
+        holder.settings.setDefaultPreset(id: id, for: kind, language: language.code)
     }
 
     func restoreFactory() {

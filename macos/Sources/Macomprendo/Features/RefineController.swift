@@ -97,7 +97,7 @@ enum RefineSide: Equatable, Sendable {
         refined = ""
         error = nil
         if selectedPresetID == nil {
-            selectedPresetID = settings().defaultPreset(for: .refine)?.id
+            selectedPresetID = settings().defaultPreset(for: .refine, language: settings().promptLanguage)?.id
         }
         panel.present(layout: .refine)
         rerun()
@@ -138,7 +138,7 @@ enum RefineSide: Equatable, Sendable {
         if let id = selectedPresetID, let found = current.preset(id: id), found.kind == .refine {
             chosen = found
         } else {
-            chosen = current.defaultPreset(for: .refine)
+            chosen = current.defaultPreset(for: .refine, language: current.promptLanguage)
         }
         guard let preset = chosen else {
             error = ErrorText.describe(FeatureConfigError.noPreset(.refine))

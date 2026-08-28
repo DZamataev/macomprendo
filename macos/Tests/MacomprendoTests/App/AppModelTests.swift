@@ -128,7 +128,7 @@ import Testing
         _ = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
         let data = try #require(store.load())
         let stored = try Settings.migrate(data)
-        #expect(stored.presetsSeeded == true)
+        #expect(stored.seededPromptLanguages.contains("en"))
         #expect(stored.presets.count == 11)
     }
 

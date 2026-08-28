@@ -43,7 +43,7 @@ import Foundation
         summary = ""
         error = nil
         if selectedPresetID == nil {
-            selectedPresetID = settings().defaultPreset(for: .summarize)?.id
+            selectedPresetID = settings().defaultPreset(for: .summarize, language: settings().promptLanguage)?.id
         }
         panel.present(layout: .summary)
         rerun()
@@ -77,7 +77,7 @@ import Foundation
         if let id = selectedPresetID, let found = current.preset(id: id), found.kind == .summarize {
             chosen = found
         } else {
-            chosen = current.defaultPreset(for: .summarize)
+            chosen = current.defaultPreset(for: .summarize, language: current.promptLanguage)
         }
         guard let preset = chosen else {
             error = ErrorText.describe(FeatureConfigError.noPreset(.summarize))

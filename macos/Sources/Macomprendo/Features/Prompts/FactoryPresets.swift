@@ -113,35 +113,48 @@ enum FactoryPresets {
         ]
     }
 
-    /// First-run seeding. Does nothing once `presetsSeeded` is true.
+    /// Seeds every language that has not been seeded yet. Adding a language later is one new
+    /// content file plus one enum case — this loop then picks it up on the next launch.
     static func seed(into settings: inout Settings) {
-        guard !settings.presetsSeeded else { return }
-        settings.presets = all()
-        settings.presetsSeeded = true
-        settings.defaultRefinePresetID = defaultRefineID
-        settings.defaultSummarizePresetID = defaultSummarizeID
+        for language in PromptLanguage.allCases
+        where !settings.seededPromptLanguages.contains(language.code) {
+            let seeded = presets(for: language)
+            // A language with no content is not "seeded": marking it so would permanently
+            // suppress its presets once the content arrives.
+            guard !seeded.isEmpty else { continue }
+            for preset in seeded { settings.addPreset(preset) }
+            settings.seededPromptLanguages.append(language.code)
+        }
     }
 
-    /// Re-adds factory presets the user deleted, appended at the end of their kind.
-    /// Existing presets — factory or custom — are never modified.
+    /// Re-adds factory presets the user deleted, in every language, and repairs a dangling
+    /// default for every kind × language pair. Existing presets are never modified.
     static func restoreMissing(into settings: inout Settings) {
         let existing = Set(settings.presets.map(\.id))
-        for factory in all() where !existing.contains(factory.id) {
-            settings.addPreset(factory)
-        }
-        settings.presetsSeeded = true
-        for kind in PresetKind.allCases {
-            let current = settings.defaultPresetID(for: kind)
-            if current == nil || settings.preset(id: current!) == nil,
-               let first = settings.presets(of: kind).first {
-                settings.setDefaultPreset(id: first.id, for: kind)
+        for factory in all() where !existing.contains(factory.id) { settings.addPreset(factory) }
+        for language in PromptLanguage.allCases {
+            if !settings.seededPromptLanguages.contains(language.code) {
+                settings.seededPromptLanguages.append(language.code)
+            }
+            for kind in PresetKind.allCases {
+                let current = settings.defaultPresetID(for: kind, language: language.code)
+                if current == nil || settings.preset(id: current!) == nil,
+                   let first = settings.presets(of: kind, language: language.code).first {
+                    settings.setDefaultPreset(id: first.id, for: kind, language: language.code)
+                }
             }
         }
     }
 
+    /// Replaced by the Role × Language assembler in Task 3.
+    static func presets(for language: PromptLanguage) -> [PromptPreset] {
+        language == .english ? all() : []
+    }
+
     private static func make(_ id: UUID, _ kind: PresetKind, _ order: Int,
                              _ name: String, _ template: String) -> PromptPreset {
-        PromptPreset(id: id, kind: kind, name: name, systemPrompt: systemPrompt,
-                     userTemplate: template, isFactory: true, sortOrder: order)
+        PromptPreset(id: id, kind: kind, language: PromptLanguage.english.code, name: name,
+                     systemPrompt: systemPrompt, userTemplate: template, isFactory: true,
+                     sortOrder: order)
     }
 }

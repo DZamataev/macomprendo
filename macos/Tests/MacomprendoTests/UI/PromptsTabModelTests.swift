@@ -47,7 +47,7 @@ import Testing
     @Test func addCreatesACustomPresetOfTheCurrentKindAndSelectsIt() {
         let (model, holder, _) = make()
         model.add()
-        #expect(holder.settings.presets(of: .refine).count == 8)
+        #expect(holder.settings.presets(of: .refine, language: "en").count == 8)
         #expect(model.draft?.isFactory == false)
         #expect(model.draft?.id == model.selectedID)
         #expect(model.presets.last?.id == model.selectedID)
@@ -56,7 +56,7 @@ import Testing
     @Test func duplicateCopiesTheSelectionAsANonFactoryPreset() {
         let (model, holder, _) = make()
         model.duplicate()
-        #expect(holder.settings.presets(of: .refine).count == 8)
+        #expect(holder.settings.presets(of: .refine, language: "en").count == 8)
         #expect(model.draft?.name == "Clean up copy")
         #expect(model.draft?.isFactory == false)
         #expect(model.draft?.userTemplate == FactoryPresets.refine()[0].userTemplate)
@@ -72,9 +72,9 @@ import Testing
 
     @Test func deletingTheLastPresetOfAKindPublishesAnError() {
         let (model, holder, _) = make()
-        while holder.settings.presets(of: .refine).count > 1 { model.delete() }
+        while holder.settings.presets(of: .refine, language: "en").count > 1 { model.delete() }
         model.delete()
-        #expect(holder.settings.presets(of: .refine).count == 1)
+        #expect(holder.settings.presets(of: .refine, language: "en").count == 1)
         #expect(model.lastError?.contains("At least one") == true)
     }
 
@@ -88,7 +88,7 @@ import Testing
         let (model, holder, _) = make()
         model.select(FactoryPresets.ID.formal)
         model.makeDefault()
-        #expect(holder.settings.defaultRefinePresetID == FactoryPresets.ID.formal)
+        #expect(holder.settings.defaultPresetID(for: .refine, language: "en") == FactoryPresets.ID.formal)
     }
 
     @Test func restoreFactoryReaddsDeletedFactoryPresets() {
@@ -96,7 +96,7 @@ import Testing
         model.delete()                                   // removes Clean up
         model.restoreFactory()
         #expect(holder.settings.preset(id: FactoryPresets.ID.cleanUp) != nil)
-        #expect(holder.settings.presets(of: .refine).count == 7)
+        #expect(holder.settings.presets(of: .refine, language: "en").count == 7)
     }
 
     @Test func testWithSampleTextStreamsIntoTheOutputBox() async {

@@ -45,6 +45,10 @@ struct SpeechSettings: Codable, Sendable, Equatable {
     /// Keychain (invariant 5); `endpointAPIKeyRef` only records that one is stored.
     static let endpointKeychainAccount = "speech.endpoint"
 
+    static let defaultPreviewText =
+        "Macomprendo can read your selected text out loud. "
+        + "Макомпрендо читает выделенный текст вслух."
+
     var voiceID: String?
     var rate: Float
     var pitch: Float
@@ -55,6 +59,11 @@ struct SpeechSettings: Codable, Sendable, Equatable {
     var endpointVoice: String
     var endpointInstructions: String
     var endpointAPIKeyRef: String?
+    /// Base language code → voice identifier. An absent key means "pick automatically".
+    var voiceByLanguage: [String: String]
+    var segmentationEnabled: Bool
+    var previewText: String
+    var auditionOnSelect: Bool
 
     init(voiceID: String? = nil,
          rate: Float = 0.5,
@@ -65,7 +74,11 @@ struct SpeechSettings: Codable, Sendable, Equatable {
          endpointModel: String = SpeechSettings.defaultEndpointModel,
          endpointVoice: String = SpeechSettings.defaultEndpointVoice,
          endpointInstructions: String = "",
-         endpointAPIKeyRef: String? = nil) {
+         endpointAPIKeyRef: String? = nil,
+         voiceByLanguage: [String: String] = [:],
+         segmentationEnabled: Bool = true,
+         previewText: String = SpeechSettings.defaultPreviewText,
+         auditionOnSelect: Bool = true) {
         self.voiceID = voiceID
         self.rate = rate
         self.pitch = pitch
@@ -76,6 +89,10 @@ struct SpeechSettings: Codable, Sendable, Equatable {
         self.endpointVoice = endpointVoice
         self.endpointInstructions = endpointInstructions
         self.endpointAPIKeyRef = endpointAPIKeyRef
+        self.voiceByLanguage = voiceByLanguage
+        self.segmentationEnabled = segmentationEnabled
+        self.previewText = previewText
+        self.auditionOnSelect = auditionOnSelect
     }
 }
 
@@ -97,6 +114,13 @@ extension SpeechSettings {
         endpointInstructions = try c.decodeIfPresent(String.self, forKey: .endpointInstructions)
             ?? d.endpointInstructions
         endpointAPIKeyRef = try c.decodeIfPresent(String.self, forKey: .endpointAPIKeyRef)
+        voiceByLanguage = try c.decodeIfPresent([String: String].self, forKey: .voiceByLanguage)
+            ?? d.voiceByLanguage
+        segmentationEnabled = try c.decodeIfPresent(Bool.self, forKey: .segmentationEnabled)
+            ?? d.segmentationEnabled
+        previewText = try c.decodeIfPresent(String.self, forKey: .previewText) ?? d.previewText
+        auditionOnSelect = try c.decodeIfPresent(Bool.self, forKey: .auditionOnSelect)
+            ?? d.auditionOnSelect
     }
 }
 
@@ -106,7 +130,7 @@ enum SettingsMigrationError: Error, Equatable {
 
 /// The whole persisted document. Stored as JSON in `UserDefaults` under "settings.v1".
 struct Settings: Codable, Sendable, Equatable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
 
     var schemaVersion: Int
     var dictationMode: DictationMode
@@ -120,9 +144,12 @@ struct Settings: Codable, Sendable, Equatable {
     var summarizeLLM: LLMSelection?
     var speech: SpeechSettings
     var presets: [PromptPreset]
-    var presetsSeeded: Bool
-    var defaultRefinePresetID: UUID?
-    var defaultSummarizePresetID: UUID?
+    /// The working language for Refine & Summarize.
+    var promptLanguage: String
+    /// Languages whose factory presets have already been seeded.
+    var seededPromptLanguages: [String]
+    /// Key: `Settings.presetKey(kind, language)`.
+    var defaultPresetIDs: [String: UUID]
     /// Key: screen identifier, value: the remembered Quick Panel frame.
     var quickPanelFrames: [String: CGRect]
 
@@ -139,9 +166,9 @@ struct Settings: Codable, Sendable, Equatable {
             summarizeLLM: LLMSelection(endpointID: Endpoint.ollamaLocalID, model: "qwen2.5:1.5b"),
             speech: SpeechSettings(),
             presets: [],
-            presetsSeeded: false,
-            defaultRefinePresetID: nil,
-            defaultSummarizePresetID: nil,
+            promptLanguage: PromptLanguage.systemDefault.code,
+            seededPromptLanguages: [],
+            defaultPresetIDs: [:],
             quickPanelFrames: [:]
         )
     }
@@ -182,9 +209,11 @@ extension Settings {
         summarizeLLM = try c.decodeIfPresent(LLMSelection.self, forKey: .summarizeLLM) ?? d.summarizeLLM
         speech = try c.decodeIfPresent(SpeechSettings.self, forKey: .speech) ?? d.speech
         presets = try c.decodeIfPresent([PromptPreset].self, forKey: .presets) ?? d.presets
-        presetsSeeded = try c.decodeIfPresent(Bool.self, forKey: .presetsSeeded) ?? d.presetsSeeded
-        defaultRefinePresetID = try c.decodeIfPresent(UUID.self, forKey: .defaultRefinePresetID)
-        defaultSummarizePresetID = try c.decodeIfPresent(UUID.self, forKey: .defaultSummarizePresetID)
+        promptLanguage = try c.decodeIfPresent(String.self, forKey: .promptLanguage) ?? d.promptLanguage
+        seededPromptLanguages = try c.decodeIfPresent([String].self, forKey: .seededPromptLanguages)
+            ?? d.seededPromptLanguages
+        defaultPresetIDs = try c.decodeIfPresent([String: UUID].self, forKey: .defaultPresetIDs)
+            ?? d.defaultPresetIDs
         quickPanelFrames = try c.decodeIfPresent([String: CGRect].self, forKey: .quickPanelFrames) ?? d.quickPanelFrames
     }
 }

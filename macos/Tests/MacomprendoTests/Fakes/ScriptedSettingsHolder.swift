@@ -12,7 +12,7 @@ import Foundation
     static func seeded() -> ScriptedSettingsHolder {
         var s = Settings.default
         s.presets = []
-        s.presetsSeeded = false
+        s.seededPromptLanguages = []
         FactoryPresets.seed(into: &s)
         return ScriptedSettingsHolder(s)
     }

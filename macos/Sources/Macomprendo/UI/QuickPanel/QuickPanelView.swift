@@ -11,9 +11,11 @@ struct QuickPanelView: View {
         Group {
             switch panel.layout {
             case .refine:
-                RefineLayout(controller: refine, presets: app.settings.presets(of: .refine))
+                RefineLayout(controller: refine,
+                            presets: app.settings.presets(of: .refine, language: app.settings.promptLanguage))
             case .summary:
-                SummaryLayout(controller: summarize, presets: app.settings.presets(of: .summarize))
+                SummaryLayout(controller: summarize,
+                             presets: app.settings.presets(of: .summarize, language: app.settings.promptLanguage))
             }
         }
         .frame(minWidth: 520, minHeight: 300)
