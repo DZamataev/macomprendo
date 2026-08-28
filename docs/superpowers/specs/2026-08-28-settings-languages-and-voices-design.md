@@ -88,8 +88,17 @@ and the "at least one of a kind must exist" rule now apply within a kind **and**
 
 ## Part 1 — hotkeys in the menubar menu
 
-`MenuBarView`'s per-action row becomes a `Toggle` whose label is an `HStack` of the display
-name, a `Spacer`, and the shortcut in `.secondary`. The shortcut string comes from
+`MenuBarView`'s per-action row becomes a `Toggle` whose label is a single plain string,
+`"<name> — <shortcut>"`.
+
+It has to be one string. A `MenuBarExtra(.menu)` item is a real `NSMenuItem`, and SwiftUI keeps
+only the first `Text` of a composite label: an `HStack { Text(name); Spacer(); Text(shortcut) }`
+renders as the name alone, with the shortcut silently dropped and no warning. That is how this
+shipped broken on the first attempt — no unit test could see it, because the loss happens at
+render, and it was caught only by opening the menu. The same constraint rules out right-aligning
+the shortcut the way a native menu does, so it is separated inline. `.keyboardShortcut()` would
+draw it natively but would also bind the key, so pressing it with the app active would toggle the
+checkbox instead of running the action. The shortcut string comes from
 `KeyboardShortcuts.getShortcut(for: .forAction(action))?.description` — `"⌥Space"`,
 `"⌥⇧Space"` — and reads `"not set"` when no shortcut is bound (`refineSelection` ships
 unbound today).
@@ -98,16 +107,20 @@ Formatting lives in a pure, testable helper next to `HotkeyAction`:
 
 ```swift
 extension HotkeyAction {
-    /// `shortcut` is the description from KeyboardShortcuts, or nil when unbound.
+    /// The shortcut alone: the library's description, or "not set" when unbound or blank.
     func menuTrailing(shortcut: String?) -> String
+    /// The whole row as one string: "<display name> — <menuTrailing>".
+    func menuTitle(shortcut: String?) -> String
 }
 ```
 
-*Amended after execution.* The design first drafted this as
-`static func menuLabel(name:shortcut:) -> (title:, trailing:)`. The title half was never used —
-the row already renders the action's display name itself — so what shipped is the instance
-method above, returning only the trailing text (`"⌥Space"`, or `"not set"` for an unbound or
-blank shortcut).
+*Amended twice after execution.* The design first drafted this as
+`static func menuLabel(name:shortcut:) -> (title:, trailing:)`; the title half was never needed,
+so it became the instance `menuTrailing` above. The row itself was then drafted as a composite
+label — name, `Spacer`, shortcut in `.secondary` — and that is what shipped first and did not
+work: the shortcut never appeared in the menu. `menuTitle` exists because the row has to be a
+single string; see Part 1's body for why, and `docs/SMOKE_TEST.md` for the row that catches it,
+since no unit test can.
 
 The library's `shortcutByNameDidChange` notification is `internal` and unavailable to us, and
 it is not needed: `MenuBarExtra` re-evaluates the menu body each time the menu opens, so a

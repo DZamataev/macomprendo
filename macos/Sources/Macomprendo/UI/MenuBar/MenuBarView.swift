@@ -11,17 +11,12 @@ struct MenuBarView: View {
 
         Divider()
 
+        // One plain string, deliberately: see `HotkeyAction.menuTitle(shortcut:)` for why a
+        // composite label loses the shortcut here.
         ForEach(HotkeyAction.allCases, id: \.self) { action in
-            Toggle(isOn: Binding(
+            Toggle(action.menuTitle(shortcut: action.currentShortcutText()), isOn: Binding(
                 get: { model.isEnabled(action) },
-                set: { model.setEnabled(action, $0) })) {
-                    HStack {
-                        Text(action.displayName)
-                        Spacer()
-                        Text(action.menuTrailing(shortcut: action.currentShortcutText()))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                set: { model.setEnabled(action, $0) }))
         }
 
         Divider()
