@@ -17,10 +17,11 @@ extension PromptLanguage {
     var content: FactoryPresetContent {
         switch self {
         case .english: .english
-        // Only English has content in this task. Task 4 splits `.russian` out and Task 5 the
-        // remaining five, so the build stays green at every step and no language is ever
-        // left without content.
-        case .russian, .spanish, .german, .french, .portuguese, .chinese: .english
+        case .russian: .russian
+        // Task 5 splits out the remaining five languages (.spanish, .german, .french,
+        // .portuguese, .chinese), so the build stays green at every step and no language is
+        // ever left without content.
+        case .spanish, .german, .french, .portuguese, .chinese: .english
         }
     }
 }

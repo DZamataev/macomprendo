@@ -73,6 +73,17 @@ import Testing
         }
     }
 
+    @Test func russianContentIsWrittenInRussian() {
+        let content = PromptLanguage.russian.content
+        #expect(content.systemPrompt != PromptLanguage.english.content.systemPrompt)
+        for role in FactoryPresets.Role.allCases {
+            let entry = content.entries[role]!
+            #expect(entry.template.contains(where: { LanguageSegmenter.script(of: $0) == .cyrillic }),
+                    "ru/\(role.rawValue) has no Cyrillic text")
+        }
+        #expect(content.entries[.translateAndOrganize]!.name == "Перевести и систематизировать")
+    }
+
     @Test func rolesSplitEightRefineAndFourSummarize() {
         #expect(FactoryPresets.Role.allCases.filter { $0.kind == .refine }.count == 8)
         #expect(FactoryPresets.Role.allCases.filter { $0.kind == .summarize }.count == 4)
