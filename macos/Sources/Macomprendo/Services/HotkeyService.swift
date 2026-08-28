@@ -19,6 +19,26 @@ enum HotkeyAction: String, CaseIterable, Sendable {
     }
 }
 
+extension HotkeyAction {
+    static let unboundShortcutText = "not set"
+
+    /// The trailing text of this action's menu row. Pure, so it is unit-tested without
+    /// AppKit or the KeyboardShortcuts package.
+    func menuTrailing(shortcut: String?) -> String {
+        let trimmed = (shortcut ?? "").trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? Self.unboundShortcutText : trimmed
+    }
+
+    /// The shortcut currently bound to this action, as the library renders it ("⌥Space").
+    /// Read at menu-build time: `MenuBarExtra` re-evaluates its body every time the menu
+    /// opens, so a shortcut rebound in Settings ▸ Hotkeys shows up on the next open. The
+    /// library's `shortcutByNameDidChange` notification is internal and cannot be observed.
+    @MainActor
+    func currentShortcutText() -> String? {
+        KeyboardShortcuts.getShortcut(for: .forAction(self))?.description
+    }
+}
+
 enum HotkeyEvent: Sendable, Equatable {
     case keyDown(HotkeyAction)
     case keyUp(HotkeyAction)

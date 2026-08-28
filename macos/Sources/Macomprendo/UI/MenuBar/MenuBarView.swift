@@ -12,9 +12,16 @@ struct MenuBarView: View {
         Divider()
 
         ForEach(HotkeyAction.allCases, id: \.self) { action in
-            Toggle(action.displayName, isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { model.isEnabled(action) },
-                set: { model.setEnabled(action, $0) }))
+                set: { model.setEnabled(action, $0) })) {
+                    HStack {
+                        Text(action.displayName)
+                        Spacer()
+                        Text(action.menuTrailing(shortcut: action.currentShortcutText()))
+                            .foregroundStyle(.secondary)
+                    }
+                }
         }
 
         Divider()
