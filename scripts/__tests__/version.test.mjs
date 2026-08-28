@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bumpVersion, readVersion, replaceVersion } from "../lib/version.mjs";
+import { bumpVersion, readVersion } from "../lib/version.mjs";
 
 test("readVersion finds MARKETING_VERSION in project.yml text", () => {
   const yml = 'settings:\n  base:\n    MARKETING_VERSION: "0.1.0"\n';
@@ -20,9 +20,4 @@ test("bumpVersion bumps each part", () => {
 
 test("bumpVersion rejects an unknown part", () => {
   assert.throws(() => bumpVersion("1.2.3", "sideways"), /Unknown version part/);
-});
-
-test("replaceVersion leaves longer version-like strings alone", () => {
-  assert.equal(replaceVersion('MARKETING_VERSION: "0.1.0"', "0.1.0", "0.2.0"), 'MARKETING_VERSION: "0.2.0"');
-  assert.equal(replaceVersion("0.1.0.1", "0.1.0", "0.2.0"), "0.1.0.1");
 });

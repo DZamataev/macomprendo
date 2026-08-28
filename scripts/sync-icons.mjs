@@ -75,9 +75,21 @@ export async function syncIcons(repoRoot, { check = false } = {}) {
     if (!check) await fs.writeFile(target, source);
   }
 
+  const licenseTarget = path.join(iconsDir, LICENSE_TARGET);
+  const licenseSource = await fs.readFile(path.join(repoRoot, LICENSE_SOURCE), "utf8");
+  let licenseCurrent = null;
+  try {
+    licenseCurrent = await fs.readFile(licenseTarget, "utf8");
+  } catch {
+    licenseCurrent = null;
+  }
+  if (licenseCurrent !== licenseSource) {
+    changed.push(LICENSE_TARGET);
+    if (!check) await fs.writeFile(licenseTarget, licenseSource);
+  }
+
   if (!check) {
     for (const file of stale) await fs.rm(path.join(iconsDir, file));
-    await fs.copyFile(path.join(repoRoot, LICENSE_SOURCE), path.join(iconsDir, LICENSE_TARGET));
   }
 
   return { changed, stale, total: wanted.length };

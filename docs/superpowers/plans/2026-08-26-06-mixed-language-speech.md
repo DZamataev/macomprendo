@@ -64,8 +64,8 @@ unless listed under "Interface additions beyond the shared map" below.
    files must not run it. `brew install xcodegen` is a prerequisite (2.46.0 is what the repo was
    generated with).
 2. **Verify your working directory before you start.** Run
-   `pwd && git -C /Users/frenzy/dev/macomprendo status --short && git -C /Users/frenzy/dev/macomprendo log --oneline -1`
-   and confirm you are in `/Users/frenzy/dev/macomprendo`, that the tree is clean apart from
+   `pwd && git -C <repo> status --short && git -C <repo> log --oneline -1`
+   and confirm you are in `<repo>`, that the tree is clean apart from
    untracked `.claude/worktrees/`, and that the previous task's commit is HEAD. Do not start on a
    dirty tree.
 3. **Incremental builds hide warnings.** `swift build` only re-emits diagnostics for files it
@@ -160,10 +160,10 @@ Plans 1–5 are merged. The following exist and are consumed verbatim: `Settings
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
-Expected: you are in `/Users/frenzy/dev/macomprendo`; `status` prints nothing except possibly
+Expected: you are in `<repo>`; `status` prints nothing except possibly
 `?? .claude/worktrees/`.
 
 - [ ] **Step 2: Write the failing test**
@@ -468,10 +468,10 @@ git commit -m "feat(speech): add a pure Cyrillic/Latin script segmenter"
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
-Expected: clean tree in `/Users/frenzy/dev/macomprendo`; HEAD is
+Expected: clean tree in `<repo>`; HEAD is
 `feat(speech): add a pure Cyrillic/Latin script segmenter`.
 
 - [ ] **Step 2: Write the failing test**
@@ -825,8 +825,8 @@ git commit -m "feat(speech): switch system voices per script inside one selectio
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
 Expected: clean tree; HEAD is
 `feat(speech): switch system voices per script inside one selection`.
@@ -1039,8 +1039,8 @@ git commit -m "feat(speech): surface backend failures through SpeakController to
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
 Expected: clean tree; HEAD is
 `feat(speech): surface backend failures through SpeakController toasts`.
@@ -1251,8 +1251,8 @@ git commit -m "feat(settings): add the endpoint speech source fields to SpeechSe
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
 Expected: clean tree; HEAD is
 `feat(settings): add the endpoint speech source fields to SpeechSettings`.
@@ -1535,8 +1535,8 @@ the base does not already end in it. Verified outputs:
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
 Expected: clean tree; HEAD is
 `feat(speech): add sentence-aware chunking for the speech endpoint`.
@@ -1790,8 +1790,8 @@ git commit -m "feat(speech): add the OpenAI-compatible speech request builder"
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
 Expected: clean tree; HEAD is
 `feat(speech): add the OpenAI-compatible speech request builder`.
@@ -2032,8 +2032,8 @@ git commit -m "feat(speech): add the AudioPlaying seam and playback/key error ca
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
 Expected: clean tree; HEAD is
 `feat(speech): add the AudioPlaying seam and playback/key error cases`.
@@ -2512,8 +2512,8 @@ git commit -m "feat(speech): add the OpenAI-compatible endpoint speech backend"
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
 Expected: clean tree; HEAD is
 `feat(speech): add the OpenAI-compatible endpoint speech backend`.
@@ -2775,8 +2775,8 @@ git commit -m "feat(speech): route speech to the system or endpoint backend per 
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
 Expected: clean tree; HEAD is
 `feat(speech): route speech to the system or endpoint backend per settings`.
@@ -3214,8 +3214,8 @@ git commit -m "feat(settings): add a speech source picker and the endpoint secti
 
 ```bash
 pwd
-git -C /Users/frenzy/dev/macomprendo status --short
-git -C /Users/frenzy/dev/macomprendo log --oneline -1
+git -C <repo> status --short
+git -C <repo> log --oneline -1
 ```
 Expected: clean tree; HEAD is
 `feat(settings): add a speech source picker and the endpoint section`.

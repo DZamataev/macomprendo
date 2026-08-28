@@ -1,0 +1,93 @@
+name: Release
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-build:
+    runs-on: macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Report toolchain versions
+        run: |
+          node --version
+          npm --version
+          swift --version
+          xcodebuild -version
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Verify the tag matches the release version
+        run: |
+          node -e '
+          import("node:fs/promises").then(async (fs) => {
+            const { readVersion } = await import("./scripts/lib/version.mjs");
+            const { PROJECT_YML } = await import("./scripts/lib/paths.mjs");
+            const version = readVersion(await fs.readFile(PROJECT_YML, "utf8"));
+            const tag = process.env.GITHUB_REF_NAME;
+            const expected = `v${version}`;
+            if (tag !== expected) {
+              console.error(`Tag ${tag} does not match MARKETING_VERSION ${version} in macos/project.yml (expected ${expected}).`);
+              process.exit(1);
+            }
+            console.log(`Tag ${tag} matches MARKETING_VERSION ${version}.`);
+          });
+          '
+
+      - name: Run Node script tests
+        run: npm run test:scripts
+
+      - name: Run Swift package tests
+        run: swift test --package-path macos
+
+      - name: Build the app without signing
+        run: >-
+          xcodebuild
+          -project macos/Macomprendo.xcodeproj
+          -scheme Macomprendo
+          -configuration Release
+          -destination 'generic/platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+      - name: Audit public repository files
+        run: npm run audit
+
+      - name: Build an unsigned universal app bundle
+        run: npm run build -- --arch arm64,x86_64
+
+      - name: Report the built artifact
+        run: |
+          lipo -archs dist/Macomprendo.app/Contents/MacOS/Macomprendo
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            dist/Macomprendo.app/Contents/Info.plist
+          ls dist/Macomprendo.app/Contents/Resources
+
+      - name: Archive the unsigned build
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            dist/Macomprendo.app/Contents/Info.plist)
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/Macomprendo.app "dist/Macomprendo-${VERSION}-macos-unsigned.zip"
+          shasum -a 256 "dist/Macomprendo-${VERSION}-macos-unsigned.zip"
+
+      - name: Upload the unsigned build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macomprendo-unsigned
+          path: dist/Macomprendo-*-macos-unsigned.zip
+          if-no-files-found: error
+          retention-days: 14

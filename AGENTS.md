@@ -19,6 +19,7 @@ and summarize go through Ollama or an OpenAI-compatible chat endpoint.
 | `macos/Tests/MacomprendoTests` | swift-testing tests mirroring the source tree; `Fakes/` holds protocol doubles |
 | `scripts/` | Node ≥ 20 ESM tooling; `lib/` holds shared helpers; `__tests__/` holds `node:test` tests |
 | `docs/` | `ARCHITECTURE.md`, `SMOKE_TEST.md`, `DECISIONS/ADR-*.md`, `superpowers/{specs,plans}` |
+| `DISTRIBUTING.md` | Signing, notarization, and releasing — the operator-facing counterpart to `scripts/` |
 
 ## Commands
 

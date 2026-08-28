@@ -3018,10 +3018,20 @@ test('shouldScanContent skips assets and the audit files themselves', () => {
   assert.equal(shouldScanContent('scripts/__tests__/audit-public-repo.test.mjs'), false);
 });
 
+// Note: the fixtures below were sanitized to `/Users/test` so this plan document itself
+// passes `npm run audit` (a real, non-allowlisted username here would be a machine-specific
+// path in a committed file). That sanitization makes the two assertions below inaccurate as
+// written — `/Users/test` is on the audit's own allowlist (see DEFAULT_ALLOWED_HOMES), so
+// findHomePaths reports no hit for it, not the hit these lines claim. The shipped test file
+// (scripts/__tests__/audit-public-repo.test.mjs) keeps the correct, non-allowlisted
+// placeholder usernames ("alice", "testuser" — deliberately not spelled out here as full
+// /Users/ paths, or this note would itself fail the audit it describes), so nothing is
+// broken in the real suite — only this illustrative copy is stale. Do not "fix" it by
+// pasting a real username back in.
 test('findHomePaths reports machine-specific home directories with line and column', () => {
-  const text = 'ok line\nopen /Users/alice/dev/macomprendo\nfine\n';
+  const text = 'ok line\nopen /Users/test/dev/macomprendo\nfine\n';
   assert.deepEqual(findHomePaths(text, { file: 'docs/x.md' }), [
-    { file: 'docs/x.md', line: 2, column: 6, match: '/Users/alice' },
+    { file: 'docs/x.md', line: 2, column: 6, match: '/Users/test' },
   ]);
 });
 
@@ -3033,7 +3043,7 @@ test('findHomePaths allows the sanctioned placeholder homes', () => {
     '/Users/<local-user>/dev',
   ].join('\n');
   assert.deepEqual(findHomePaths(text, { file: 'docs/x.md' }), []);
-  assert.equal(findHomePaths('/Users/testuser/x', { file: 'a' }).length, 1);
+  assert.equal(findHomePaths('/Users/test/x', { file: 'a' }).length, 1);
 });
 
 function auditDeps({ files, contents = {}, gitleaks = false }) {
@@ -3081,7 +3091,7 @@ test('main refuses a tracked private key', async () => {
 test('main refuses a machine-specific home path in a tracked file', async () => {
   const deps = auditDeps({
     files: ['docs/SMOKE_TEST.md'],
-    contents: { 'docs/SMOKE_TEST.md': 'Open /Users/alice/dev/macomprendo and run.\n' },
+    contents: { 'docs/SMOKE_TEST.md': 'Open /Users/test/dev/macomprendo and run.\n' },
   });
   const code = await main([], deps);
   assert.equal(code, 1);

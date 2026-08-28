@@ -55,6 +55,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   each, edit a preset's system prompt and user template with placeholder
   validation shown on selecting or saving a preset, restore deleted factory
   presets, and test a preset against sample text with a live streamed preview.
+- Node release toolchain (`scripts/`, Node ≥ 20 ESM): `npm run build` assembles a
+  universal, ad-hoc or Developer ID signed `Macomprendo.app`, discovering and copying
+  whichever SwiftPM resource bundles and dynamic frameworks the build actually emits;
+  `npm run notarize` builds, submits to Apple's notary service, staples the ticket and
+  packages a checksummed ZIP; `npm run configure-notary` stores notarization credentials
+  in the Keychain without ever putting a password on a command line; `npm run release`
+  bumps the version, finalizes `CHANGELOG.md`, runs the full test suite, tags, pushes and
+  publishes a GitHub release, optionally attaching a notarized build with `--notarize`;
+  `npm run install-app` builds and atomically installs into `/Applications` with a
+  restorable backup; `npm run audit` refuses to publish credentials, Xcode user state, or
+  machine-specific paths. All of it is covered by `node:test` unit tests.
+- Documentation: this README, `DISTRIBUTING.md`, `docs/ARCHITECTURE.md`,
+  `docs/SMOKE_TEST.md`, `PRIVACY.md`, and ADR-0001 through ADR-0008.
 
 ### Fixed
 - The menubar's "Settings…" item now activates the app before opening the
@@ -79,3 +92,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   E…"). Only short Latin runs still merge into a neighboring Cyrillic run
   (accented but intelligible), and the merge threshold now counts letters
   only, ignoring attached digits/punctuation.
+
+### Security
+- Not sandboxed by necessity (see ADR-0003), but hardened runtime, Developer ID
+  signed, notarized and stapled before distribution.
+- Pasteboard contents are snapshotted and restored after every simulated ⌘C/⌘V,
+  guarded by a change-count check so a copy made during the 300 ms window is
+  never clobbered.
+- API keys live in the Keychain only; they are never written to `settings.v1`,
+  logs, or exported files, and transcripts/LLM text are never logged at the
+  default log level.
+- `npm run audit` blocks publication of credentials (`.p8`/`.p12`/`.pem`/`.cer`/
+  `.key`/`.mobileprovision`, keychains), Xcode user state, notary logs, and
+  machine-specific `/Users/<name>` paths, and runs Gitleaks over the working
+  tree and git history when it is installed.

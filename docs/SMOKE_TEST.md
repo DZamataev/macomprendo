@@ -10,35 +10,67 @@ Reset permissions when you want to rehearse a fresh install:
 
 ## Dictation (hotkey #1)
 
-| # | Step | Expected |
-|---|------|----------|
-| 1 | Launch the app for the first time | No Dock icon; a waveform icon appears in the menubar; the Welcome window opens |
-| 2 | Click "Allow microphone…" in onboarding | The macOS microphone prompt appears; after allowing, the step shows "Granted." |
-| 3 | Click "Allow accessibility…" | The Accessibility prompt appears; after enabling Macomprendo in System Settings and returning, the step shows "Granted." |
-| 4 | Choose "Large v3 Turbo" and click Download | Progress advances to 100%, then "Downloaded." |
-| 5 | Click "Check for Ollama" (with Ollama running) | "Ollama is running." (with Ollama stopped: the orange "Not found" hint) |
-| 6 | Click Finish | Window closes and does not reopen on the next launch |
-| 7 | Open TextEdit, click into a document, hold ⌥Space and say "hello world" | HUD appears top-centre of the screen with the mouse, level meter moves, timer counts up |
-| 8 | Release ⌥Space | HUD switches to "Transcribing…", then a ✓ that disappears after ~1.2 s; "hello world" is inserted at the caret in TextEdit |
-| 9 | Before dictating, copy some text (⌘C), then dictate again | After insertion, ⌘V still pastes your original clipboard text |
-| 10 | Dictate, and while the HUD says "Transcribing…" press ⌥Space again | HUD shows "Cancelled"; nothing is inserted |
-| 11 | Hold ⌥Space to start recording, then press Esc | HUD shows "Cancelled"; nothing is inserted |
-| 12 | Dictate, and while the HUD says "Transcribing…" press Esc | HUD shows "Cancelled"; nothing is inserted |
-| 13 | Hold ⌥Space, say nothing, release | HUD shows "Nothing heard"; nothing is inserted |
-| 14 | Settings ▸ General: switch to "Press to start, press to stop" | ⌥Space starts recording; a second press stops, transcribes and inserts |
-| 15 | Settings ▸ General: set Insert text by = "Typing character by character", dictate into TextEdit | Text is typed rather than pasted; the clipboard is untouched |
-| 16 | Settings ▸ Hotkeys: record ⌃⌥D for Dictate, then use it | The new shortcut dictates; ⌥Space no longer does |
-| 17 | Menubar menu: switch "Dictate" off, press the hotkey | Nothing happens; switching it back on restores it |
-| 18 | Dictate into a full-screen app on a second display | The HUD appears on the screen with the mouse, above the full-screen app, and the text lands in the app |
-| 19 | Menubar menu while idle / recording | Status line reads "Ready" / "Recording…" |
-| 20 | Settings ▸ Models: delete the downloaded model, then dictate | HUD shows a "model missing" error with recovery text; downloading it again fixes dictation |
-| 21 | Settings ▸ Providers: select "Ollama (local)", click "Test connection" | "Connected — N models" (with Ollama stopped: the unreachable error and its recovery text) |
-| 22 | Settings ▸ Providers ▸ Ollama: click "Pull qwen2.5:1.5b" | Progress advances and finishes with "Pulled qwen2.5:1.5b" |
-| 23 | Settings ▸ Providers: add an OpenAI-compatible endpoint, type an API key, click "Save key", quit and relaunch | The key is still there (read back from the Keychain), and `settings.v1` in UserDefaults contains no secret |
-| 24 | Settings ▸ Dictation: switch the source to that endpoint with model `whisper-1`, dictate | Audio is sent to the endpoint and the transcript is inserted |
-| 25 | Deny the microphone in System Settings, then press the hotkey | HUD shows the permission error and the Privacy ▸ Microphone pane opens |
-| 26 | Turn Accessibility off in System Settings, then press the hotkey | HUD shows the permission error and the Privacy ▸ Accessibility pane opens |
-| 27 | Settings ▸ General: toggle "Launch at login" on, check System Settings ▸ General ▸ Login Items | Macomprendo is listed; toggling it off removes it |
+- [ ] Launch the app for the first time — no Dock icon; a waveform icon appears in the
+      menubar; the Welcome window opens.
+- [ ] Click "Allow microphone…" in onboarding — the macOS microphone prompt appears; after
+      allowing, the step shows "Granted."
+- [ ] Click "Allow accessibility…" — the Accessibility prompt appears; after enabling
+      Macomprendo in System Settings and returning, the step shows "Granted."
+- [ ] Choose "Large v3 Turbo" and click Download — progress advances to 100%, then
+      "Downloaded."
+- [ ] Click "Check for Ollama" (with Ollama running) — "Ollama is running." (with Ollama
+      stopped: the orange "Not found" hint)
+- [ ] Click Finish — the window closes and does not reopen on the next launch.
+- [ ] Open TextEdit, click into a document, hold ⌥Space and say "hello world" — the HUD
+      appears top-centre of the screen with the mouse, the level meter moves, the timer counts
+      up.
+- [ ] Release ⌥Space — the HUD switches to "Transcribing…", then a ✓ that disappears after
+      ~1.2 s; "hello world" is inserted at the caret in TextEdit.
+- [ ] Before dictating, copy some text (⌘C), then dictate again — after insertion, ⌘V still
+      pastes your original clipboard text.
+- [ ] Dictate, and while the HUD says "Transcribing…" press ⌥Space again — the HUD shows
+      "Cancelled"; nothing is inserted.
+- [ ] Hold ⌥Space to start recording, then press Esc — the HUD shows "Cancelled"; nothing is
+      inserted.
+- [ ] Dictate, and while the HUD says "Transcribing…" press Esc — the HUD shows "Cancelled";
+      nothing is inserted.
+- [ ] Hold ⌥Space, say nothing, release — the HUD shows "Nothing heard"; nothing is inserted.
+- [ ] Settings ▸ General: switch to "Press to start, press to stop" — ⌥Space starts recording;
+      a second press stops, transcribes and inserts.
+- [ ] Settings ▸ General: set Insert text by = "Typing character by character", dictate into
+      TextEdit — text is typed rather than pasted; the clipboard is untouched.
+- [ ] Settings ▸ Hotkeys: record ⌃⌥D for Dictate, then use it — the new shortcut dictates;
+      ⌥Space no longer does.
+- [ ] Menubar menu: switch "Dictate" off, press the hotkey — nothing happens; switching it back
+      on restores it.
+- [ ] Dictate into a full-screen app on a second display — the HUD appears on the screen with
+      the mouse, above the full-screen app, and the text lands in the app.
+- [ ] Menubar menu while idle / recording — the status line reads "Ready" / "Recording…".
+- [ ] Settings ▸ Models: delete the downloaded model, then dictate — the HUD shows a "model
+      missing" error with recovery text; downloading it again fixes dictation.
+- [ ] Settings ▸ Providers: select "Ollama (local)", click "Test connection" — "Connected —
+      N models" (with Ollama stopped: the unreachable error and its recovery text).
+- [ ] Settings ▸ Providers ▸ Ollama: click "Pull qwen2.5:1.5b" — progress advances and finishes
+      with "Pulled qwen2.5:1.5b".
+- [ ] Settings ▸ Providers: add an OpenAI-compatible endpoint, type an API key, click "Save
+      key", quit and relaunch — the key is still there (read back from the Keychain), and
+      `settings.v1` in UserDefaults contains no secret.
+- [ ] **Keychain fallback path:** with that same endpoint's key already saved, go back to
+      Settings ▸ Providers, type a *different* key over it, and click "Save key" again — the
+      caption still reads "Key saved to the Keychain."; quitting and relaunching reads back the
+      new key, not the old one. (Saving over an existing key exercises
+      `SystemKeychainStore.set`'s `SecItemUpdate` path directly; saving a key for the first
+      time, as in the step above, exercises its `SecItemAdd` fallback, taken when
+      `SecItemUpdate` returns `errSecItemNotFound`. This is deliberately excluded from CI
+      because Keychain access is flaky in that environment.)
+- [ ] Settings ▸ Dictation: switch the source to that endpoint with model `whisper-1`, dictate
+      — audio is sent to the endpoint and the transcript is inserted.
+- [ ] Deny the microphone in System Settings, then press the hotkey — the HUD shows the
+      permission error and the Privacy ▸ Microphone pane opens.
+- [ ] Turn Accessibility off in System Settings, then press the hotkey — the HUD shows the
+      permission error and the Privacy ▸ Accessibility pane opens.
+- [ ] Settings ▸ General: toggle "Launch at login" on, check System Settings ▸ General ▸ Login
+      Items — Macomprendo is listed; toggling it off removes it.
 
 ## Refine selection (hotkey #5, unassigned by default)
 
@@ -190,3 +222,102 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
       Keychain item is gone.
 - [ ] Open Console.app filtered on subsystem `com.dzamataev.macomprendo` and repeat a ⌥S with
       the endpoint source selected: **no** log line contains the selected text or the API key.
+
+## Release checklist
+
+Run this list on a Mac that has *not* been used to develop the current change, if possible.
+Every box must be ticked before `npm run release`.
+
+### Automated gates
+
+- [ ] `npm ci` succeeds from a clean `node_modules`.
+- [ ] `npm run test:scripts` — all Node tests pass.
+- [ ] `swift test --package-path macos` — all Swift tests pass.
+- [ ] `npm run gen && git diff --exit-code macos/Macomprendo.xcodeproj` — the committed Xcode
+      project matches `macos/project.yml`.
+- [ ] `npm run sync-agents -- --check` — the agent-config symlinks are intact.
+- [ ] `npm run audit` — the public repository audit passes.
+- [ ] `npm run build -- --dry-run` — the build plan prints without error.
+- [ ] `npm run release -- --dry-run patch` — the version resolves and the changelog validates.
+
+### Build artifact
+
+- [ ] `npm run build -- --arch arm64,x86_64` succeeds.
+- [ ] `lipo -archs dist/Macomprendo.app/Contents/MacOS/Macomprendo` prints `x86_64 arm64`.
+- [ ] `ls dist/Macomprendo.app/Contents/Resources` contains `AppIcon.icns`, `LICENSE`,
+      `Macomprendo_Macomprendo.bundle` (the vendored Phosphor icons), and
+      `KeyboardShortcuts_KeyboardShortcuts.bundle`.
+- [ ] `find dist/Macomprendo.app/Contents/Resources/Macomprendo_Macomprendo.bundle -type f | wc -l`
+      prints a number greater than zero. This is the actual proof the vendored Phosphor SVGs
+      shipped inside the built app — nothing about the running app's *appearance* proves it (the
+      menubar icon is a hardcoded SF Symbol, not drawn from this bundle, and a missing bundle
+      degrades every other icon silently to a similar-looking SF Symbol instead of failing
+      visibly; see the "Icons in Settings" row below).
+- [ ] `ls dist/Macomprendo.app/Contents/Frameworks` contains `whisper.framework` — whisper is
+      dynamically linked (confirm with
+      `otool -L dist/Macomprendo.app/Contents/MacOS/Macomprendo | grep whisper`), so this
+      directory must be present, not absent. See DISTRIBUTING.md → "What the build copies into
+      the bundle" if a future whisper xcframework bump changes this.
+- [ ] `codesign --verify --deep --strict --verbose=2 dist/Macomprendo.app` reports the bundle as
+      valid on disk and satisfying its designated requirement.
+- [ ] `/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/Macomprendo.app/Contents/Info.plist`
+      prints `com.dzamataev.macomprendo`.
+- [ ] `/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' …` matches
+      `MARKETING_VERSION` in `macos/project.yml`.
+
+### Notarized artifact
+
+Requires the Developer ID Application certificate for team `68QJJA7HK9` from DISTRIBUTING.md's
+prerequisites, installed in the login keychain.
+
+- [ ] `npm run notarize` finishes with `Notarized release: dist/Macomprendo-<version>-macos.zip`.
+- [ ] `xcrun stapler validate dist/Macomprendo.app` reports the ticket is valid.
+- [ ] `spctl --assess --type execute --verbose=4 dist/Macomprendo.app` prints `accepted` and
+      `source=Notarized Developer ID`.
+- [ ] `shasum -a 256 -c dist/Macomprendo-<version>-macos.zip.sha256` passes.
+- [ ] Expanding the ZIP on a Mac that has never seen the app opens it with no Gatekeeper warning.
+
+> **This block has never been executed for real.** Everything above is covered by unit tests
+> against a faked `notarytool`/`codesign`/`spctl`, and `--dry-run` prints the exact same steps
+> that a real run would execute (both share one generated step list), but that only proves the
+> *steps* are right — not that Apple's notary service accepts what gets submitted. An actual
+> submission — network round-trip, real "Accepted" status, a genuine staple and a live
+> Gatekeeper check — has not happened yet.
+> The first time an operator runs `npm run notarize` (standalone, or via
+> `npm run release -- --notarize <bump>`) for real, tick every box above deliberately instead of
+> assuming the tests already proved it.
+
+### Install and first run
+
+- [ ] `npm run install-app` installs into `/Applications` and relaunches the app.
+- [ ] Running it a second time while the app is open quits the running copy and relaunches it.
+- [ ] No `.macomprendo-update.*` directory is left behind in the install directory.
+- [ ] On a fresh user account, onboarding asks for Microphone, then Accessibility, and the
+      System Settings deep links open the correct panes.
+
+### Manual verification (human only — no agent can perform these)
+
+- [ ] **Icons in Settings look like Phosphor glyphs, not system symbols.** Open Settings and
+      look at any tab with icons (Hotkeys, Providers, Models…). Every icon in the app is drawn
+      by `Icon.swift`, which loads a vendored Phosphor SVG from `Macomprendo_Macomprendo.bundle`
+      (see ADR-0008) — Phosphor's glyphs have a noticeably different weight and shape from
+      Apple's SF Symbols. If the SVG can't be found, `Icon.swift` falls back **silently** to a
+      similar but not identical SF Symbol (`AppIcon.fallbackSymbol`) — no error, no log line, and
+      the app keeps running normally. So this row is a judgement call about how the icons *look*,
+      not a pass/fail the app itself reports, and a "yes, they look like Phosphor icons" here is
+      the closest a human glance gets to confirming the bundle loaded — it is not conclusive on
+      its own (use the `find`/`wc -l` check in Build artifact for that). The menubar's own status
+      item is not evidence either way: it is deliberately hardcoded to the SF Symbol `waveform`
+      (`MenuBarExtra("Macomprendo", systemImage: "waveform")` in `MacomprendoApp.swift`), per
+      CLAUDE.md invariant 12 — it never draws from this bundle, with or without it present.
+- [ ] **Dictation produces a transcript.** Press the dictation hotkey once, say a sentence, and
+      confirm text is inserted. This is the only proof that the whisper xcframework
+      (`whisper.framework`, dynamically linked — see ADR-0007) actually loaded and ran on this
+      machine; a linking or Metal-resource problem would only surface here, not in a headless
+      test or a dry run.
+
+### Documentation
+
+- [ ] `CHANGELOG.md` has entries under `## [Unreleased]` describing everything in this release.
+- [ ] `README.md` install instructions match the artifact names actually produced.
+- [ ] `DISTRIBUTING.md` lists the bundle and framework names currently emitted by `swift build`.

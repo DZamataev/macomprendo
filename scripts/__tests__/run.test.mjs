@@ -33,3 +33,9 @@ test("dryRun does not spawn anything", async () => {
   const result = await run("definitely-not-a-command", [], { dryRun: true, log: silent });
   assert.deepEqual(result, { stdout: "", stderr: "", code: 0 });
 });
+
+test("run writes input to stdin and closes it", async () => {
+  const result = await run("cat", [], { capture: true, input: "hello\nworld\n", log: silent });
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout, "hello\nworld\n");
+});

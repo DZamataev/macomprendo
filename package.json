@@ -9,9 +9,15 @@
     "node": ">=20"
   },
   "scripts": {
+    "audit": "node scripts/audit-public-repo.mjs",
+    "build": "node scripts/build-app.mjs",
+    "configure-notary": "node scripts/configure-notarization.mjs",
     "fetch-model-hashes": "node scripts/fetch-model-hashes.mjs",
     "gen": "xcodegen generate --spec macos/project.yml",
     "icon": "node scripts/make-placeholder-icon.mjs",
+    "install-app": "node scripts/install-app.mjs",
+    "notarize": "node scripts/notarize-app.mjs",
+    "release": "node scripts/release.mjs",
     "sync-agents": "node scripts/sync-agent-config.mjs",
     "sync-agents:check": "node scripts/sync-agent-config.mjs --check",
     "sync-icons": "node scripts/sync-icons.mjs",
@@ -20,7 +26,8 @@
     "test:swift": "swift test --package-path macos"
   },
   "dependencies": {
-    "picocolors": "1.1.1"
+    "picocolors": "1.1.1",
+    "yaml": "2.6.1"
   },
   "devDependencies": {
     "@phosphor-icons/core": "2.1.1"

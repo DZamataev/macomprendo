@@ -38,6 +38,9 @@ jobs:
       - name: Check vendored Phosphor icons are current
         run: node scripts/sync-icons.mjs --check
 
+      - name: Audit public repository files
+        run: npm run audit
+
   macos:
     name: Swift tests and unsigned build
     runs-on: macos-15
@@ -79,3 +82,9 @@ jobs:
           -destination 'generic/platform=macOS'
           CODE_SIGNING_ALLOWED=NO
           build
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build an unsigned arm64 app bundle
+        run: npm run build -- --arch arm64
