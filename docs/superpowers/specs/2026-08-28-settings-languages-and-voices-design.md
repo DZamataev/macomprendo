@@ -99,9 +99,15 @@ Formatting lives in a pure, testable helper next to `HotkeyAction`:
 ```swift
 extension HotkeyAction {
     /// `shortcut` is the description from KeyboardShortcuts, or nil when unbound.
-    static func menuLabel(name: String, shortcut: String?) -> (title: String, trailing: String)
+    func menuTrailing(shortcut: String?) -> String
 }
 ```
+
+*Amended after execution.* The design first drafted this as
+`static func menuLabel(name:shortcut:) -> (title:, trailing:)`. The title half was never used —
+the row already renders the action's display name itself — so what shipped is the instance
+method above, returning only the trailing text (`"⌥Space"`, or `"not set"` for an unbound or
+blank shortcut).
 
 The library's `shortcutByNameDidChange` notification is `internal` and unavailable to us, and
 it is not needed: `MenuBarExtra` re-evaluates the menu body each time the menu opens, so a
@@ -145,37 +151,67 @@ different problem (not flipping the voice for one short foreign word) and still 
 1. `settings.segmentationEnabled == false` → one utterance with the whole text and
    `settings.voiceID`. Byte for byte the behaviour from before segmentation existed.
 2. Otherwise split with `LanguageSegmenter.runs(in:)` as today.
-3. For each non-neutral run with at least `AVSpeechService.minDetectionLetters` (12)
-   letters, ask the
-   detector for a language. Shorter runs skip detection — `NLLanguageRecognizer` guesses on
-   short input, and a wrong guess is worse than the script-based fallback.
-4. The run's voice is the first of: `voiceByLanguage[detected]` when that voice is installed
-   → `fallbackVoice(for: run.script, in: voices)` (today's automatic pick) → `settings.voiceID`.
-5. If every run resolved to `settings.voiceID`, emit a single utterance holding the original
-   text — the existing optimisation is preserved.
+3. A neutral run (digits, punctuation) keeps `settings.voiceID` and is never detected.
+4. When `voiceByLanguage` is empty, detection is skipped for every run: it exists only to key
+   that map, so asking `NLLanguageRecognizer` per run on the main actor would be pure cost in
+   the default configuration.
+5. Otherwise, for each non-neutral run with at least `AVSpeechService.minDetectionLetters` (12)
+   letters, ask the detector for a language. Shorter runs skip detection —
+   `NLLanguageRecognizer` guesses on short input, and a wrong guess is worse than the
+   script-based fallback.
+6. The run's voice is the first of: `voiceByLanguage[detected]` when that voice is installed →
+   **`settings.voiceID` when the run is in the configured voice's own script** →
+   `fallbackVoice(for: run.script, in: voices)` (today's automatic pick) → `settings.voiceID`.
+7. If every run resolved to the **same** voice, emit a single utterance holding the original
+   text — the existing optimisation, widened so that two languages mapped to one voice also
+   collapse instead of producing an audible boundary per run.
 
 The per-language map therefore **replaces the automatic pick where the user made one** and
 leaves it in place everywhere else.
 
+*Amended after execution.* Step 6's middle clause was missing from the four-item list this
+spec first carried; the code has always had it, and it is what keeps a Latin run on a
+deliberately chosen Latin default instead of substituting `fallbackVoice`'s idea of the best
+`en-US` voice. Steps 3, 4 and the "same voice" wording in 7 record what shipped.
+
+### The 12-letter threshold and what it actually gates
+
+The threshold in step 5 gates the **map lookup**, not merely detection, and that is wider than
+it first reads. Any Latin run under 12 letters falls through to `settings.voiceID`: a user who
+mapped `es` to a Spanish voice hears their English default read "Buenos días" (10 letters),
+with no mixed-language sentence involved at all.
+
+This is deliberate and stays. Below a dozen letters `NLLanguageRecognizer` guesses, and a
+confidently wrong guess picks a worse voice — for a whole sentence — than the script-based
+fallback does for a fragment. It is written down here so it is not rediscovered as a bug. A
+cheap future refinement that keeps the same rationale: for a run below the threshold, reuse the
+language detected for the nearest same-script run in the same text, and fall back to script
+only when there is none. Neither the threshold nor the fallback chain changes in this
+iteration.
+
 ### Speech tab, system source
 
-The pane becomes scrollable and contains:
+The pane becomes scrollable and contains, in this order:
 
 - **Default voice** — the existing grouped voice list, writing `voiceID`. It is the voice for
   languages with no mapping and the only voice when segmentation is off.
-- **Voice per language** — one row per base language that has installed voices. Each row is a
-  picker of "Auto" plus every voice in that language, regional variants included (`en-US` and
-  `en-GB` sit under one "English" row). `SpeechTabModel.group` regroups from the full tag to
-  the base code; `VoiceGroup.language` becomes the base code and `displayName` its localized
-  name. Dimmed while segmentation is off.
 - **Switch voices for mixed-language text** — the `segmentationEnabled` toggle, with prose
   under it explaining that text is cut into runs of a single script, each run's language is
   detected, and the run is read by the voice mapped to that language; and that short Latin
   fragments inside Cyrillic text deliberately stay on the Cyrillic voice.
+- **Voice per language** — one row per base language that has installed voices. Each row is a
+  picker of "Auto" plus every voice in that language, regional variants included (`en-US` and
+  `en-GB` sit under one "English" row). `SpeechTabModel.group` regroups from the full tag to
+  the base code; `VoiceGroup.language` becomes the base code and `displayName` its localized
+  name. Dimmed, heading included, while segmentation is off.
 - **Preview** — `previewText` in an editable `TextField(axis: .vertical)`, next to the
   existing Preview button. `SpeechTabModel.sampleText` stops being a constant and becomes the
   default value of the field.
 - **Play a sample when a voice is selected** — the `auditionOnSelect` toggle.
+
+*Amended after execution.* The toggle sits above "Voice per language" rather than below it, so
+the explanation of what switching means is read before the map it controls, and the dimming it
+causes is visible in the section directly under it.
 
 Nothing above is shown for the endpoint source, which keeps its current form.
 
@@ -248,8 +284,13 @@ Content rules:
 
 - Every role except the two translating ones states, in its own language, that the original
   language of the text must be preserved.
-- `translate` is the only template that keeps the `{language}` placeholder — it still means
-  "the OS language", i.e. translate into the language I work in.
+- `translate` is the only template that keeps the `{language}` placeholder, and it resolves to
+  the **OS** language rather than to `promptLanguage`. This is intentional, not an oversight:
+  Translate means "put this into the language I read my Mac in", which is the one target that
+  needs no further input; the preset whose target is the working language is
+  `translateAndOrganize`, which names it literally. The consequence — the Russian Translate
+  preset on an English Mac reads «Переведи … на English» — is accepted, and the user retains
+  the instruction field for any other target.
 - `translateAndOrganize` translates into the preset's **own** language, written literally in
   the template rather than through a placeholder. The Russian one says "переведи на русский и
   приведи в порядок структуру".
@@ -260,8 +301,17 @@ Content rules:
 
 `FactoryPresets.seed(into:)` seeds every language absent from `seededPromptLanguages` and
 appends it to that list, so adding an eighth language later is one new file plus one enum
-case. `restoreMissing(into:)` restores missing factory presets across all seven languages and
-repairs a dangling default for every `kind × language` pair.
+case. It is the **authority** for a language's presets existing, and it is idempotent per
+preset **ID**, not merely per `seededPromptLanguages` entry: a document written before that key
+existed already holds the eleven English presets (they decode with `language == "en"`) and
+would otherwise have them seeded a second time. It also reads which kinds already have a
+default before adding anything, so `addPreset`'s "claim the default when there is none" rule
+cannot hand it to whichever preset happened to be missing.
+
+`restoreMissing(into:)` restores missing factory presets across all seven languages and repairs
+a dangling default for every `kind × language` pair. It sits behind the "Restore factory
+presets" button and runs only on demand; its own `seededPromptLanguages` repair is a
+belt-and-braces no-op for any document `seed` has seen.
 
 ### Settings ▸ Refine & Summarize
 
@@ -270,6 +320,16 @@ the editor, the default marker and the test run all operate within the shown lan
 `add()` and `duplicate()` create the preset in the shown language. `restoreFactory()`
 restores across all languages.
 
+The shown language is read from `Settings.promptLanguage` on every access rather than cached in
+the tab's model: the Quick Panel's globe menu writes the same setting, so a copy taken when the
+tab was built would leave it listing another language's presets.
+
+*Known limitation, deliberately not fixed here.* `PromptsTabModel.runTest()` renders
+`PromptsTabModel.sampleText` — an English scrap of dictation — whatever language is shown. So
+"Test with sample text" on the Russian "Причесать" preset exercises the Russian prompt against
+English input. The prompt itself is what is under test and the run is still informative, so
+per-language sample text is left for a later iteration rather than added in a fix wave.
+
 ### The Quick Panel windows
 
 `RefineLayout` and `SummaryLayout` get a compact language menu (globe icon) to the left of the
@@ -277,7 +337,16 @@ preset picker. Choosing a language:
 
 1. writes `settings.promptLanguage`, so the choice is persisted and survives a relaunch;
 2. moves `selectedPresetID` to that language's default preset for the kind;
-3. reruns, so one click reprocesses the same text with the other language's prompt set.
+3. reruns **once**, so one click reprocesses the same text with the other language's prompt
+   set. The preset picker is bound through the controller rather than through
+   `.onChange(of: selectedPresetID)`, which would also fire for the programmatic write in step
+   2 and start a second, immediately cancelled stream.
+
+A language can also be switched in Settings while the panel is closed, and `selectedPresetID`
+outlives a panel session — so the rule for "which preset does this run use" is that a stored
+selection counts only while it matches the controller's kind **and** `promptLanguage`,
+otherwise that language's default wins. It is applied both when the panel opens and when a run
+starts, and it lives in one place, `PromptLanguageSwitching`, which both controllers adopt.
 
 To write settings, `RefineController` and `SummarizeController` swap their
 `settings: @MainActor () -> Settings` parameter for `holder: any SettingsHolding` — the
@@ -312,8 +381,10 @@ open and only one closes. The coordinator is pure logic tested against a fake; a
 lives in the service. It is constructed in `AppEnvironment` like every other service.
 
 Wiring: `OnboardingWindowController` calls `open(.onboarding)` when it shows the window and
-`close(.onboarding)` from a new `NSWindowDelegate.windowWillClose`. `SettingsView` calls
-`open(.settings)` in `.onAppear` and `close(.settings)` in `.onDisappear`.
+`close(.onboarding)` from a new `NSWindowDelegate.windowWillClose`. The `open(.settings)` /
+`close(.settings)` pair hangs off the SwiftUI `Settings` scene in `MacomprendoApp.swift`, as
+`.onAppear` / `.onDisappear` modifiers on the scene's content — not inside `SettingsView`,
+which is also the view under test and has no business owning an app-wide activation policy.
 
 **Known risk.** A SwiftUI `Settings` scene exposes no window handle, and `.onDisappear` on it
 is not a guaranteed contract. If a live run shows it does not fire on close, the fallback is a
@@ -399,6 +470,14 @@ The HUD is shown only when `active == .hotkey`. A panel-initiated read keeps the
 the panel has its own controls, and a floating "Speaking…" HUD over it would be noise. Errors
 still surface as toasts on every path.
 
+Because a panel read has no HUD, it must not outlive the panel: dismissing the panel — with
+Esc, or as part of Insert / Replace selection, which dismiss on their way out — stops playback
+whenever `active != .hotkey`. Dismissing is a "done here" gesture, and continuing to read with
+no visible control and no way to stop but ⌥S is more surprising than falling silent. A hotkey
+read that merely overlaps the panel owns the HUD and the hotkey and is left alone.
+`QuickPanelController` takes this as a closure at construction; it never learns about
+`SpeakController` (UI must not reach into Features).
+
 ### Layout changes
 
 `SummaryLayout`'s footer gains a speech control beside Copy and Replace selection.
@@ -424,7 +503,7 @@ One icon is added to `Resources/Icons/icons.json` for this part — `pause` — 
 
 Unit tests (`swift-testing`, mirroring the source tree):
 
-- `HotkeyAction.menuLabel` for a bound and an unbound shortcut.
+- `HotkeyAction.menuTrailing` for a bound and an unbound shortcut.
 - Factory set integrity: 7 × 12 presets, IDs unique, English IDs unchanged from the shipped
   values, every template passes `PromptRenderer.validate`, no template except `translate`
   contains `{language}`, every template contains `{text}`.
