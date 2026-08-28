@@ -1,4 +1,4 @@
-# Settings rework: hotkeys in the menu, per-language prompts, per-language voices, dock icon
+# Settings rework: hotkeys in the menu, per-language prompts and voices, dock icon, panel playback
 
 Status: approved 2026-08-28.
 Builds on: `2026-08-23-macomprendo-design.md` (§3.5 Settings, §4 prompt presets),
@@ -7,8 +7,8 @@ Builds on: `2026-08-23-macomprendo-design.md` (§3.5 Settings, §4 prompt preset
 
 ## Problem
 
-Five unrelated-looking complaints share two roots — settings that do not carry the user's
-language, and settings UI that hides what the app is actually doing:
+Six unrelated-looking complaints share two roots — settings that do not carry the user's
+language, and UI that hides what the app is actually doing:
 
 1. The menubar menu lists the five actions with checkmarks but never says which key fires
    them, so the menu cannot be used to remember a hotkey.
@@ -22,6 +22,10 @@ language, and settings UI that hides what the app is actually doing:
 5. The app is `LSUIElement`, so the onboarding wizard and the Settings window live without a
    Dock icon: they vanish behind other windows with no way to bring them back except the
    menubar.
+6. The Quick Panel can copy or insert its text but cannot read it aloud. Hearing a refined
+   sentence or a summary means dismissing the panel, reselecting the text and pressing the
+   Speak hotkey. Speech itself is also all-or-nothing: it can be started and stopped, never
+   paused.
 
 ## Goals
 
@@ -34,6 +38,7 @@ language, and settings UI that hides what the app is actually doing:
    switchable from Settings *and* from the Quick Panel windows.
 5. A Dock icon appears while the onboarding wizard or the Settings window is open and
    disappears when the last of them closes.
+6. The Quick Panel can speak, pause, resume and stop its own text, on both speech sources.
 
 ## Non-goals (YAGNI)
 
@@ -46,6 +51,8 @@ language, and settings UI that hides what the app is actually doing:
   `promptLanguage`. They stay independent settings.
 - Segmentation for the endpoint speech source. The server-side model code-switches natively.
 - A Dock icon for the HUD or the Quick Panel. They are `NSPanel`s and never own the icon.
+- Seeking, scrubbing or skipping within speech, and any progress indicator. See Part 6 for
+  why this is deferred rather than merely unbuilt.
 
 ## Settings schema
 
@@ -313,6 +320,106 @@ is not a guaranteed contract. If a live run shows it does not fire on close, the
 thin glue object observing `NSWindow.willCloseNotification` and reconciling against
 `NSApp.windows`. This is verified in `docs/SMOKE_TEST.md`, not by a unit test.
 
+## Part 6 — playback controls in the Quick Panel
+
+### What the two backends can actually do
+
+The scope here is set by a hard asymmetry between the backends, so it is recorded rather than
+rediscovered later.
+
+*Pause is cheap on both.* `AVSpeechSynthesizer` has `pauseSpeaking(at:)` / `continueSpeaking()`
+and pauses its whole queue, which is what segmentation produces. `EndpointSpeechService` plays
+through `AVAudioPlayer`, whose `pause()` preserves `currentTime`.
+
+*Seeking is not available at all on system voices.* `AVSpeechSynthesizer` exposes no position
+and accepts no position: the only progress signal is the delegate callback
+`willSpeakRangeOfSpeechString`, which reports a character range just before speaking it.
+Rewinding could only be emulated as "stop and start again from sentence N" — a jump, not a
+scrub. The endpoint backend has the opposite shape: `currentTime` is writable, so scrubbing
+inside a chunk is trivial, but a chunk holds up to 4096 characters and moving past its edge
+means re-issuing a paid, slow HTTP request. A single seek control cannot sit honestly on top
+of both, so seeking, skipping and the progress indicator that would drive them are all
+deferred as one decision.
+
+This iteration therefore ships exactly Play, Pause, Resume and Stop, which behave identically
+on both sources.
+
+### Protocol changes
+
+```swift
+@MainActor protocol SpeechSynthesizing: AnyObject {
+    // …existing members…
+    /// True only while speech has been started and then paused. `isSpeaking` stays true.
+    var isPaused: Bool { get }
+    func pause()
+    func resume()
+}
+
+@MainActor protocol AudioPlaying: AnyObject {
+    // …existing members…
+    var isPaused: Bool { get }
+    func pause()
+    func resume()
+}
+```
+
+`isPaused` is a sub-state of `isSpeaking`, not a sibling: a paused utterance is still the
+in-flight one, so `isSpeaking` remains true and the existing "one in-flight task per
+controller" rule (invariant 7) is untouched. `pause()` on an idle backend and `resume()` on a
+backend that is not paused are both no-ops, matching how `stop()` already behaves.
+
+`AVSpeechService` forwards to `pauseSpeaking(at: .word)` / `continueSpeaking()`.
+`EndpointSpeechService` forwards to the player; its one-chunk prefetch keeps running while
+paused, which is harmless — the fetched chunk simply waits. `SpeechRouter` forwards to the
+backend named by the settings it was last asked to speak with, and reports `isPaused` as the
+disjunction of both, mirroring how it already reports `isSpeaking`.
+
+### `SpeakController`
+
+Playback started from a panel and playback started by hotkey #3 must be the same in-flight
+job, so pressing ⌥S while the panel is speaking stops it rather than starting a second one.
+The controller therefore grows an explicit notion of who asked:
+
+```swift
+enum SpeakSource: Hashable { case hotkey, refineOriginal, refineRefined, summary }
+
+@Published private(set) var isSpeaking: Bool
+@Published private(set) var isPaused: Bool
+@Published private(set) var active: SpeakSource?   // nil when idle
+
+func speak(_ text: String, from source: SpeakSource)
+func pauseOrResume()
+func stop()
+```
+
+`toggle(text:)` keeps its signature and its hotkey behaviour, now recording `.hotkey` as the
+active source. Starting playback from any source supersedes whatever was playing.
+
+The HUD is shown only when `active == .hotkey`. A panel-initiated read keeps the HUD hidden:
+the panel has its own controls, and a floating "Speaking…" HUD over it would be noise. Errors
+still surface as toasts on every path.
+
+### Layout changes
+
+`SummaryLayout`'s footer gains a speech control beside Copy and Replace selection.
+`RefineLayout` puts one in each pane header beside Copy and Insert, because the panel shows
+two texts and "read this aloud" has to name one of them.
+
+Each control renders from `(controller.active, controller.isPaused)` compared against its own
+`SpeakSource`:
+
+| State for this control | Icon | Action |
+|---|---|---|
+| not the active source | Speak | `speak(text, from: mySource)` |
+| active, playing | Pause | `pauseOrResume()` |
+| active, paused | Resume | `pauseOrResume()` |
+
+A Stop button sits beside it whenever this control is the active source. Speaking blank text
+toasts the existing "nothing to read" message rather than starting.
+
+Two icons are added to `Resources/Icons/icons.json` (`pause`, `play`) per invariant 12; `stop`
+already exists.
+
 ## Testing
 
 Unit tests (`swift-testing`, mirroring the source tree):
@@ -337,7 +444,15 @@ Unit tests (`swift-testing`, mirroring the source tree):
 - `RefineController` / `SummarizeController` language switching through
   `ScriptedSettingsHolder`: `promptLanguage` is written, the preset moves to the new
   language's default, a rerun is triggered.
+- `SpeakController` playback: `speak(from:)` sets `active`, `pauseOrResume` flips `isPaused`
+  both ways, `stop` clears both, a second source supersedes the first, the hotkey stops
+  panel playback instead of starting a second job, the HUD appears only for `.hotkey`, and
+  blank text toasts instead of starting.
+- `SpeechRouter` forwarding of `pause` / `resume` / `isPaused` to the backend named by the
+  settings it last spoke with, with `ScriptedSpeech` extended to record the calls.
 
 `docs/SMOKE_TEST.md` gains rows for what cannot be unit-tested: the Dock icon appearing and
 disappearing with each window, hearing the preview and the audition, the menubar menu showing
-the shortcut a user just rebound, and switching language live in a Quick Panel window.
+the shortcut a user just rebound, switching language live in a Quick Panel window, and
+pausing and resuming panel playback on both speech sources — the one place where the two
+backends could diverge in feel.
