@@ -3556,7 +3556,14 @@ Add under `Unreleased`:
 
 ### Changed
 - The Models tab is gone; speech models are configured in Settings ▸ Dictation.
+- The four summarize presets now state explicitly that the summary is written in the language
+  of the text, instead of leaving it to the model to infer.
 ```
+
+Both entries under Changed and the "Translate & organize" clause under Added describe changes
+that became user-visible partway through the branch (Task 3), not at the end. They are recorded
+here rather than in their own task because the branch merges as one unit; the changelog has to
+read as one feature, not as eighteen partial entries that supersede each other.
 
 - [ ] **Step 3: Update the architecture notes**
 
