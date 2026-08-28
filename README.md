@@ -53,8 +53,9 @@ npm ci
 npm run install-app
 ```
 
-`npm run install-app` builds an ad-hoc signed universal app and installs it into
-`/Applications`. See [DISTRIBUTING.md](DISTRIBUTING.md) for signed and notarized builds.
+`npm run install-app` builds an ad-hoc signed app for your Mac's own architecture and
+installs it into `/Applications`. See [DISTRIBUTING.md](DISTRIBUTING.md) for signed,
+notarized, universal builds.
 
 ## First run
 

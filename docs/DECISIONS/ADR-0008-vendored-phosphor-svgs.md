@@ -23,8 +23,10 @@ so neither a build nor CI ever needs npm to produce the app.
 
 - `swift build` has no third-party icon dependency; the icon set is plain resource data.
 - The icons ship inside `Macomprendo_Macomprendo.bundle`, SwiftPM's resource bundle for the app
-  target, which `scripts/build-app.mjs` copies into `Contents/Resources`. If that bundle is missing
-  from a build, the icons are missing from the app — the build script warns when it finds none.
+  target, which `scripts/build-app.mjs` copies into `Contents/Resources`. If no resource bundle
+  at all is found next to the executable, a real build errors (`swift build produced no SwiftPM
+  resource bundle next to the executable`) rather than shipping the app without its icons;
+  under `--dry-run`, where nothing has actually been built, that same check only warns.
 - Adding a new icon is a two-step action: add its name to the sync list and run
   `npm run sync-icons`, then commit the SVG. This is documented in `AGENTS.md`.
 - Vendored SVGs are committed assets, so `npm run audit` must not treat them as suspicious; they

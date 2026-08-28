@@ -27,3 +27,8 @@ by SHA-256. Users who prefer a server can instead select an `Endpoint` and
   covered by `docs/SMOKE_TEST.md` rather than unit tests.
 - If Ollama ever adds `/v1/audio/transcriptions`, it works through the existing endpoint path with
   no code change.
+- **SHA-256 verification is not a settled property today.** The catalog carries a `sha256` field
+  per model (populated by `scripts/fetch-model-hashes.mjs`), but all nine entries currently ship
+  with it empty, so downloads are not actually checked against a hash yet. DISTRIBUTING.md and
+  the `macomprendo-release` skill disclose this honestly; this ADR's "verified by SHA-256" should
+  be read as the intended design, not a claim about the current build.

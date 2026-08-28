@@ -94,8 +94,10 @@ network round trip to Apple, with a default 60-minute wait.
   Application** certificate; an *Apple Development* certificate cannot be notarized.
 - The build copies every `*.bundle` SwiftPM emits into `Contents/Resources` (that is where the
   vendored Phosphor icons live) and every dynamic `*.framework` into `Contents/Frameworks`.
-  whisper.cpp is a prebuilt xcframework, so there are no ggml Metal bundles to copy. If the build
-  warns "No SwiftPM resource bundle found", stop and fix it before shipping.
+  whisper.cpp is a prebuilt xcframework, so there are no ggml Metal bundles to copy. A real
+  build **errors** (not warns) with "swift build produced no SwiftPM resource bundle next to
+  the executable" if none is found — that check only becomes a warning under `--dry-run`,
+  where nothing has actually been built yet. Either way, stop and fix it before shipping.
 - CI never notarizes: no Apple secrets are assumed to exist in the repository.
 - **No real notarization has ever been run against this toolchain.** No submission has ever
   reached Apple, nothing has ever been stapled, and no Gatekeeper acceptance check has ever

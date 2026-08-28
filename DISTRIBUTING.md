@@ -280,7 +280,9 @@ history.
 ## Verification the tooling performs
 
 - Developer ID signing with hardened runtime and a secure timestamp
-- Nested frameworks and SwiftPM resource bundles signed before the enclosing app
+- Nested frameworks signed before the enclosing app (SwiftPM resource bundles are copied
+  unsigned and sealed by the app's own signature — see "What the build copies into the
+  bundle" above)
 - Universal architecture report (`lipo -archs`) after assembly
 - Synchronous `notarytool` submission with an explicit `Accepted` check
 - Ticket stapling plus `stapler validate`
