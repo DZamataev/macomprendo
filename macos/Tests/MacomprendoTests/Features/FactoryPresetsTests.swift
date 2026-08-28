@@ -73,4 +73,23 @@ import Testing
         FactoryPresets.restoreMissing(into: &s)
         #expect(s.defaultPresetID(for: .refine, language: "en") == FactoryPresets.ID.cleanUp)
     }
+
+    /// Same rule `seed()` already follows: a language only counts as seeded once it holds
+    /// presets. `restoreMissing` must not flag an empty language, or a future `seed()`
+    /// (once that language ships real content) would skip it forever.
+    @Test func restoreMissingDoesNotFlagAContentlessLanguageAsSeeded() {
+        var s = Settings.default
+        s.presets = []
+        s.seededPromptLanguages = []
+        FactoryPresets.seed(into: &s)                  // only English has content today
+        FactoryPresets.restoreMissing(into: &s)
+
+        #expect(s.presets(of: .refine, language: "ru").isEmpty)
+        #expect(!s.seededPromptLanguages.contains("ru"))
+
+        // A subsequent seed() must still be free to seed "ru" — it is gated only on
+        // `seededPromptLanguages`, so this documents that the gate was never tripped.
+        FactoryPresets.seed(into: &s)
+        #expect(!s.seededPromptLanguages.contains("ru"))
+    }
 }
