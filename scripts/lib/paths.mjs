@@ -10,7 +10,6 @@ export const PROJECT_YML = path.join(MACOS_DIR, 'project.yml');
 export const XCODEPROJ = path.join(MACOS_DIR, 'Macomprendo.xcodeproj');
 export const PBXPROJ = path.join(XCODEPROJ, 'project.pbxproj');
 export const CHANGELOG_PATH = path.join(ROOT, 'CHANGELOG.md');
-export const README_PATH = path.join(ROOT, 'README.md');
 export const LICENSE_PATH = path.join(ROOT, 'LICENSE');
 export const APP_BUNDLE_DIR = path.join(MACOS_DIR, 'AppBundle');
 export const INFO_PLIST_SRC = path.join(APP_BUNDLE_DIR, 'Info.plist');

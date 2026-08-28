@@ -16,12 +16,3 @@ export function bumpVersion(version, part) {
   if (part === "patch") return `${major}.${minor}.${patch + 1}`;
   throw new Error(`Unknown version part: ${part}`);
 }
-
-/**
- * Replaces every standalone occurrence of `from` with `to`.
- * The look-around stops "0.1.0" from matching inside "0.1.0.1".
- */
-export function replaceVersion(text, from, to) {
-  const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return text.replace(new RegExp(`(?<![0-9.])${escaped}(?![0-9.])`, "g"), to);
-}
