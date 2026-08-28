@@ -2673,11 +2673,12 @@ import Testing
         coordinator.open(.settings)
         coordinator.open(.onboarding)
         coordinator.close(.settings)
-        // The second `true` is `close` re-asserting visibility while an owner remains.
-        #expect(policy.calls == [true, true])
+        // No policy call at all: the icon was already visible and must stay visible. Calling
+        // the policy again would re-run NSApp.activate and steal focus.
+        #expect(policy.calls == [true])
         #expect(coordinator.owners == [.onboarding])
         coordinator.close(.onboarding)
-        #expect(policy.calls == [true, true, false])
+        #expect(policy.calls == [true, false])
     }
 
     @Test func openingTheSameOwnerTwiceCallsThePolicyOnce() {
@@ -2745,14 +2746,20 @@ import Foundation
         self.policy = policy
     }
 
+    /// The policy is called ONLY on a real visibility transition, in both directions.
+    /// `NSAppActivationPolicy.setDockIconVisible(true)` also calls
+    /// `NSApp.activate(ignoringOtherApps:)`, so re-asserting visibility while another owner
+    /// is still open would yank focus to this app at the moment the user closed a window —
+    /// while they were working in a different app entirely.
     func open(_ owner: Owner) {
-        guard owners.insert(owner).inserted else { return }
+        let wasEmpty = owners.isEmpty
+        guard owners.insert(owner).inserted, wasEmpty else { return }
         policy.setDockIconVisible(true)
     }
 
     func close(_ owner: Owner) {
-        guard owners.remove(owner) != nil else { return }
-        policy.setDockIconVisible(!owners.isEmpty)
+        guard owners.remove(owner) != nil, owners.isEmpty else { return }
+        policy.setDockIconVisible(false)
     }
 }
 ```
