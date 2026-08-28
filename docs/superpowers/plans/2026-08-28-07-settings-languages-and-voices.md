@@ -35,8 +35,13 @@ per language and deterministic UUIDs so the eleven IDs already shipped keep thei
   `macos/Sources/Macomprendo/Resources/Icons/icons.json`, run `npm run sync-icons`, add the
   `AppIcon` case **and** its `fallbackSymbol`, and commit the SVG.
 - `macos/project.yml` is the source of truth for the Xcode project. No file added by this plan
-  needs a `project.yml` edit — the target globs `Sources/Macomprendo/**` — but `npm run gen`
-  must stay a no-op.
+  needs a `project.yml` edit — it already points at `Sources/Macomprendo` — but **xcodegen
+  expands that directory into an explicit file list in the generated `.xcodeproj`**, so any
+  task that CREATES a source or test file must run `npm run gen` and commit the regenerated
+  project in the same commit. `git diff --exit-code macos/Macomprendo.xcodeproj` after
+  `npm run gen` is the check. `swift test` uses `Package.swift` and passes either way, so a
+  stale project only surfaces in an Xcode or Release build — verify it explicitly rather than
+  inferring it from a green test run.
 - Commands: `npm run test:swift`, `npm run test:scripts`, `swift build --package-path macos`.
 - Conventional commit messages.
 - **No settings migration.** The app has not shipped. A document written by an older build
