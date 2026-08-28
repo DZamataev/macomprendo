@@ -61,7 +61,7 @@ Reset permissions when you want to rehearse a fresh install — quit the app fir
 - [ ] Dictate into a full-screen app on a second display — the HUD appears on the screen with
       the mouse, above the full-screen app, and the text lands in the app.
 - [ ] Menubar menu while idle / recording — the status line reads "Ready" / "Recording…".
-- [ ] Settings ▸ Models: delete the downloaded model, then dictate — the HUD shows a "model
+- [ ] Settings ▸ Dictation: delete the downloaded model, then dictate — the HUD shows a "model
       missing" error with recovery text; downloading it again fixes dictation.
 - [ ] Settings ▸ Providers: select "Ollama (local)", click "Test connection" — "Connected —
       N models" (with Ollama stopped: the unreachable error and its recovery text).
@@ -251,6 +251,28 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
 > Settings window leaves the Dock icon behind, replace the `.onAppear`/`.onDisappear` pair with
 > a glue object observing `NSWindow.willCloseNotification` and reconciling against
 > `NSApp.windows`; the `DockIconCoordinator` API does not change.
+
+## Menubar hotkey display, per-language voices and prompt language
+
+| Step | Expected |
+|---|---|
+| Rebind "Refine selection" in Settings ▸ Hotkeys, then open the menubar menu | The new shortcut is shown beside the action; unbound actions read "not set" |
+| Settings ▸ Dictation | The speech-model list is here and the Models tab is gone |
+| Settings ▸ Speech, pick a voice under "Voice per language" | A short phrase is heard immediately in that voice and in that language |
+| Turn off "Play a sample when a voice is selected", pick another voice | Nothing is heard |
+| Edit the preview text, press Preview | The edited text is read, switching voices at the script boundary |
+| Turn off "Switch voices for mixed-language text", press Preview | The whole text is read by the default voice, in one go |
+| Refine a selection, press the speak button in the Refined pane | The refined text is read; no "Speaking…" HUD appears over the panel |
+| Press pause, then resume, on both speech sources (System voices and Endpoint) | Playback stops and continues where it left off, identically on both |
+| Press pause on the Endpoint source before the first chunk has finished synthesising, then resume | Nothing plays until resume; resume then plays that first chunk from the start, instead of it being dropped or played twice |
+| Start Speak in the Original pane, then press Speak in the Refined pane | Original's control reverts to its idle icon; only the Refined text plays — never both at once |
+| Press Stop while a pane is reading | Playback stops immediately and the control reverts to its idle Speak icon |
+| While the panel is reading, press ⌥S | Playback stops; the selection is not re-read (one hotkey press never starts a second, overlapping read) |
+| Switch the language in the panel's globe menu | The preset list becomes that language's and the text is reprocessed |
+
+> Seeking, scrubbing and a playback progress indicator are deliberately absent: `AVSpeechSynthesizer`
+> exposes no position, so a scrubber could not behave the same on both speech sources. Pause/resume
+> is the shipped scope — do not treat their absence as a bug.
 
 ## Release checklist
 

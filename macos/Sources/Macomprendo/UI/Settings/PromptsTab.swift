@@ -9,7 +9,8 @@ import SwiftUI
     @Published var kind: PresetKind = .refine {
         didSet { if kind != oldValue { select(presets.first?.id) } }
     }
-    /// The working language for this tab. Its writer arrives in Task 6.
+    /// The working language for this tab, changed only through `setLanguage(_:)` below, which
+    /// also persists it to `Settings.promptLanguage` and re-selects a preset in the new list.
     @Published private(set) var language: PromptLanguage = .english
     @Published private(set) var selectedID: UUID?
     @Published var draft: PromptPreset?

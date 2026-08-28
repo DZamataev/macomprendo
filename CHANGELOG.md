@@ -80,6 +80,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Quick Panel can now read its own text aloud: Refine's Original and
   Refined panes and Summarize's summary each get a Speak/Pause/Resume control
   plus Stop while playing, independent of the Speak selection hotkey.
+- The menubar menu now shows each action's current hotkey beside its
+  checkmark; an unbound action reads "not set".
+- Refine and Summarize now have a working language, switchable from Settings ▸
+  Refine & Summarize and from the Quick Panel's globe menu. Factory prompt
+  presets are seeded in English, Russian, Spanish, German, French, Portuguese
+  and Chinese — twelve per language, 84 in all, written natively rather than
+  translated — including a new "Translate & organize" preset.
+
+### Changed
+- The Models tab is gone; speech models are now configured in Settings ▸
+  Dictation.
+- The four summarize presets now state explicitly that the summary is written
+  in the language of the text, instead of leaving it to the model to infer.
 
 ### Fixed
 - The onboarding permission steps no longer show a stale answer: they re-read
