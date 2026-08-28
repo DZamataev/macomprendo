@@ -39,7 +39,7 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .expand: .init(name: "Erweitern", template: """
-                Erweitere den folgenden Text um mehr Detail und eine klarere Struktur. Erfinde \
+                Erweitere den folgenden Text um mehr Details und eine klarere Struktur. Erfinde \
                 keine Fakten. Behalte die Originalsprache bei.
                 {instruction}
 
@@ -53,7 +53,7 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .translate: .init(name: "Übersetzen", template: """
-                Übersetze den folgenden Text ins {language}. Behalte Ton und Formatierung bei.
+                Übersetze den folgenden Text auf {language}. Behalte Ton und Formatierung bei.
                 {instruction}
 
                 {text}

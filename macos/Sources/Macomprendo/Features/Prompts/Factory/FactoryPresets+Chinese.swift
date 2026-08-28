@@ -59,13 +59,13 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .brief: .init(name: "简述", template: """
-                用两三句话概括以下文本。请用原文的语言撰写摘要。
+                用两三句话概括以下文本。用原文的语言撰写摘要。
                 {instruction}
 
                 {text}
                 """),
             .bullets: .init(name: "要点", template: """
-                将以下文本概括为最多六条简洁的要点，每条一行，每条以「- 」开头。请用原文的语言\
+                将以下文本概括为最多六条简洁的要点，每条一行，每条以“- ”开头。用原文的语言\
                 撰写。
                 {instruction}
 
@@ -78,8 +78,8 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .keyActions: .init(name: "待办事项", template: """
-                用原文的语言，把以下文本中具体的待办事项列成编号列表。如果没有，就准确回答\
-                「没有待办事项。」
+                用原文的语言，把以下文本中具体的待办事项列成编号列表。如果没有，就原样回答\
+                “没有待办事项。”
                 {instruction}
 
                 {text}

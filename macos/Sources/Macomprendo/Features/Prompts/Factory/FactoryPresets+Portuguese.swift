@@ -9,8 +9,8 @@ extension FactoryPresetContent {
             """,
         entries: [
             .cleanUp: .init(name: "Limpar", template: """
-                Limpe o texto a seguir. Remova palavras de preenchimento, começos falsos e \
-                gaguejos, e corrija a pontuação e as maiúsculas. Preserve o sentido, o tom e o \
+                Limpe o texto a seguir. Remova palavras de preenchimento, falsos começos e \
+                hesitações, e corrija a pontuação e as maiúsculas. Preserve o sentido, o tom e o \
                 idioma original.
                 {instruction}
 

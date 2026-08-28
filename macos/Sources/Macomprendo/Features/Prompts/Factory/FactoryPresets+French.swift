@@ -31,7 +31,7 @@ extension FactoryPresetContent {
                 {text}
                 """),
             .shorten: .init(name: "Raccourcir", template: """
-                Réécris le texte suivant nettement plus court, en conservant tous les points \
+                Réécris le texte suivant de façon nettement plus concise, en conservant tous les points \
                 importants. Conserve la langue d'origine.
                 {instruction}
 
@@ -75,7 +75,7 @@ extension FactoryPresetContent {
                 """),
             .bullets: .init(name: "Puces", template: """
                 Résume le texte suivant en six puces concises maximum, une ligne chacune, chacune \
-                commençant par « - ». Rédige-les dans la langue du texte.
+                commençant par «- ». Rédige-les dans la langue du texte.
                 {instruction}
 
                 {text}
