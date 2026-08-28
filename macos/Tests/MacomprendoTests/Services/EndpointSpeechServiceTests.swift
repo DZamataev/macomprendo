@@ -368,6 +368,45 @@ import Testing
         #expect(r.player.played == [Self.audioResponse.body])
     }
 
+    /// The other half of the held-chunk rule: the job being cancelled owns the chunk it held
+    /// back, so `stop()` must drop it. Without the clear in `cancelCurrent()` the stale buffer
+    /// would surface — either played by a later `resume()`, or prepended to whatever the next
+    /// `speak()` fetched.
+    @Test func stoppingWhilePausedDropsTheChunkThatWasHeldBack() async {
+        let r = rig()
+        r.http.isGated = true
+
+        r.service.speak("Hello.", settings: settings())
+        for _ in 0..<50 {
+            if !r.http.requests.isEmpty { break }
+            await Task.yield()
+        }
+        r.service.pause()
+        r.http.releaseGate(at: 0)
+        await settle()
+        #expect(r.player.played.isEmpty)     // held, exactly as the pause test asserts
+
+        r.service.stop()
+        #expect(!r.service.isPaused)
+        #expect(!r.service.isSpeaking)
+
+        // Nothing resurfaces. The next read plays its own audio, and pausing *it* resumes the
+        // player rather than replaying the buffer the cancelled read was holding.
+        r.http.isGated = false
+        r.player.finishesImmediately = false
+        r.service.speak("One. Two.", settings: settings())
+        await settle()
+        #expect(inputs(r.http).last == "Two.")
+        #expect(r.player.played == [Self.audioResponse.body])
+
+        r.service.pause()
+        r.service.resume()
+        #expect(r.player.resumeCount == 1)
+        #expect(r.player.played == [Self.audioResponse.body])
+
+        r.service.stop()
+    }
+
     @Test func theVoiceCatalogHoldsTheBuiltInNames() {
         let r = rig()
         let voices = r.service.voices()

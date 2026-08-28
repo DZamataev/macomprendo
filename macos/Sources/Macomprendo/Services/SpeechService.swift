@@ -142,8 +142,13 @@ extension SpeechSynthesizing {
                           voiceID: voiceID(for: run, settings: settings, voices: voices,
                                            configuredScript: configuredScript, detector: detector))
         }
-        guard plan.contains(where: { $0.voiceID != settings.voiceID }) else {
-            return [UtterancePlan(text: text, voiceID: settings.voiceID)]
+        // Collapse whenever the whole text resolved to *one* voice, not only when that voice is
+        // the configured one: two languages mapped to the same voice would otherwise still be
+        // enqueued as N utterances, and `AVSpeechSynthesizer` puts an audible boundary between
+        // queued utterances.
+        let resolved = Set(plan.map(\.voiceID))
+        guard resolved.count > 1 else {
+            return [UtterancePlan(text: text, voiceID: resolved.first ?? settings.voiceID)]
         }
         return plan
     }
@@ -156,7 +161,11 @@ extension SpeechSynthesizing {
                                     configuredScript: ScriptClass,
                                     detector: any LanguageDetecting) -> String? {
         guard run.script != .neutral else { return settings.voiceID }
-        if LanguageSegmenter.letterCount(run.text) >= minDetectionLetters,
+        // Detection exists only to key `voiceByLanguage`. With no mapping there is nothing to
+        // look up, so the default configuration must not instantiate `NLLanguageRecognizer`
+        // once per run on the main actor and throw the answer away.
+        if !settings.voiceByLanguage.isEmpty,
+           LanguageSegmenter.letterCount(run.text) >= minDetectionLetters,
            let language = detector.dominantLanguage(of: run.text),
            let mapped = settings.voiceByLanguage[language],
            voices.contains(where: { $0.id == mapped }) {
@@ -175,6 +184,10 @@ extension SpeechSynthesizing {
 
     func speak(_ text: String, settings: SpeechSettings) {
         queued.removeAll()
+        // `AVSpeechSynthesizer` is known to swallow a `speak` issued while it sits paused, and
+        // `stopSpeaking` alone does not always leave that state. Reachable from the panel:
+        // pause the Original pane's read, then press Speak in the Refined pane.
+        if synthesizer.isPaused { synthesizer.continueSpeaking() }
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
         let plan = Self.utterancePlan(text: text, settings: settings, voices: voices(),
                                       detector: detector)

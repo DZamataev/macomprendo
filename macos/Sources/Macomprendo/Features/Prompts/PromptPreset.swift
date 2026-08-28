@@ -5,7 +5,9 @@ enum PresetKind: String, Codable, Sendable, CaseIterable {
     case summarize
 }
 
-/// A user-editable prompt. Rendering and factory seeding arrive in Plan 4.
+/// A user-editable prompt for one feature (`kind`) in one language. Factory presets are seeded
+/// per language by `FactoryPresets`; everything below the struct is the language-scoped store on
+/// `Settings` that the Quick Panel and the Prompts tab read and write.
 struct PromptPreset: Codable, Sendable, Identifiable, Equatable {
     var id: UUID
     var kind: PresetKind

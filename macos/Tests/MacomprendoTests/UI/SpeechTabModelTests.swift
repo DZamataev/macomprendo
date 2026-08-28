@@ -91,6 +91,13 @@ import Testing
         #expect(speech.spoken.isEmpty)
     }
 
+    /// Nothing in the type system ties the phrase table to `PromptLanguage`, so an eighth
+    /// language would otherwise ship auditioning in the voice's own name with no one noticing.
+    @Test func everyPromptLanguageHasAnAuditionPhrase() {
+        #expect(Set(SpeechTabModel.auditionPhrases.keys)
+                == Set(PromptLanguage.allCases.map(\.code)))
+    }
+
     @Test func anUnknownLanguageIsAuditionedWithTheVoicesOwnName() {
         let (model, _, _) = make(voices: catalog)
         #expect(model.auditionPhrase(for: "uk.lesya") == "Lesya")

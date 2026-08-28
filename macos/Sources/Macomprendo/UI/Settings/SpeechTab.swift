@@ -217,16 +217,20 @@ struct SpeechTab: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("Voice per language").font(.headline)
-            ForEach(model.groups) { group in
-                Picker(group.displayName, selection: Binding(
-                    get: { model.voice(forLanguage: group.language) },
-                    set: { model.setVoice($0, forLanguage: group.language) })) {
-                        Text("Auto").tag(String?.none)
-                        ForEach(group.voices) { voice in
-                            Text(voice.name).tag(Optional(voice.id))
+            // The heading is inside the disabled container, not beside it: attached to the
+            // rows alone it stayed at full contrast over a greyed-out list.
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Voice per language").font(.headline)
+                ForEach(model.groups) { group in
+                    Picker(group.displayName, selection: Binding(
+                        get: { model.voice(forLanguage: group.language) },
+                        set: { model.setVoice($0, forLanguage: group.language) })) {
+                            Text("Auto").tag(String?.none)
+                            ForEach(group.voices) { voice in
+                                Text(voice.name).tag(Optional(voice.id))
+                            }
                         }
-                    }
+                }
             }
             .disabled(!app.settings.speech.segmentationEnabled)
 

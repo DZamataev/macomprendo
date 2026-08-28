@@ -222,6 +222,33 @@ import Testing
         #expect(plan == [UtterancePlan(text: text, voiceID: "en.alex")])
     }
 
+    /// Two languages mapped to the same voice used to survive as N utterances: the collapse
+    /// only compared each run against `settings.voiceID`. `AVSpeechSynthesizer` puts an audible
+    /// boundary between queued utterances, so the user heard a seam per run for no reason.
+    @Test func twoLanguagesMappedToOneVoiceCollapseToASingleUtterance() {
+        let text = cyrillicPart + latinPart
+        let plan = AVSpeechService.utterancePlan(
+            text: text,
+            settings: settings("en.alex", map: ["ru": "ru.milena", "en": "ru.milena"]),
+            voices: voices,
+            detector: ScriptedLanguageDetector([cyrillicPart: "ru", latinPart: "en"]))
+        #expect(plan == [UtterancePlan(text: text, voiceID: "ru.milena")])
+    }
+
+    /// The default configuration maps nothing, and detection is only ever used to look up that
+    /// map — so asking `NLLanguageRecognizer` per run on the main actor would be pure cost.
+    @Test func detectionIsSkippedEntirelyWhenNoLanguageIsMapped() {
+        let detector = ScriptedLanguageDetector()
+        let text = cyrillicPart + latinPart
+        let plan = AVSpeechService.utterancePlan(text: text,
+                                                 settings: settings("en.alex"),
+                                                 voices: voices,
+                                                 detector: detector)
+        #expect(detector.asked.isEmpty)
+        // The script-based fallback still runs, so the plan is unchanged by the shortcut.
+        #expect(plan.map(\.voiceID) == ["ru.milena.enhanced", "en.alex"])
+    }
+
     @Test func emptyTextProducesNoUtterances() {
         #expect(AVSpeechService.utterancePlan(text: "", settings: settings("en.alex"),
                                               voices: voices,
