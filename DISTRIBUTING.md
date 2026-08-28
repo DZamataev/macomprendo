@@ -88,6 +88,13 @@ Other `build-app.mjs` flags: `--configuration release|debug` (default `release`)
 (override `MARKETING_VERSION`), `--build-number <n>` (default: the version), and
 `--dist <dir>` (default `dist/`).
 
+**`error: command …/swift-version-<hash>.txt not registered` during `npm run build -- --arch
+arm64,x86_64`:** stale/inconsistent state in `macos/.build` from alternating single-arch and
+multi-arch (`--triple`) builds. Run `rm -rf macos/.build`, then re-run the build. This is a
+SwiftPM/llbuild incremental-build issue, not a `build-app.mjs` bug — it surfaces for anyone
+who has been doing ordinary single-architecture dev builds and then runs the universal build
+for the first time.
+
 ### What the build copies into the bundle
 
 `swift build` leaves sidecars next to the executable, and `scripts/build-app.mjs` discovers

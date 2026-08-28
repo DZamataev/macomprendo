@@ -122,3 +122,4 @@ block before retrying or touching anything by hand.
 | `CHANGELOG.md has no entries under "## [Unreleased]"` | Write the release notes in `CHANGELOG.md` first |
 | `…project.pbxproj declares MARKETING_VERSION … but … was expected` | Run `npm run gen` and commit the regenerated project |
 | Audit flags a `/Users/<name>` path | Replace it with `~/`, `<repo>`, or `/Users/test` |
+| `error: command …/swift-version-<hash>.txt not registered` during `npm run build -- --arch arm64,x86_64` | Stale/inconsistent state in `macos/.build` from alternating single-arch and multi-arch (`--triple`) builds. Run `rm -rf macos/.build`, then re-run the build. |
