@@ -417,8 +417,8 @@ Each control renders from `(controller.active, controller.isPaused)` compared ag
 A Stop button sits beside it whenever this control is the active source. Speaking blank text
 toasts the existing "nothing to read" message rather than starting.
 
-Two icons are added to `Resources/Icons/icons.json` (`pause`, `play`) per invariant 12; `stop`
-already exists.
+One icon is added to `Resources/Icons/icons.json` for this part — `pause` — per invariant 12;
+`play` and `stop` are already vendored. The language switcher in Part 4 adds `globe`.
 
 ## Testing
 
