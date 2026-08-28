@@ -403,6 +403,25 @@ test('main --yes --notarize runs notarize before the commit and attaches the ZIP
   assert.ok(log.lines.some((l) => l.includes('notarized build will be built fresh and attached')));
 });
 
+// notarize-app.mjs emits both the ZIP and its `.sha256` sidecar (see planNotarize's final
+// `sha256` step), and README.md tells downloaders to verify with
+// `shasum -a 256 -c Macomprendo-<version>-macos.zip.sha256` — a file that never reaches the
+// Releases page unless the release step attaches it alongside the ZIP.
+test('main --yes --notarize attaches both the ZIP and its .sha256 sidecar to the release', async () => {
+  const io = releaseIO();
+  const run = preflightRun({ 'git ls-remote --tags origin refs/tags/v0.1.1': { stdout: '' } });
+  const log = makeFakeLog();
+
+  const code = await main(['--yes', '--notarize', 'patch'],
+    { run, log, io, root: '/repo', fsOps: makeFakeFsOps(), now: () => new Date('2026-08-23T10:00:00Z') });
+
+  assert.equal(code, 0);
+  const create = run.calls.find((c) => c.cmd === 'gh' && c.args[0] === 'release' && c.args[1] === 'create');
+  assert.ok(create, 'gh release create must have run');
+  assert.ok(create.args.some((a) => a.endsWith('Macomprendo-0.1.1-macos.zip')));
+  assert.ok(create.args.some((a) => a.endsWith('Macomprendo-0.1.1-macos.zip.sha256')));
+});
+
 // Pins the "no half-released repo silently reported as success" requirement at the
 // earliest possible failure index — a gate step (npm run test:scripts) fails right
 // after prepareFiles has already rewritten the tracked files, so the repository is

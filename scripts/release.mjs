@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 
 import {
-  ROOT, MACOS_DIR, PROJECT_YML, PBXPROJ, XCODEPROJ, CHANGELOG_PATH, DIST_DIR, SCHEME,
+  ROOT, PROJECT_YML, PBXPROJ, CHANGELOG_PATH, DIST_DIR, SCHEME,
 } from './lib/paths.mjs';
 import { run as realRun } from './lib/run.mjs';
 import { log as realLog } from './lib/log.mjs';
@@ -16,6 +16,7 @@ import { realFsOps, realIO } from './lib/fs.mjs';
 import { readVersion, bumpVersion } from './lib/version.mjs';
 import { updateChangelog, extractSection } from './lib/changelog.mjs';
 import { prompt } from './lib/prompt.mjs';
+import { describeStep } from './build-app.mjs';
 
 export const PROJECT_YML_VERSION = /^[ \t]*MARKETING_VERSION:[ \t]*"?(\d+\.\d+\.\d+)"?[ \t]*$/m;
 export const PBXPROJ_VERSION = /^([ \t]*)MARKETING_VERSION = (\d+\.\d+\.\d+);$/gm;
@@ -278,7 +279,11 @@ export async function main(argv, deps = {}) {
     // filename and its internal MARKETING_VERSION only line up with this release once
     // notarize-app.mjs runs (as the plan's own notarize step) after prepareFiles has
     // already bumped macos/project.yml.
-    const assets = options.notarize ? [assetPath] : [];
+    // notarize-app.mjs's plan always ends with a `sha256` step that writes `${final}.sha256`
+    // right next to the ZIP it names (see planNotarize) — whenever notarize runs as part of
+    // this release, that sidecar is guaranteed to exist by the time this gh release create
+    // step runs. README.md tells downloaders to verify with it, so it must travel with the ZIP.
+    const assets = options.notarize ? [assetPath, `${assetPath}.sha256`] : [];
     const attachmentNote = options.notarize
       ? `The notarized build will be built fresh and attached: ${path.basename(assetPath)}.`
       : 'This will publish release notes only; no build artifact will be attached '
@@ -293,7 +298,7 @@ export async function main(argv, deps = {}) {
     if (options.dryRun) {
       log.info('Planned commands:');
       for (const step of planRelease({ version, notesPath, assets, notarize: options.notarize })) {
-        log.info(`  ${[step.cmd, ...step.args].join(' ')}`);
+        log.info(`  ${describeStep(step)}`);
       }
       log.info('Dry run complete; no files, tags or remote state changed.');
       return 0;
@@ -326,7 +331,7 @@ export async function main(argv, deps = {}) {
       await io.writeFile(notesPath, `${notes}\n`);
 
       for (const step of planRelease({ version, notesPath, assets, notarize: options.notarize })) {
-        log.step([step.cmd, ...step.args].join(' '));
+        log.step(describeStep(step));
         await run(step.cmd, step.args, { cwd: root });
 
         if (step.cmd === 'git' && step.args[0] === 'commit') commitCreated = true;
