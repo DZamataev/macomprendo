@@ -134,6 +134,53 @@ import Testing
         #expect(s == before)
     }
 
+    /// A document written by a build from before `seededPromptLanguages` existed already holds
+    /// the English factory presets — they decode with `language == "en"` — but decodes the new
+    /// key to `[]`. Seeding must notice the presets themselves, not only the key, or English is
+    /// seeded a second time and every English ID exists twice.
+    @Test func seedingADocumentThatAlreadyHoldsEnglishAddsNoDuplicates() {
+        var s = Settings.default
+        s.presets = FactoryPresets.presets(for: .english)
+            .filter { $0.id != FactoryPresets.presetID(role: .translateAndOrganize,
+                                                       language: .english) }
+        s.seededPromptLanguages = []
+        s.defaultPresetIDs = [:]
+
+        FactoryPresets.seed(into: &s)
+
+        let english = s.presets.filter { $0.language == "en" }
+        #expect(Set(english.map(\.id)).count == english.count)
+        #expect(english.count == 12)
+        #expect(s.seededPromptLanguages.contains("en"))
+        // The role that did not exist before this branch arrives without claiming the default
+        // the pre-branch document never stored.
+        #expect(s.preset(id: FactoryPresets.presetID(role: .translateAndOrganize,
+                                                     language: .english)) != nil)
+        #expect(s.defaultPreset(for: .refine, language: "en")?.id
+                == FactoryPresets.presetID(role: .cleanUp, language: .english))
+    }
+
+    /// The partially-seeded case: the user deleted a few presets of a language whose key was
+    /// then lost. Seeding must still not duplicate what is there.
+    @Test func seedingALanguageThatHoldsSomeOfItsPresetsDuplicatesNothing() throws {
+        var s = Settings.default
+        s.presets = []
+        s.seededPromptLanguages = []
+        FactoryPresets.seed(into: &s)
+        try s.deletePreset(id: FactoryPresets.presetID(role: .casual, language: .russian))
+        try s.deletePreset(id: FactoryPresets.presetID(role: .tldr, language: .russian))
+        s.seededPromptLanguages = []
+        let defaultsBefore = s.defaultPresetIDs
+
+        FactoryPresets.seed(into: &s)
+
+        let ids = s.presets.map(\.id)
+        #expect(Set(ids).count == ids.count)
+        #expect(s.presets.count == 12 * PromptLanguage.allCases.count)
+        // A default that was already stored is never re-pointed by seeding.
+        #expect(s.defaultPresetIDs == defaultsBefore)
+    }
+
     @Test func restoreMissingBringsBackADeletedFactoryPresetInItsOwnLanguage() throws {
         var s = Settings.default
         s.presets = []

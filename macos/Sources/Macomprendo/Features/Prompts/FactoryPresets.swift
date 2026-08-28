@@ -72,26 +72,54 @@ enum FactoryPresets {
 
     /// Seeds every language that has not been seeded yet. Adding a language later is one new
     /// content file plus one enum case — this loop then picks it up on the next launch.
+    ///
+    /// This is the authority for "this language's factory presets exist": it is idempotent per
+    /// *preset ID*, not merely per `seededPromptLanguages` entry, so it is safe against any
+    /// document — a fresh one, one written before that key existed (which already holds the
+    /// English set and would otherwise be seeded a second time, duplicating eleven IDs), and one
+    /// holding only some of a language's presets. `restoreMissing(into:)` repeats the repair for
+    /// a user who deleted a preset and wants it back; it is not what keeps seeding correct.
     static func seed(into settings: inout Settings) {
+        var existing = Set(settings.presets.map(\.id))
         for language in PromptLanguage.allCases
         where !settings.seededPromptLanguages.contains(language.code) {
             let seeded = presets(for: language)
             // A language with no content is not "seeded": marking it so would permanently
             // suppress its presets once the content arrives.
             guard !seeded.isEmpty else { continue }
-            for preset in seeded { settings.addPreset(preset) }
+            // Which kinds already have a default has to be read *before* adding anything:
+            // `addPreset` claims the default whenever there is none, which would otherwise hand
+            // it to whichever preset happened to be missing — on a pre-branch document that is
+            // "Translate & organize", the one role that did not exist yet.
+            let claimed = PresetKind.allCases.filter {
+                settings.defaultPresetID(for: $0, language: language.code) != nil
+            }
+            for preset in seeded where !existing.contains(preset.id) {
+                settings.addPreset(preset)
+                existing.insert(preset.id)
+            }
+            for kind in PresetKind.allCases where !claimed.contains(kind) {
+                guard let first = settings.presets(of: kind, language: language.code).first
+                else { continue }
+                settings.setDefaultPreset(id: first.id, for: kind, language: language.code)
+            }
             settings.seededPromptLanguages.append(language.code)
         }
     }
 
     /// Re-adds factory presets the user deleted, in every language, and repairs a dangling
     /// default for every kind × language pair. Existing presets are never modified.
+    ///
+    /// Behind the "Restore factory presets" button, so it runs only on demand. `seed(into:)`
+    /// above is the authority for a language being seeded; the `seededPromptLanguages` repair
+    /// below is a belt-and-braces no-op for any document `seed` has already seen, kept only so
+    /// this entry point cannot leave the key disagreeing with the presets it just restored.
     static func restoreMissing(into settings: inout Settings) {
         let existing = Set(settings.presets.map(\.id))
         for factory in all() where !existing.contains(factory.id) { settings.addPreset(factory) }
         for language in PromptLanguage.allCases {
-            // Same rule as `seed`: a language only counts as seeded once it actually holds
-            // presets. Marking an empty language seeded would suppress its content forever.
+            // A language only counts as seeded once it actually holds presets: marking an
+            // empty language seeded would suppress its content forever.
             let hasPresets = PresetKind.allCases.contains {
                 !settings.presets(of: $0, language: language.code).isEmpty
             }
