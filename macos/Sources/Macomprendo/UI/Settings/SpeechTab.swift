@@ -2,8 +2,12 @@ import SwiftUI
 
 @MainActor final class SpeechTabModel: ObservableObject {
     struct VoiceGroup: Identifiable, Equatable {
-        let language: String        // BCP-47, e.g. "en-US"
-        let displayName: String     // "English (United States)"
+        /// A base language code ("en", "ru"), never a full BCP-47 tag — `group(_:)` keys it
+        /// with `baseCode(_:)` because that is what `LanguageDetecting` returns, so this is the
+        /// same key space `voiceByLanguage`, `voice(forLanguage:)` and `setVoice(_:forLanguage:)`
+        /// read and write. Writing a full tag ("ru-RU") here would silently stop matching.
+        let language: String        // base code, e.g. "en"
+        let displayName: String     // "English"
         let voices: [Voice]
         var id: String { language }
     }
