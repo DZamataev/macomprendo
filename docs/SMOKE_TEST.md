@@ -238,6 +238,20 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
 - [ ] Open Console.app filtered on subsystem `com.dzamataev.macomprendo` and repeat a ⌥S with
       the endpoint source selected: **no** log line contains the selected text or the API key.
 
+## Dock icon
+
+| Step | Expected |
+|---|---|
+| Open Settings from the menubar | A Dock icon appears while the window is up |
+| Close the Settings window | The Dock icon disappears; the menubar item stays |
+| Open "Check permissions…", then Settings, then close Settings | The Dock icon stays while the wizard is still open |
+| Close the wizard too | The Dock icon disappears |
+
+> `.onDisappear` on a SwiftUI `Settings` scene is not a documented contract. If closing the
+> Settings window leaves the Dock icon behind, replace the `.onAppear`/`.onDisappear` pair with
+> a glue object observing `NSWindow.willCloseNotification` and reconciling against
+> `NSApp.windows`; the `DockIconCoordinator` API does not change.
+
 ## Release checklist
 
 Run this list on a Mac that has *not* been used to develop the current change, if possible.

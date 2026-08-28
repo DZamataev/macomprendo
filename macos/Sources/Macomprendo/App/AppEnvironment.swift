@@ -37,6 +37,7 @@ struct AppEnvironment {
     var speech: any SpeechSynthesizing
     /// nil in tests: no NSPanel is created and the Quick Panel controller stays headless.
     var quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)?
+    var activationPolicy: any ActivationPolicyControlling
 
     @MainActor
     static func live() -> AppEnvironment {
@@ -73,6 +74,7 @@ struct AppEnvironment {
                 endpoint: EndpointSpeechService(http: http,
                                                 keychain: keychain,
                                                 player: AVAudioPlayerPlayer())),
-            quickPanelHost: { view in FloatingPanelHost(rootView: view) })
+            quickPanelHost: { view in FloatingPanelHost(rootView: view) },
+            activationPolicy: NSAppActivationPolicy())
     }
 }

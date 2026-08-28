@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     let dictation: DictationController
     let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
     private(set) var textFeatures: TextFeatures?
+    lazy var dockIcon = DockIconCoordinator(policy: env.activationPolicy)
     lazy var modelsViewModel = ModelsViewModel(models: env.models)
     lazy var speechTabModel = SpeechTabModel(speech: env.speech, holder: self, keychain: keychain)
     lazy var promptsTabModel = PromptsTabModel(

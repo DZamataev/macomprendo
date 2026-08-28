@@ -73,6 +73,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   All of it is covered by `node:test` unit tests.
 - Documentation: this README, `DISTRIBUTING.md`, `docs/ARCHITECTURE.md`,
   `docs/SMOKE_TEST.md`, `PRIVACY.md`, and ADR-0001 through ADR-0008.
+- A Dock icon now appears while the onboarding wizard or the Settings window is
+  open, and disappears when both are closed, so either window can be brought
+  back to the front (⌘Tab, the Dock) instead of vanishing behind other apps
+  with no way back except the menubar.
 
 ### Fixed
 - The onboarding permission steps no longer show a stale answer: they re-read
