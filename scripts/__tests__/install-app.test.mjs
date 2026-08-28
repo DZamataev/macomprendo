@@ -98,7 +98,7 @@ test('main terminates a running copy before swapping', async () => {
   assert.ok(deps.run.lines().includes('kill -TERM 4242'));
 });
 
-test('main restores the backup when the swap fails', async () => {
+test('main restores the backup when the swap fails, and cleans up the staging directory', async () => {
   const deps = installDeps();
   let swaps = 0;
   const originalMove = deps.fsOps.move;
@@ -116,6 +116,38 @@ test('main restores the backup when the swap fails', async () => {
     '/Applications/Macomprendo.app',
   ]);
   assert.ok(deps.log.lines.some((l) => l.includes('Restored the previously installed app')));
+  // The backup has actually been moved back out of workDir to the destination by this
+  // point — nothing irreplaceable is left inside it, so it must be cleaned up.
+  assert.ok(deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/.macomprendo-update.AB12'));
+});
+
+// The staged copy lost here is reproducible from dist/; the *backup* of the previously
+// installed app is not, and workDir is the only place it survives once the restore itself
+// has failed. Deleting workDir here would destroy the only surviving copy of the user's
+// previous app immediately after telling them (via the log line asserted below) that it
+// is still there.
+test('main keeps the staging directory when the swap fails and the automatic restore also fails', async () => {
+  const deps = installDeps();
+  let swaps = 0;
+  const originalMove = deps.fsOps.move;
+  deps.fsOps.move = async (from, to) => {
+    swaps += 1;
+    // swap 1 (destination -> backup) succeeds; swap 2 (staged -> destination, the swap-in)
+    // and swap 3 (the automatic restore's backup -> destination) both fail.
+    if (swaps >= 2) throw new Error('Resource busy');
+    return originalMove(from, to);
+  };
+
+  const code = await main([], deps);
+
+  assert.equal(code, 1);
+  assert.ok(deps.log.lines.some((l) => l.includes('Automatic restore failed')));
+  const backupPath = '/Applications/.macomprendo-update.AB12/previous-Macomprendo.app';
+  assert.ok(deps.log.lines.some((l) => l.includes(`The previous app remains at ${backupPath}`)));
+  assert.ok(
+    !deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/.macomprendo-update.AB12'),
+    'the only surviving copy of the previous app must not be deleted when the restore itself failed',
+  );
 });
 
 test('main installs fresh when no previous app exists', async () => {
@@ -222,7 +254,10 @@ test('main refuses to replace a destination that is not Macomprendo', async () =
   assert.ok(deps.log.lines.some((l) => l.includes('Refusing to replace')));
 });
 
-test('main restores the backup and preserves the staging dir when the post-swap verify fails', async () => {
+// The backup was successfully moved back out of workDir to the destination (asserted
+// below), so nothing irreplaceable is left inside it — a post-swap failure does not by
+// itself earn the staging directory a reprieve once the restore has actually succeeded.
+test('main restores the backup and cleans up the staging directory when the post-swap verify fails', async () => {
   const deps = installDeps();
   const originalRun = deps.run;
   let codesignCalls = 0;
@@ -244,6 +279,43 @@ test('main restores the backup and preserves the staging dir when the post-swap 
     '/Applications/Macomprendo.app',
   ]);
   assert.ok(deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/Macomprendo.app'));
-  assert.ok(!deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/.macomprendo-update.AB12'));
+  assert.ok(deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/.macomprendo-update.AB12'));
   assert.ok(deps.log.lines.some((l) => l.includes('Restored the previously installed app')));
+});
+
+// Unlike the test above, the restore itself now also fails — the backup never leaves
+// workDir, so it is the only surviving copy of the user's previous app and must be kept.
+test('main keeps the staging directory when the post-swap verify fails and the automatic restore also fails', async () => {
+  const deps = installDeps();
+  const originalRun = deps.run;
+  let codesignCalls = 0;
+  deps.run = async (cmd, args = [], options = {}) => {
+    if (cmd === 'codesign') {
+      codesignCalls += 1;
+      if (codesignCalls === 3) {
+        throw new Error('codesign --verify --deep --strict /Applications/Macomprendo.app exited with 1');
+      }
+    }
+    return originalRun(cmd, args, options);
+  };
+  let moves = 0;
+  const originalMove = deps.fsOps.move;
+  deps.fsOps.move = async (from, to) => {
+    moves += 1;
+    // move 1 (destination -> backup) and move 2 (staged -> destination, the swap-in) both
+    // succeed; move 3 (the automatic restore's backup -> destination) fails.
+    if (moves === 3) throw new Error('Resource busy');
+    return originalMove(from, to);
+  };
+
+  const code = await main([], deps);
+
+  assert.equal(code, 1);
+  assert.ok(deps.log.lines.some((l) => l.includes('Automatic restore failed')));
+  const backupPath = '/Applications/.macomprendo-update.AB12/previous-Macomprendo.app';
+  assert.ok(deps.log.lines.some((l) => l.includes(`The previous app remains at ${backupPath}`)));
+  assert.ok(
+    !deps.fsOps.events.some((e) => e[0] === 'rmrf' && e[1] === '/Applications/.macomprendo-update.AB12'),
+    'the only surviving copy of the previous app must not be deleted when the restore itself failed',
+  );
 });

@@ -101,6 +101,10 @@ export async function main(argv, deps = {}) {
   let backedUp = false;
   let swapped = false;
   let installed = false;
+  // Set only once the backup has actually been moved back to the destination — the
+  // distinction the `finally` guard below depends on, and the whole point of this flag:
+  // `backedUp` alone can't tell "restored" apart from "restore was attempted and failed".
+  let restored = false;
 
   try {
     workDir = await fsOps.mkdtemp(path.join(options.installDir, '.macomprendo-update.'));
@@ -183,6 +187,7 @@ export async function main(argv, deps = {}) {
         }
         if (backedUp) {
           await fsOps.move(backup, destination);
+          restored = true;
           log.info('Restored the previously installed app.');
         } else {
           log.info('Removed the unverified update; there was no previous app to restore.');
@@ -195,16 +200,16 @@ export async function main(argv, deps = {}) {
     }
     return 1;
   } finally {
-    // Clean up the staging directory once it is safe to: the new app was installed and
-    // verified, or the swap never happened (a pre-swap failure — whether or not there was
-    // a previous app at the destination — leaves nothing precious in the staging
-    // directory). A post-swap failure — the staged app was already moved into place before
-    // something about it failed to verify — leaves the staging directory (and anything left
-    // in it, such as an unrestored backup) for manual inspection instead of erasing the
-    // evidence. `pathExists(destination)` used to stand in for "the swap never happened",
-    // but on a first-time install the destination never existed either way, so a pre-swap
-    // failure there was wrongly kept forever.
-    const safeToCleanUp = installed || !swapped;
+    // Clean up the staging directory only once nothing irreplaceable is left inside it.
+    // The staged copy is reproducible from dist/, so losing it costs nothing; the *backup*
+    // of a previously installed app is not reproducible, and workDir is the only place it
+    // lives until it has actually been moved back to the destination. So: installed (the
+    // new app is live and verified, backup no longer needed), or there was never a backup
+    // to protect (backedUp false — covers both a fresh install and a pre-swap failure,
+    // regardless of whether a previous app existed at the destination), or the backup was
+    // successfully restored. Anything else — backed up, but not yet (or never) restored —
+    // must keep workDir: that backup is the only surviving copy of the user's previous app.
+    const safeToCleanUp = installed || !backedUp || restored;
     if (workDir !== null && safeToCleanUp) {
       await fsOps.rmrf(workDir);
     }
