@@ -11,12 +11,17 @@ struct MenuBarView: View {
 
         Divider()
 
-        // One plain string, deliberately: see `HotkeyAction.menuTitle(shortcut:)` for why a
-        // composite label loses the shortcut here.
         ForEach(HotkeyAction.allCases, id: \.self) { action in
-            Toggle(action.menuTitle(shortcut: action.currentShortcutText()), isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { model.isEnabled(action) },
-                set: { model.setEnabled(action, $0) }))
+                set: { model.setEnabled(action, $0) })) {
+                    // `+` on Text yields ONE Text, not a composite label, so the whole row
+                    // survives into the NSMenuItem — see `HotkeyAction.menuTitle(shortcut:)`.
+                    Text(action.displayName)
+                        + Text(HotkeyAction.menuSeparator
+                               + action.menuTrailing(shortcut: action.currentShortcutText()))
+                        .foregroundStyle(.secondary)
+                }
         }
 
         Divider()

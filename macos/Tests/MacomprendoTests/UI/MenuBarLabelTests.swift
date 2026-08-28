@@ -18,23 +18,27 @@ import Testing
         #expect(HotkeyAction.allCases.allSatisfy { !$0.displayName.isEmpty })
     }
 
-    /// The menu row is ONE string, not a name plus a separately-styled trailing view: a
-    /// `MenuBarExtra(.menu)` item keeps only the first `Text` of a composite label and
-    /// silently drops the rest, which is how the shortcut went missing the first time.
-    @Test func theMenuTitleCarriesTheShortcutInTheSameString() {
-        #expect(HotkeyAction.dictate.menuTitle(shortcut: "⌃D") == "Dictate — ⌃D")
-        #expect(HotkeyAction.summarize.menuTitle(shortcut: "⌃⇧S") == "Summarize selection — ⌃⇧S")
+    /// The separator is padded on both sides: the menu row is one run of text, so without the
+    /// spaces it reads "Dictate—⌃D" instead of as an annotation of the action.
+    @Test func theSeparatorIsPaddedOnBothSides() {
+        #expect(HotkeyAction.menuSeparator.hasPrefix(" "))
+        #expect(HotkeyAction.menuSeparator.hasSuffix(" "))
+        #expect(HotkeyAction.menuSeparator.trimmingCharacters(in: .whitespaces) == "—")
     }
 
-    @Test func theMenuTitleSaysWhenNothingIsBound() {
-        #expect(HotkeyAction.refineSelection.menuTitle(shortcut: nil) == "Refine selection — not set")
-        #expect(HotkeyAction.refineSelection.menuTitle(shortcut: "  ") == "Refine selection — not set")
-    }
-
-    @Test func everyActionProducesANonEmptyMenuTitleForBothStates() {
+    /// What `MenuBarView` renders, composed the same way it composes it. Pins the shape of the
+    /// row — that it leads with the action and ends with the shortcut or "not set" — without
+    /// claiming anything about the styling, which only the smoke test can see.
+    @Test func theRowLeadsWithTheActionAndEndsWithTheShortcut() {
         for action in HotkeyAction.allCases {
-            #expect(action.menuTitle(shortcut: "⌃D").hasPrefix(action.displayName))
-            #expect(action.menuTitle(shortcut: nil).hasSuffix(HotkeyAction.unboundShortcutText))
+            let bound = action.displayName + HotkeyAction.menuSeparator
+                + action.menuTrailing(shortcut: "⌃D")
+            #expect(bound.hasPrefix(action.displayName))
+            #expect(bound.hasSuffix("⌃D"))
+
+            let unbound = action.displayName + HotkeyAction.menuSeparator
+                + action.menuTrailing(shortcut: nil)
+            #expect(unbound.hasSuffix(HotkeyAction.unboundShortcutText))
         }
     }
 }

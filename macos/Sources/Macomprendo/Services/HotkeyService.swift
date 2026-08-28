@@ -29,21 +29,21 @@ extension HotkeyAction {
         return trimmed.isEmpty ? Self.unboundShortcutText : trimmed
     }
 
-    /// The whole menu row as ONE string.
+    /// Between the action's name and its shortcut, with spaces: without them the row reads
+    /// "Dictate—⌃D" rather than as an annotation.
     ///
-    /// It has to be one string: a `MenuBarExtra(.menu)` item is a real `NSMenuItem`, and
-    /// SwiftUI keeps only the first `Text` of a composite label — a
-    /// `HStack { Text(name); Spacer(); Text(shortcut) }` renders as the name alone, with the
-    /// shortcut silently dropped and no warning. That is exactly how this shipped broken the
-    /// first time, and no unit test could see it, because the loss happens at render.
+    /// The row is built by concatenating two `Text`s with `+`, which yields ONE `Text` and
+    /// therefore survives into the `NSMenuItem` with per-run styling intact. A composite
+    /// *layout* does not: a `MenuBarExtra(.menu)` item keeps only the first `Text` of an
+    /// `HStack { Text(name); Spacer(); Text(shortcut) }`, dropping the shortcut with no
+    /// warning. That is how this shipped broken the first time, and no unit test could see
+    /// it, because the loss happens at render.
     ///
     /// The same constraint rules out right-aligning the shortcut the way a native menu does,
-    /// so it is separated inline instead. `.keyboardShortcut()` would draw it natively but
-    /// would also bind the key: pressing it with the app active would toggle the checkbox
-    /// instead of running the action.
-    func menuTitle(shortcut: String?) -> String {
-        "\(displayName) — \(menuTrailing(shortcut: shortcut))"
-    }
+    /// so it is separated inline. `.keyboardShortcut()` would draw it natively but would also
+    /// bind the key: pressing it with the app active would toggle the checkbox instead of
+    /// running the action.
+    static let menuSeparator = " — "
 
     /// The shortcut currently bound to this action, as the library renders it ("⌥Space").
     /// Read at menu-build time: `MenuBarExtra` re-evaluates its body every time the menu
