@@ -5,8 +5,15 @@ hotkey, paste or HUD code. Unit tests cover the logic; this file covers the part
 TCC permissions and a window server.
 
 **Build under test:** the Xcode Debug build (`⌘R`).
-Reset permissions when you want to rehearse a fresh install:
-`tccutil reset Microphone com.dzamataev.macomprendo && tccutil reset Accessibility com.dzamataev.macomprendo`
+Reset permissions when you want to rehearse a fresh install — quit the app first, then
+`npm run reset-permissions` (add `--dry-run` to see the commands, `--force` to reset anyway).
+
+> **An ad-hoc build loses its permissions on every rebuild.** macOS records a grant against the
+> app's code identity; ad-hoc signing gives it none, so the grant is tied to that build's code
+> hash and stops applying the moment you rebuild — while System Settings still shows the toggle
+> switched on. The app then reports no accessibility access for a permission that looks granted.
+> Sign with the Developer ID identity (`npm run build -- --sign "Developer ID Application: …"`)
+> when you need permissions to survive a rebuild.
 
 ## Dictation (hotkey #1)
 
@@ -16,6 +23,14 @@ Reset permissions when you want to rehearse a fresh install:
       allowing, the step shows "Granted."
 - [ ] Click "Allow accessibility…" — the Accessibility prompt appears; after enabling
       Macomprendo in System Settings and returning, the step shows "Granted."
+- [ ] **The step notices a grant made in System Settings.** On the accessibility step, switch to
+      System Settings, turn Macomprendo on, and switch back to the wizard without clicking
+      anything: the status flips to "Granted." on its own. This is the only check of the
+      `didBecomeActiveNotification` wiring in `OnboardingView` — a unit test cannot raise it.
+- [ ] **"Check again" re-reads the status.** Turn the permission back off in System Settings,
+      return, and click "Check again": the step drops back to "Denied." macOS shows its prompt
+      only once per app, so after the first time "Allow accessibility…" does nothing visible —
+      this button is what a stuck-looking step needs.
 - [ ] Choose "Large v3 Turbo" and click Download — progress advances to 100%, then
       "Downloaded."
 - [ ] Click "Check for Ollama" (with Ollama running) — "Ollama is running." (with Ollama
