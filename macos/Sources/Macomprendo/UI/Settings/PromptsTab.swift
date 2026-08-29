@@ -214,22 +214,28 @@ struct PromptsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Picker("Feature", selection: $model.kind) {
-                    ForEach(PresetKind.allCases, id: \.self) { kind in
-                        Text(kind.displayName).tag(kind)
-                    }
+            // Two rows rather than one. The Settings window is 640pt wide, and the segmented
+            // control plus both language pickers on a single row demand about 744pt — SwiftUI
+            // then centres the oversized content and the whole tab is clipped on both edges,
+            // which is what it did when "Translate into" was added. Keep the widths here as
+            // maximums that add up to less than the window, not as fixed sizes.
+            Picker("Feature", selection: $model.kind) {
+                ForEach(PresetKind.allCases, id: \.self) { kind in
+                    Text(kind.displayName).tag(kind)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 240)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 240)
 
+            HStack(spacing: 12) {
                 Picker("Language", selection: Binding(get: { model.language },
                                                       set: { model.setLanguage($0) })) {
                     ForEach(PromptLanguage.allCases) { language in
                         Text(language.displayName).tag(language)
                     }
                 }
-                .frame(width: 220)
+                .frame(maxWidth: 240)
 
                 Picker("Translate into", selection: Binding(get: { model.translationTarget },
                                                             set: { model.translationTarget = $0 })) {
@@ -237,10 +243,10 @@ struct PromptsTab: View {
                         Text(model.translationTargetLabel(target)).tag(target)
                     }
                 }
-                .frame(width: 260)
+                .frame(maxWidth: 320)
                 .help("Substituted as {chosen_language} in the translating presets.")
 
-                Spacer()
+                Spacer(minLength: 0)
             }
 
             endpointRow
@@ -255,26 +261,37 @@ struct PromptsTab: View {
     }
 
     private var endpointRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            endpointControls
+            // On its own line and allowed to wrap: inside the HStack this text competed for
+            // width with the pickers and squeezed the Reload button down to an ellipsis.
+            if let error = model.modelsError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var endpointControls: some View {
         HStack {
             Picker("Endpoint", selection: endpointBinding) {
                 ForEach(app.settings.endpoints) { endpoint in
                     Text(endpoint.name).tag(Optional(endpoint.id))
                 }
             }
-            .frame(width: 240)
+            .frame(maxWidth: 240)
 
             Picker("Model", selection: modelBinding) {
                 ForEach(model.availableModels, id: \.self) { name in
                     Text(name).tag(name)
                 }
             }
-            .frame(width: 260)
+            .frame(maxWidth: 240)
 
             Button("Reload") { Task { await model.loadModels() } }
-
-            if let error = model.modelsError {
-                Text(error).font(.caption).foregroundStyle(.orange).lineLimit(2)
-            }
+                .fixedSize()
         }
     }
 

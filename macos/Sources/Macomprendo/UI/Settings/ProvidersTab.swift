@@ -17,6 +17,7 @@ private struct ProvidersTabContent: View {
         HSplitView {
             list
             detail
+                .frame(minWidth: 320, maxWidth: .infinity)
         }
         .padding()
     }
@@ -44,9 +45,14 @@ private struct ProvidersTabContent: View {
                 Spacer()
             }
         }
-        .frame(minWidth: 200)
+        // Bounded on both ends: an HSplitView hands a greedy pane everything the other does
+        // not claim, and with only a minimum here the list took the whole width and squeezed
+        // the editor down to a column a few characters wide.
+        .frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
     }
 
+    /// The editor needs a floor of its own, or the split gives it whatever is left — which is
+    /// nothing once the list has taken its share.
     @ViewBuilder
     private var detail: some View {
         if let endpoint = viewModel.endpoints.first(where: { $0.id == selection }) {
