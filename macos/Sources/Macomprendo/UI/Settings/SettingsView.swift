@@ -16,6 +16,9 @@ struct SettingsView: View {
             ProvidersTab()
                 .tabItem { Label { Text("Providers") } icon: { Icon(.endpoint, size: 16) } }
         }
-        .frame(width: 640, height: 480)
+        // A floor rather than a fixed size, and wide enough for the densest tabs: Refine &
+        // Summarize carries three pickers over a list and an editor, and Providers is a split
+        // view whose two panes each need room. At 640 both were clipped. Resizable from here up.
+        .frame(minWidth: 760, idealWidth: 760, minHeight: 560, idealHeight: 560)
     }
 }

@@ -97,6 +97,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in the language of the text, instead of leaving it to the model to infer.
 
 ### Fixed
+- The Settings window no longer clips its own tabs. It is now 760×560 and
+  resizable rather than fixed at 640×480: Refine & Summarize carries three
+  pickers above a preset list and an editor, and at the old width the tab was
+  wider than the window and cut off on both edges.
+- Settings ▸ Providers no longer squeezes the endpoint editor into a column a
+  few characters wide. The split view gave the endpoint list everything the
+  editor did not claim, and the editor had no minimum width to claim any.
 - The onboarding permission steps no longer show a stale answer: they re-read
   the permission whenever the app comes back to the front, and a "Check again"
   button re-reads it on demand. macOS shows its permission prompt only once, so
