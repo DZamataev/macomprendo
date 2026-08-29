@@ -11,7 +11,10 @@ enum RefineSide: Equatable, Sendable {
 }
 
 /// Hotkeys #2 (Dictate & Refine) and #5 (Refine selection).
-@MainActor final class RefineController: ObservableObject {
+@MainActor final class RefineController: ObservableObject, PromptLanguageSwitching {
+    let presetKind = PresetKind.refine
+    var settingsHolder: any SettingsHolding { holder }
+
     @Published var original: String = ""
     @Published var refined: String = ""
     @Published var isStreaming: Bool = false
@@ -27,7 +30,7 @@ enum RefineSide: Equatable, Sendable {
     private let inserter: any TextInserting
     private let tracker: any FrontmostAppTracking
     private let toaster: any Toasting
-    private let settings: @MainActor () -> Settings
+    private let holder: any SettingsHolding
 
     private var streamTask: Task<Void, Never>?
     /// Bumped on every re-run so a cancelled stream cannot clobber the new one's state.
@@ -42,7 +45,7 @@ enum RefineSide: Equatable, Sendable {
          inserter: any TextInserting,
          tracker: any FrontmostAppTracking,
          toaster: any Toasting,
-         settings: @escaping @MainActor () -> Settings) {
+         holder: any SettingsHolding) {
         self.capture = capture
         self.llm = llm
         self.panel = panel
@@ -50,7 +53,7 @@ enum RefineSide: Equatable, Sendable {
         self.inserter = inserter
         self.tracker = tracker
         self.toaster = toaster
-        self.settings = settings
+        self.holder = holder
 
         capture.onTranscript = { [weak self] text in self?.beginRefine(with: text) }
         capture.onError = { [weak self] error in
@@ -96,9 +99,7 @@ enum RefineSide: Equatable, Sendable {
         original = text.trimmingCharacters(in: .whitespacesAndNewlines)
         refined = ""
         error = nil
-        if selectedPresetID == nil {
-            selectedPresetID = settings().defaultPreset(for: .refine)?.id
-        }
+        refreshSelectedPreset()
         panel.present(layout: .refine)
         rerun()
     }
@@ -132,15 +133,7 @@ enum RefineSide: Equatable, Sendable {
 
     private func runStream(generation: Int) async {
         defer { if generation == streamGeneration { isStreaming = false } }
-        let current = settings()
-
-        let chosen: PromptPreset?
-        if let id = selectedPresetID, let found = current.preset(id: id), found.kind == .refine {
-            chosen = found
-        } else {
-            chosen = current.defaultPreset(for: .refine)
-        }
-        guard let preset = chosen else {
+        guard let preset = activePreset else {
             error = ErrorText.describe(FeatureConfigError.noPreset(.refine))
             return
         }
@@ -151,9 +144,13 @@ enum RefineSide: Equatable, Sendable {
             return
         }
 
-        let prompt = PromptRenderer.render(preset, text: original,
-                                           instruction: instruction,
-                                           language: Self.uiLanguageName())
+        let prompt = PromptRenderer.render(
+            preset, text: original,
+            instruction: instruction,
+            language: Self.uiLanguageName(),
+            chosenLanguage: holder.settings.translationTarget.resolvedName(
+                promptLanguage: holder.settings.promptLanguage,
+                systemLanguageCode: TranslationTarget.currentSystemLanguageCode))
         do {
             let target = try llm()
             for try await delta in target.provider.chat(prompt.messages, model: target.model,
@@ -193,7 +190,7 @@ enum RefineSide: Equatable, Sendable {
             return
         }
         do {
-            try await inserter.insert(value, into: target, method: settings().insertMethod)
+            try await inserter.insert(value, into: target, method: holder.settings.insertMethod)
             panel.dismiss()
         } catch {
             toaster.toast(ErrorText.describe(error), duration: 2.5)

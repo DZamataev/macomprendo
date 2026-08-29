@@ -19,7 +19,8 @@ extension AppEnvironment {
                      keySimulator: any KeySimulating = ScriptedKeySimulator(),
                      ax: any AXReading = ScriptedAXReader(text: nil),
                      speech: any SpeechSynthesizing = ScriptedSpeech(),
-                     quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)? = nil) -> AppEnvironment {
+                     quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)? = nil,
+                     activationPolicy: any ActivationPolicyControlling = FakeActivationPolicy()) -> AppEnvironment {
         AppEnvironment(hotkeys: hotkeys,
                        recorder: recorder,
                        inserter: inserter,
@@ -37,6 +38,7 @@ extension AppEnvironment {
                        keySimulator: keySimulator,
                        ax: ax,
                        speech: speech,
-                       quickPanelHost: quickPanelHost)
+                       quickPanelHost: quickPanelHost,
+                       activationPolicy: activationPolicy)
     }
 }

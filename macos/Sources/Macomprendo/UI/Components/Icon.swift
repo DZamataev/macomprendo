@@ -10,6 +10,7 @@ enum AppIcon: String, CaseIterable {
     case speak = "speaker-high"
     case stop = "stop"
     case play = "play"
+    case pause = "pause"
     case refine = "sparkle"
     case summarize = "text-aa"
     case clipboard = "clipboard-text"
@@ -29,6 +30,7 @@ enum AppIcon: String, CaseIterable {
     case model = "cpu"
     case presets = "list-bullets"
     case magic = "magic-wand"
+    case globe = "globe"
 
     /// Shown when the SVG resource is missing, so the UI degrades instead of going blank.
     var fallbackSymbol: String {
@@ -38,6 +40,7 @@ enum AppIcon: String, CaseIterable {
         case .speak: return "speaker.wave.2"
         case .stop: return "stop.fill"
         case .play: return "play.fill"
+        case .pause: return "pause.fill"
         case .refine: return "sparkles"
         case .summarize: return "textformat"
         case .clipboard: return "doc.on.clipboard"
@@ -57,6 +60,7 @@ enum AppIcon: String, CaseIterable {
         case .model: return "cpu"
         case .presets: return "list.bullet"
         case .magic: return "wand.and.stars"
+        case .globe: return "globe"
         }
     }
 

@@ -2,13 +2,27 @@ import SwiftUI
 
 @MainActor final class SpeechTabModel: ObservableObject {
     struct VoiceGroup: Identifiable, Equatable {
-        let language: String        // BCP-47, e.g. "en-US"
-        let displayName: String     // "English (United States)"
+        /// A base language code ("en", "ru"), never a full BCP-47 tag — `group(_:)` keys it
+        /// with `baseCode(_:)` because that is what `LanguageDetecting` returns, so this is the
+        /// same key space `voiceByLanguage`, `voice(forLanguage:)` and `setVoice(_:forLanguage:)`
+        /// read and write. Writing a full tag ("ru-RU") here would silently stop matching.
+        let language: String        // base code, e.g. "en"
+        let displayName: String     // "English"
         let voices: [Voice]
         var id: String { language }
     }
 
-    static let sampleText = "Macomprendo can read your selected text out loud."
+    /// A short line per language so a voice can be judged on its own language, not on English.
+    /// Anything else is auditioned with the voice's own name, the way System Settings does.
+    static let auditionPhrases: [String: String] = [
+        "en": "This is how I sound.",
+        "ru": "Вот так звучит мой голос.",
+        "es": "Así suena mi voz.",
+        "de": "So klingt meine Stimme.",
+        "fr": "Voici comment sonne ma voix.",
+        "pt": "É assim que soa a minha voz.",
+        "zh": "这就是我的声音。"
+    ]
 
     static let endpointPrivacyCaption =
         "Selected text is sent to the configured server when this source is active."
@@ -49,7 +63,7 @@ import SwiftUI
     /// For the endpoint source this performs a real network call and therefore doubles as the
     /// connection test; failures arrive as a toast through `SpeakController`'s `onError` hook.
     func preview() {
-        speech.speak(Self.sampleText, settings: holder.settings.speech)
+        speech.speak(holder.settings.speech.previewText, settings: holder.settings.speech)
     }
 
     func hasAPIKey() -> Bool {
@@ -71,14 +85,56 @@ import SwiftUI
         apiKeyField = ""
     }
 
+    /// The base code of a BCP-47 tag: "ru-RU" and "zh-Hans-CN" become "ru" and "zh". The voice
+    /// map is keyed this way because that is what `LanguageDetecting` returns.
+    static func baseCode(_ tag: String) -> String {
+        tag.split(separator: "-").first.map { $0.lowercased() } ?? tag.lowercased()
+    }
+
     static func group(_ voices: [Voice]) -> [VoiceGroup] {
-        Dictionary(grouping: voices, by: \.language)
-            .map { language, voices in
-                VoiceGroup(language: language,
-                           displayName: Locale.current.localizedString(forIdentifier: language) ?? language,
+        Dictionary(grouping: voices, by: { baseCode($0.language) })
+            .map { code, voices in
+                VoiceGroup(language: code,
+                           displayName: Locale.current.localizedString(forLanguageCode: code) ?? code,
                            voices: voices.sorted { ($0.name, $0.id) < ($1.name, $1.id) })
             }
             .sorted { ($0.displayName, $0.language) < ($1.displayName, $1.language) }
+    }
+
+    func voice(forLanguage language: String) -> String? {
+        holder.settings.speech.voiceByLanguage[language]
+    }
+
+    /// nil clears the mapping, which puts that language back on the automatic pick.
+    func setVoice(_ voiceID: String?, forLanguage language: String) {
+        objectWillChange.send()
+        holder.settings.speech.voiceByLanguage[language] = voiceID
+        if let voiceID { audition(voiceID) }
+    }
+
+    func setDefaultVoice(_ voiceID: String?) {
+        objectWillChange.send()
+        holder.settings.speech.voiceID = voiceID
+        if let voiceID { audition(voiceID) }
+    }
+
+    /// Forces the system source and switches segmentation off, so the phrase is guaranteed to
+    /// be heard in the voice that was just picked instead of being re-segmented away from it.
+    /// Needs no new protocol method: `SpeechRouter` reads the source from these settings.
+    private func audition(_ voiceID: String) {
+        guard holder.settings.speech.auditionOnSelect else { return }
+        var settings = holder.settings.speech
+        settings.source = .system
+        settings.voiceID = voiceID
+        settings.segmentationEnabled = false
+        speech.speak(auditionPhrase(for: voiceID), settings: settings)
+    }
+
+    func auditionPhrase(for voiceID: String) -> String {
+        guard let voice = speech.voices(for: .system).first(where: { $0.id == voiceID }) else {
+            return ""
+        }
+        return Self.auditionPhrases[Self.baseCode(voice.language)] ?? voice.name
     }
 }
 
@@ -87,35 +143,48 @@ struct SpeechTab: View {
     @ObservedObject var app: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Picker("Speech source", selection: sourceSelection) {
-                ForEach(SpeechSource.allCases) { source in
-                    Text(source.displayName).tag(source)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Speech source", selection: sourceSelection) {
+                    ForEach(SpeechSource.allCases) { source in
+                        Text(source.displayName).tag(source)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                if app.settings.speech.source == .system {
+                    systemSection
+                } else {
+                    endpointSection
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Preview text").font(.headline)
+                    TextField("Preview text", text: $app.settings.speech.previewText, axis: .vertical)
+                        .lineLimit(2...4)
+                    Toggle("Play a sample when a voice is selected",
+                           isOn: $app.settings.speech.auditionOnSelect)
+                    HStack {
+                        Button("Preview") { model.preview() }
+                        Button("Reload voices") { model.reload() }
+                        Spacer()
+                        Text("Hotkey ⌥S reads the current selection; press it again to stop.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
-            .pickerStyle(.segmented)
-
-            if app.settings.speech.source == .system {
-                systemSection
-            } else {
-                endpointSection
-            }
-
-            HStack {
-                Button("Preview") { model.preview() }
-                Button("Reload voices") { model.reload() }
-                Spacer()
-                Text("Hotkey ⌥S reads the current selection; press it again to stop.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            .padding(20)
         }
-        .padding(20)
     }
 
     private var systemSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Voice").font(.headline)
-            List(selection: voiceSelection) {
+            Text("Default voice").font(.headline)
+            Text("Used for languages you have not mapped, and for everything when voice "
+                 + "switching is off.")
+                .font(.caption).foregroundStyle(.secondary)
+            List(selection: Binding(get: { app.settings.speech.voiceID },
+                                    set: { model.setDefaultVoice($0) })) {
                 ForEach(model.groups) { group in
                     Section(group.displayName) {
                         ForEach(group.voices) { voice in
@@ -136,6 +205,34 @@ struct SpeechTab: View {
                 }
             }
             .frame(minHeight: 200)
+
+            Toggle("Switch voices for mixed-language text",
+                   isOn: $app.settings.speech.segmentationEnabled)
+            Text("""
+                Text is cut into runs of a single script, each run's language is detected, and \
+                the run is read by the voice you mapped to that language. Short Latin fragments \
+                inside Cyrillic text stay on the Cyrillic voice on purpose, so one foreign word \
+                does not flip the voice mid-sentence.
+                """)
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // The heading is inside the disabled container, not beside it: attached to the
+            // rows alone it stayed at full contrast over a greyed-out list.
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Voice per language").font(.headline)
+                ForEach(model.groups) { group in
+                    Picker(group.displayName, selection: Binding(
+                        get: { model.voice(forLanguage: group.language) },
+                        set: { model.setVoice($0, forLanguage: group.language) })) {
+                            Text("Auto").tag(String?.none)
+                            ForEach(group.voices) { voice in
+                                Text(voice.name).tag(Optional(voice.id))
+                            }
+                        }
+                }
+            }
+            .disabled(!app.settings.speech.segmentationEnabled)
 
             // Rate, pitch and volume are AVSpeechSynthesizer parameters; the endpoint takes
             // free-form "Style instructions" instead.
@@ -202,11 +299,6 @@ struct SpeechTab: View {
     private var sourceSelection: Binding<SpeechSource> {
         Binding(get: { app.settings.speech.source },
                 set: { app.settings.speech.source = $0 })
-    }
-
-    private var voiceSelection: Binding<String?> {
-        Binding(get: { app.settings.speech.voiceID },
-                set: { app.settings.speech.voiceID = $0 })
     }
 
     /// Keeps the last valid URL when the user is mid-edit and the text does not parse.

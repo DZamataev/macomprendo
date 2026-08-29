@@ -100,7 +100,15 @@ extension TextFeatures {
                      transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider)
         -> TextFeatures {
 
-        let quickPanel = QuickPanelController(holder: model)
+        // Built before the panel so the panel can be handed its dismissal hook at construction:
+        // dismissing the panel stops a read the panel itself started (a hotkey read is left
+        // alone — see `SpeakController.stopPanelPlayback`).
+        let speak = SpeakController(speech: env.speech, toaster: hud, settings: { model.settings })
+
+        let quickPanel = QuickPanelController(holder: model,
+                                              onDismiss: { [weak speak] in
+                                                  speak?.stopPanelPlayback()
+                                              })
 
         let capture = DictationCapture(
             recorder: env.recorder,
@@ -117,7 +125,7 @@ extension TextFeatures {
             inserter: env.inserter,
             tracker: env.tracker,
             toaster: hud,
-            settings: { model.settings })
+            holder: model)
 
         let summarize = SummarizeController(
             llm: { try model.llmTarget(for: .summarize) },
@@ -126,9 +134,7 @@ extension TextFeatures {
             inserter: env.inserter,
             tracker: env.tracker,
             toaster: hud,
-            settings: { model.settings })
-
-        let speak = SpeakController(speech: env.speech, toaster: hud, settings: { model.settings })
+            holder: model)
 
         let selectedText = AXSelectedTextService(ax: env.ax,
                                                  pasteboard: env.pasteboard,
@@ -140,7 +146,7 @@ extension TextFeatures {
         // The panel's content needs the controllers, so the window is built last and attached.
         if let makeHost = env.quickPanelHost {
             quickPanel.attach(makeHost(QuickPanelView(panel: quickPanel, refine: refine,
-                                                      summarize: summarize, app: model)))
+                                                      summarize: summarize, speak: speak, app: model)))
         }
         return features
     }

@@ -24,11 +24,16 @@ enum QuickPanelLayout: Equatable, Sendable {
     @Published private(set) var isVisible = false
 
     private let holder: any SettingsHolding
+    /// Run whenever the panel is dismissed, whichever way. Injected rather than reached for:
+    /// the panel lives in UI and must not know `SpeakController`, so the composition root
+    /// supplies the "stop a read this panel started" call (see `TextFeatures.live`).
+    private let onDismiss: @MainActor () -> Void
     private var host: (any QuickPanelHosting)?
     private var currentScreenKey: String?
 
-    init(holder: any SettingsHolding) {
+    init(holder: any SettingsHolding, onDismiss: @escaping @MainActor () -> Void = {}) {
         self.holder = holder
+        self.onDismiss = onDismiss
     }
 
     /// Called by the composition root once the SwiftUI content (which needs the controllers) exists.
@@ -71,6 +76,7 @@ enum QuickPanelLayout: Equatable, Sendable {
     }
 
     func dismiss() {
+        onDismiss()
         host?.hide()
         isVisible = false
     }

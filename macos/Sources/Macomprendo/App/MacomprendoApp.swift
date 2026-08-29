@@ -33,7 +33,10 @@ struct MacomprendoApp: App {
 
         // `Settings` alone would resolve to our own Core type, so qualify the scene.
         SwiftUI.Settings {
-            SettingsView().environmentObject(model)
+            SettingsView()
+                .environmentObject(model)
+                .onAppear { model.dockIcon.open(.settings) }
+                .onDisappear { model.dockIcon.close(.settings) }
         }
     }
 }

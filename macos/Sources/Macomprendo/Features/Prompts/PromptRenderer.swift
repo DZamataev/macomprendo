@@ -6,7 +6,8 @@ struct RenderedPrompt: Equatable, Sendable {
 
 /// Pure validation + substitution for prompt templates. No I/O, no state.
 enum PromptRenderer {
-    static let knownPlaceholders: Set<String> = ["text", "instruction", "language"]
+    static let knownPlaceholders: Set<String> = ["text", "instruction", "language",
+                                                 "chosen_language"]
     static let defaultLanguage = "English"
 
     /// Returns a list of user-facing problems; an empty array means the preset is usable.
@@ -19,10 +20,10 @@ enum PromptRenderer {
             problems.append("The user template must contain {text}.")
         }
         for name in placeholders(in: preset.userTemplate).subtracting(knownPlaceholders).sorted() {
-            problems.append("Unknown placeholder {\(name)}. Supported: {text}, {instruction}, {language}.")
+            problems.append("Unknown placeholder {\(name)}. Supported: {text}, {instruction}, {language}, {chosen_language}.")
         }
         for name in placeholders(in: preset.systemPrompt).subtracting(knownPlaceholders).sorted() {
-            problems.append("Unknown placeholder {\(name)} in the system prompt. Supported: {text}, {instruction}, {language}.")
+            problems.append("Unknown placeholder {\(name)} in the system prompt. Supported: {text}, {instruction}, {language}, {chosen_language}.")
         }
         return problems
     }
@@ -47,13 +48,17 @@ enum PromptRenderer {
     ///
     /// - A template line that mentions `{instruction}` but not `{text}` is dropped entirely when
     ///   the instruction is nil or blank, so an unused instruction never leaves an empty line.
-    /// - `{language}` falls back to `defaultLanguage`.
+    /// - `{language}` is the language of the Mac, and `{chosen_language}` the translation target
+    ///   the user picked in Settings; both fall back to `defaultLanguage`. Every factory
+    ///   translating preset uses `{chosen_language}`; `{language}` is kept for user-written ones.
     /// - `{text}` is substituted last so placeholder-looking text from the user is left alone.
-    static func render(_ preset: PromptPreset, text: String,
-                       instruction: String?, language: String?) -> RenderedPrompt {
+    static func render(_ preset: PromptPreset, text: String, instruction: String?,
+                       language: String?, chosenLanguage: String? = nil) -> RenderedPrompt {
         let instruction = (instruction ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let rawLanguage = (language ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let language = rawLanguage.isEmpty ? defaultLanguage : rawLanguage
+        let rawChosen = (chosenLanguage ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let chosen = rawChosen.isEmpty ? defaultLanguage : rawChosen
 
         var lines: [String] = []
         for line in preset.userTemplate.components(separatedBy: "\n") {
@@ -61,6 +66,7 @@ enum PromptRenderer {
             lines.append(line
                 .replacingOccurrences(of: "{instruction}", with: instruction)
                 .replacingOccurrences(of: "{language}", with: language)
+                .replacingOccurrences(of: "{chosen_language}", with: chosen)
                 .replacingOccurrences(of: "{text}", with: text))
         }
 

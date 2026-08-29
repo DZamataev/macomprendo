@@ -28,12 +28,20 @@ import SwiftUI
          llm: @escaping @MainActor (PresetKind) throws -> LLMTarget) {
         self.holder = holder
         self.llm = llm
-        select(holder.settings.presets(of: kind).first?.id)
+        select(holder.settings.presets(of: kind, language: language.code).first?.id)
     }
 
-    var presets: [PromptPreset] { holder.settings.presets(of: kind) }
+    /// The working language, re-read from `Settings.promptLanguage` on every access rather than
+    /// cached: the Quick Panel's globe menu writes the same setting, so a copy taken in `init`
+    /// would leave this tab listing another language's presets. `setLanguage(_:)` is still the
+    /// only writer here.
+    var language: PromptLanguage {
+        PromptLanguage.resolve(languageCode: holder.settings.promptLanguage)
+    }
 
-    var defaultPresetID: UUID? { holder.settings.defaultPresetID(for: kind) }
+    var presets: [PromptPreset] { holder.settings.presets(of: kind, language: language.code) }
+
+    var defaultPresetID: UUID? { holder.settings.defaultPresetID(for: kind, language: language.code) }
 
     /// The endpoint + model chosen for the current feature.
     var selection: LLMSelection? {
@@ -53,6 +61,33 @@ import SwiftUI
 
     // MARK: Selection & editing
 
+    /// Persists the choice: the Quick Panel reads the same `Settings.promptLanguage`.
+    /// What the translating presets translate into. Lives beside the prompt language but is
+    /// independent of it: one says which language the prompts are written in, the other which
+    /// language their output should be in.
+    var translationTarget: TranslationTarget {
+        get { holder.settings.translationTarget }
+        set {
+            guard holder.settings.translationTarget != newValue else { return }
+            objectWillChange.send()
+            holder.settings.translationTarget = newValue
+        }
+    }
+
+    /// How one option reads in the picker. The system option names the language it currently
+    /// resolves to, so "follow the system" is not a guess.
+    func translationTargetLabel(_ target: TranslationTarget) -> String {
+        target.pickerLabel(promptLanguage: holder.settings.promptLanguage,
+                           systemLanguageCode: TranslationTarget.currentSystemLanguageCode)
+    }
+
+    func setLanguage(_ newValue: PromptLanguage) {
+        guard newValue != language else { return }
+        objectWillChange.send()
+        holder.settings.promptLanguage = newValue.code
+        select(presets.first?.id)
+    }
+
     func select(_ id: UUID?) {
         selectedID = id
         draft = id.flatMap { holder.settings.preset(id: $0) }
@@ -67,8 +102,8 @@ import SwiftUI
     }
 
     func add() {
-        let new = PromptPreset(id: UUID(), kind: kind, name: "New preset",
-                               systemPrompt: FactoryPresets.systemPrompt,
+        let new = PromptPreset(id: UUID(), kind: kind, language: language.code, name: "New preset",
+                               systemPrompt: language.content.systemPrompt,
                                userTemplate: "{instruction}\n\n{text}",
                                isFactory: false, sortOrder: 0)
         let stored = holder.settings.addPreset(new)
@@ -79,6 +114,7 @@ import SwiftUI
         guard let source = draft else { return }
         var copy = source
         copy.id = UUID()
+        copy.language = language.code
         copy.name = source.name + " copy"
         copy.isFactory = false
         let stored = holder.settings.addPreset(copy)
@@ -105,12 +141,12 @@ import SwiftUI
 
     func makeDefault() {
         guard let id = selectedID else { return }
-        holder.settings.setDefaultPreset(id: id, for: kind)
+        holder.settings.setDefaultPreset(id: id, for: kind, language: language.code)
     }
 
     func restoreFactory() {
         var settings = holder.settings
-        FactoryPresets.restoreMissing(into: &settings)
+        FactoryPresets.restoreFactory(into: &settings)
         holder.settings = settings
         select(selectedID ?? presets.first?.id)
     }
@@ -125,8 +161,11 @@ import SwiftUI
         testOutput = ""
         testError = nil
         isTesting = true
-        let prompt = PromptRenderer.render(draft, text: Self.sampleText,
-                                           instruction: nil, language: nil)
+        let prompt = PromptRenderer.render(
+            draft, text: Self.sampleText, instruction: nil, language: nil,
+            chosenLanguage: holder.settings.translationTarget.resolvedName(
+                promptLanguage: holder.settings.promptLanguage,
+                systemLanguageCode: TranslationTarget.currentSystemLanguageCode))
         let kind = self.kind
         testTask = Task { [weak self] in
             await self?.runTestStream(prompt: prompt, kind: kind, generation: generation)
@@ -175,12 +214,34 @@ struct PromptsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("Feature", selection: $model.kind) {
-                ForEach(PresetKind.allCases, id: \.self) { kind in
-                    Text(kind.displayName).tag(kind)
+            HStack(spacing: 12) {
+                Picker("Feature", selection: $model.kind) {
+                    ForEach(PresetKind.allCases, id: \.self) { kind in
+                        Text(kind.displayName).tag(kind)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .frame(width: 240)
+
+                Picker("Language", selection: Binding(get: { model.language },
+                                                      set: { model.setLanguage($0) })) {
+                    ForEach(PromptLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
+                .frame(width: 220)
+
+                Picker("Translate into", selection: Binding(get: { model.translationTarget },
+                                                            set: { model.translationTarget = $0 })) {
+                    ForEach(TranslationTarget.allOptions, id: \.self) { target in
+                        Text(model.translationTargetLabel(target)).tag(target)
+                    }
+                }
+                .frame(width: 260)
+                .help("Substituted as {chosen_language} in the translating presets.")
+
+                Spacer()
             }
-            .pickerStyle(.segmented)
 
             endpointRow
 
@@ -244,8 +305,13 @@ struct PromptsTab: View {
             }
             .font(.caption)
 
-            Button("Restore factory presets") { model.restoreFactory() }
-                .font(.caption)
+            VStack(alignment: .leading, spacing: 2) {
+                Button("Restore factory presets") { model.restoreFactory() }
+                Text("Puts every factory preset back to its shipped text and re-adds any you "
+                     + "deleted. Your own presets, the order and the chosen default are kept.")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
 
             if let error = model.lastError {
                 Text(error).font(.caption).foregroundStyle(.red)
@@ -264,7 +330,8 @@ struct PromptsTab: View {
                     .frame(height: 70)
                     .border(.separator)
 
-                Text("User template — must contain {text}; may use {instruction} and {language}")
+                Text("User template — must contain {text}; may use {instruction}, "
+                     + "{chosen_language} (the target above) and {language} (the Mac's language)")
                     .font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: draft.userTemplate)
                     .frame(height: 110)

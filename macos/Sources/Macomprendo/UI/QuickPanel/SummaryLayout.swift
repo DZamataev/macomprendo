@@ -4,6 +4,7 @@ import SwiftUI
 struct SummaryLayout: View {
     @ObservedObject var controller: SummarizeController
     let presets: [PromptPreset]
+    @ObservedObject var speak: SpeakController
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,14 +25,28 @@ struct SummaryLayout: View {
             Icon(.summarize, size: 14)
                 .foregroundStyle(.secondary)
 
-            Picker("", selection: $controller.selectedPresetID) {
+            Menu {
+                ForEach(PromptLanguage.allCases) { language in
+                    Button(language.displayName) { controller.promptLanguage = language.code }
+                }
+            } label: {
+                Icon(.globe, size: 14)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Prompt language")
+
+            // Bound through `selectPreset(_:)` rather than `$controller.selectedPresetID` plus
+            // `.onChange`: that also fired for the programmatic write the globe menu makes, so
+            // every language switch started two streams and cancelled the first.
+            Picker("", selection: Binding(get: { controller.selectedPresetID },
+                                          set: { controller.selectPreset($0) })) {
                 ForEach(presets) { preset in
                     Text(preset.name).tag(Optional(preset.id))
                 }
             }
             .labelsHidden()
             .frame(width: 160)
-            .onChange(of: controller.selectedPresetID) { _, _ in controller.rerun() }
 
             TextField("Extra instruction (⌘↩ to run again)", text: $controller.instruction)
                 .textFieldStyle(.roundedBorder)
@@ -75,6 +90,7 @@ struct SummaryLayout: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
+            SpeechControls(speak: speak, source: .summary, text: { controller.summary })
             Button { controller.copy() } label: {
                 Label { Text("Copy") } icon: {
                     Icon(.copy, size: 14)

@@ -107,4 +107,14 @@ import Testing
         viewModel.cancelDownload("base")
         #expect(viewModel.downloadTasks["base"] == nil)
     }
+
+    @Test func stateCaptionsNoLongerPointAtADeletedTab() {
+        #expect(DictationTab.stateCaption(for: nil) == "Checking…")
+        #expect(DictationTab.stateCaption(for: .notDownloaded)
+                == "Not downloaded — download it under Speech models below.")
+        #expect(DictationTab.stateCaption(for: .downloading(fraction: 0.42)) == "Downloading… 42%")
+        #expect(DictationTab.stateCaption(for: .downloaded(URL(fileURLWithPath: "/tmp/ggml-base.bin")))
+                == "Ready.")
+        #expect(DictationTab.stateCaption(for: .failed("boom")) == "boom")
+    }
 }

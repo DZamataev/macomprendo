@@ -13,8 +13,8 @@ and summarize go through Ollama or an OpenAI-compatible chat endpoint.
 | `macos/Sources/Macomprendo/Core` | `Settings`, `SettingsStore`, `Endpoint`, `KeychainStore`, `MacomprendoError`, `Log`, `Pasteboard` |
 | `macos/Sources/Macomprendo/Services` | OS-facing protocols + default implementations (hotkeys, audio, AX, paste, speech, models, permissions) |
 | `macos/Sources/Macomprendo/Providers` | `HTTPClient`, LLM and transcription providers, stream parsers, `WAVEncoder` |
-| `macos/Sources/Macomprendo/Features` | `@MainActor` controllers with explicit state enums, prompt presets |
-| `macos/Sources/Macomprendo/UI` | MenuBar, Settings tabs, Quick Panel, Recording HUD, Onboarding, Components |
+| `macos/Sources/Macomprendo/Features` | `@MainActor` controllers with explicit state enums; `Prompts/` holds `PromptPreset`, the renderer and `FactoryPresets`, whose `Factory/` subfolder has one content file per language |
+| `macos/Sources/Macomprendo/UI` | MenuBar, Settings tabs (General, Hotkeys, Dictation, Speech, Refine & Summarize, Providers), Quick Panel, Recording HUD, Onboarding, Components |
 | `macos/Sources/Macomprendo/Resources/Icons` | Vendored Phosphor SVGs + `icons.json` + their MIT licence |
 | `macos/Tests/MacomprendoTests` | swift-testing tests mirroring the source tree; `Fakes/` holds protocol doubles |
 | `scripts/` | Node ≥ 20 ESM tooling; `lib/` holds shared helpers; `__tests__/` holds `node:test` tests |

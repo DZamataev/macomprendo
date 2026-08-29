@@ -1,7 +1,10 @@
 import Foundation
 
 /// Hotkey #4. Selected text in, streamed summary out, Copy or Replace selection.
-@MainActor final class SummarizeController: ObservableObject {
+@MainActor final class SummarizeController: ObservableObject, PromptLanguageSwitching {
+    let presetKind = PresetKind.summarize
+    var settingsHolder: any SettingsHolding { holder }
+
     @Published var source: String = ""
     @Published var summary: String = ""
     @Published var isStreaming: Bool = false
@@ -15,7 +18,7 @@ import Foundation
     private let inserter: any TextInserting
     private let tracker: any FrontmostAppTracking
     private let toaster: any Toasting
-    private let settings: @MainActor () -> Settings
+    private let holder: any SettingsHolding
 
     private var streamTask: Task<Void, Never>?
     private var streamGeneration = 0
@@ -27,14 +30,14 @@ import Foundation
          inserter: any TextInserting,
          tracker: any FrontmostAppTracking,
          toaster: any Toasting,
-         settings: @escaping @MainActor () -> Settings) {
+         holder: any SettingsHolding) {
         self.llm = llm
         self.panel = panel
         self.pasteboard = pasteboard
         self.inserter = inserter
         self.tracker = tracker
         self.toaster = toaster
-        self.settings = settings
+        self.holder = holder
     }
 
     func start(text: String) {
@@ -42,9 +45,7 @@ import Foundation
         source = text.trimmingCharacters(in: .whitespacesAndNewlines)
         summary = ""
         error = nil
-        if selectedPresetID == nil {
-            selectedPresetID = settings().defaultPreset(for: .summarize)?.id
-        }
+        refreshSelectedPreset()
         panel.present(layout: .summary)
         rerun()
     }
@@ -71,15 +72,7 @@ import Foundation
 
     private func runStream(generation: Int) async {
         defer { if generation == streamGeneration { isStreaming = false } }
-        let current = settings()
-
-        let chosen: PromptPreset?
-        if let id = selectedPresetID, let found = current.preset(id: id), found.kind == .summarize {
-            chosen = found
-        } else {
-            chosen = current.defaultPreset(for: .summarize)
-        }
-        guard let preset = chosen else {
+        guard let preset = activePreset else {
             error = ErrorText.describe(FeatureConfigError.noPreset(.summarize))
             return
         }
@@ -90,9 +83,13 @@ import Foundation
             return
         }
 
-        let prompt = PromptRenderer.render(preset, text: source,
-                                           instruction: instruction,
-                                           language: RefineController.uiLanguageName())
+        let prompt = PromptRenderer.render(
+            preset, text: source,
+            instruction: instruction,
+            language: RefineController.uiLanguageName(),
+            chosenLanguage: holder.settings.translationTarget.resolvedName(
+                promptLanguage: holder.settings.promptLanguage,
+                systemLanguageCode: TranslationTarget.currentSystemLanguageCode))
         do {
             let target = try llm()
             for try await delta in target.provider.chat(prompt.messages, model: target.model,
@@ -119,7 +116,7 @@ import Foundation
             return
         }
         do {
-            try await inserter.insert(summary, into: target, method: settings().insertMethod)
+            try await inserter.insert(summary, into: target, method: holder.settings.insertMethod)
             panel.dismiss()
         } catch {
             toaster.toast(ErrorText.describe(error), duration: 2.5)

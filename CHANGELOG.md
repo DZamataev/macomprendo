@@ -24,9 +24,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   toggle backed by `SMAppService` that reconciles with System Settings on
   appear, dictation/insert-method pickers, and shortcut recorders for all
   five hotkeys.
-- Models and Dictation settings tabs: download, cancel and delete whisper
-  models with live progress and disk-usage totals, and choose between local
-  transcription or an endpoint plus spoken language from the Dictation tab.
+- Dictation settings tab: choose between local transcription or an endpoint
+  plus the spoken language, and download, cancel and delete whisper models
+  with live progress and disk-usage totals.
 - Providers settings tab: add, edit and remove LLM/transcription endpoints,
   store and clear their API keys in the Keychain, test a connection's model
   count, and pull an Ollama model with live progress.
@@ -40,8 +40,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   factory prompt presets (Clean up, Formal, Casual, Shorten, Expand, Fix
   grammar, Translate for Refine; Brief, Bullets, TL;DR, Key actions for
   Summarize).
-- Speech settings tab: pick a voice grouped by language, adjust rate, pitch
-  and volume, and preview the current settings against a sample sentence.
+- Speech settings tab: pick a default voice grouped by language, map a
+  separate voice to each language for mixed-script text (with a toggle to
+  turn that switching off), adjust rate, pitch and volume, edit the preview
+  text and preview it on demand, and optionally audition a voice with a
+  short phrase in its own language as soon as it is selected.
 - Speak selection now switches system voices mid-utterance for mixed-script
   text, so a Cyrillic run inside an otherwise Latin sentence (and vice versa)
   is read in a matching installed voice instead of the configured one
@@ -70,6 +73,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   All of it is covered by `node:test` unit tests.
 - Documentation: this README, `DISTRIBUTING.md`, `docs/ARCHITECTURE.md`,
   `docs/SMOKE_TEST.md`, `PRIVACY.md`, and ADR-0001 through ADR-0008.
+- A Dock icon now appears while the onboarding wizard or the Settings window is
+  open, and disappears when both are closed, so either window can be brought
+  back to the front (⌘Tab, the Dock) instead of vanishing behind other apps
+  with no way back except the menubar.
+- The Quick Panel can now read its own text aloud: Refine's Original and
+  Refined panes and Summarize's summary each get a Speak/Pause/Resume control
+  plus Stop while playing, independent of the Speak selection hotkey. Closing
+  the panel stops a read the panel started — its controls go with it — while a
+  read started with the Speak hotkey keeps its HUD and keeps playing.
+- The menubar menu now shows each action's current hotkey beside its
+  checkmark; an unbound action reads "not set".
+- Refine and Summarize now have a working language, switchable from Settings ▸
+  Refine & Summarize and from the Quick Panel's globe menu. Factory prompt
+  presets are seeded in English, Russian, Spanish, German, French, Portuguese
+  and Chinese — twelve per language, 84 in all, written natively rather than
+  translated — including a new "Translate & organize" preset.
+
+### Changed
+- The Models tab is gone; speech models are now configured in Settings ▸
+  Dictation.
+- The four summarize presets now state explicitly that the summary is written
+  in the language of the text, instead of leaving it to the model to infer.
 
 ### Fixed
 - The onboarding permission steps no longer show a stale answer: they re-read

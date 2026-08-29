@@ -35,8 +35,13 @@ per language and deterministic UUIDs so the eleven IDs already shipped keep thei
   `macos/Sources/Macomprendo/Resources/Icons/icons.json`, run `npm run sync-icons`, add the
   `AppIcon` case **and** its `fallbackSymbol`, and commit the SVG.
 - `macos/project.yml` is the source of truth for the Xcode project. No file added by this plan
-  needs a `project.yml` edit — the target globs `Sources/Macomprendo/**` — but `npm run gen`
-  must stay a no-op.
+  needs a `project.yml` edit — it already points at `Sources/Macomprendo` — but **xcodegen
+  expands that directory into an explicit file list in the generated `.xcodeproj`**, so any
+  task that CREATES a source or test file must run `npm run gen` and commit the regenerated
+  project in the same commit. `git diff --exit-code macos/Macomprendo.xcodeproj` after
+  `npm run gen` is the check. `swift test` uses `Package.swift` and passes either way, so a
+  stale project only surfaces in an Xcode or Release build — verify it explicitly rather than
+  inferring it from a green test run.
 - Commands: `npm run test:swift`, `npm run test:scripts`, `swift build --package-path macos`.
 - Conventional commit messages.
 - **No settings migration.** The app has not shipped. A document written by an older build
@@ -615,7 +620,11 @@ In `macos/Sources/Macomprendo/Features/Prompts/FactoryPresets.swift`, pass
     static func seed(into settings: inout Settings) {
         for language in PromptLanguage.allCases
         where !settings.seededPromptLanguages.contains(language.code) {
-            for preset in presets(for: language) { settings.addPreset(preset) }
+            let seeded = presets(for: language)
+            // A language with no content is not "seeded": marking it so would permanently
+            // suppress its presets once the content arrives.
+            guard !seeded.isEmpty else { continue }
+            for preset in seeded { settings.addPreset(preset) }
             settings.seededPromptLanguages.append(language.code)
         }
     }
@@ -626,7 +635,12 @@ In `macos/Sources/Macomprendo/Features/Prompts/FactoryPresets.swift`, pass
         let existing = Set(settings.presets.map(\.id))
         for factory in all() where !existing.contains(factory.id) { settings.addPreset(factory) }
         for language in PromptLanguage.allCases {
-            if !settings.seededPromptLanguages.contains(language.code) {
+            // Same rule as `seed`: a language only counts as seeded once it actually holds
+            // presets. Marking an empty language seeded would suppress its content forever.
+            let hasPresets = PresetKind.allCases.contains {
+                !settings.presets(of: $0, language: language.code).isEmpty
+            }
+            if hasPresets, !settings.seededPromptLanguages.contains(language.code) {
                 settings.seededPromptLanguages.append(language.code)
             }
             for kind in PresetKind.allCases {
@@ -861,29 +875,18 @@ extension PromptLanguage {
     var content: FactoryPresetContent {
         switch self {
         case .english: .english
-        case .russian: .russian
-        case .spanish: .spanish
-        case .german: .german
-        case .french: .french
-        case .portuguese: .portuguese
-        case .chinese: .chinese
+        // Only English has content in this task. Task 4 splits `.russian` out and Task 5 the
+        // remaining five, so the build stays green at every step and no language is ever
+        // left without content.
+        case .russian, .spanish, .german, .french, .portuguese, .chinese: .english
         }
     }
 }
 ```
 
-Note: this switch will not compile until Tasks 4 and 5 add the other six statics. Add the six
-`case` lines in this task and take the build red only between Step 3 and Step 5 — Step 5
-provides English and the remaining six are added in Tasks 4 and 5. To keep this task's build
-green, temporarily map the six unwritten languages to `.english`:
-
-```swift
-        case .russian, .spanish, .german, .french, .portuguese, .chinese: .english
-```
-
-Task 4 replaces `.russian` with its own case, Task 5 the remaining five. The
-`everyLanguageCoversEveryRole` test passes throughout; `onlyTranslateUsesTheLanguagePlaceholder`
-also passes, because English satisfies it.
+Write exactly the switch above — do not add the other six cases yet, they have nothing to
+point at. The `everyLanguageCoversEveryRole` test passes throughout, and
+`onlyTranslateUsesTheLanguagePlaceholder` passes too because English satisfies it.
 
 - [ ] **Step 4: Rewrite `FactoryPresets` as the assembler**
 
@@ -967,7 +970,11 @@ enum FactoryPresets {
     static func seed(into settings: inout Settings) {
         for language in PromptLanguage.allCases
         where !settings.seededPromptLanguages.contains(language.code) {
-            for preset in presets(for: language) { settings.addPreset(preset) }
+            let seeded = presets(for: language)
+            // A language with no content is not "seeded": marking it so would permanently
+            // suppress its presets once the content arrives.
+            guard !seeded.isEmpty else { continue }
+            for preset in seeded { settings.addPreset(preset) }
             settings.seededPromptLanguages.append(language.code)
         }
     }
@@ -978,7 +985,12 @@ enum FactoryPresets {
         let existing = Set(settings.presets.map(\.id))
         for factory in all() where !existing.contains(factory.id) { settings.addPreset(factory) }
         for language in PromptLanguage.allCases {
-            if !settings.seededPromptLanguages.contains(language.code) {
+            // Same rule as `seed`: a language only counts as seeded once it actually holds
+            // presets. Marking an empty language seeded would suppress its content forever.
+            let hasPresets = PresetKind.allCases.contains {
+                !settings.presets(of: $0, language: language.code).isEmpty
+            }
+            if hasPresets, !settings.seededPromptLanguages.contains(language.code) {
                 settings.seededPromptLanguages.append(language.code)
             }
             for kind in PresetKind.allCases {
@@ -1557,6 +1569,7 @@ git commit -m "feat(settings): pick the prompt language in Refine & Summarize"
   `macos/Sources/Macomprendo/UI/QuickPanel/SummaryLayout.swift`
 - Modify: `macos/Sources/Macomprendo/Resources/Icons/icons.json`,
   `macos/Sources/Macomprendo/UI/Components/Icon.swift`
+- Modify: `macos/Tests/MacomprendoTests/App/TextFeaturesTests.swift:40,45`
 - Test: `macos/Tests/MacomprendoTests/Features/RefineControllerTests.swift`,
   `macos/Tests/MacomprendoTests/Features/SummarizeControllerTests.swift`
 
@@ -1646,6 +1659,10 @@ Do exactly the same in `SummarizeController`, with `.summarize` in the `defaultP
 
 In `TextFeatures.live`, replace `settings: { model.settings }` with `holder: model` for both
 controllers. `SpeakController` keeps its `settings:` closure — it is not changed by this task.
+
+`macos/Tests/MacomprendoTests/App/TextFeaturesTests.swift` also builds both controllers, at
+lines 40 and 45: replace `settings: { holder.settings }` with `holder: holder` there. Line 47
+builds the `SpeakController` and stays as it is.
 
 - [ ] **Step 4: Add the globe icon**
 
@@ -2156,14 +2173,22 @@ add a `settings(_:map:segmentation:)` overload):
         #expect(plan.first(where: { $0.text.contains("русское") })?.voiceID == "ru.milena.enhanced")
     }
 
-    @Test func shortRunsAreNeverSentToTheDetector() {
+    /// "Привет." is a 6-letter Cyrillic run, and Cyrillic runs never merge into a Latin
+    /// neighbour — so it survives as its own run and is below the threshold, while the long
+    /// Latin run is above it. Asserting both halves is what makes this test fail against a
+    /// broken threshold instead of passing vacuously on an empty question list.
+    @Test func onlyRunsLongEnoughToBeTrustworthyAreSentToTheDetector() {
         let detector = ScriptedLanguageDetector()
         _ = AVSpeechService.utterancePlan(
-            text: "Привет мир hi",
+            text: "Привет. This is a reasonably long English sentence here.",
             settings: settings("en.alex", map: ["ru": "ru.milena"]),
             voices: voices,
             detector: detector)
-        #expect(detector.asked.allSatisfy { LanguageSegmenter.letterCount($0) >= AVSpeechService.minDetectionLetters })
+        #expect(detector.asked.count == 1)
+        #expect(detector.asked.first?.contains("reasonably") == true)
+        #expect(detector.asked.allSatisfy {
+            LanguageSegmenter.letterCount($0) >= AVSpeechService.minDetectionLetters
+        })
     }
 
     @Test func aPlanThatResolvesToOneVoiceCollapsesToTheOriginalText() {
@@ -2648,11 +2673,12 @@ import Testing
         coordinator.open(.settings)
         coordinator.open(.onboarding)
         coordinator.close(.settings)
-        // The second `true` is `close` re-asserting visibility while an owner remains.
-        #expect(policy.calls == [true, true])
+        // No policy call at all: the icon was already visible and must stay visible. Calling
+        // the policy again would re-run NSApp.activate and steal focus.
+        #expect(policy.calls == [true])
         #expect(coordinator.owners == [.onboarding])
         coordinator.close(.onboarding)
-        #expect(policy.calls == [true, true, false])
+        #expect(policy.calls == [true, false])
     }
 
     @Test func openingTheSameOwnerTwiceCallsThePolicyOnce() {
@@ -2720,14 +2746,20 @@ import Foundation
         self.policy = policy
     }
 
+    /// The policy is called ONLY on a real visibility transition, in both directions.
+    /// `NSAppActivationPolicy.setDockIconVisible(true)` also calls
+    /// `NSApp.activate(ignoringOtherApps:)`, so re-asserting visibility while another owner
+    /// is still open would yank focus to this app at the moment the user closed a window —
+    /// while they were working in a different app entirely.
     func open(_ owner: Owner) {
-        guard owners.insert(owner).inserted else { return }
+        let wasEmpty = owners.isEmpty
+        guard owners.insert(owner).inserted, wasEmpty else { return }
         policy.setDockIconVisible(true)
     }
 
     func close(_ owner: Owner) {
-        guard owners.remove(owner) != nil else { return }
-        policy.setDockIconVisible(!owners.isEmpty)
+        guard owners.remove(owner) != nil, owners.isEmpty else { return }
+        policy.setDockIconVisible(false)
     }
 }
 ```
@@ -3033,6 +3065,12 @@ and set `isPaused = false` at the top of `play(_:)` and in `stop()`.
 ```swift
     private(set) var isPaused = false
 
+    /// `speak` returns before the first chunk has been synthesised, so a pause can land while
+    /// the audio is still in flight. `player.pause()` is a no-op then — there is nothing
+    /// playing yet — so `playAndWait` must hold the finished chunk back instead of starting
+    /// it, or the pause the user asked for is silently ignored and the sound starts anyway.
+    private var heldAudio: Data?
+
     func pause() {
         guard isSpeaking, !isPaused else { return }
         player.pause()
@@ -3042,8 +3080,13 @@ and set `isPaused = false` at the top of `play(_:)` and in `stop()`.
 
     func resume() {
         guard isPaused else { return }
-        player.resume()
         isPaused = false
+        if let audio = heldAudio {
+            heldAudio = nil
+            do { try player.play(audio) } catch { resumePlayback(throwing: error) }
+        } else {
+            player.resume()
+        }
         onStateChange?()
     }
 ```
@@ -3536,7 +3579,14 @@ Add under `Unreleased`:
 
 ### Changed
 - The Models tab is gone; speech models are configured in Settings ▸ Dictation.
+- The four summarize presets now state explicitly that the summary is written in the language
+  of the text, instead of leaving it to the model to infer.
 ```
+
+Both entries under Changed and the "Translate & organize" clause under Added describe changes
+that became user-visible partway through the branch (Task 3), not at the end. They are recorded
+here rather than in their own task because the branch merges as one unit; the changelog has to
+read as one feature, not as eighteen partial entries that supersede each other.
 
 - [ ] **Step 3: Update the architecture notes**
 
@@ -3550,14 +3600,27 @@ In `AGENTS.md` (never `CLAUDE.md` — it is a symlink), update the project map: 
 `Features/Prompts` row mentions `Factory/` holding one content file per language, and the
 Settings-tab list drops "Models".
 
-- [ ] **Step 5: Verify**
+- [ ] **Step 5: Strip this plan's task numbers out of shipped code**
+
+Plan task numbers are meaningless once the branch merges. Run
+
+```bash
+grep -rn "Task [0-9]" macos/Sources/Macomprendo
+```
+
+and rewrite every comment this branch introduced so it says what the code does instead of which
+task added it — at minimum `UI/Settings/PromptsTab.swift:12`, whose comment still says "Its
+writer arrives in Task 6" although `setLanguage` is forty lines below it. Leave the older
+`Plan N` references alone: they predate this branch and rewriting them is not this plan's work.
+
+- [ ] **Step 6: Verify**
 
 Run: `npm run test:swift && npm run test:scripts && npm run gen && git diff --exit-code macos/Macomprendo.xcodeproj`
 Expected: everything green and `npm run gen` a no-op.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add CHANGELOG.md docs AGENTS.md
+git add CHANGELOG.md docs AGENTS.md macos/Sources/Macomprendo
 git commit -m "docs: record the settings rework"
 ```

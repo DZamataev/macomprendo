@@ -16,8 +16,8 @@ import Testing
 
     private func makeRig(deltas: [String] = ["Short", " summary"],
                          failure: MacomprendoError? = nil,
-                         delayPerDelta: Duration = .zero) -> Rig {
-        let holder = ScriptedSettingsHolder.seeded()
+                         delayPerDelta: Duration = .zero,
+                         holder: ScriptedSettingsHolder = .seeded()) -> Rig {
         let panel = QuickPanelController(holder: holder)
         panel.attach(ScriptedPanelHost())
 
@@ -35,7 +35,7 @@ import Testing
             inserter: inserter,
             tracker: ScriptedTracker(),
             toaster: toaster,
-            settings: { holder.settings })
+            holder: holder)
 
         return Rig(controller: controller, panel: panel, pasteboard: pasteboard,
                    inserter: inserter, toaster: toaster, recorder: recorder, holder: holder)
@@ -52,7 +52,7 @@ import Testing
 
         #expect(rig.controller.summary == "Short summary")
         #expect(!rig.controller.isStreaming)
-        #expect(rig.controller.selectedPresetID == FactoryPresets.ID.brief)
+        #expect(rig.controller.selectedPresetID == FactoryPresets.presetID(role: .brief, language: .english))
     }
 
     @Test func theBriefPresetTemplateIsUsed() async {
@@ -69,7 +69,7 @@ import Testing
         rig.controller.start(text: "a long article")
         await rig.controller.drain()
 
-        rig.controller.selectedPresetID = FactoryPresets.ID.bullets
+        rig.controller.selectedPresetID = FactoryPresets.presetID(role: .bullets, language: .english)
         rig.controller.rerun()
         await rig.controller.drain()
 
@@ -126,5 +126,85 @@ import Testing
         #expect(rig.inserter.calls.isEmpty)
         #expect(rig.toaster.messages.count == 1)
         rig.controller.stop()
+    }
+
+    @Test func switchingLanguagePersistsItPicksTheNewDefaultAndReruns() async {
+        let holder = ScriptedSettingsHolder.seeded()
+        holder.settings.promptLanguage = "en"
+        let rig = makeRig(holder: holder)
+        rig.controller.start(text: "hello")
+        await rig.controller.drain()
+        let runsBefore = rig.recorder.calls.count
+
+        rig.controller.promptLanguage = "ru"
+        await rig.controller.drain()
+
+        #expect(holder.settings.promptLanguage == "ru")
+        #expect(rig.controller.selectedPresetID
+                == FactoryPresets.presetID(role: .brief, language: .russian))
+        #expect(rig.recorder.calls.count > runsBefore)
+        let sent = rig.recorder.calls.last!.messages
+        #expect(sent.contains { $0.content.contains("Изложи следующий текст в двух-трёх предложениях") })
+    }
+
+    /// See `RefineControllerTests`: the panel keeps `selectedPresetID` between uses, so a
+    /// language switched in Settings has to reach it the next time it opens.
+    @Test func aLanguageSwitchedInSettingsReachesAnAlreadyUsedPanel() async {
+        let holder = ScriptedSettingsHolder.seeded()
+        holder.settings.promptLanguage = "en"
+        let rig = makeRig(holder: holder)
+        rig.controller.start(text: "an article")
+        await rig.controller.drain()
+
+        holder.settings.promptLanguage = "ru"      // Settings, behind the panel's back
+        rig.controller.start(text: "статья")
+        await rig.controller.drain()
+
+        #expect(holder.settings.preset(id: rig.controller.selectedPresetID!)?.language == "ru")
+        #expect(rig.controller.selectedPresetID
+                == FactoryPresets.presetID(role: .brief, language: .russian))
+        let sent = rig.recorder.calls.last!.messages
+        #expect(sent.contains { $0.content.contains("Изложи следующий текст") })
+    }
+
+    @Test func aStoredPresetFromAnotherLanguageIsNotUsedForTheRun() async {
+        let holder = ScriptedSettingsHolder.seeded()
+        holder.settings.promptLanguage = "en"
+        let rig = makeRig(holder: holder)
+        rig.controller.selectedPresetID = FactoryPresets.presetID(role: .bullets,
+                                                                  language: .english)
+        holder.settings.promptLanguage = "ru"
+        rig.controller.rerun()
+        await rig.controller.drain()
+
+        let sent = rig.recorder.calls.last!.messages
+        #expect(sent.contains { $0.content.contains("Изложи следующий текст") })
+    }
+
+    @Test func pickingThePresetThatIsAlreadySelectedDoesNotRerun() async {
+        let rig = makeRig()
+        rig.controller.start(text: "an article")
+        await rig.controller.drain()
+        let runs = rig.recorder.calls.count
+
+        rig.controller.selectPreset(rig.controller.selectedPresetID)
+        await rig.controller.drain()
+        #expect(rig.recorder.calls.count == runs)
+
+        rig.controller.selectPreset(FactoryPresets.presetID(role: .bullets, language: .english))
+        await rig.controller.drain()
+        #expect(rig.recorder.calls.count == runs + 1)
+    }
+
+    @Test func settingTheSameLanguageDoesNotRerun() async {
+        let holder = ScriptedSettingsHolder.seeded()
+        holder.settings.promptLanguage = "ru"
+        let rig = makeRig(holder: holder)
+        rig.controller.start(text: "привет")
+        await rig.controller.drain()
+        let runs = rig.recorder.calls.count
+        rig.controller.promptLanguage = "ru"
+        await rig.controller.drain()
+        #expect(rig.recorder.calls.count == runs)
     }
 }

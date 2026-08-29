@@ -45,10 +45,7 @@ struct DictationTab: View {
                             Text(candidate.displayName).tag(candidate.id)
                         }
                     }
-                    Text(stateDescription(for: modelID))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("Download and delete models in the Models tab.")
+                    Text(Self.stateCaption(for: model.modelsViewModel.rows.first(where: { $0.id == modelID })?.state))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 case .endpoint(let id, let modelName):
@@ -69,6 +66,36 @@ struct DictationTab: View {
                     ForEach(TranscriptionLanguages.options, id: \.name) { option in
                         Text(option.name).tag(option.code)
                     }
+                }
+            }
+
+            Section("Speech models") {
+                Text("Models are stored in ~/Library/Application Support/Macomprendo/models.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                // Plain rows, not a nested List: a List inside a Form scrolls independently
+                // and clips its own content.
+                ForEach(model.modelsViewModel.rows) { row in
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.model.displayName)
+                            Text(ModelsViewModel.sizeText(row.model.sizeBytes))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        modelStateView(row)
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                HStack {
+                    Text("Disk usage: \(model.modelsViewModel.diskUsageText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Refresh") { Task { await model.modelsViewModel.refresh() } }
                 }
             }
         }
@@ -136,19 +163,46 @@ struct DictationTab: View {
 
     // MARK: - Helpers
 
-    private func stateDescription(for modelID: String) -> String {
-        guard let row = model.modelsViewModel.rows.first(where: { $0.id == modelID }) else {
-            return "Checking\u{2026}"
-        }
-        switch row.state {
-        case .notDownloaded: return "Not downloaded \u{2014} download it in the Models tab."
-        case .downloading(let fraction): return "Downloading\u{2026} \(Int(fraction * 100))%"
-        case .downloaded: return "Ready."
-        case .failed(let message): return message
+    /// Pure, so the wording is unit-tested. `nil` means the row has not been read yet.
+    /// `ModelState` is the top-level enum from `ModelManager`, the same one `ModelsViewModel.Row`
+    /// stores.
+    static func stateCaption(for state: ModelState?) -> String {
+        switch state {
+        case .none: "Checking…"
+        case .notDownloaded: "Not downloaded — download it under Speech models below."
+        case .downloading(let fraction): "Downloading… \(Int(fraction * 100))%"
+        case .downloaded: "Ready."
+        case .failed(let message): message
         }
     }
 
     private func baseURL(for id: UUID) -> String {
         model.settings.endpoints.first { $0.id == id }?.baseURL.absoluteString ?? "the endpoint"
+    }
+
+    @ViewBuilder
+    private func modelStateView(_ row: ModelsViewModel.Row) -> some View {
+        switch row.state {
+        case .notDownloaded:
+            Button("Download") { model.modelsViewModel.download(row.id) }
+        case .downloading(let fraction):
+            HStack(spacing: 8) {
+                ProgressView(value: fraction).frame(width: 90)
+                Button("Cancel") { model.modelsViewModel.cancelDownload(row.id) }
+            }
+        case .downloaded:
+            HStack(spacing: 8) {
+                Label { Text("Ready") } icon: { Icon(.success, size: 14) }
+                    .foregroundStyle(.green)
+                Button("Delete", role: .destructive) { Task { await model.modelsViewModel.delete(row.id) } }
+            }
+        case .failed(let message):
+            HStack(spacing: 8) {
+                Label { Text(message) } icon: { Icon(.warning, size: 14) }
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                Button("Retry") { model.modelsViewModel.download(row.id) }
+            }
+        }
     }
 }

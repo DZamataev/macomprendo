@@ -15,7 +15,6 @@ import Testing
     #expect(s.transcriptionLanguage == nil)
     #expect(s.speech == SpeechSettings())
     #expect(s.presets.isEmpty)
-    #expect(s.presetsSeeded == false)
     #expect(s.quickPanelFrames.isEmpty)
 }
 
@@ -35,11 +34,12 @@ import Testing
     s.transcriptionSource = .endpoint(id: Endpoint.ollamaLocalID, model: "whisper-1")
     s.transcriptionLanguage = "de"
     s.presets = [
-        PromptPreset(kind: .refine, name: "Clean up", systemPrompt: "Return only the result.",
+        PromptPreset(kind: .refine, language: "en", name: "Clean up",
+                     systemPrompt: "Return only the result.",
                      userTemplate: "Clean up:\n{text}", isFactory: true, sortOrder: 0)
     ]
-    s.presetsSeeded = true
-    s.defaultRefinePresetID = s.presets[0].id
+    s.seededPromptLanguages = ["en"]
+    s.defaultPresetIDs[Settings.presetKey(.refine, "en")] = s.presets[0].id
     s.quickPanelFrames = ["screen-1": CGRect(x: 10, y: 20, width: 680, height: 420)]
 
     let data = try JSONEncoder().encode(s)
@@ -129,4 +129,57 @@ import Testing
     #expect(SpeechSource.allCases.map(\.rawValue) == ["system", "endpoint"])
     #expect(SpeechSource.system.displayName == "System voices")
     #expect(SpeechSource.endpoint.displayName == "Endpoint")
+}
+
+@Suite struct SettingsSchemaV2Tests {
+    @Test func defaultsCarryTheNewKeys() {
+        let d = Settings.default
+        #expect(Settings.currentSchemaVersion == 2)
+        #expect(d.promptLanguage == PromptLanguage.systemDefault.code)
+        #expect(d.seededPromptLanguages.isEmpty)
+        #expect(d.defaultPresetIDs.isEmpty)
+        #expect(d.speech.voiceByLanguage.isEmpty)
+        #expect(d.speech.segmentationEnabled)
+        #expect(d.speech.auditionOnSelect)
+        #expect(d.speech.previewText.contains("Macomprendo"))
+    }
+
+    @Test func previewTextIsMixedScriptSoItDemonstratesSegmentation() {
+        let text = SpeechSettings().previewText
+        let scripts = Set(LanguageSegmenter.runs(in: text).map(\.script))
+        #expect(scripts.contains(.latin))
+        #expect(scripts.contains(.cyrillic))
+    }
+
+    @Test func aDocumentWithoutTheNewKeysDecodesToDefaults() throws {
+        let json = Data(#"{"schemaVersion":1}"#.utf8)
+        let settings = try Settings.migrate(json)
+        #expect(settings.schemaVersion == 2)
+        #expect(settings.promptLanguage == PromptLanguage.systemDefault.code)
+        #expect(settings.seededPromptLanguages.isEmpty)
+        #expect(settings.speech.segmentationEnabled)
+    }
+
+    @Test func aPresetWithoutALanguageDecodesAsEnglish() throws {
+        let json = Data("""
+            {"id":"F0000000-0000-0000-0000-000000000001","kind":"refine","name":"Clean up",
+             "systemPrompt":"s","userTemplate":"{text}","isFactory":true,"sortOrder":0}
+            """.utf8)
+        let preset = try JSONDecoder().decode(PromptPreset.self, from: json)
+        #expect(preset.language == "en")
+    }
+
+    @Test func newKeysSurviveARoundTrip() throws {
+        var settings = Settings.default
+        settings.promptLanguage = "ru"
+        settings.seededPromptLanguages = ["en", "ru"]
+        settings.defaultPresetIDs = [Settings.presetKey(.refine, "ru"):
+            FactoryPresets.presetID(role: .cleanUp, language: .russian)]
+        settings.speech.voiceByLanguage = ["ru": "ru.milena", "en": "en.alex"]
+        settings.speech.segmentationEnabled = false
+        settings.speech.auditionOnSelect = false
+        settings.speech.previewText = "hi"
+        let data = try JSONEncoder().encode(settings)
+        #expect(try Settings.migrate(data) == settings)
+    }
 }

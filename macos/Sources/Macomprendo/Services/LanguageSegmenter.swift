@@ -149,13 +149,16 @@ enum LanguageSegmenter {
         return nil
     }
 
-    /// Counts only letters (Cyrillic or Latin) in the run's text, ignoring attached neutral
-    /// characters (digits, punctuation, whitespace) so they never influence merge decisions.
-    private static func letterCount(_ run: TextRun) -> Int {
-        run.text.reduce(into: 0) { count, character in
+    /// Counts only letters (Cyrillic or Latin), ignoring digits, punctuation and whitespace.
+    /// Internal because the speech planner uses it to decide whether a run is long enough for
+    /// language detection to be trustworthy.
+    static func letterCount(_ text: String) -> Int {
+        text.reduce(into: 0) { count, character in
             if script(of: character) != .neutral { count += 1 }
         }
     }
+
+    private static func letterCount(_ run: TextRun) -> Int { letterCount(run.text) }
 
     /// Cyrillic always wins: this is only ever called to merge a short Latin run into an
     /// adjacent Cyrillic one, so the combined run must stay Cyrillic.

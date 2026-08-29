@@ -19,6 +19,42 @@ enum HotkeyAction: String, CaseIterable, Sendable {
     }
 }
 
+extension HotkeyAction {
+    static let unboundShortcutText = "not set"
+
+    /// The shortcut half of this action's menu row. Pure, so it is unit-tested without
+    /// AppKit or the KeyboardShortcuts package.
+    func menuTrailing(shortcut: String?) -> String {
+        let trimmed = (shortcut ?? "").trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? Self.unboundShortcutText : trimmed
+    }
+
+    /// Between the action's name and its shortcut, with spaces: without them the row reads
+    /// "Dictate—⌃D" rather than as an annotation.
+    ///
+    /// The row is built by concatenating two `Text`s with `+`, which yields ONE `Text` and
+    /// therefore survives into the `NSMenuItem` with per-run styling intact. A composite
+    /// *layout* does not: a `MenuBarExtra(.menu)` item keeps only the first `Text` of an
+    /// `HStack { Text(name); Spacer(); Text(shortcut) }`, dropping the shortcut with no
+    /// warning. That is how this shipped broken the first time, and no unit test could see
+    /// it, because the loss happens at render.
+    ///
+    /// The same constraint rules out right-aligning the shortcut the way a native menu does,
+    /// so it is separated inline. `.keyboardShortcut()` would draw it natively but would also
+    /// bind the key: pressing it with the app active would toggle the checkbox instead of
+    /// running the action.
+    static let menuSeparator = " — "
+
+    /// The shortcut currently bound to this action, as the library renders it ("⌥Space").
+    /// Read at menu-build time: `MenuBarExtra` re-evaluates its body every time the menu
+    /// opens, so a shortcut rebound in Settings ▸ Hotkeys shows up on the next open. The
+    /// library's `shortcutByNameDidChange` notification is internal and cannot be observed.
+    @MainActor
+    func currentShortcutText() -> String? {
+        KeyboardShortcuts.getShortcut(for: .forAction(self))?.description
+    }
+}
+
 enum HotkeyEvent: Sendable, Equatable {
     case keyDown(HotkeyAction)
     case keyUp(HotkeyAction)

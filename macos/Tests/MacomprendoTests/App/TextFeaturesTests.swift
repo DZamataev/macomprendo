@@ -37,12 +37,12 @@ import Testing
             capture: capture,
             llm: { LLMTarget(provider: provider, model: "m") },
             panel: panel, pasteboard: pasteboard, inserter: ScriptedInserter(),
-            tracker: ScriptedTracker(), toaster: toaster, settings: { holder.settings })
+            tracker: ScriptedTracker(), toaster: toaster, holder: holder)
 
         let summarize = SummarizeController(
             llm: { LLMTarget(provider: provider, model: "m") },
             panel: panel, pasteboard: pasteboard, inserter: ScriptedInserter(),
-            tracker: ScriptedTracker(), toaster: toaster, settings: { holder.settings })
+            tracker: ScriptedTracker(), toaster: toaster, holder: holder)
 
         let speak = SpeakController(speech: speech, toaster: toaster, settings: { holder.settings })
 

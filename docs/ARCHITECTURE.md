@@ -25,6 +25,8 @@
 │ SpeechSynthesizing         │ │  · WhisperCppTranscriber    │
 │ ModelManaging              │ │  · OpenAICompatible…        │
 │ PermissionsChecking        │ │ Streaming (SSE, NDJSON)     │
+│ LanguageDetecting          │ │                             │
+│ ActivationPolicyControlling│ │                             │
 └─────────────┬──────────────┘ └───────────┬─────────────────┘
               │                            │
 ┌─────────────▼────────────────────────────▼─────────────────┐
@@ -33,6 +35,14 @@
 │               Pasteboard                                    │
 └────────────────────────────────────────────────────────────┘
 ```
+
+Factory prompt presets (`Features/Prompts/FactoryPresets.swift`) are the cross product of
+`FactoryPresets.Role` (eight refine roles, four summarize roles) and `PromptLanguage` (seven
+languages) — 84 presets in all, with content for each language written natively in
+`Features/Prompts/Factory/FactoryPresets+<Language>.swift`. A preset's UUID is not random:
+`FactoryPresets.presetID(role:language:)` derives it from the role's and the language's fixed
+hex slots, so `restoreMissing(into:)` can tell "deleted factory preset" from "custom preset"
+across all seven languages without a lookup table.
 
 ## Rules
 
