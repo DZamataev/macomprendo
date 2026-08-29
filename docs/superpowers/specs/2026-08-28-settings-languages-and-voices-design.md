@@ -319,6 +319,35 @@ Content rules:
 - `{instruction}` and `{text}` behave exactly as today. `PromptRenderer` and its validation
   are unchanged.
 
+### The translation target
+
+`Settings.translationTarget` says what the translating presets translate into, substituted into
+their templates as `{chosen_language}`. It is one of three: follow the Mac's language (the
+default, which is what `translate` meant before the setting existed, so an upgrading document
+keeps its behaviour), follow `Settings.promptLanguage`, or a fixed language from
+`TranslationLanguages` — a list deliberately wider than the seven, because the languages you
+write prompts *in* and the languages you want to read are different sets. It is chosen in
+Settings ▸ Refine & Summarize only; the Quick Panel switches the prompt language, not the target.
+
+The placeholder sits on its own "target language" line in every template rather than inside a
+sentence. A language name inlined into Russian or German would need a grammatical case the
+substitution cannot know — «Переведи на Russian» and "ins Deutsch" are both wrong — so the
+templates say «Целевой язык: Russian» and then refer to "this language".
+
+All six translating roles use it: `translate`, `translateAndOrganize` and the four `…Translated`
+summarize roles. No factory template references `{language}` any more; it stays a supported
+placeholder for prompts the user writes.
+
+### Restoring, not merely topping up
+
+A seeded preset is ordinary user data, and `seed(into:)` never rewrites one — which means a
+*corrected* shipped template can reach an existing document only through
+`restoreFactory(into:)`, behind the "Restore factory presets" button. It therefore restores:
+every factory preset still present has its name, system prompt and template put back to the
+shipped text, and any the user deleted are re-added. The cost is the button's plain meaning —
+an edit made to a factory preset is discarded. Custom presets are untouched, and so are ordering
+and the chosen default, which are separate acts of customisation from editing text.
+
 ### Growing the set after it has shipped
 
 A document seeded by an earlier build lists every language, so the per-language loop skips it and

@@ -146,7 +146,7 @@ import SwiftUI
 
     func restoreFactory() {
         var settings = holder.settings
-        FactoryPresets.restoreMissing(into: &settings)
+        FactoryPresets.restoreFactory(into: &settings)
         holder.settings = settings
         select(selectedID ?? presets.first?.id)
     }
@@ -305,8 +305,13 @@ struct PromptsTab: View {
             }
             .font(.caption)
 
-            Button("Restore factory presets") { model.restoreFactory() }
-                .font(.caption)
+            VStack(alignment: .leading, spacing: 2) {
+                Button("Restore factory presets") { model.restoreFactory() }
+                Text("Puts every factory preset back to its shipped text and re-adds any you "
+                     + "deleted. Your own presets, the order and the chosen default are kept.")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
 
             if let error = model.lastError {
                 Text(error).font(.caption).foregroundStyle(.red)
@@ -325,7 +330,8 @@ struct PromptsTab: View {
                     .frame(height: 70)
                     .border(.separator)
 
-                Text("User template — must contain {text}; may use {instruction} and {language}")
+                Text("User template — must contain {text}; may use {instruction}, "
+                     + "{chosen_language} (the target above) and {language} (the Mac's language)")
                     .font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: draft.userTemplate)
                     .frame(height: 110)

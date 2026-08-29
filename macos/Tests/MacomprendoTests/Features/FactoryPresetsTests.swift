@@ -217,7 +217,7 @@ import Testing
         #expect(s.defaultPresetIDs == defaultsBefore)
     }
 
-    @Test func restoreMissingBringsBackADeletedFactoryPresetInItsOwnLanguage() throws {
+    @Test func restoreFactoryBringsBackADeletedFactoryPresetInItsOwnLanguage() throws {
         var s = Settings.default
         s.presets = []
         s.seededPromptLanguages = []
@@ -225,7 +225,7 @@ import Testing
         let victim = FactoryPresets.presetID(role: .bullets, language: .russian)
         try s.deletePreset(id: victim)
         #expect(s.preset(id: victim) == nil)
-        FactoryPresets.restoreMissing(into: &s)
+        FactoryPresets.restoreFactory(into: &s)
         #expect(s.preset(id: victim)?.language == "ru")
         #expect(s.presets.count == 16 * PromptLanguage.allCases.count)
     }
@@ -306,5 +306,87 @@ import Testing
         s.setDefaultPreset(id: chosen, for: .summarize, language: "de")
         FactoryPresets.seed(into: &s)
         #expect(s.defaultPresetID(for: .summarize, language: "de") == chosen)
+    }
+}
+
+/// "Restore factory presets" has to restore them, not merely re-add the missing ones: correcting
+/// a shipped template is otherwise unreachable, because a seeded preset is ordinary user data
+/// that `seed(into:)` never rewrites.
+@Suite struct RestoreFactoryTests {
+    private func seeded() -> Settings {
+        var s = Settings.default
+        s.presets = []
+        s.seededPromptLanguages = []
+        FactoryPresets.seed(into: &s)
+        return s
+    }
+
+    @Test func anEditedFactoryPresetIsPutBackToItsShippedText() {
+        var s = seeded()
+        let id = FactoryPresets.presetID(role: .translate, language: .russian)
+        var edited = s.preset(id: id)!
+        edited.userTemplate = "хочу своё {text}"
+        edited.name = "Мой перевод"
+        edited.systemPrompt = "своя система"
+        s.updatePreset(edited)
+
+        FactoryPresets.restoreFactory(into: &s)
+
+        let shipped = FactoryPresets.presets(for: .russian).first { $0.id == id }!
+        let restored = s.preset(id: id)!
+        #expect(restored.userTemplate == shipped.userTemplate)
+        #expect(restored.name == shipped.name)
+        #expect(restored.systemPrompt == shipped.systemPrompt)
+    }
+
+    @Test func aCustomPresetIsLeftAlone() {
+        var s = seeded()
+        let custom = s.addPreset(PromptPreset(kind: .refine, language: "ru", name: "Моё",
+                                              systemPrompt: "s", userTemplate: "{text}",
+                                              isFactory: false, sortOrder: 0))
+        FactoryPresets.restoreFactory(into: &s)
+        #expect(s.preset(id: custom.id)?.name == "Моё")
+        #expect(s.preset(id: custom.id)?.userTemplate == "{text}")
+        #expect(s.preset(id: custom.id)?.isFactory == false)
+    }
+
+    /// Reordering and choosing a default are separate acts of customisation from editing text,
+    /// and the button is about text — so they survive it.
+    @Test func orderingAndTheChosenDefaultSurvive() {
+        var s = seeded()
+        let tldr = FactoryPresets.presetID(role: .tldr, language: .german)
+        s.movePreset(id: tldr, to: 0)
+        s.setDefaultPreset(id: tldr, for: .summarize, language: "de")
+        let orderBefore = s.presets(of: .summarize, language: "de").map(\.id)
+
+        FactoryPresets.restoreFactory(into: &s)
+
+        #expect(s.presets(of: .summarize, language: "de").map(\.id) == orderBefore)
+        #expect(s.defaultPresetID(for: .summarize, language: "de") == tldr)
+    }
+
+    @Test func aDeletedFactoryPresetStillComesBack() throws {
+        var s = seeded()
+        let victim = FactoryPresets.presetID(role: .bullets, language: .russian)
+        try s.deletePreset(id: victim)
+        FactoryPresets.restoreFactory(into: &s)
+        #expect(s.preset(id: victim)?.language == "ru")
+        #expect(s.presets.count
+                == FactoryPresets.Role.allCases.count * PromptLanguage.allCases.count)
+    }
+
+    @Test func restoringRecordsTheCurrentFactoryVersion() {
+        var s = seeded()
+        s.seededFactoryVersion = 0
+        FactoryPresets.restoreFactory(into: &s)
+        #expect(s.seededFactoryVersion == FactoryPresets.currentVersion)
+    }
+
+    @Test func restoringIsIdempotent() {
+        var s = seeded()
+        FactoryPresets.restoreFactory(into: &s)
+        let after = s
+        FactoryPresets.restoreFactory(into: &s)
+        #expect(s == after)
     }
 }

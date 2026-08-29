@@ -4,7 +4,7 @@ import Foundation
 /// and are ordinary user data afterwards: editable, reorderable and deletable.
 ///
 /// A preset's UUID is derived from its role and language rather than written by hand, so
-/// `restoreMissing(into:)` can still tell "deleted factory preset" from "custom preset" across
+/// `restoreFactory(into:)` can still tell "deleted factory preset" from "custom preset" across
 /// seven languages. English is slot `0000`, which keeps the eleven IDs that shipped before
 /// languages existed at exactly the values they had.
 enum FactoryPresets {
@@ -113,7 +113,7 @@ enum FactoryPresets {
     /// *preset ID*, not merely per `seededPromptLanguages` entry, so it is safe against any
     /// document — a fresh one, one written before that key existed (which already holds the
     /// English set and would otherwise be seeded a second time, duplicating eleven IDs), and one
-    /// holding only some of a language's presets. `restoreMissing(into:)` repeats the repair for
+    /// holding only some of a language's presets. `restoreFactory(into:)` repeats the repair for
     /// a user who deleted a preset and wants it back; it is not what keeps seeding correct.
     static func seed(into settings: inout Settings) {
         var existing = Set(settings.presets.map(\.id))
@@ -167,13 +167,29 @@ enum FactoryPresets {
     }
 
     /// Re-adds factory presets the user deleted, in every language, and repairs a dangling
-    /// default for every kind × language pair. Existing presets are never modified.
+    /// default for every kind × language pair.
+    ///
+    /// It *restores*, rather than merely topping up: a factory preset still present has its name,
+    /// system prompt and template put back to the shipped text. That is the only way a corrected
+    /// template ever reaches an existing document — a seeded preset is ordinary user data, and
+    /// `seed(into:)` deliberately never rewrites one. The cost is the button's plain meaning: an
+    /// edit the user made to a factory preset is discarded. Custom presets are never touched, and
+    /// neither is ordering or the chosen default, which are separate acts of customisation from
+    /// editing text.
     ///
     /// Behind the "Restore factory presets" button, so it runs only on demand. `seed(into:)`
     /// above is the authority for a language being seeded; the `seededPromptLanguages` repair
     /// below is a belt-and-braces no-op for any document `seed` has already seen, kept only so
     /// this entry point cannot leave the key disagreeing with the presets it just restored.
-    static func restoreMissing(into settings: inout Settings) {
+    static func restoreFactory(into settings: inout Settings) {
+        let shipped = Dictionary(uniqueKeysWithValues: all().map { ($0.id, $0) })
+        for index in settings.presets.indices {
+            guard let source = shipped[settings.presets[index].id] else { continue }
+            settings.presets[index].name = source.name
+            settings.presets[index].systemPrompt = source.systemPrompt
+            settings.presets[index].userTemplate = source.userTemplate
+            settings.presets[index].isFactory = true
+        }
         let existing = Set(settings.presets.map(\.id))
         for factory in all() where !existing.contains(factory.id) { settings.addPreset(factory) }
         for language in PromptLanguage.allCases {
@@ -193,5 +209,6 @@ enum FactoryPresets {
                 }
             }
         }
+        settings.seededFactoryVersion = currentVersion
     }
 }
