@@ -218,8 +218,11 @@ import Testing
         h.recorder.emitLevel(0.4)
         h.recorder.triggerAutoStop()
 
+        // Wait on the terminal state, not on `inserted`. `insert()` records its text and
+        // only then does the cycle clear `isInserting` and settle `state`, so a wait that
+        // stops at `inserted` can resume while the cycle is still finishing.
         await waitFor("implicit stop transcribes and inserts") {
-            h.inserter.inserted.map(\.text) == ["capped"]
+            h.inserter.inserted.map(\.text) == ["capped"] && h.controller.state == .idle
         }
         #expect(h.controller.state == .idle)
         #expect(h.hud.state == .success("Inserted"))
@@ -236,8 +239,14 @@ import Testing
         h.controller.handle(.keyDown(.dictate))
         await h.controller.activeTask?.value
         h.recorder.triggerAutoStop()
+        // `state == .idle` is the load-bearing half of this condition. `begin()` refuses to
+        // start a new recording while `isInserting` is still set, and it refuses *silently* —
+        // no new task is assigned, so the `await activeTask?.value` below would await the
+        // previous cycle's task and the state assertion would see `.idle`. Waiting only for
+        // `inserted` resumes inside that window whenever the machine is loaded enough to
+        // delay the two statements that follow `insert()`.
         await waitFor("implicit stop transcribes and inserts") {
-            h.inserter.inserted.map(\.text) == ["capped"]
+            h.inserter.inserted.map(\.text) == ["capped"] && h.controller.state == .idle
         }
 
         h.controller.handle(.keyDown(.dictate))
