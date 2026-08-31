@@ -76,6 +76,8 @@ xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
 13. **Vendored xcframeworks are upgraded deliberately.** whisper.cpp and sherpa-onnx are
     binary targets: record their release artefact and checksum, re-run framework discovery,
     and verify local transcription after every upgrade.
+14. **Computer use always goes through Peekaboo.** For desktop or UI inspection and
+    interaction, use Peekaboo; never use Orca computer-use.
 
 ## How to…
 
