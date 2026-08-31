@@ -9,6 +9,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "Packages/WhisperBinary"),
+        .package(path: "Packages/SherpaOnnxBinary"),
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "2.0.0")
     ],
     targets: [
@@ -16,6 +17,7 @@ let package = Package(
             name: "Macomprendo",
             dependencies: [
                 .product(name: "Whisper", package: "WhisperBinary"),
+                .product(name: "SherpaOnnx", package: "SherpaOnnxBinary"),
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts")
             ],
             path: "Sources/Macomprendo",
