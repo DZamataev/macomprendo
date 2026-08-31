@@ -182,4 +182,32 @@ import Testing
         let data = try JSONEncoder().encode(settings)
         #expect(try Settings.migrate(data) == settings)
     }
+
+    @Test func aDocumentWithoutTheNewSelectionKeysDecodesToEmptyDefaults() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+        let settings = try JSONDecoder().decode(Settings.self, from: json)
+
+        #expect(settings.lastModelByEngine == [:])
+        #expect(settings.lastTranscriptionEndpointID == nil)
+        #expect(settings.lastTranscriptionEndpointModel == nil)
+    }
+
+    @Test func theSelectionKeysSurviveARoundTrip() throws {
+        var settings = Settings.default
+        let id = UUID()
+        settings.lastModelByEngine = ["whisperCpp": "base", "gigaAM": "gigaam-v3-e2e-ctc"]
+        settings.lastTranscriptionEndpointID = id
+        settings.lastTranscriptionEndpointModel = "whisper-1"
+
+        let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings))
+
+        #expect(decoded.lastModelByEngine["gigaAM"] == "gigaam-v3-e2e-ctc")
+        #expect(decoded.lastModelByEngine["whisperCpp"] == "base")
+        #expect(decoded.lastTranscriptionEndpointID == id)
+        #expect(decoded.lastTranscriptionEndpointModel == "whisper-1")
+    }
+
+    @Test func addingTheSelectionKeysDoesNotMoveTheSchemaVersion() {
+        #expect(Settings.currentSchemaVersion == 2)
+    }
 }

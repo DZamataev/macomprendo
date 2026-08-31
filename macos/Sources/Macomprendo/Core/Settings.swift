@@ -157,6 +157,14 @@ struct Settings: Codable, Sendable, Equatable {
     var defaultPresetIDs: [String: UUID]
     /// Key: screen identifier, value: the remembered Quick Panel frame.
     var quickPanelFrames: [String: CGRect]
+    /// `ASREngine.rawValue` → the model id last selected for that engine, so returning to a
+    /// backend's sub-tab restores what was chosen there rather than the engine's default.
+    var lastModelByEngine: [String: String]
+    /// The endpoint last configured for transcription. Stored as its two components rather
+    /// than as a `TranscriptionSource?`, because only one of that enum's cases would ever be
+    /// valid here and a type that can hold an impossible value invites the bug of writing one.
+    var lastTranscriptionEndpointID: UUID?
+    var lastTranscriptionEndpointModel: String?
 
     static var `default`: Settings {
         Settings(
@@ -176,7 +184,10 @@ struct Settings: Codable, Sendable, Equatable {
             seededPromptLanguages: [],
             seededFactoryVersion: 0,
             defaultPresetIDs: [:],
-            quickPanelFrames: [:]
+            quickPanelFrames: [:],
+            lastModelByEngine: [:],
+            lastTranscriptionEndpointID: nil,
+            lastTranscriptionEndpointModel: nil
         )
     }
 
@@ -226,5 +237,8 @@ extension Settings {
         defaultPresetIDs = try c.decodeIfPresent([String: UUID].self, forKey: .defaultPresetIDs)
             ?? d.defaultPresetIDs
         quickPanelFrames = try c.decodeIfPresent([String: CGRect].self, forKey: .quickPanelFrames) ?? d.quickPanelFrames
+        lastModelByEngine = try c.decodeIfPresent([String: String].self, forKey: .lastModelByEngine) ?? [:]
+        lastTranscriptionEndpointID = try c.decodeIfPresent(UUID.self, forKey: .lastTranscriptionEndpointID)
+        lastTranscriptionEndpointModel = try c.decodeIfPresent(String.self, forKey: .lastTranscriptionEndpointModel)
     }
 }
