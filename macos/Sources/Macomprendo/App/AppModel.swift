@@ -9,6 +9,9 @@ final class AppModel: ObservableObject {
         didSet {
             guard settings != oldValue else { return }
             snapshot.current = settings
+            if settings.transcriptionSource != oldValue.transcriptionSource {
+                hud.modelCaption = HUDController.caption(for: settings.transcriptionSource)
+            }
             persist()
         }
     }
@@ -77,6 +80,7 @@ final class AppModel: ObservableObject {
         self.snapshot = snapshot
 
         let hud = HUDController(presenter: env.hudPresenter)
+        hud.modelCaption = HUDController.caption(for: loaded.transcriptionSource)
         self.hud = hud
 
         let factory = env.factory

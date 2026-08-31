@@ -22,6 +22,9 @@ protocol HUDPresenting: AnyObject {
 @MainActor
 final class HUDController: ObservableObject {
     @Published private(set) var state: HUDState = .hidden
+    /// The active transcription model's name, shown dim while recording and transcribing so a
+    /// misconfiguration is visible before the transcript comes back wrong.
+    @Published var modelCaption: String?
 
     private let presenter: (any HUDPresenting)?
     private let sleep: @Sendable (TimeInterval) async -> Void
@@ -40,6 +43,18 @@ final class HUDController: ObservableObject {
         case .success, .toast: 1.2
         case .error: 4
         case .hidden, .recording, .transcribing, .speaking: nil
+        }
+    }
+
+    /// Pure, so the wording is unit-tested. `nonisolated` for the same reason
+    /// `HUDView.elapsedText` is: `ObservableObject` members would otherwise inherit the
+    /// main-actor isolation of the type.
+    nonisolated static func caption(for source: TranscriptionSource) -> String {
+        switch source {
+        case .local(let modelID):
+            ModelCatalog.model(id: modelID)?.displayName ?? modelID
+        case .endpoint(_, let model):
+            "OpenAI endpoint · \(model)"
         }
     }
 

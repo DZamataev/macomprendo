@@ -4,7 +4,18 @@ struct HUDView: View {
     @ObservedObject var controller: HUDController
 
     var body: some View {
-        content
+        VStack(spacing: 4) {
+            content
+            if let caption = Self.captionText(for: controller.state, caption: controller.modelCaption) {
+                Text(caption)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+            }
+        }
             .frame(width: HUDLayout.size.width, height: HUDLayout.size.height)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
@@ -77,5 +88,15 @@ struct HUDView: View {
     nonisolated static func elapsedText(_ elapsed: TimeInterval) -> String {
         let total = Int(elapsed.rounded(.down))
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    /// Which states name the model. `.speaking` deliberately does not: it belongs to
+    /// text-to-speech, where a transcription model's name would be actively misleading.
+    nonisolated static func captionText(for state: HUDState, caption: String?) -> String? {
+        guard let caption, !caption.isEmpty else { return nil }
+        switch state {
+        case .recording, .transcribing: return caption
+        case .hidden, .speaking, .success, .error, .toast: return nil
+        }
     }
 }

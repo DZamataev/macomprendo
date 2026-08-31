@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum HUDLayout {
-    static let size = CGSize(width: 260, height: 92)
+    static let size = CGSize(width: 260, height: 108)
     static let topInset: CGFloat = 24
 
     /// Top-centre of the given screen.

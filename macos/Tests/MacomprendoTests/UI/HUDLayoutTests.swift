@@ -29,8 +29,8 @@ import Testing
         #expect(origin.y == 660)          // 780 - 100 - 20
     }
 
-    @Test func defaultSizeIsTheDesignedHUDSize() {
-        #expect(HUDLayout.size == CGSize(width: 260, height: 92))
+    @Test func theHUDIsTallEnoughForTheModelCaption() {
+        #expect(HUDLayout.size == CGSize(width: 260, height: 108))
         #expect(HUDLayout.topInset == 24)
     }
 }

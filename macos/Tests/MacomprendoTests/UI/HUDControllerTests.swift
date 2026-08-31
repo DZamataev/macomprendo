@@ -17,6 +17,21 @@ import Testing
         #expect(presenter.presentCount == 0)
     }
 
+    @Test func namesALocalModelByItsCatalogDisplayName() {
+        #expect(HUDController.caption(for: .local(modelID: "large-v3-turbo")) == "Large v3 Turbo")
+        #expect(HUDController.caption(for: .local(modelID: "gigaam-v3-e2e-ctc"))
+                == "GigaAM v3 e2e CTC (Russian)")
+    }
+
+    @Test func namesAnEndpointByItsModel() {
+        #expect(HUDController.caption(for: .endpoint(id: UUID(), model: "whisper-1"))
+                == "OpenAI endpoint · whisper-1")
+    }
+
+    @Test func fallsBackToTheRawIDForAModelNoLongerInTheCatalog() {
+        #expect(HUDController.caption(for: .local(modelID: "removed-model")) == "removed-model")
+    }
+
     @Test func recordingStaysVisibleUntilTheNextState() {
         let (controller, presenter, sleeps) = makeController()
         controller.show(.recording(level: 0.4, elapsed: 1.5))
