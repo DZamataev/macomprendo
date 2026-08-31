@@ -116,7 +116,7 @@ Assign a shortcut in Settings ▸ Hotkeys first.
       "Esc cancels" hint would be a false promise); on release the HUD shows "Transcribing…",
       then the Quick Panel opens with "Original" holding the transcript and "Refined" streaming.
 - [ ] With Dictation mode = Toggle: press once to start. A recording HUD with a microphone
-      indicator says "Press the hotkey again to transcribe". Press again to stop; the HUD
+      indicator says "Press the hotkey again to transcribe." Press again to stop; the HUD
       changes to "Transcribing…", then the Quick Panel opens.
 - [ ] Say nothing and release: the HUD's "Transcribing…" disappears, a "Nothing heard." toast
       appears, and no panel opens.

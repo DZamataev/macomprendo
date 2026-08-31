@@ -208,7 +208,7 @@ import Testing
     @Test func toggleDictationShowsARecordingHUDUntilTheSecondPress() async {
         let rig = makeRig(mode: .toggle)
         let recording = HUDState.recordingPrompt(
-            hint: "Press the hotkey again to transcribe"
+            hint: "Press the hotkey again to transcribe."
         )
 
         rig.controller.handle(.keyDown(.dictateAndRefine))

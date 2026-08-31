@@ -71,7 +71,7 @@ enum RefineSide: Equatable, Sendable {
             case .recording:
                 if self.holder.settings.dictationMode == .toggle {
                     self.toaster.show(.recordingPrompt(
-                        hint: "Press the hotkey again to transcribe"
+                        hint: "Press the hotkey again to transcribe."
                     ))
                 }
             case .transcribing: self.toaster.show(.transcribing)
