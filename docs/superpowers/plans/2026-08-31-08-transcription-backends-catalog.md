@@ -1766,6 +1766,14 @@ EOF
 
 ### Task 9: The Dictation tab as three backend sub-tabs
 
+> **SUPERSEDED IN PART — read the spec before this section.** Partway through this task the
+> design changed: an explicit active-model selector now sits above the sub-tabs and lists only
+> ready-to-use backends, and the sub-tabs became pure navigation that no longer write
+> `transcriptionSource`. `Settings.lastModelByEngine` is deleted with it, and there is one
+> status block beside the selector rather than one per tab. The text below still describes the
+> earlier "active sub-tab *is* the selection" design; where the two disagree, the spec's
+> "The Dictation tab" section wins. See `docs/superpowers/HANDOFF-2026-08-31-transcription-backends.md`.
+
 **Files:**
 - Create: `macos/Sources/Macomprendo/UI/Settings/DictationTabModel.swift`
 - Create: `macos/Sources/Macomprendo/UI/Settings/ModelBriefView.swift`
