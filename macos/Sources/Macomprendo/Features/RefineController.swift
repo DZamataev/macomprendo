@@ -64,12 +64,16 @@ enum RefineSide: Equatable, Sendable {
             self.isCapturing = state != .idle
             // Drive the toaster — it *is* the HUD (`Toasting.show(_:)/hide()`) — through
             // capture, since `DictationCapture` has no HUD dependency of its own.
-            // `HUDState.recording` renders "Release to transcribe · Esc cancels", but Esc
-            // is not wired to `DictationCapture`, so showing that hint here would be a
-            // false promise: show nothing while recording, only "Transcribing…" once
-            // recording stops, matching docs/SMOKE_TEST.md's Dictate & Refine row.
+            // Hold mode stays silent because the regular recording HUD promises Esc-to-cancel,
+            // which this capture does not support. Toggle mode can give honest feedback with a
+            // dedicated prompt that tells the user to press the hotkey again.
             switch state {
-            case .recording: break
+            case .recording:
+                if self.holder.settings.dictationMode == .toggle {
+                    self.toaster.show(.recordingPrompt(
+                        hint: "Press the hotkey again to transcribe"
+                    ))
+                }
             case .transcribing: self.toaster.show(.transcribing)
             case .idle: self.toaster.hide()
             }

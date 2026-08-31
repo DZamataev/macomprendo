@@ -43,6 +43,17 @@ struct HUDView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(12)
+        case .recordingPrompt(let hint):
+            VStack(spacing: 6) {
+                Icon(.microphoneFill, size: 20).foregroundStyle(Color.red)
+                Text("Recording…").font(.caption)
+                Text(hint)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .padding(12)
         case .transcribing:
             VStack(spacing: 8) {
                 ProgressView().controlSize(.small)
@@ -95,7 +106,7 @@ struct HUDView: View {
     nonisolated static func captionText(for state: HUDState, caption: String?) -> String? {
         guard let caption, !caption.isEmpty else { return nil }
         switch state {
-        case .recording, .transcribing: return caption
+        case .recording, .recordingPrompt, .transcribing: return caption
         case .hidden, .speaking, .success, .error, .toast: return nil
         }
     }

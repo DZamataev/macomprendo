@@ -4,6 +4,8 @@ import SwiftUI
 enum HUDState: Equatable, Sendable {
     case hidden
     case recording(level: Float, elapsed: TimeInterval)
+    /// Recording without a live meter, with a mode-specific instruction.
+    case recordingPrompt(hint: String)
     case transcribing
     /// Text-to-speech is playing; `hint` tells the user how to stop it.
     case speaking(hint: String)
@@ -42,7 +44,7 @@ final class HUDController: ObservableObject {
         switch state {
         case .success, .toast: 1.2
         case .error: 4
-        case .hidden, .recording, .transcribing, .speaking: nil
+        case .hidden, .recording, .recordingPrompt, .transcribing, .speaking: nil
         }
     }
 

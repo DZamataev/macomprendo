@@ -20,7 +20,9 @@ import Testing
                          failure: MacomprendoError? = nil,
                          delayPerDelta: Duration = .zero,
                          configured: Bool = true,
+                         mode: DictationMode = .hold,
                          holder: ScriptedSettingsHolder = .seeded()) -> Rig {
+        holder.settings.dictationMode = mode
         let host = ScriptedPanelHost()
         let panel = QuickPanelController(holder: holder)
         panel.attach(host)
@@ -37,7 +39,7 @@ import Testing
             recorder: audioRecorder,
             transcriberProvider: { ScriptedTranscriber(text: "spoken words") },
             permissions: ScriptedPermissions(),
-            mode: { .hold },
+            mode: { holder.settings.dictationMode },
             language: { "en" })
 
         let controller = RefineController(
@@ -184,13 +186,11 @@ import Testing
         #expect(rig.controller.refined == "Hello there")
     }
 
-    // F1: hotkey #2 (Dictate & Refine) reuses `DictationCapture`, which has no HUD
-    // dependency of its own — RefineController must drive the toaster from
-    // `capture.onStateChange`. Resolution (a): show nothing while recording, because
+    // In hold mode, show nothing while recording because
     // `HUDState.recording` renders "Release to transcribe · Esc cancels" and Esc is not
     // wired to `DictationCapture` — showing that hint here would be a false promise.
-    @Test func dictationCaptureShowsNoHUDWhileRecordingAndTranscribingWhileTranscribing() async {
-        let rig = makeRig()
+    @Test func holdDictationShowsNoHUDWhileRecordingAndTranscribingWhileTranscribing() async {
+        let rig = makeRig(mode: .hold)
         rig.controller.handle(.keyDown(.dictateAndRefine))
         #expect(rig.toaster.states.isEmpty)
         #expect(rig.toaster.hideCount == 0)
@@ -202,6 +202,25 @@ import Testing
         #expect(rig.toaster.hideCount == 1)      // back to idle just before the transcript arrives
         #expect(rig.panel.isVisible)             // ... and the Quick Panel takes over from there
 
+        await rig.controller.drain()
+    }
+
+    @Test func toggleDictationShowsARecordingHUDUntilTheSecondPress() async {
+        let rig = makeRig(mode: .toggle)
+        let recording = HUDState.recordingPrompt(
+            hint: "Press the hotkey again to transcribe"
+        )
+
+        rig.controller.handle(.keyDown(.dictateAndRefine))
+        #expect(rig.toaster.states == [recording])
+
+        rig.controller.handle(.keyUp(.dictateAndRefine))
+        #expect(rig.toaster.states == [recording])
+
+        rig.controller.handle(.keyDown(.dictateAndRefine))
+        #expect(rig.toaster.states == [recording, .transcribing])
+
+        await rig.controller.drainCapture()
         await rig.controller.drain()
     }
 

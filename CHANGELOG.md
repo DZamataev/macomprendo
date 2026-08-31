@@ -13,6 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   benchmarks and backend-specific parameters, plus an active-model selector and one readiness
   status for the selected source.
 - The recording HUD names the model that will transcribe.
+- Dictate & Refine now shows a recording HUD in Toggle mode until the second hotkey press.
 - Project foundation: SwiftPM and XcodeGen builds, Core settings/keychain/error
   layer, menubar app shell, Node tooling and CI.
 - Providers layer: transcription via a local whisper.cpp model or any
