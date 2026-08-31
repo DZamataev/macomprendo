@@ -708,11 +708,11 @@ EOF
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: the `SherpaOnnx` product (module `SherpaOnnxC`), and `SherpaRuntime.isAvailable() -> Bool`.
+- Produces: the `SherpaOnnx` product (module `SherpaOnnxC`), and `SherpaRuntime.version() -> String`, `SherpaRuntime.onnxruntimeVersion() -> String`.
 
 - [ ] **Step 1: Write the failing test**
 
-Mirrors `WhisperRuntimeTests`: proves the binary is linked and callable without loading a model.
+Mirrors `WhisperRuntimeTests`: proves the binary is linked and callable without loading a model. The assertions read real strings out of the linked library, so a broken link fails the test rather than passing it.
 
 ```swift
 import Foundation
@@ -721,10 +721,16 @@ import Testing
 
 @Suite struct SherpaRuntimeTests {
 
-    @Test func theLinkedRuntimeAnswers() {
-        // Creating a recognizer from an empty config must return cleanly rather than trap.
-        // That this returns at all proves the xcframework is linked and loadable.
-        #expect(SherpaRuntime.isAvailable() == true)
+    @Test func reportsTheLinkedSherpaVersion() {
+        let version = SherpaRuntime.version()
+        #expect(!version.isEmpty)
+        #expect(version.hasPrefix("1.13"), "linked sherpa-onnx is \(version), expected the 1.13 series")
+    }
+
+    @Test func reportsTheStaticallyLinkedOnnxruntimeVersion() {
+        // onnxruntime is linked into this xcframework variant rather than shipped beside it;
+        // a non-empty answer here is what proves that.
+        #expect(!SherpaRuntime.onnxruntimeVersion().isEmpty)
     }
 }
 ```
@@ -789,13 +795,14 @@ import SherpaOnnxC
 
 /// Facts about the linked sherpa-onnx build, mirroring `WhisperRuntime`.
 enum SherpaRuntime {
-    /// Creating a recognizer from an empty config exercises the linkage without needing a
-    /// model on disk. sherpa returns `nil` for an unusable config rather than trapping.
-    static func isAvailable() -> Bool {
-        var config = SherpaOnnxOfflineRecognizerConfig()
-        let recognizer = SherpaOnnxCreateOfflineRecognizer(&config)
-        if let recognizer { SherpaOnnxDestroyOfflineRecognizer(recognizer) }
-        return true
+    /// e.g. "1.13.4".
+    static func version() -> String {
+        String(cString: SherpaOnnxGetVersionStr())
+    }
+
+    /// The onnxruntime linked *into* this xcframework variant, not a separate dylib.
+    static func onnxruntimeVersion() -> String {
+        String(cString: SherpaOnnxGetOnnxruntimeVersionStr())
     }
 }
 ```
@@ -1244,6 +1251,7 @@ EOF
 - Modify: `macos/Sources/Macomprendo/Services/ModelCatalog.swift`
 - Modify: `macos/Tests/MacomprendoTests/Services/ModelCatalogTests.swift`
 - Modify: `scripts/fetch-model-hashes.mjs`
+- Modify: `scripts/__tests__/fetch-model-hashes.test.mjs` (existing, 174 lines — its records are keyed on model id)
 - Create: `scripts/lib/model-hashes.mjs`
 - Create: `scripts/__tests__/model-hashes.test.mjs`
 
@@ -1404,7 +1412,11 @@ Change `static let all: [LocalASRModel] = whisper` to `whisper + gigaAM` and app
 
 - [ ] **Step 4: Write the failing node test for the rewriter**
 
-Read `scripts/fetch-model-hashes.mjs` first — it currently matches `WhisperModel(...)` on one line and keys rewrites on the model id. One model now has up to four lines, so the key becomes the `downloadURL`.
+Read `scripts/fetch-model-hashes.mjs` first. Three things about it that the rest of this task depends on:
+
+- it matches `WhisperModel(id: "...")` on one line and keys rewrites on the **model id**. One model now has up to four files, so the key becomes the **`fileName`**, which Task 1's `localFileNamesAreUniqueAcrossTheWholeCatalog` test guarantees is unique catalog-wide;
+- its `downloadURLFor(id)` hardcodes the whisper Hugging Face path and it iterates a hardcoded `MODEL_IDS`. Neither can produce a GigaAM URL, so records must instead be parsed out of the catalog source as `{ fileName, downloadURL }` pairs;
+- **it does not read published hashes.** Without `--download` it only issues HEAD for `Content-Length` and leaves `sha256` empty; with `--download` it streams each file end to end through SHA-256. Add an `--only <substring>` filter on `fileName` so this task can hash the four GigaAM files without also pulling ~6 GB of whisper weights.
 
 `scripts/__tests__/model-hashes.test.mjs`:
 
@@ -1448,11 +1460,13 @@ Run: `npm run test:scripts` — expected FAIL (`Cannot find module '../lib/model
 - [ ] **Step 6: Fill in the real sizes and hashes**
 
 ```bash
-node scripts/fetch-model-hashes.mjs
+node scripts/fetch-model-hashes.mjs --download --only gigaam
 git diff macos/Sources/Macomprendo/Services/ModelCatalog.swift
 ```
 
-Every GigaAM `sha256: ""` must now hold a 64-character digest and every placeholder size must be an exact byte count. If a hash comes back empty, the script could not resolve that URL — fix the resolution rather than committing a blank.
+This transfers about 1.3 GB. Every GigaAM `sha256: ""` must come back holding a 64-character digest and every placeholder size must become an exact byte count. If a hash comes back empty, the script could not resolve that URL — fix the resolution rather than committing a blank.
+
+Whisper's entries keep their empty `sha256`, exactly as they are on main today: filling them would cost another 6 GB of transfer for something this plan does not need. The spec pins the *community* GigaAM conversions by hash because nobody upstream has verified them; whisper's weights come from the same repository the project has always trusted.
 
 - [ ] **Step 7: Run everything and commit**
 
@@ -2070,6 +2084,8 @@ struct DictationTab: View {
 - `parametersSection` for whisper.cpp keeps the spoken-language picker and adds the thread count and the `translate` flag, which is currently pinned to `false` in `WhisperParams.make`; for GigaAM it renders `tab.activeTab.parameterSummary` as explanatory text and nothing else.
 - `endpointSection` keeps today's endpoint picker and model field and adds a "Test" button that runs `OpenAICompatibleTranscriber.probe()` and stores the outcome in `tab.endpointProbe`.
 - `statusSection` shows `Icon(.success)` or `Icon(.warning)` beside `tab.statusHeadline`, then `tab.statusDetail`, then a button for the `FixAction`: `.download(id)` calls `model.modelsViewModel.download(id)`, `.testEndpoint` runs the probe, `.selectModel` focuses the model field.
+
+**Keep `static func stateCaption(for: ModelState?) -> String` and its exact wording.** The rebuild must not drop it: `ModelsViewModelTests.stateCaptionsNoLongerPointAtADeletedTab` covers it, and the per-model rows still use it. Its "download it under Speech models below" string is now wrong, though — that section no longer exists. Update that one case to "Not downloaded — use the Download button on this row." and update the assertion in `ModelsViewModelTests` to match.
 
 Keep `tab.modelStates` in step with `model.modelsViewModel.rows` so readiness reflects live download progress.
 
