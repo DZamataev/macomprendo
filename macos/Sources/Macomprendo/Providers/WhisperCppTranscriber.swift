@@ -41,11 +41,18 @@ struct WhisperParams: Sendable, Equatable {
         let resolved = (language?.isEmpty == false) ? language! : "auto"
         return WhisperParams(
             language: resolved,
-            // Leave two cores for the UI and the audio thread, unless the user picked a count.
-            threads: max(1, options.threads ?? (processorCount - 2)),
+            threads: threadCount(options.threads, processorCount: processorCount),
             noTimestamps: true,
             translate: options.translate
         )
+    }
+
+    /// Automatic leaves two cores for the UI and the audio thread. An explicit count is
+    /// clamped at both ends: `Settings` is JSON a user can export, edit and re-import, so a
+    /// nonsense value must not reach `whisper_full_params.n_threads`.
+    private static func threadCount(_ requested: Int?, processorCount: Int) -> Int {
+        guard let requested else { return max(1, processorCount - 2) }
+        return min(max(1, requested), max(1, processorCount))
     }
 }
 

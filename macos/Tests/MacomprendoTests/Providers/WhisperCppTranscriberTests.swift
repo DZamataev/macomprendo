@@ -50,6 +50,18 @@ import Testing
                                    options: WhisperOptions(threads: -4)).threads == 1)
     }
 
+    @Test func clampsAnExplicitThreadCountToTheCoresTheMachineHas() {
+        // Settings are JSON a user can export, edit and re-import, so the ceiling cannot be
+        // left to the picker that normally produces this number.
+        #expect(WhisperParams.make(language: nil, processorCount: 10,
+                                   options: WhisperOptions(threads: 100_000)).threads == 10)
+        #expect(WhisperParams.make(language: nil, processorCount: 1,
+                                   options: WhisperOptions(threads: 64)).threads == 1)
+        // A machine that reports no cores still gets a usable single thread.
+        #expect(WhisperParams.make(language: nil, processorCount: 0,
+                                   options: WhisperOptions(threads: 64)).threads == 1)
+    }
+
     @Test func turnsOnTranslationWhenTheSettingAsksForIt() {
         #expect(WhisperParams.make(language: "ru", processorCount: 8,
                                    options: WhisperOptions(translate: true)).translate)

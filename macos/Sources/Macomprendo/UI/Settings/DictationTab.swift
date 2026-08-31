@@ -207,7 +207,10 @@ struct DictationTab: View {
     @ViewBuilder
     private var parametersSection: some View {
         Section("Parameters") {
-            if tab.activeTab == .whisperCpp {
+            // What a tab offers is the model's statement, not the view's: an empty
+            // `parameterSummary` means "this tab has real controls". Only the two local tabs
+            // reach here — the outer switch sends `.endpoint` to its own section.
+            if tab.activeTab.parameterSummary.isEmpty {
                 Picker("Spoken language", selection: language) {
                     ForEach(TranscriptionLanguages.options, id: \.name) { option in
                         Text(option.name).tag(option.code)
