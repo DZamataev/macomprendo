@@ -141,6 +141,23 @@ import Testing
         #expect(tab.indicator(for: .endpoint) == .inactive)
     }
 
+    @Test func theSubTabTitleCarriesItsOwnReadinessMarker() {
+        // In the title string, not beside it: a segmented control always renders its own
+        // title, whereas an icon next to it may be dropped by the style.
+        let tab = tabModel()
+        tab.select(tab: .gigaAM)
+        tab.select(modelID: "gigaam-v3-e2e-ctc")
+        tab.modelStates["gigaam-v3-e2e-ctc"] = .downloaded
+        #expect(tab.tabTitle(for: .gigaAM) == "GigaAM ✅")
+
+        tab.modelStates["gigaam-v3-e2e-ctc"] = .notDownloaded
+        #expect(tab.tabTitle(for: .gigaAM) == "GigaAM ❌")
+
+        // An unconfigured backend is neither ready nor broken, so it carries no marker at all.
+        #expect(tab.tabTitle(for: .whisperCpp) == "whisper.cpp")
+        #expect(tab.tabTitle(for: .endpoint) == "OpenAI endpoint")
+    }
+
     @Test func theActiveTabSaysSoEvenWhenItCannotRun() {
         let tab = tabModel()
         tab.select(tab: .gigaAM)

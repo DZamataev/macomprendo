@@ -34,7 +34,7 @@ struct DictationTab: View {
         VStack(spacing: 0) {
             Picker("", selection: tabBinding) {
                 ForEach(DictationBackendTab.allCases) { candidate in
-                    tabLabel(candidate).tag(candidate)
+                    Text(tab.tabTitle(for: candidate)).tag(candidate)
                 }
             }
             .pickerStyle(.segmented)
@@ -66,20 +66,6 @@ struct DictationTab: View {
             tab.adopt(models.rows)
         }
         .onChange(of: models.rows) { _, rows in tab.adopt(rows) }
-    }
-
-    /// The active tab carries its readiness; the other two carry nothing, because they are
-    /// not what dictation will run and a warning icon on them would read as a fault.
-    @ViewBuilder
-    private func tabLabel(_ candidate: DictationBackendTab) -> some View {
-        switch tab.indicator(for: candidate) {
-        case .ready:
-            Label { Text(candidate.title) } icon: { Icon(.success, size: 11) }
-        case .notReady:
-            Label { Text(candidate.title) } icon: { Icon(.warning, size: 11) }
-        case .inactive:
-            Text(candidate.title)
-        }
     }
 
     // MARK: - Status

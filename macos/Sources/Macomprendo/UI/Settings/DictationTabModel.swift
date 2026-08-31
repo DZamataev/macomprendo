@@ -165,6 +165,16 @@ extension DictationTabModel {
         /// Not the configured backend, so nothing about it is ready or broken — it simply is
         /// not what dictation will run. Marking it "not ready" would read as a fault.
         case inactive
+
+        /// Empty for `.inactive`: an unconfigured backend must look different from a broken
+        /// one, or a fresh install would show three alarming tabs.
+        var marker: String {
+            switch self {
+            case .ready: "✅"
+            case .notReady: "❌"
+            case .inactive: ""
+            }
+        }
     }
 
     /// Only the active tab is ever `.ready` or `.notReady`: readiness is about what will run
@@ -172,6 +182,15 @@ extension DictationTabModel {
     func indicator(for tab: DictationBackendTab) -> TabIndicator {
         guard tab == activeTab else { return .inactive }
         return readiness == .ready ? .ready : .notReady
+    }
+
+    /// The sub-tab's label, marker included. The marker is part of the *string* rather than a
+    /// sibling icon because a segmented control renders its own title for certain, while a
+    /// `Label`'s icon may be dropped by the style — and a readiness warning that might not
+    /// render is not a warning. `✅`/`❌` are the symbols the spec itself uses for this screen.
+    func tabTitle(for tab: DictationBackendTab) -> String {
+        let marker = indicator(for: tab).marker
+        return marker.isEmpty ? tab.title : "\(tab.title) \(marker)"
     }
 
     /// What a model's `languages` says, in words. `nil` means multilingual with no published
