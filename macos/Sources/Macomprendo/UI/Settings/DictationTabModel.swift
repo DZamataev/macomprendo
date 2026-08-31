@@ -165,42 +165,31 @@ final class DictationTabModel: ObservableObject {
 
     // MARK: - Configuring the endpoint
 
-    /// What the endpoint sub-tab's own controls show. An active endpoint source wins; failing
-    /// that, whatever was configured; failing that, the first endpoint, which is what the
-    /// picker would land on anyway — so the Test button reaches the server on screen rather
-    /// than reporting that nothing is configured.
+    /// What the endpoint sub-tab's own controls show. They are configuration state, separate
+    /// from the active source: only the active-model selector may change what transcribes.
+    /// When no endpoint has been configured, fall back to the first picker option so the Test
+    /// button reaches the server on screen rather than reporting that nothing is configured.
     var configuredEndpointID: UUID? {
-        if case .endpoint(let id, _) = holder.settings.transcriptionSource { return id }
         return holder.settings.lastTranscriptionEndpointID ?? holder.settings.endpoints.first?.id
     }
 
     var configuredEndpointModel: String {
-        if case .endpoint(_, let model) = holder.settings.transcriptionSource { return model }
         return holder.settings.lastTranscriptionEndpointModel ?? ""
     }
 
     /// Configuring an endpoint records it; it becomes active only when chosen in the selector.
-    /// The one exception is the endpoint that is *already* transcribing: editing that is not
-    /// an activation, and leaving the active source on the old value would be a lie.
-    ///
     /// Either edit invalidates the probe, which proved that *that* server answered on *that*
     /// model name.
     func select(endpointID: UUID) {
         guard configuredEndpointID != endpointID else { return }
         endpointProbe = nil
         holder.settings.lastTranscriptionEndpointID = endpointID
-        if case .endpoint(_, let model) = holder.settings.transcriptionSource {
-            holder.settings.transcriptionSource = .endpoint(id: endpointID, model: model)
-        }
     }
 
     func select(endpointModel: String) {
         guard configuredEndpointModel != endpointModel else { return }
         endpointProbe = nil
         holder.settings.lastTranscriptionEndpointModel = endpointModel
-        if case .endpoint(let id, _) = holder.settings.transcriptionSource {
-            holder.settings.transcriptionSource = .endpoint(id: id, model: endpointModel)
-        }
     }
 
     var readiness: BackendReadiness {

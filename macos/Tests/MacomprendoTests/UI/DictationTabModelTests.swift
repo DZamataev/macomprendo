@@ -11,6 +11,8 @@ import Testing
     private func endpointSettings(id: UUID = UUID(), model: String = "whisper-1") -> Settings {
         var settings = Settings.default
         settings.transcriptionSource = .endpoint(id: id, model: model)
+        settings.lastTranscriptionEndpointID = id
+        settings.lastTranscriptionEndpointModel = model
         return settings
     }
 
@@ -210,16 +212,31 @@ import Testing
         #expect(tab.holder.settings.transcriptionSource == .local(modelID: "large-v3-turbo"))
     }
 
-    @Test func editingTheAlreadyActiveEndpointKeepsTheSourceInStep() {
-        // Editing the endpoint that is *already* transcribing is not an activation, and
-        // leaving the source pointing at the old model name would be a lie.
+    @Test func configuringAnAlreadyActiveEndpointsIDLeavesTheActiveSourceUnchanged() {
+        let activeID = UUID()
+        let configuredID = UUID()
+        var settings = endpointSettings(id: activeID)
+        settings.lastTranscriptionEndpointID = activeID
+        settings.lastTranscriptionEndpointModel = "whisper-1"
+        let tab = tabModel(settings)
+
+        tab.select(endpointID: configuredID)
+
+        #expect(tab.holder.settings.lastTranscriptionEndpointID == configuredID)
+        #expect(tab.holder.settings.transcriptionSource == .endpoint(id: activeID, model: "whisper-1"))
+    }
+
+    @Test func configuringAnAlreadyActiveEndpointsModelLeavesTheActiveSourceUnchanged() {
         let id = UUID()
-        let tab = tabModel(endpointSettings(id: id))
+        var settings = endpointSettings(id: id)
+        settings.lastTranscriptionEndpointID = id
+        settings.lastTranscriptionEndpointModel = "whisper-1"
+        let tab = tabModel(settings)
 
         tab.select(endpointModel: "gpt-4o-transcribe")
 
-        #expect(tab.holder.settings.transcriptionSource == .endpoint(id: id, model: "gpt-4o-transcribe"))
         #expect(tab.holder.settings.lastTranscriptionEndpointModel == "gpt-4o-transcribe")
+        #expect(tab.holder.settings.transcriptionSource == .endpoint(id: id, model: "whisper-1"))
     }
 
     @Test func changingTheEndpointDropsAProbeThatProvedADifferentServer() {
