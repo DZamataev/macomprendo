@@ -1,6 +1,6 @@
 # Handoff — transcription backends catalog
 
-Paused 2026-08-31. Branch `feat/transcription-backends-catalog`, 15 commits on top of `main`.
+Paused 2026-08-31. Branch `feat/transcription-backends-catalog`, 17 commits on top of `main`.
 
 **Read these three, in order, before touching anything:**
 
@@ -20,12 +20,18 @@ Paused 2026-08-31. Branch `feat/transcription-backends-catalog`, 15 commits on t
 | 6 GigaAM entries + hash script | complete, review clean, 1 fix round |
 | 7 Readiness + endpoint probe | complete, review clean, 1 fix round |
 | 8 Per-engine selection memory | complete, review clean — **but see the redesign** |
-| 9 Tabbed Dictation settings | **IN FLIGHT, redesigned mid-task** |
+| 9 Dictation settings | **complete and green, NOT YET REVIEWED** — redesigned mid-task |
 | 10 HUD model caption | not started |
 | 11 ADR, docs, signed build | not started |
 
-Suites at the pause: **744 Swift / 75 suites**, **228 Node**, `swift build` clean, `npm run gen` a no-op.
+Suites at the pause: **748 Swift / 75 suites**, **228 Node**, `swift build` clean, `npm run gen` a no-op.
 Baseline when this started was 661 Swift / 218 Node.
+
+**Task 9 is the one piece of this branch no independent reviewer has seen.** Every other task
+went through a task review and, where findings arose, a scoped re-review. Task 9's redesign
+landed after the pause was called, so its review is the first thing to do on resuming — not
+because anything is known to be wrong with it, but because nothing else here rests on an
+implementer's own assessment.
 
 ## The one thing a newcomer will get wrong
 
@@ -74,4 +80,12 @@ A session was spawned from a chip carrying an **earlier, wrong** diagnosis of th
 
 ## How to resume
 
-Re-enter with `superpowers:subagent-driven-development`, pointed at the plan. The ledger's identity line names the plan file; tasks with a `complete (commits …)` line are done and must not be re-dispatched. Resume at Task 9, whose brief needs regenerating from the amended spec rather than from the stale plan text — or amend the plan's Task 9 first, which is the tidier option.
+Re-enter with `superpowers:subagent-driven-development`, pointed at the plan. The ledger's identity line names the plan file; tasks with a `complete (commits …)` line are done and must not be re-dispatched.
+
+In order:
+
+1. **Review Task 9** over `6854c4c..5bd0178` — the redesign, unreviewed. Hand the reviewer the spec's "The Dictation tab" section rather than the plan's Task 9 text, which is stale, and point it at the deleted-tests list in `task-9-report.md`.
+2. **Task 10** (HUD model caption) and **Task 11** (ADR, smoke tests, signed build). Their briefs are already generated in the workspace and are still accurate — neither was touched by the redesign.
+3. **The final whole-branch review**, on the most capable model, pointed at the ledger's 17 deferred minors so it can triage which must be fixed before merge.
+
+Task 11 is where the three unverified things above finally get tested. Do not merge before it.
