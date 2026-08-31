@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-08-31T14:09:24Z",
+  "phase": null,
+  "phase_name": "transcription backends catalog",
+  "phase_dir": "docs/superpowers",
+  "plan": 8,
+  "task": 11,
+  "total_tasks": 11,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Catalog data model", "status": "done"},
+    {"id": 2, "name": "Multi-file downloads", "status": "done"},
+    {"id": 3, "name": "Vendor sherpa-onnx", "status": "done"},
+    {"id": 4, "name": "GigaAMTranscriber", "status": "done"},
+    {"id": 5, "name": "Factory engine dispatch", "status": "done"},
+    {"id": 6, "name": "GigaAM entries and hash script", "status": "done"},
+    {"id": 7, "name": "Readiness and endpoint probe", "status": "done"},
+    {"id": 8, "name": "Per-engine selection memory redesign", "status": "done"},
+    {"id": 9, "name": "Dictation settings", "status": "done", "commit": "33eb673"},
+    {"id": 10, "name": "HUD model caption", "status": "done", "commit": "2f1502b"}
+  ],
+  "remaining_tasks": [
+    {"id": 11, "name": "ADR, docs, and a real signed build", "status": "not_started"},
+    {"id": "final", "name": "Whole-branch review and final verification", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "Task 11 must perform a signed build and, if possible, launch and exercise a GigaAM model; the ONNX C decode path has not yet been runtime-verified.", "type": "human_action", "workaround": "Run the Task 11 brief commands; use a real downloaded model and microphone, or record the exact environment limitation in the report."}
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "Run the real GigaAM runtime smoke test with a microphone and downloaded model.", "context": "Unit tests cannot execute SherpaOnnx C decode; this is required before merge.", "blocking": true},
+    {"action": "Visually inspect Settings ▸ Dictation and the HUD layout if a macOS app session is available.", "context": "The SwiftUI layout has not been seen on screen.", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Use an explicit active-model selector; sub-tabs are navigation only.", "rationale": "Prevents silently downgrading the active model while browsing another backend.", "phase": 8},
+    {"decision": "Endpoint configuration writes only lastTranscriptionEndpointID/Model; activation alone writes transcriptionSource.", "rationale": "A review found the former implementation created a hidden second activation path.", "phase": 8},
+    {"decision": "Continue in the existing feature branch checkout.", "rationale": "The branch already contains the complete prior work and its SDD ledger.", "phase": 8},
+    {"decision": "Do not add a Claude co-author trailer to Codex-authored commits.", "rationale": "The attribution would be inaccurate.", "phase": 8}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Read docs/superpowers/specs/2026-08-31-transcription-backends-catalog-design.md, docs/superpowers/plans/2026-08-31-08-transcription-backends-catalog.md, and .superpowers/sdd/2026-08-31-08-transcription-backends-catalog/progress.md; then execute Task 11 from task-11-brief.md and review it.",
+  "context_notes": "Branch feat/transcription-backends-catalog is clean at 2f1502b. Tasks 1-8 are complete and Task 9 passed independent review after fixing endpoint configuration activation; Task 10 passed independent review. Task 11 is dispatched in the ledger but no implementer started before pause. The SDD workspace is git-ignored; keep reports there and do not stage them. After Task 11, run the final whole-branch review, triage deferred minors (including the warning icon), then full verification."
+}
