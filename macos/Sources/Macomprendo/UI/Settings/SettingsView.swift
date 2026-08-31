@@ -7,7 +7,7 @@ struct SettingsView: View {
                 .tabItem { Label { Text("General") } icon: { Icon(.settings, size: 16) } }
             HotkeysTab()
                 .tabItem { Label { Text("Hotkeys") } icon: { Icon(.hotkeys, size: 16) } }
-            DictationTab()
+            DictationTab(tab: AppRoot.model.dictationTabModel, models: AppRoot.model.modelsViewModel)
                 .tabItem { Label { Text("Dictation") } icon: { Icon(.microphone, size: 16) } }
             SpeechTab(model: AppRoot.model.speechTabModel, app: AppRoot.model)
                 .tabItem { Label { Text("Speech") } icon: { Icon(.speak, size: 16) } }

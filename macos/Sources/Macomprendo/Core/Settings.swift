@@ -165,6 +165,12 @@ struct Settings: Codable, Sendable, Equatable {
     /// valid here and a type that can hold an impossible value invites the bug of writing one.
     var lastTranscriptionEndpointID: UUID?
     var lastTranscriptionEndpointModel: String?
+    /// whisper.cpp's thread count. `nil` leaves it to the machine's core count. Only
+    /// whisper.cpp reads these two: GigaAM takes no parameters and an endpoint decides
+    /// for itself.
+    var whisperThreads: Int?
+    /// whisper.cpp's `translate` flag: transcribe non-English speech into English.
+    var whisperTranslate: Bool
 
     static var `default`: Settings {
         Settings(
@@ -187,7 +193,9 @@ struct Settings: Codable, Sendable, Equatable {
             quickPanelFrames: [:],
             lastModelByEngine: [:],
             lastTranscriptionEndpointID: nil,
-            lastTranscriptionEndpointModel: nil
+            lastTranscriptionEndpointModel: nil,
+            whisperThreads: nil,
+            whisperTranslate: false
         )
     }
 
@@ -240,5 +248,7 @@ extension Settings {
         lastModelByEngine = try c.decodeIfPresent([String: String].self, forKey: .lastModelByEngine) ?? [:]
         lastTranscriptionEndpointID = try c.decodeIfPresent(UUID.self, forKey: .lastTranscriptionEndpointID)
         lastTranscriptionEndpointModel = try c.decodeIfPresent(String.self, forKey: .lastTranscriptionEndpointModel)
+        whisperThreads = try c.decodeIfPresent(Int.self, forKey: .whisperThreads)
+        whisperTranslate = try c.decodeIfPresent(Bool.self, forKey: .whisperTranslate) ?? d.whisperTranslate
     }
 }

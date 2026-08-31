@@ -21,6 +21,7 @@ final class AppModel: ObservableObject {
     private(set) var textFeatures: TextFeatures?
     lazy var dockIcon = DockIconCoordinator(policy: env.activationPolicy)
     lazy var modelsViewModel = ModelsViewModel(models: env.models)
+    lazy var dictationTabModel = DictationTabModel(holder: self)
     lazy var speechTabModel = SpeechTabModel(speech: env.speech, holder: self, keychain: keychain)
     lazy var promptsTabModel = PromptsTabModel(
         holder: self,
@@ -82,9 +83,12 @@ final class AppModel: ObservableObject {
         let models = env.models
         let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider = {
             let settings = snapshot.current
-            return try await factory.transcriber(for: settings.transcriptionSource,
-                                                 endpoints: settings.endpoints,
-                                                 models: models)
+            return try await factory.transcriber(
+                for: settings.transcriptionSource,
+                endpoints: settings.endpoints,
+                models: models,
+                whisper: WhisperOptions(threads: settings.whisperThreads,
+                                        translate: settings.whisperTranslate))
         }
         self.transcriberProvider = transcriberProvider
 

@@ -9,6 +9,20 @@ enum WhisperRuntime {
     }
 }
 
+/// The whisper.cpp parameters the Dictation tab offers. Kept apart from `WhisperParams`,
+/// which is what those choices resolve to for one call.
+struct WhisperOptions: Sendable, Equatable {
+    /// `nil` leaves the thread count to the machine's core count.
+    var threads: Int?
+    /// whisper.cpp's own flag: transcribe non-English speech into English.
+    var translate: Bool
+
+    init(threads: Int? = nil, translate: Bool = false) {
+        self.threads = threads
+        self.translate = translate
+    }
+}
+
 /// The decisions that go into a `whisper_full_params`, extracted so they can be
 /// unit-tested without loading a model.
 struct WhisperParams: Sendable, Equatable {
@@ -19,14 +33,18 @@ struct WhisperParams: Sendable, Equatable {
     var noTimestamps: Bool
     var translate: Bool
 
-    static func make(language: String?, processorCount: Int) -> WhisperParams {
+    static func make(
+        language: String?,
+        processorCount: Int,
+        options: WhisperOptions = WhisperOptions()
+    ) -> WhisperParams {
         let resolved = (language?.isEmpty == false) ? language! : "auto"
         return WhisperParams(
             language: resolved,
-            // Leave two cores for the UI and the audio thread.
-            threads: max(1, processorCount - 2),
+            // Leave two cores for the UI and the audio thread, unless the user picked a count.
+            threads: max(1, options.threads ?? (processorCount - 2)),
             noTimestamps: true,
-            translate: false
+            translate: options.translate
         )
     }
 }
@@ -61,11 +79,16 @@ private final class WhisperContextBox: @unchecked Sendable {
 /// loading `large-v3-turbo` costs a couple of seconds. Serialisation is free: the
 /// type is an actor, and whisper contexts are not safe for concurrent `whisper_full`.
 actor WhisperCppTranscriber: TranscriptionProvider {
+    /// The user's thread count and translate flag. `nonisolated` and immutable so
+    /// `ProviderFactory`'s wiring can be asserted without awaiting the actor.
+    nonisolated let options: WhisperOptions
+
     private let modelURL: URL
     private var contextBox: WhisperContextBox?
 
-    init(modelURL: URL) {
+    init(modelURL: URL, options: WhisperOptions = WhisperOptions()) {
         self.modelURL = modelURL
+        self.options = options
     }
 
     func transcribe(_ pcm: [Float], sampleRate: Int, language: String?) async throws -> String {
@@ -80,7 +103,8 @@ actor WhisperCppTranscriber: TranscriptionProvider {
         let context = try loadedContext()
         let settings = WhisperParams.make(
             language: language,
-            processorCount: ProcessInfo.processInfo.activeProcessorCount
+            processorCount: ProcessInfo.processInfo.activeProcessorCount,
+            options: options
         )
 
         try Task.checkCancellation()

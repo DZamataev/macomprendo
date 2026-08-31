@@ -143,7 +143,7 @@ import Testing
     @Test func stateCaptionsNoLongerPointAtADeletedTab() {
         #expect(DictationTab.stateCaption(for: nil) == "Checking…")
         #expect(DictationTab.stateCaption(for: .notDownloaded)
-                == "Not downloaded — download it under Speech models below.")
+                == "Not downloaded — use the Download button on this row.")
         #expect(DictationTab.stateCaption(for: .downloading(fraction: 0.42)) == "Downloading… 42%")
         #expect(DictationTab.stateCaption(for: .downloaded) == "Ready.")
         #expect(DictationTab.stateCaption(for: .failed("boom")) == "boom")

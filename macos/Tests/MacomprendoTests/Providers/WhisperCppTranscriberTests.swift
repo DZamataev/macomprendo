@@ -37,6 +37,31 @@ import Testing
         #expect(!params.translate)
     }
 
+    @Test func honoursAnExplicitThreadCountOverTheCoreCount() {
+        let params = WhisperParams.make(language: nil, processorCount: 10,
+                                        options: WhisperOptions(threads: 3))
+        #expect(params.threads == 3)
+    }
+
+    @Test func clampsAnExplicitThreadCountToAtLeastOne() {
+        #expect(WhisperParams.make(language: nil, processorCount: 10,
+                                   options: WhisperOptions(threads: 0)).threads == 1)
+        #expect(WhisperParams.make(language: nil, processorCount: 10,
+                                   options: WhisperOptions(threads: -4)).threads == 1)
+    }
+
+    @Test func turnsOnTranslationWhenTheSettingAsksForIt() {
+        #expect(WhisperParams.make(language: "ru", processorCount: 8,
+                                   options: WhisperOptions(translate: true)).translate)
+    }
+
+    @Test func carriesTheOptionsItWasBuiltWith() {
+        let options = WhisperOptions(threads: 5, translate: true)
+        let transcriber = WhisperCppTranscriber(modelURL: URL(fileURLWithPath: "/models/ggml-base.bin"),
+                                                options: options)
+        #expect(transcriber.options == options)
+    }
+
     // MARK: - WhisperTextAssembler (pure)
 
     @Test func concatenatesSegmentsWithoutAddingSeparators() {

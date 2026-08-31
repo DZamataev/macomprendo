@@ -21,115 +21,268 @@ enum TranscriptionLanguages {
     ]
 }
 
+/// One sub-tab per transcription backend. The sub-tab *is* the selection: opening GigaAM makes
+/// GigaAM the engine dictation runs. That is deliberate, and the status block right under the
+/// tabs says so in words rather than leaving it to be discovered by pressing the hotkey.
 struct DictationTab: View {
     @EnvironmentObject private var model: AppModel
-
-    private enum SourceKind: String, CaseIterable, Identifiable {
-        case local, endpoint
-        var id: String { rawValue }
-    }
+    @ObservedObject var tab: DictationTabModel
+    @ObservedObject var models: ModelsViewModel
+    @FocusState private var endpointModelFocused: Bool
 
     var body: some View {
-        Form {
-            Section("Transcription source") {
-                Picker("Run transcription", selection: sourceKind) {
-                    Text("On this Mac (whisper.cpp)").tag(SourceKind.local)
-                    Text("Through an endpoint").tag(SourceKind.endpoint)
-                }
-                .pickerStyle(.radioGroup)
-
-                switch model.settings.transcriptionSource {
-                case .local(let modelID):
-                    Picker("Model", selection: localModelID) {
-                        ForEach(ModelCatalog.all) { candidate in
-                            Text(candidate.displayName).tag(candidate.id)
-                        }
-                    }
-                    Text(Self.stateCaption(for: model.modelsViewModel.rows.first(where: { $0.id == modelID })?.state))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                case .endpoint(let id, let modelName):
-                    Picker("Endpoint", selection: endpointID) {
-                        ForEach(model.settings.endpoints) { endpoint in
-                            Text(endpoint.name).tag(endpoint.id)
-                        }
-                    }
-                    TextField("Model", text: endpointModel)
-                    Text("Sends WAV audio to \(baseURL(for: id))/v1/audio/transcriptions as \u{201c}\(modelName)\u{201d}.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            Picker("", selection: tabBinding) {
+                ForEach(DictationBackendTab.allCases) { candidate in
+                    tabLabel(candidate).tag(candidate)
                 }
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding([.horizontal, .top])
 
-            Section("Language") {
+            // Pinned above the scrolling form rather than filed at the bottom of it: on a tab
+            // listing nine models with their briefs, a status block below the fold would be
+            // exactly the "you can only find this out by dictating" failure it exists to avoid.
+            statusBanner
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+
+            Divider()
+
+            Form {
+                switch tab.activeTab {
+                case .whisperCpp, .gigaAM:
+                    modelsSection
+                    parametersSection
+                case .endpoint:
+                    endpointSection
+                }
+            }
+            .formStyle(.grouped)
+        }
+        .task {
+            await models.refresh()
+            tab.adopt(models.rows)
+        }
+        .onChange(of: models.rows) { _, rows in tab.adopt(rows) }
+    }
+
+    /// The active tab carries its readiness; the other two carry nothing, because they are
+    /// not what dictation will run and a warning icon on them would read as a fault.
+    @ViewBuilder
+    private func tabLabel(_ candidate: DictationBackendTab) -> some View {
+        switch tab.indicator(for: candidate) {
+        case .ready:
+            Label { Text(candidate.title) } icon: { Icon(.success, size: 11) }
+        case .notReady:
+            Label { Text(candidate.title) } icon: { Icon(.warning, size: 11) }
+        case .inactive:
+            Text(candidate.title)
+        }
+    }
+
+    // MARK: - Status
+
+    private var isReady: Bool { tab.readiness == .ready }
+
+    private var statusBanner: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Icon(isReady ? .success : .warning, size: 14)
+                .foregroundStyle(isReady ? Color.green : Color.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tab.statusHeadline)
+                    .font(.callout.weight(.semibold))
+                Text(tab.statusDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            fixButton
+        }
+    }
+
+    @ViewBuilder
+    private var fixButton: some View {
+        if case .notReady(_, let fix) = tab.readiness, let fix {
+            switch fix {
+            case .download(let modelID):
+                Button("Download") { models.download(modelID) }
+            case .testEndpoint:
+                testButton
+            case .selectModel:
+                Button("Name a model") { endpointModelFocused = true }
+            }
+        }
+    }
+
+    private var testButton: some View {
+        Button(tab.isProbing ? "Testing…" : "Test") {
+            let provider = model.transcriberProvider
+            Task { await tab.probeEndpoint { try await provider() } }
+        }
+        .disabled(tab.isProbing)
+    }
+
+    // MARK: - Models
+
+    private var modelsSection: some View {
+        Section("Models") {
+            ForEach(tab.rows(for: tab.activeTab)) { entry in
+                modelRow(entry)
+            }
+
+            HStack(alignment: .firstTextBaseline) {
+                Text("Stored in ~/Library/Application Support/Macomprendo/models. "
+                     + "Disk usage: \(models.diskUsageText)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button("Refresh") { Task { await models.refresh() } }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func modelRow(_ entry: LocalASRModel) -> some View {
+        let state = models.rows.first { $0.id == entry.id }?.state
+        let selected = tab.selectedModelID == entry.id
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(entry.displayName)
+                            .fontWeight(selected ? .semibold : .regular)
+                        if selected { activeBadge }
+                    }
+                    Text("\(ModelsViewModel.sizeText(entry.totalSizeBytes)) · "
+                         + DictationTabModel.languagesText(entry.languages))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if selected {
+                        Text(Self.stateCaption(for: state))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 6) {
+                    if !selected {
+                        Button("Use this model") { tab.select(modelID: entry.id) }
+                    }
+                    modelStateView(entry.id, state)
+                }
+            }
+            ModelBriefView(brief: entry.brief)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var activeBadge: some View {
+        Text("Active")
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color.accentColor.opacity(0.2)))
+    }
+
+    @ViewBuilder
+    private func modelStateView(_ id: String, _ state: ModelState?) -> some View {
+        switch state {
+        case .none:
+            EmptyView()
+        case .notDownloaded:
+            Button("Download") { models.download(id) }
+        case .downloading(let fraction):
+            HStack(spacing: 8) {
+                ProgressView(value: fraction).frame(width: 90)
+                Button("Cancel") { models.cancelDownload(id) }
+            }
+        case .downloaded:
+            HStack(spacing: 8) {
+                Label { Text("Downloaded") } icon: { Icon(.success, size: 14) }
+                    .foregroundStyle(.green)
+                Button("Delete", role: .destructive) { Task { await models.delete(id) } }
+            }
+        case .failed(let message):
+            HStack(spacing: 8) {
+                Label { Text(message) } icon: { Icon(.warning, size: 14) }
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                Button("Retry") { models.download(id) }
+            }
+        }
+    }
+
+    // MARK: - Parameters
+
+    @ViewBuilder
+    private var parametersSection: some View {
+        Section("Parameters") {
+            if tab.activeTab == .whisperCpp {
                 Picker("Spoken language", selection: language) {
                     ForEach(TranscriptionLanguages.options, id: \.name) { option in
                         Text(option.name).tag(option.code)
                     }
                 }
-            }
-
-            Section("Speech models") {
-                Text("Models are stored in ~/Library/Application Support/Macomprendo/models.")
+                Picker("Threads", selection: threads) {
+                    ForEach(DictationTabModel.threadChoices(processorCount: processorCount), id: \.self) { choice in
+                        Text(DictationTabModel.threadLabel(choice, processorCount: processorCount))
+                            .tag(choice)
+                    }
+                }
+                Toggle("Translate into English", isOn: translate)
+                Text("whisper.cpp can translate while it transcribes: speech in any language "
+                     + "comes back as English text. Leave this off to keep the spoken language.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                // Plain rows, not a nested List: a List inside a Form scrolls independently
-                // and clips its own content.
-                ForEach(model.modelsViewModel.rows) { row in
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(row.model.displayName)
-                            Text(ModelsViewModel.sizeText(row.model.totalSizeBytes))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        modelStateView(row)
-                    }
-                    .padding(.vertical, 2)
-                }
-
-                HStack {
-                    Text("Disk usage: \(model.modelsViewModel.diskUsageText)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Refresh") { Task { await model.modelsViewModel.refresh() } }
-                }
+            } else {
+                Text(tab.activeTab.parameterSummary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .formStyle(.grouped)
-        .padding()
-        .task { await model.modelsViewModel.refresh() }
+    }
+
+    private var processorCount: Int { ProcessInfo.processInfo.activeProcessorCount }
+
+    // MARK: - Endpoint
+
+    @ViewBuilder
+    private var endpointSection: some View {
+        Section("Endpoint") {
+            Picker("Endpoint", selection: endpointID) {
+                ForEach(model.settings.endpoints) { endpoint in
+                    Text(endpoint.name).tag(endpoint.id)
+                }
+            }
+            TextField("Model", text: endpointModel)
+                .focused($endpointModelFocused)
+
+            if case .endpoint(let id, let modelName) = model.settings.transcriptionSource {
+                Text("Sends WAV audio to \(baseURL(for: id))/v1/audio/transcriptions "
+                     + "as \u{201c}\(modelName)\u{201d}. Your dictation is sent to that server.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(alignment: .firstTextBaseline) {
+                testButton
+                Text(tab.probeCaption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     // MARK: - Bindings
 
-    private var sourceKind: Binding<SourceKind> {
-        Binding(
-            get: {
-                if case .endpoint = model.settings.transcriptionSource { return .endpoint }
-                return .local
-            },
-            set: { kind in
-                switch kind {
-                case .local:
-                    model.settings.transcriptionSource = .local(modelID: ModelCatalog.defaultID)
-                case .endpoint:
-                    let endpointID = model.settings.endpoints.first?.id ?? Endpoint.ollamaLocalID
-                    model.settings.transcriptionSource = .endpoint(id: endpointID, model: "whisper-1")
-                }
-            })
-    }
-
-    private var localModelID: Binding<String> {
-        Binding(
-            get: {
-                if case .local(let modelID) = model.settings.transcriptionSource { return modelID }
-                return ModelCatalog.defaultID
-            },
-            set: { model.settings.transcriptionSource = .local(modelID: $0) })
+    private var tabBinding: Binding<DictationBackendTab> {
+        Binding(get: { tab.activeTab }, set: { tab.select(tab: $0) })
     }
 
     private var endpointID: Binding<UUID> {
@@ -138,10 +291,7 @@ struct DictationTab: View {
                 if case .endpoint(let id, _) = model.settings.transcriptionSource { return id }
                 return Endpoint.ollamaLocalID
             },
-            set: { newID in
-                guard case .endpoint(_, let modelName) = model.settings.transcriptionSource else { return }
-                model.settings.transcriptionSource = .endpoint(id: newID, model: modelName)
-            })
+            set: { tab.select(endpointID: $0) })
     }
 
     private var endpointModel: Binding<String> {
@@ -150,15 +300,22 @@ struct DictationTab: View {
                 if case .endpoint(_, let modelName) = model.settings.transcriptionSource { return modelName }
                 return ""
             },
-            set: { newModel in
-                guard case .endpoint(let id, _) = model.settings.transcriptionSource else { return }
-                model.settings.transcriptionSource = .endpoint(id: id, model: newModel)
-            })
+            set: { tab.select(endpointModel: $0) })
     }
 
     private var language: Binding<String?> {
         Binding(get: { model.settings.transcriptionLanguage },
                 set: { model.settings.transcriptionLanguage = $0 })
+    }
+
+    private var threads: Binding<Int?> {
+        Binding(get: { model.settings.whisperThreads },
+                set: { model.settings.whisperThreads = $0 })
+    }
+
+    private var translate: Binding<Bool> {
+        Binding(get: { model.settings.whisperTranslate },
+                set: { model.settings.whisperTranslate = $0 })
     }
 
     // MARK: - Helpers
@@ -169,7 +326,7 @@ struct DictationTab: View {
     static func stateCaption(for state: ModelState?) -> String {
         switch state {
         case .none: "Checking…"
-        case .notDownloaded: "Not downloaded — download it under Speech models below."
+        case .notDownloaded: "Not downloaded — use the Download button on this row."
         case .downloading(let fraction): "Downloading… \(Int(fraction * 100))%"
         case .downloaded: "Ready."
         case .failed(let message): message
@@ -178,31 +335,5 @@ struct DictationTab: View {
 
     private func baseURL(for id: UUID) -> String {
         model.settings.endpoints.first { $0.id == id }?.baseURL.absoluteString ?? "the endpoint"
-    }
-
-    @ViewBuilder
-    private func modelStateView(_ row: ModelsViewModel.Row) -> some View {
-        switch row.state {
-        case .notDownloaded:
-            Button("Download") { model.modelsViewModel.download(row.id) }
-        case .downloading(let fraction):
-            HStack(spacing: 8) {
-                ProgressView(value: fraction).frame(width: 90)
-                Button("Cancel") { model.modelsViewModel.cancelDownload(row.id) }
-            }
-        case .downloaded:
-            HStack(spacing: 8) {
-                Label { Text("Ready") } icon: { Icon(.success, size: 14) }
-                    .foregroundStyle(.green)
-                Button("Delete", role: .destructive) { Task { await model.modelsViewModel.delete(row.id) } }
-            }
-        case .failed(let message):
-            HStack(spacing: 8) {
-                Label { Text(message) } icon: { Icon(.warning, size: 14) }
-                    .foregroundStyle(.red)
-                    .lineLimit(2)
-                Button("Retry") { model.modelsViewModel.download(row.id) }
-            }
-        }
     }
 }

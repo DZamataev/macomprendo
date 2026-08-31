@@ -97,6 +97,19 @@ import Testing
         #expect(transcriber is WhisperCppTranscriber)
     }
 
+    @Test func handsWhisperTheThreadCountAndTranslateFlagFromSettings() async throws {
+        let models = FakeModelManager(localURLs: ["base": URL(fileURLWithPath: "/models/ggml-base.bin")])
+        let factory = ProviderFactory(http: StubHTTPClient(), keychain: InMemoryKeychainStore())
+
+        let transcriber = try await factory.transcriber(
+            for: .local(modelID: "base"), endpoints: [], models: models,
+            whisper: WhisperOptions(threads: 6, translate: true)
+        )
+
+        #expect((transcriber as? WhisperCppTranscriber)?.options
+                == WhisperOptions(threads: 6, translate: true))
+    }
+
     @Test func throwsModelMissingWhenTheLocalModelIsNotDownloaded() async {
         let models = FakeModelManager()
         let factory = ProviderFactory(http: StubHTTPClient(), keychain: InMemoryKeychainStore())

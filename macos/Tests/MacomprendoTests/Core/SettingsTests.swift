@@ -210,4 +210,23 @@ import Testing
     @Test func addingTheSelectionKeysDoesNotMoveTheSchemaVersion() {
         #expect(Settings.currentSchemaVersion == 2)
     }
+
+    @Test func aDocumentWithoutTheWhisperParameterKeysDecodesToAutomaticAndNoTranslation() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+        let settings = try JSONDecoder().decode(Settings.self, from: json)
+
+        #expect(settings.whisperThreads == nil)
+        #expect(settings.whisperTranslate == false)
+    }
+
+    @Test func theWhisperParameterKeysSurviveARoundTrip() throws {
+        var settings = Settings.default
+        settings.whisperThreads = 6
+        settings.whisperTranslate = true
+
+        let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings))
+
+        #expect(decoded.whisperThreads == 6)
+        #expect(decoded.whisperTranslate)
+    }
 }
