@@ -16,6 +16,7 @@ and summarize go through Ollama or an OpenAI-compatible chat endpoint.
 | `macos/Sources/Macomprendo/Features` | `@MainActor` controllers with explicit state enums; `Prompts/` holds `PromptPreset`, the renderer and `FactoryPresets`, whose `Factory/` subfolder has one content file per language |
 | `macos/Sources/Macomprendo/UI` | MenuBar, Settings tabs (General, Hotkeys, Dictation, Speech, Refine & Summarize, Providers), Quick Panel, Recording HUD, Onboarding, Components |
 | `macos/Sources/Macomprendo/Resources/Icons` | Vendored Phosphor SVGs + `icons.json` + their MIT licence |
+| `macos/Packages/{WhisperBinary,SherpaOnnxBinary}` | Local SwiftPM wrappers for the deliberately vendored whisper.cpp and sherpa-onnx xcframeworks |
 | `macos/Tests/MacomprendoTests` | swift-testing tests mirroring the source tree; `Fakes/` holds protocol doubles |
 | `scripts/` | Node ≥ 20 ESM tooling; `lib/` holds shared helpers; `__tests__/` holds `node:test` tests |
 | `docs/` | `ARCHITECTURE.md`, `SMOKE_TEST.md`, `DECISIONS/ADR-*.md`, `superpowers/{specs,plans}` |
@@ -72,6 +73,9 @@ xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
     `npm run sync-icons`, add the `AppIcon` case and its `fallbackSymbol`, and commit the
     SVG. The menubar status item is the one deliberate exception: it must be an SF Symbol
     template image.
+13. **Vendored xcframeworks are upgraded deliberately.** whisper.cpp and sherpa-onnx are
+    binary targets: record their release artefact and checksum, re-run framework discovery,
+    and verify local transcription after every upgrade.
 
 ## How to…
 

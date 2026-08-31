@@ -307,11 +307,11 @@ Every box must be ticked before `npm run release`.
       menubar icon is a hardcoded SF Symbol, not drawn from this bundle, and a missing bundle
       degrades every other icon silently to a similar-looking SF Symbol instead of failing
       visibly; see the "Icons in Settings" row below).
-- [ ] `ls dist/Macomprendo.app/Contents/Frameworks` contains `whisper.framework` — whisper is
-      dynamically linked (confirm with
-      `otool -L dist/Macomprendo.app/Contents/MacOS/Macomprendo | grep whisper`), so this
-      directory must be present, not absent. See DISTRIBUTING.md → "What the build copies into
-      the bundle" if a future whisper xcframework bump changes this.
+- [ ] `ls dist/Macomprendo.app/Contents/Frameworks` contains `whisper.framework` and
+      `SherpaOnnxC.framework` — both are dynamically linked (confirm with
+      `otool -L dist/Macomprendo.app/Contents/MacOS/Macomprendo | grep -E 'whisper|SherpaOnnxC'`),
+      so this directory must be present, not absent. See DISTRIBUTING.md → "What the build
+      copies into the bundle" if a future vendored xcframework bump changes this.
 - [ ] `codesign --verify --deep --strict --verbose=2 dist/Macomprendo.app` reports the bundle as
       valid on disk and satisfying its designated requirement.
 - [ ] `/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/Macomprendo.app/Contents/Info.plist`
@@ -375,3 +375,29 @@ prerequisites, installed in the login keychain.
 - [ ] `CHANGELOG.md` has entries under `## [Unreleased]` describing everything in this release.
 - [ ] `README.md` install instructions match the artifact names actually produced.
 - [ ] `DISTRIBUTING.md` lists the bundle and framework names currently emitted by `swift build`.
+
+## GigaAM local transcription
+
+Run these checks from the signed `dist/Macomprendo.app` assembled by the release build above,
+not from an Xcode or `swift run` development build. They are the acceptance gate for the real
+sherpa-onnx recognizer and ONNX decode path.
+
+1. Settings ▸ Dictation ▸ GigaAM. Download each of the four models to completion. After each
+   download, click "Use this model" (or select it in the active-model selector) and confirm
+   the status block turns to "Ready to use".
+2. With `gigaam-v3-e2e-ctc` selected, dictate a Russian sentence containing a number.
+   Expect punctuation, capitalisation, and the number spelled out.
+3. Repeat with `gigaam-v3-e2e-rnnt`: same expectations, and no crash on the four-file set.
+4. With `gigaam-multilingual-ctc` selected, dictate Russian: expect correct words with **no**
+   punctuation and no capitals. Then dictate English and confirm it transcribes at all.
+5. Repeat step 4 with `gigaam-multilingual-large-ctc`. Neither multilingual entry has an
+   upstream sherpa-onnx export, so nobody has verified their embedded ONNX metadata for us:
+   confirm the model loads rather than failing inside sherpa.
+6. Switch between two GigaAM models and dictate after each. Memory in Activity Monitor
+   returns to roughly its previous level, showing the old recognizer was freed.
+7. Start a dictation, then press the hotkey again mid-transcription: the first task is
+   cancelled and no text is inserted twice.
+8. The HUD names the active model while recording, and does not name it while Speak plays.
+9. Make a downloaded GigaAM model active, delete it from its row while it remains selected,
+   then press the dictation hotkey: the failure names the missing model rather than failing
+   opaquely.

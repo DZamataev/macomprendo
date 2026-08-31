@@ -125,6 +125,11 @@ slice is **dynamically linked** — the executable's load commands reference
 `Contents/Frameworks` and signed as nested code in its own right. Its Metal resources travel
 inside the framework, so there are no separate ggml resource bundles to copy.
 
+sherpa-onnx is also consumed as a prebuilt xcframework (`docs/DECISIONS/ADR-0009`). Its
+`SherpaOnnxC.framework` slice is a second dynamic framework in the bundle, alongside the
+already dynamic `whisper.framework`. The build copies both to `Contents/Frameworks`, adds
+`@executable_path/../Frameworks`, and signs each framework before signing the app itself.
+
 Resource bundles are **not** signed individually — not because `codesign` always refuses
 them, but because they are *resources*, not nested code, and are sealed by the app's own
 signature instead. The two bundles here aren't even alike: `Macomprendo_Macomprendo.bundle`
@@ -134,17 +139,17 @@ signing target ("bundle format unrecognized, invalid, or unsuitable" — confirm
 it directly). `KeyboardShortcuts_KeyboardShortcuts.bundle` comes from the KeyboardShortcuts
 package's own `.process(...)`-declared resources, **does** have an `Info.plist`, and
 `codesign` accepts it individually without complaint. Neither is signed on its own regardless
-— only nested *code* needs its own signature before the enclosing app, and `whisper.framework`
-is the only nested code here.
+— only nested *code* needs its own signature before the enclosing app. Both
+`whisper.framework` and `SherpaOnnxC.framework` are signed nested code.
 
-Re-run the discovery after any whisper xcframework bump or any change to the app target's
+Re-run the discovery after any vendored xcframework bump or any change to the app target's
 resources or dependencies:
 
 ```sh
 BIN=$(swift build --package-path macos -c release --triple arm64-apple-macosx14.0 --show-bin-path)
 ls -d "$BIN"/*.bundle 2>/dev/null || echo "(no .bundle)"
 ls -d "$BIN"/*.framework 2>/dev/null || echo "(no .framework)"
-otool -L "$BIN/Macomprendo" | grep -i whisper || echo "whisper is statically linked"
+otool -L "$BIN/Macomprendo" | grep -Ei 'whisper|SherpaOnnxC' || echo "framework is statically linked"
 ```
 
 Current result for this project:
@@ -153,12 +158,14 @@ Current result for this project:
 $BIN/KeyboardShortcuts_KeyboardShortcuts.bundle
 $BIN/Macomprendo_Macomprendo.bundle
 $BIN/whisper.framework
+$BIN/SherpaOnnxC.framework
 
 @rpath/whisper.framework/Versions/Current/whisper (compatibility version 0.0.0, current version 0.0.0)
+@rpath/SherpaOnnxC.framework/Versions/A/SherpaOnnxC (compatibility version 0.0.0, current version 0.0.0)
 ```
 
-whisper is dynamically linked, so `whisper.framework` is copied and signed; both `.bundle`
-directories are copied unsigned and sealed by the app's signature.
+whisper and SherpaOnnxC are dynamically linked, so both frameworks are copied and signed; both
+`.bundle` directories are copied unsigned and sealed by the app's signature.
 
 `build-app.mjs` only hard-fails when **no** resource bundle at all is found next to the
 executable (`resourceBundles.length === 0`) — it does not check that any *specific* bundle
@@ -166,7 +173,7 @@ executable (`resourceBundles.length === 0`) — it does not check that any *spec
 were still present but ours had somehow stopped being emitted, the build would succeed and warn
 about nothing; the app would simply ship without its icons. The `find … | wc -l` check in
 `docs/SMOKE_TEST.md`'s release checklist is what actually verifies *our* bundle specifically.
-Missing `.framework` entries are only a problem when `otool -L` says the whisper slice is
+Missing `.framework` entries are only a problem when `otool -L` says the corresponding slice is
 dynamic.
 
 ## 3. Notarize and package

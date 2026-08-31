@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- GigaAM local transcription: four Sber models covering Russian with punctuation, and
+  Russian, English, Kazakh, Kyrgyz and Uzbek without it, alongside whisper.cpp.
+- Dictation settings now separate backends into sub-tabs with local-model briefs, published
+  benchmarks and backend-specific parameters, plus an active-model selector and one readiness
+  status for the selected source.
+- The recording HUD names the model that will transcribe.
 - Project foundation: SwiftPM and XcodeGen builds, Core settings/keychain/error
   layer, menubar app shell, Node tooling and CI.
 - Providers layer: transcription via a local whisper.cpp model or any
@@ -91,6 +97,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   translated — including a new "Translate & organize" preset.
 
 ### Changed
+- Models are described as file sets, so a model can consist of more than one file.
 - The Models tab is gone; speech models are now configured in Settings ▸
   Dictation.
 - The four summarize presets now state explicitly that the summary is written
