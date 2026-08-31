@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class ModelsViewModel: ObservableObject {
     struct Row: Identifiable, Equatable {
-        let model: WhisperModel
+        let model: LocalASRModel
         var state: ModelState
         var id: String { model.id }
     }
@@ -14,9 +14,9 @@ final class ModelsViewModel: ObservableObject {
     private(set) var downloadTasks: [String: Task<Void, Never>] = [:]
 
     private let models: any ModelManaging
-    private let catalog: [WhisperModel]
+    private let catalog: [LocalASRModel]
 
-    init(models: any ModelManaging, catalog: [WhisperModel] = ModelCatalog.all) {
+    init(models: any ModelManaging, catalog: [LocalASRModel] = ModelCatalog.all) {
         self.models = models
         self.catalog = catalog
     }
@@ -89,7 +89,7 @@ final class ModelsViewModel: ObservableObject {
 
     private func recomputeDiskUsage() {
         diskUsage = rows.reduce(into: Int64(0)) { total, row in
-            if case .downloaded = row.state { total += row.model.sizeBytes }
+            if case .downloaded = row.state { total += row.model.totalSizeBytes }
         }
     }
 }

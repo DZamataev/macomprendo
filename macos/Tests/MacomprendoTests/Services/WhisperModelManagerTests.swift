@@ -11,14 +11,23 @@ import Testing
     private static let payload = Data("hello".utf8)
     private static let modelPath = "/ggerganov/whisper.cpp/resolve/main/ggml-test.bin"
 
-    private func makeModel(sha256: String) -> WhisperModel {
-        WhisperModel(
+    private func makeModel(sha256: String) -> LocalASRModel {
+        LocalASRModel(
             id: "test",
             displayName: "Test",
-            fileName: "ggml-test.bin",
-            sizeBytes: 5,
-            sha256: sha256,
-            downloadURL: URL(string: "https://huggingface.co\(Self.modelPath)")!
+            engine: .whisperCpp,
+            languages: nil,
+            files: [
+                ModelFile(
+                    role: .ggml,
+                    fileName: "ggml-test.bin",
+                    sizeBytes: 5,
+                    sha256: sha256,
+                    downloadURL: URL(string: "https://huggingface.co\(Self.modelPath)")!
+                )
+            ],
+            brief: ModelBrief(summary: "", strengths: [], limitations: [], benchmarks: [],
+                              sourceURL: URL(string: "https://example.invalid")!)
         )
     }
 

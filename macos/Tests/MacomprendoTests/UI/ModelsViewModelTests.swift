@@ -4,20 +4,25 @@ import Testing
 
 @MainActor
 @Suite struct ModelsViewModelTests {
-    private func makeCatalog() -> [WhisperModel] {
+    private static let testBrief = ModelBrief(summary: "", strengths: [], limitations: [], benchmarks: [],
+                                               sourceURL: URL(string: "https://example.invalid")!)
+
+    private func makeCatalog() -> [LocalASRModel] {
         [
-            WhisperModel(id: "base",
-                         displayName: "Base",
-                         fileName: "ggml-base.bin",
-                         sizeBytes: 148_000_000,
-                         sha256: "aaa",
-                         downloadURL: URL(string: "https://example.invalid/ggml-base.bin")!),
-            WhisperModel(id: "large-v3-turbo",
-                         displayName: "Large v3 Turbo",
-                         fileName: "ggml-large-v3-turbo.bin",
-                         sizeBytes: 1_620_000_000,
-                         sha256: "bbb",
-                         downloadURL: URL(string: "https://example.invalid/ggml-large-v3-turbo.bin")!)
+            LocalASRModel(id: "base",
+                          displayName: "Base",
+                          engine: .whisperCpp,
+                          languages: nil,
+                          files: [ModelFile(role: .ggml, fileName: "ggml-base.bin", sizeBytes: 148_000_000,
+                                            sha256: "aaa", downloadURL: URL(string: "https://example.invalid/ggml-base.bin")!)],
+                          brief: Self.testBrief),
+            LocalASRModel(id: "large-v3-turbo",
+                          displayName: "Large v3 Turbo",
+                          engine: .whisperCpp,
+                          languages: nil,
+                          files: [ModelFile(role: .ggml, fileName: "ggml-large-v3-turbo.bin", sizeBytes: 1_620_000_000,
+                                            sha256: "bbb", downloadURL: URL(string: "https://example.invalid/ggml-large-v3-turbo.bin")!)],
+                          brief: Self.testBrief)
         ]
     }
 

@@ -80,7 +80,7 @@ struct DictationTab: View {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(row.model.displayName)
-                            Text(ModelsViewModel.sizeText(row.model.sizeBytes))
+                            Text(ModelsViewModel.sizeText(row.model.totalSizeBytes))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

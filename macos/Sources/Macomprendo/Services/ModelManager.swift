@@ -30,7 +30,7 @@ actor WhisperModelManager: ModelManaging {
 
     nonisolated let modelsDirectory: URL
     private let http: any HTTPClient
-    private let catalog: [WhisperModel]
+    private let catalog: [LocalASRModel]
     private var states: [String: ModelState] = [:]
     /// Model ids with a download currently running, so a second concurrent
     /// `download(_:)` for the same id is rejected instead of racing the first
@@ -42,7 +42,7 @@ actor WhisperModelManager: ModelManaging {
     }
 
     /// Catalog-injecting initialiser, used by tests.
-    init(directory: URL, http: any HTTPClient, catalog: [WhisperModel]) {
+    init(directory: URL, http: any HTTPClient, catalog: [LocalASRModel]) {
         self.modelsDirectory = directory
         self.http = http
         self.catalog = catalog
@@ -138,8 +138,8 @@ actor WhisperModelManager: ModelManaging {
         states[id] = .downloading(fraction: 0)
 
         // 1. HEAD for the authoritative size and range support.
-        let head = try await http.send(HTTPRequest(method: "HEAD", url: model.downloadURL, timeout: 10))
-        let total = Int64(head.header("Content-Length") ?? "") ?? model.sizeBytes
+        let head = try await http.send(HTTPRequest(method: "HEAD", url: onlyFile(of: model).downloadURL, timeout: 10))
+        let total = Int64(head.header("Content-Length") ?? "") ?? onlyFile(of: model).sizeBytes
         let acceptsRanges = (head.header("Accept-Ranges") ?? "").lowercased() == "bytes"
 
         // 2. Decide whether to resume.
@@ -173,7 +173,7 @@ actor WhisperModelManager: ModelManaging {
 
         var lastReported = -1.0
         for try await chunk in http.stream(
-            HTTPRequest(method: "GET", url: model.downloadURL, headers: headers, timeout: 60)
+            HTTPRequest(method: "GET", url: onlyFile(of: model).downloadURL, headers: headers, timeout: 60)
         ) {
             // This mostly guards other cancellation-triggered suspension points, not
             // consumer-side cancellation of this loop itself: per `HTTPClient`'s doc
@@ -216,11 +216,11 @@ actor WhisperModelManager: ModelManaging {
                 "\(model.displayName): expected \(total) bytes, received \(received)"
             )
         }
-        if model.sha256.isEmpty {
+        if onlyFile(of: model).sha256.isEmpty {
             Log.providers.warning(
                 "No SHA-256 recorded for whisper model \(model.id, privacy: .public); skipping integrity check"
             )
-        } else if try Self.sha256(of: partial) != model.sha256 {
+        } else if try Self.sha256(of: partial) != onlyFile(of: model).sha256 {
             try? FileManager.default.removeItem(at: partial)
             throw MacomprendoError.modelDownloadFailed("\(model.displayName): checksum mismatch")
         }
@@ -238,16 +238,26 @@ actor WhisperModelManager: ModelManaging {
         states[id] = state
     }
 
-    private func model(_ id: String) -> WhisperModel? {
+    private func model(_ id: String) -> LocalASRModel? {
         catalog.first { $0.id == id }
     }
 
-    private func destinationURL(for model: WhisperModel) -> URL {
-        modelsDirectory.appendingPathComponent(model.fileName)
+    /// Task 2 replaces this with a per-file lookup; for now a model is still one file.
+    private func onlyFile(of model: LocalASRModel) -> ModelFile {
+        // Every catalog entry in this task has exactly one file, and `ModelCatalogTests`
+        // enforces the shape, so a violation is a programmer error rather than a user-facing one.
+        guard let file = model.files.first else {
+            preconditionFailure("catalog entry \(model.id) has no files")
+        }
+        return file
     }
 
-    private func partialURL(for model: WhisperModel) -> URL {
-        modelsDirectory.appendingPathComponent(model.fileName + ".partial")
+    private func destinationURL(for model: LocalASRModel) -> URL {
+        modelsDirectory.appendingPathComponent(onlyFile(of: model).fileName)
+    }
+
+    private func partialURL(for model: LocalASRModel) -> URL {
+        modelsDirectory.appendingPathComponent(onlyFile(of: model).fileName + ".partial")
     }
 
     /// Bytes we can keep from a previous attempt: only when the server supports
