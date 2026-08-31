@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Macomprendo
 
-@Suite struct WhisperModelManagerTests {
+@Suite struct LocalModelManagerTests {
 
     // MARK: - Fixtures
 
@@ -66,7 +66,7 @@ import Testing
         try Self.payload.write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        #expect(try WhisperModelManager.sha256(of: url) == Self.helloDigest)
+        #expect(try LocalModelManager.sha256(of: url) == Self.helloDigest)
     }
 
     @Test func sha256HandlesFilesLargerThanOneReadBlock() throws {
@@ -76,7 +76,7 @@ import Testing
         try big.write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let digest = try WhisperModelManager.sha256(of: url)
+        let digest = try LocalModelManager.sha256(of: url)
         #expect(digest.count == 64)
         #expect(digest == digest.lowercased())
     }
@@ -86,7 +86,7 @@ import Testing
     @Test func downloadWritesTheFileAndReportsCompletion() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(), catalog: [makeModel(sha256: Self.helloDigest)]
         )
 
@@ -102,7 +102,7 @@ import Testing
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let http = makeHTTP()
-        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: "")])
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [makeModel(sha256: "")])
 
         _ = try await collect(manager.download("test"))
 
@@ -115,7 +115,7 @@ import Testing
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("macomprendo-absent-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(), catalog: [makeModel(sha256: "")]
         )
 
@@ -131,7 +131,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         try Self.payload.write(to: directory.appendingPathComponent("ggml-test.bin"))
         let http = makeHTTP()
-        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: "")])
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [makeModel(sha256: "")])
 
         let fractions = try await collect(manager.download("test"))
 
@@ -147,7 +147,7 @@ import Testing
         // "he" already downloaded; the server will send the remaining "llo".
         try Data("he".utf8).write(to: directory.appendingPathComponent("ggml-test.bin.partial"))
         let http = makeHTTP(chunks: [Data("llo".utf8)])
-        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
 
         _ = try await collect(manager.download("test"))
 
@@ -160,7 +160,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         try Data("XX".utf8).write(to: directory.appendingPathComponent("ggml-test.bin.partial"))
         let http = makeHTTP(acceptRanges: false)
-        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
 
         _ = try await collect(manager.download("test"))
 
@@ -174,7 +174,7 @@ import Testing
         try Data("far too many bytes".utf8)
             .write(to: directory.appendingPathComponent("ggml-test.bin.partial"))
         let http = makeHTTP()
-        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
 
         _ = try await collect(manager.download("test"))
 
@@ -194,7 +194,7 @@ import Testing
         let http = GatedHTTPClient(
             inner: makeHTTP(chunks: [Data("he".utf8), Data("llo".utf8)]), gate: gate
         )
-        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
 
         var firstIterator = manager.download("test").makeAsyncIterator()
         let firstProgress = try await firstIterator.next()
@@ -226,7 +226,7 @@ import Testing
         let http = GatedHTTPClient(
             inner: makeHTTP(chunks: [Data("he".utf8), Data("llo".utf8)]), gate: gate
         )
-        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
 
         let firstChunkReceived = Gate()
         let consumer = Task {
@@ -271,7 +271,7 @@ import Testing
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let http = makeHTTP()
-        let manager = WhisperModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [makeModel(sha256: Self.helloDigest)])
 
         _ = try await collect(manager.download("test"))
 
@@ -287,12 +287,12 @@ import Testing
     @Test func failsAndCleansUpWhenTheChecksumDoesNotMatch() async {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(),
             catalog: [makeModel(sha256: String(repeating: "0", count: 64))]
         )
 
-        await #expect(throws: MacomprendoError.modelDownloadFailed("Test: checksum mismatch")) {
+        await #expect(throws: MacomprendoError.modelDownloadFailed("ggml-test.bin: checksum mismatch")) {
             for try await _ in manager.download("test") {}
         }
         #expect(!FileManager.default.fileExists(
@@ -306,7 +306,7 @@ import Testing
     @Test func acceptsTheFileWhenTheCatalogHashIsEmpty() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(), catalog: [makeModel(sha256: "")]
         )
 
@@ -319,14 +319,14 @@ import Testing
     @Test func failsWhenFewerBytesArriveThanAdvertised() async {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory,
             http: makeHTTP(total: 5, chunks: [Data("hel".utf8)]),
             catalog: [makeModel(sha256: "")]
         )
 
         await #expect(throws: MacomprendoError.modelDownloadFailed(
-            "Test: expected 5 bytes, received 3"
+            "ggml-test.bin: expected 5 bytes, received 3"
         )) {
             for try await _ in manager.download("test") {}
         }
@@ -335,7 +335,7 @@ import Testing
     @Test func throwsModelMissingForAnUnknownID() async {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(), catalog: [makeModel(sha256: "")]
         )
 
@@ -344,29 +344,29 @@ import Testing
         }
     }
 
-    // MARK: - state / localURL / delete
+    // MARK: - state / resolved / delete
 
     @Test func stateIsNotDownloadedThenDownloadedAcrossADownload() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(), catalog: [makeModel(sha256: "")]
         )
 
         #expect(await manager.state(of: "test") == .notDownloaded)
-        #expect(await manager.localURL(for: "test") == nil)
+        #expect(await manager.resolved("test") == nil)
 
         _ = try await collect(manager.download("test"))
 
         let destination = directory.appendingPathComponent("ggml-test.bin")
-        #expect(await manager.state(of: "test") == .downloaded(destination))
-        #expect(await manager.localURL(for: "test") == destination)
+        #expect(await manager.state(of: "test") == .downloaded)
+        #expect(await manager.resolved("test")?.files[.ggml] == destination)
     }
 
     @Test func stateIsFailedAfterAFailedDownload() async {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory,
             http: makeHTTP(total: 5, chunks: [Data("h".utf8)]),
             catalog: [makeModel(sha256: "")]
@@ -386,15 +386,15 @@ import Testing
         }
     }
 
-    @Test func stateAndLocalURLAreNilForAnUnknownID() async {
+    @Test func stateAndResolutionAreEmptyForAnUnknownID() async {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(), catalog: [makeModel(sha256: "")]
         )
 
         #expect(await manager.state(of: "ghost") == .notDownloaded)
-        #expect(await manager.localURL(for: "ghost") == nil)
+        #expect(await manager.resolved("ghost") == nil)
     }
 
     @Test func deleteRemovesTheModelAndAnyPartialFile() async throws {
@@ -402,7 +402,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         try Self.payload.write(to: directory.appendingPathComponent("ggml-test.bin"))
         try Data("xx".utf8).write(to: directory.appendingPathComponent("ggml-test.bin.partial"))
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(), catalog: [makeModel(sha256: "")]
         )
 
@@ -416,7 +416,7 @@ import Testing
     @Test func deleteSucceedsWhenNothingIsOnDisk() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(), catalog: [makeModel(sha256: "")]
         )
 
@@ -427,7 +427,7 @@ import Testing
     @Test func deleteThrowsModelMissingForAnUnknownID() async {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(), catalog: [makeModel(sha256: "")]
         )
 
@@ -436,10 +436,126 @@ import Testing
         }
     }
 
+    // MARK: - Multi-file models
+
+    /// A synthetic two-file entry: the catalog itself still holds only one-file whisper
+    /// models, so this is what proves the manager treats a model as a file set.
+    private func twoFileModel() -> LocalASRModel {
+        LocalASRModel(
+            id: "two", displayName: "Two", engine: .gigaAM, languages: ["ru"],
+            files: [
+                ModelFile(role: .ctcModel, fileName: "two-model.onnx", sizeBytes: 8,
+                          sha256: "", downloadURL: URL(string: "https://example.com/model.onnx")!),
+                ModelFile(role: .tokens, fileName: "two-tokens.txt", sizeBytes: 2,
+                          sha256: "", downloadURL: URL(string: "https://example.com/tokens.txt")!)
+            ],
+            brief: ModelBrief(summary: "", strengths: [], limitations: [], benchmarks: [],
+                              sourceURL: URL(string: "https://example.com")!)
+        )
+    }
+
+    @Test func downloadsEveryFileInTheSetAndReportsProgressAcrossTheWholeSet() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let http = StubHTTPClient()
+        http.stub("HEAD", path: "/model.onnx", headers: ["Content-Length": "8", "Accept-Ranges": "bytes"])
+        http.stubStream("GET", path: "/model.onnx", chunks: [Data("abcdefgh".utf8)])
+        http.stub("HEAD", path: "/tokens.txt", headers: ["Content-Length": "2", "Accept-Ranges": "bytes"])
+        http.stubStream("GET", path: "/tokens.txt", chunks: [Data("ru".utf8)])
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [twoFileModel()])
+
+        var fractions: [Double] = []
+        for try await fraction in manager.download("two") { fractions.append(fraction) }
+
+        #expect(fractions.last == 1.0)
+        // Progress spans the whole 10-byte set, so finishing the 8-byte file is 0.8, not 1.0.
+        #expect(fractions.contains { abs($0 - 0.8) < 0.001 })
+        #expect(await manager.state(of: "two") == .downloaded)
+        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("two-model.onnx").path))
+        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("two-tokens.txt").path))
+    }
+
+    @Test func isNotDownloadedUntilEveryFileIsPresent() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("abcdefgh".utf8).write(to: directory.appendingPathComponent("two-model.onnx"))
+        let manager = LocalModelManager(directory: directory, http: StubHTTPClient(), catalog: [twoFileModel()])
+
+        #expect(await manager.state(of: "two") == .notDownloaded)
+        #expect(await manager.resolved("two") == nil)
+    }
+
+    @Test func resolvedCarriesTheEngineAndOneURLPerRole() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("abcdefgh".utf8).write(to: directory.appendingPathComponent("two-model.onnx"))
+        try Data("ru".utf8).write(to: directory.appendingPathComponent("two-tokens.txt"))
+        let manager = LocalModelManager(directory: directory, http: StubHTTPClient(), catalog: [twoFileModel()])
+
+        let resolved = try #require(await manager.resolved("two"))
+        #expect(resolved.engine == .gigaAM)
+        #expect(resolved.files[.ctcModel] == directory.appendingPathComponent("two-model.onnx"))
+        #expect(resolved.files[.tokens] == directory.appendingPathComponent("two-tokens.txt"))
+    }
+
+    @Test func deleteRemovesEveryFileInTheSet() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("abcdefgh".utf8).write(to: directory.appendingPathComponent("two-model.onnx"))
+        try Data("ru".utf8).write(to: directory.appendingPathComponent("two-tokens.txt"))
+        let manager = LocalModelManager(directory: directory, http: StubHTTPClient(), catalog: [twoFileModel()])
+
+        try await manager.delete("two")
+
+        #expect(await manager.state(of: "two") == .notDownloaded)
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("two-tokens.txt").path))
+    }
+
+    @Test func aFailureOnTheSecondFileLeavesTheModelNotDownloaded() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let http = StubHTTPClient()
+        http.stub("HEAD", path: "/model.onnx", headers: ["Content-Length": "8", "Accept-Ranges": "bytes"])
+        http.stubStream("GET", path: "/model.onnx", chunks: [Data("abcdefgh".utf8)])
+        http.stubError("HEAD", path: "/tokens.txt", error: .providerUnreachable(endpointName: "example.com"))
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [twoFileModel()])
+
+        await #expect(throws: MacomprendoError.self) {
+            for try await _ in manager.download("two") {}
+        }
+        #expect(await manager.state(of: "two") != .downloaded)
+    }
+
+    @Test func progressStaysThrottledWhenTheServerSendsMoreThanTheCatalogRecords() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // The catalog records 4 bytes; the server actually serves 100, one byte at a time.
+        // Once the fraction pins at 1.0 every further chunk would sail past a throttle that
+        // only checks `fraction >= 1.0`, so the stream would emit an update per chunk.
+        let model = LocalASRModel(
+            id: "understated", displayName: "Understated", engine: .whisperCpp, languages: nil,
+            files: [ModelFile(role: .ggml, fileName: "understated.bin", sizeBytes: 4, sha256: "",
+                              downloadURL: URL(string: "https://example.com/understated.bin")!)],
+            brief: ModelBrief(summary: "", strengths: [], limitations: [], benchmarks: [],
+                              sourceURL: URL(string: "https://example.com")!)
+        )
+        let http = StubHTTPClient()
+        http.stub("HEAD", path: "/understated.bin", headers: ["Content-Length": "100"])
+        http.stubStream("GET", path: "/understated.bin",
+                        chunks: (0..<100).map { _ in Data("x".utf8) })
+        let manager = LocalModelManager(directory: directory, http: http, catalog: [model])
+
+        let fractions = try await collect(manager.download("understated"))
+
+        #expect(fractions.last == 1.0)
+        #expect(fractions.count <= 6, "expected a handful of updates, got \(fractions.count)")
+        #expect(await manager.state(of: "understated") == .downloaded)
+    }
+
     @Test func exposesTheModelsDirectory() {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = WhisperModelManager(
+        let manager = LocalModelManager(
             directory: directory, http: makeHTTP(), catalog: [makeModel(sha256: "")]
         )
 

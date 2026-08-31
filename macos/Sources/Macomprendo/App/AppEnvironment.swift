@@ -58,7 +58,7 @@ struct AppEnvironment {
                                         keySimulator: keySimulator),
             tracker: tracker,
             permissions: SystemPermissions(),
-            models: WhisperModelManager(directory: modelsDirectory, http: http),
+            models: LocalModelManager(directory: modelsDirectory, http: http),
             http: http,
             keychain: keychain,
             factory: ProviderFactory(http: http, keychain: keychain),

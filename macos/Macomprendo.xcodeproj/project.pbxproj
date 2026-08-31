@@ -43,6 +43,7 @@
 		2D547B3C202543305C1986A5 /* Icons in Resources */ = {isa = PBXBuildFile; fileRef = 7D4D4682481DA4F22694A554 /* Icons */; };
 		2FCC6541E1A91BE6D310D744 /* HUDControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F12C73C6493DE5C71FFC06 /* HUDControllerTests.swift */; };
 		2FDD755A1612D81830BD0A27 /* SettingsHolding.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73BE8C562CD83D099597858 /* SettingsHolding.swift */; };
+		30ACD1CBDF179CBC03921EB8 /* LocalModelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 469ECA569A773027820B8E2D /* LocalModelManagerTests.swift */; };
 		33214D01376CAB5E86133FA2 /* PasteboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC9B260BEC391BD34EF68A5 /* PasteboardTests.swift */; };
 		33B868C540EDA99FAEE16916 /* HotkeyServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0E67239CC9468C31568C3FB /* HotkeyServiceTests.swift */; };
 		3446285AB6D3C1A4209F672F /* TranscriptionProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6BD7DEC4D32824CE5D7E488 /* TranscriptionProvider.swift */; };
@@ -169,7 +170,6 @@
 		C23C1D48F9C2309C57D4AA91 /* LineSplitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B971A73B99422B07304F63AD /* LineSplitterTests.swift */; };
 		C5AA11BF794CD2E4FE4D9504 /* FactoryPresets+French.swift in Sources */ = {isa = PBXBuildFile; fileRef = 285D8FF84BF6819137A952AB /* FactoryPresets+French.swift */; };
 		C750F169CA012ED74EF9DC05 /* SpeechRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B61D07CA58E9C6A30B9ED37 /* SpeechRouter.swift */; };
-		CBB4489E11C150BD72B495DC /* WhisperModelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78393CF01B6DE9B385B07AA8 /* WhisperModelManagerTests.swift */; };
 		CE487DF12E69585792B18960 /* FakePasteboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D479E761B95A218F5C82DACB /* FakePasteboard.swift */; };
 		CEC4C0CA9ED86EF4C26D3B12 /* FactoryPresets+German.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC1673040CA386FAC1A717AE /* FactoryPresets+German.swift */; };
 		CF99FD33C9E60F54A52AD909 /* OnboardingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D3585ABB95E4F152C79217 /* OnboardingWindowController.swift */; };
@@ -279,6 +279,7 @@
 		4336A9CF7FDA07771599230F /* TextInserterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInserterTests.swift; sourceTree = "<group>"; };
 		43E711A2EC41C0022C3F6349 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		451C42950DAA44B1775B3F57 /* ScriptedAXReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedAXReader.swift; sourceTree = "<group>"; };
+		469ECA569A773027820B8E2D /* LocalModelManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelManagerTests.swift; sourceTree = "<group>"; };
 		46DE6B3CF786C099ABA229B1 /* ScriptedPanelHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedPanelHost.swift; sourceTree = "<group>"; };
 		4855B5728820703725398332 /* SpeechRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRequestBuilder.swift; sourceTree = "<group>"; };
 		49006B8B10DEED92A79EA86B /* FactoryPresets+Spanish.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FactoryPresets+Spanish.swift"; sourceTree = "<group>"; };
@@ -320,7 +321,6 @@
 		7488ABFA59EDEDE31129E63B /* FakeEscapeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeEscapeMonitor.swift; sourceTree = "<group>"; };
 		752E8E8467E923BF23B53FD1 /* PermissionsServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsServiceTests.swift; sourceTree = "<group>"; };
 		7814FC9DF379F2465EC30ACA /* SpeakController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakController.swift; sourceTree = "<group>"; };
-		78393CF01B6DE9B385B07AA8 /* WhisperModelManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelManagerTests.swift; sourceTree = "<group>"; };
 		7ACC25F1FEE4CCF3A8C1E0D8 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		7B0A916B203E65708C12EABE /* SpeechTextChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechTextChunker.swift; sourceTree = "<group>"; };
 		7D4D4682481DA4F22694A554 /* Icons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Icons; path = Sources/Macomprendo/Resources/Icons; sourceTree = SOURCE_ROOT; };
@@ -532,6 +532,7 @@
 				D4AD2D737D088071B542DA1E /* KeySimulatorTests.swift */,
 				BAE1E09173F76D1E5726C20F /* LanguageDetectorTests.swift */,
 				5D29AC5A8298847AA27FD804 /* LanguageSegmenterTests.swift */,
+				469ECA569A773027820B8E2D /* LocalModelManagerTests.swift */,
 				DA96A24BF5FD47C31EA54BD9 /* ModelCatalogTests.swift */,
 				752E8E8467E923BF23B53FD1 /* PermissionsServiceTests.swift */,
 				65CC4ABCB5B4FAA1A4087424 /* SelectedTextServiceTests.swift */,
@@ -540,7 +541,6 @@
 				0EE8EE7E50A05C5624FC2B40 /* SpeechServiceTests.swift */,
 				656D96B00DDBE112BC7AFE47 /* SpeechTextChunkerTests.swift */,
 				4336A9CF7FDA07771599230F /* TextInserterTests.swift */,
-				78393CF01B6DE9B385B07AA8 /* WhisperModelManagerTests.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -1051,6 +1051,7 @@
 				1BCEB0A7B050B3DC52F901B3 /* LanguageDetectorTests.swift in Sources */,
 				85D3AAD2583AD74D0FB3E8F8 /* LanguageSegmenterTests.swift in Sources */,
 				C23C1D48F9C2309C57D4AA91 /* LineSplitterTests.swift in Sources */,
+				30ACD1CBDF179CBC03921EB8 /* LocalModelManagerTests.swift in Sources */,
 				3D22B7137AA3768B6531166B /* LogTests.swift in Sources */,
 				0D1F51E6961AB4B2493BB195 /* MacomprendoErrorTests.swift in Sources */,
 				F85CBEE1BC0F5FD7CF5777B5 /* MenuBarLabelTests.swift in Sources */,
@@ -1112,7 +1113,6 @@
 				67FFEDA07AE38F26A7FDDC29 /* WAVEncoderTests.swift in Sources */,
 				4F1958AFE334E79910FDD447 /* Wait.swift in Sources */,
 				DCB97351F4118417B32D1AAF /* WhisperCppTranscriberTests.swift in Sources */,
-				CBB4489E11C150BD72B495DC /* WhisperModelManagerTests.swift in Sources */,
 				4573AB68236D4A24566AE5BC /* WhisperRuntimeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

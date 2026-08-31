@@ -46,7 +46,7 @@ final class ModelsViewModel: ObservableObject {
                 // for a later resume) instead of showing `.failed`.
                 self.setState(await self.models.state(of: id), for: id)
             } catch MacomprendoError.cancelled {
-                // `WhisperModelManager.download` normalises its own internal
+                // `LocalModelManager.download` normalises its own internal
                 // `CancellationError` to `MacomprendoError.cancelled` before it
                 // reaches this stream, so both cases must be handled the same way.
                 self.setState(await self.models.state(of: id), for: id)

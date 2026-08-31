@@ -36,7 +36,8 @@ struct ProviderFactory: Sendable {
     ) async throws -> any TranscriptionProvider {
         switch source {
         case .local(let modelID):
-            guard let modelURL = await models.localURL(for: modelID) else {
+            guard let resolved = await models.resolved(modelID),
+                  let modelURL = resolved.files[.ggml] else {
                 throw MacomprendoError.modelMissing(modelID)
             }
             return WhisperCppTranscriber(modelURL: modelURL)

@@ -5,28 +5,41 @@ import Foundation
 enum ModelState: Sendable, Equatable {
     case notDownloaded
     case downloading(fraction: Double)
-    case downloaded(URL)
+    /// Every file in the model's set is present. Paths come from `ModelManaging.resolved(_:)`
+    /// rather than from this case: a model is a file set, so there is no single URL to carry.
+    case downloaded
     case failed(String)
 }
 
-/// Manages the on-disk whisper model store.
+/// A model whose every file is on disk, with the runtime that opens it.
+struct ResolvedLocalModel: Sendable, Equatable {
+    let engine: ASREngine
+    let files: [ModelFileRole: URL]
+}
+
+/// Manages the on-disk local-model store.
 protocol ModelManaging: AnyObject, Sendable {
     func state(of id: String) async -> ModelState
-    func localURL(for id: String) async -> URL?
-    /// Yields the completed fraction (0...1). Verifies SHA-256 and moves the file
-    /// into place atomically. Cancelling the consuming task cancels the download
-    /// and leaves the partial file for a later resume.
+    /// `nil` when the model is unknown or any file of its set is missing.
+    func resolved(_ id: String) async -> ResolvedLocalModel?
+    /// Yields the completed fraction (0...1) across the whole file set. Verifies each file's
+    /// SHA-256 and moves it into place atomically. Cancelling the consuming task cancels the
+    /// download and leaves partial files for a later resume.
     func download(_ id: String) -> AsyncThrowingStream<Double, Error>
     func delete(_ id: String) async throws
     var modelsDirectory: URL { get }
 }
 
-/// Downloads whisper ggml models into `~/Library/Application Support/Macomprendo/models/`.
+/// Downloads local ASR models into `~/Library/Application Support/Macomprendo/models/`.
+///
+/// A model is a set of files — one ggml blob for whisper.cpp, several tensors plus a
+/// token table for a sherpa-onnx transducer — and counts as downloaded only when every
+/// one of them is present.
 ///
 /// Resume is done with HTTP `Range` requests against a `<fileName>.partial` sidecar
 /// rather than `URLSessionDownloadTask` resume data, so the whole flow stays behind
 /// the `HTTPClient` seam and is unit-testable.
-actor WhisperModelManager: ModelManaging {
+actor LocalModelManager: ModelManaging {
 
     nonisolated let modelsDirectory: URL
     private let http: any HTTPClient
@@ -58,24 +71,24 @@ actor WhisperModelManager: ModelManaging {
             }
         }
         guard let model = model(id) else { return .notDownloaded }
-        let destination = destinationURL(for: model)
-        return FileManager.default.fileExists(atPath: destination.path)
-            ? .downloaded(destination)
-            : .notDownloaded
+        return isComplete(model) ? .downloaded : .notDownloaded
     }
 
-    func localURL(for id: String) async -> URL? {
-        guard let model = model(id) else { return nil }
-        let destination = destinationURL(for: model)
-        return FileManager.default.fileExists(atPath: destination.path) ? destination : nil
+    func resolved(_ id: String) async -> ResolvedLocalModel? {
+        guard let model = model(id), isComplete(model) else { return nil }
+        var urls: [ModelFileRole: URL] = [:]
+        for file in model.files { urls[file.role] = destinationURL(for: file) }
+        return ResolvedLocalModel(engine: model.engine, files: urls)
     }
 
     // MARK: - Delete
 
     func delete(_ id: String) async throws {
         guard let model = model(id) else { throw MacomprendoError.modelMissing(id) }
-        try? FileManager.default.removeItem(at: destinationURL(for: model))
-        try? FileManager.default.removeItem(at: partialURL(for: model))
+        for file in model.files {
+            try? FileManager.default.removeItem(at: destinationURL(for: file))
+            try? FileManager.default.removeItem(at: partialURL(for: file))
+        }
         states[id] = .notDownloaded
     }
 
@@ -96,7 +109,7 @@ actor WhisperModelManager: ModelManaging {
                     let mapped: Error = (error is CancellationError) ? MacomprendoError.cancelled : error
                     if case MacomprendoError.cancelled = mapped {
                         // Cancellation is not a failure: the partial file is kept for
-                        // a later resume (see `performDownload`), so the model must
+                        // a later resume (see `downloadOne`), so the model must
                         // not be stuck reporting `.failed` — `state(of:)` falls back
                         // to checking disk for `.notDownloaded`/`.downloaded`.
                         await setState(id, .notDownloaded)
@@ -127,9 +140,8 @@ actor WhisperModelManager: ModelManaging {
 
         guard let model = model(id) else { throw MacomprendoError.modelMissing(id) }
 
-        let destination = destinationURL(for: model)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            states[id] = .downloaded(destination)
+        if isComplete(model) {
+            states[id] = .downloaded
             continuation.yield(1.0)
             return
         }
@@ -137,13 +149,52 @@ actor WhisperModelManager: ModelManaging {
         try FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
         states[id] = .downloading(fraction: 0)
 
+        // Progress spans the whole set so a four-file transducer does not appear to finish
+        // four times. Sizes come from the catalog rather than from HEAD, because the HEAD for
+        // a later file has not happened yet when the first one starts streaming.
+        let setTotal = max(1, model.totalSizeBytes)
+        var completedBytes: Int64 = 0
+        var lastReported = -1.0
+
+        for file in model.files {
+            // `downloadOne` only observes cancellation once it is streaming, so without this
+            // a consumer who cancels between two files would still see the next file's HEAD
+            // go out. A one-file model had no such window; a file set does.
+            try Task.checkCancellation()
+
+            if FileManager.default.fileExists(atPath: destinationURL(for: file).path) {
+                completedBytes += file.sizeBytes
+                continue
+            }
+            try await downloadOne(file) { bytesInThisFile in
+                let fraction = min(1.0, Double(completedBytes + bytesInThisFile) / Double(setTotal))
+                // A 1.6 GB download would otherwise emit tens of thousands of updates.
+                // `lastReported < 1.0` keeps that true even when the server sends more than
+                // the catalog's recorded size: the fraction then pins at 1.0 and would
+                // otherwise wave every remaining chunk straight past the throttle.
+                if fraction - lastReported >= 0.01 || (fraction >= 1.0 && lastReported < 1.0) {
+                    lastReported = fraction
+                    self.states[id] = .downloading(fraction: fraction)
+                    continuation.yield(fraction)
+                }
+            }
+            completedBytes += file.sizeBytes
+        }
+
+        states[id] = .downloaded
+        continuation.yield(1.0)
+    }
+
+    /// Downloads one file of a set. `onProgress` receives the byte count written for THIS
+    /// file so the caller can place it inside the set's overall progress.
+    private func downloadOne(_ file: ModelFile, onProgress: (Int64) -> Void) async throws {
         // 1. HEAD for the authoritative size and range support.
-        let head = try await http.send(HTTPRequest(method: "HEAD", url: onlyFile(of: model).downloadURL, timeout: 10))
-        let total = Int64(head.header("Content-Length") ?? "") ?? onlyFile(of: model).sizeBytes
+        let head = try await http.send(HTTPRequest(method: "HEAD", url: file.downloadURL, timeout: 10))
+        let total = Int64(head.header("Content-Length") ?? "") ?? file.sizeBytes
         let acceptsRanges = (head.header("Accept-Ranges") ?? "").lowercased() == "bytes"
 
         // 2. Decide whether to resume.
-        let partial = partialURL(for: model)
+        let partial = partialURL(for: file)
         var received = resumableByteCount(at: partial, total: total, acceptsRanges: acceptsRanges)
         if received == 0 {
             try? FileManager.default.removeItem(at: partial)
@@ -171,9 +222,8 @@ actor WhisperModelManager: ModelManaging {
         defer { try? handle.close() }
         try handle.seekToEnd()
 
-        var lastReported = -1.0
         for try await chunk in http.stream(
-            HTTPRequest(method: "GET", url: onlyFile(of: model).downloadURL, headers: headers, timeout: 60)
+            HTTPRequest(method: "GET", url: file.downloadURL, headers: headers, timeout: 60)
         ) {
             // This mostly guards other cancellation-triggered suspension points, not
             // consumer-side cancellation of this loop itself: per `HTTPClient`'s doc
@@ -186,13 +236,7 @@ actor WhisperModelManager: ModelManaging {
             try handle.write(contentsOf: chunk)
             received += Int64(chunk.count)
 
-            let fraction = total > 0 ? min(1.0, Double(received) / Double(total)) : 0
-            // A 1.6 GB download would otherwise emit tens of thousands of updates.
-            if fraction - lastReported >= 0.01 || fraction >= 1.0 {
-                lastReported = fraction
-                states[id] = .downloading(fraction: fraction)
-                continuation.yield(fraction)
-            }
+            onProgress(received)
         }
         try handle.close()
 
@@ -213,23 +257,22 @@ actor WhisperModelManager: ModelManaging {
         if received != total {
             try? FileManager.default.removeItem(at: partial)
             throw MacomprendoError.modelDownloadFailed(
-                "\(model.displayName): expected \(total) bytes, received \(received)"
+                "\(file.fileName): expected \(total) bytes, received \(received)"
             )
         }
-        if onlyFile(of: model).sha256.isEmpty {
+        if file.sha256.isEmpty {
             Log.providers.warning(
-                "No SHA-256 recorded for whisper model \(model.id, privacy: .public); skipping integrity check"
+                "No SHA-256 recorded for model file \(file.fileName, privacy: .public); skipping integrity check"
             )
-        } else if try Self.sha256(of: partial) != onlyFile(of: model).sha256 {
+        } else if try Self.sha256(of: partial) != file.sha256 {
             try? FileManager.default.removeItem(at: partial)
-            throw MacomprendoError.modelDownloadFailed("\(model.displayName): checksum mismatch")
+            throw MacomprendoError.modelDownloadFailed("\(file.fileName): checksum mismatch")
         }
 
         // 5. Atomic move: a half-written file is never visible as a usable model.
+        let destination = destinationURL(for: file)
         try? FileManager.default.removeItem(at: destination)
         try FileManager.default.moveItem(at: partial, to: destination)
-        states[id] = .downloaded(destination)
-        continuation.yield(1.0)
     }
 
     // MARK: - Helpers
@@ -242,22 +285,18 @@ actor WhisperModelManager: ModelManaging {
         catalog.first { $0.id == id }
     }
 
-    /// Task 2 replaces this with a per-file lookup; for now a model is still one file.
-    private func onlyFile(of model: LocalASRModel) -> ModelFile {
-        // Every catalog entry in this task has exactly one file, and `ModelCatalogTests`
-        // enforces the shape, so a violation is a programmer error rather than a user-facing one.
-        guard let file = model.files.first else {
-            preconditionFailure("catalog entry \(model.id) has no files")
+    private func isComplete(_ model: LocalASRModel) -> Bool {
+        model.files.allSatisfy {
+            FileManager.default.fileExists(atPath: destinationURL(for: $0).path)
         }
-        return file
     }
 
-    private func destinationURL(for model: LocalASRModel) -> URL {
-        modelsDirectory.appendingPathComponent(onlyFile(of: model).fileName)
+    private func destinationURL(for file: ModelFile) -> URL {
+        modelsDirectory.appendingPathComponent(file.fileName)
     }
 
-    private func partialURL(for model: LocalASRModel) -> URL {
-        modelsDirectory.appendingPathComponent(onlyFile(of: model).fileName + ".partial")
+    private func partialURL(for file: ModelFile) -> URL {
+        modelsDirectory.appendingPathComponent(file.fileName + ".partial")
     }
 
     /// Bytes we can keep from a previous attempt: only when the server supports

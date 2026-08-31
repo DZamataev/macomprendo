@@ -26,26 +26,53 @@ import Testing
         ]
     }
 
+    /// A synthetic multi-file entry: the catalog itself still holds only one-file
+    /// whisper models.
+    private func twoFileModel() -> LocalASRModel {
+        LocalASRModel(id: "two-file",
+                      displayName: "Two File",
+                      engine: .gigaAM,
+                      languages: ["ru"],
+                      files: [
+                          ModelFile(role: .ctcModel, fileName: "two-model.onnx", sizeBytes: 300,
+                                    sha256: "ccc", downloadURL: URL(string: "https://example.invalid/model.onnx")!),
+                          ModelFile(role: .tokens, fileName: "two-tokens.txt", sizeBytes: 5,
+                                    sha256: "ddd", downloadURL: URL(string: "https://example.invalid/tokens.txt")!)
+                      ],
+                      brief: Self.testBrief)
+    }
+
     @Test func refreshBuildsARowPerCatalogEntry() async {
         let manager = StubModelManager()
-        manager.states = ["base": .downloaded(URL(fileURLWithPath: "/tmp/ggml-base.bin"))]
+        manager.states = ["base": .downloaded]
         let viewModel = ModelsViewModel(models: manager, catalog: makeCatalog())
 
         await viewModel.refresh()
 
         #expect(viewModel.rows.map(\.id) == ["base", "large-v3-turbo"])
-        #expect(viewModel.rows[0].state == .downloaded(URL(fileURLWithPath: "/tmp/ggml-base.bin")))
+        #expect(viewModel.rows[0].state == .downloaded)
         #expect(viewModel.rows[1].state == .notDownloaded)
     }
 
     @Test func diskUsageCountsOnlyDownloadedModels() async {
         let manager = StubModelManager()
-        manager.states = ["base": .downloaded(URL(fileURLWithPath: "/tmp/ggml-base.bin"))]
+        manager.states = ["base": .downloaded]
         let viewModel = ModelsViewModel(models: manager, catalog: makeCatalog())
 
         await viewModel.refresh()
         #expect(viewModel.diskUsage == 148_000_000)
         #expect(viewModel.diskUsageText.isEmpty == false)
+    }
+
+    @Test func diskUsageSumsTheWholeFileSetOfEveryDownloadedModel() async {
+        let manager = StubModelManager()
+        manager.states = ["two-file": .downloaded]
+        let viewModel = ModelsViewModel(models: manager, catalog: makeCatalog() + [twoFileModel()])
+
+        await viewModel.refresh()
+
+        // 300 + 5, not just the first file of the set.
+        #expect(viewModel.diskUsage == 305)
     }
 
     @Test func downloadReportsProgressAndEndsDownloaded() async {
@@ -92,7 +119,7 @@ import Testing
 
     @Test func deleteRemovesTheModelAndItsDiskUsage() async {
         let manager = StubModelManager()
-        manager.states = ["base": .downloaded(URL(fileURLWithPath: "/tmp/ggml-base.bin"))]
+        manager.states = ["base": .downloaded]
         let viewModel = ModelsViewModel(models: manager, catalog: makeCatalog())
         await viewModel.refresh()
 
@@ -118,8 +145,7 @@ import Testing
         #expect(DictationTab.stateCaption(for: .notDownloaded)
                 == "Not downloaded — download it under Speech models below.")
         #expect(DictationTab.stateCaption(for: .downloading(fraction: 0.42)) == "Downloading… 42%")
-        #expect(DictationTab.stateCaption(for: .downloaded(URL(fileURLWithPath: "/tmp/ggml-base.bin")))
-                == "Ready.")
+        #expect(DictationTab.stateCaption(for: .downloaded) == "Ready.")
         #expect(DictationTab.stateCaption(for: .failed("boom")) == "boom")
     }
 }

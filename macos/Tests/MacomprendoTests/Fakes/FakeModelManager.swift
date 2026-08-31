@@ -7,6 +7,7 @@ final class FakeModelManager: ModelManaging, @unchecked Sendable {
 
     private let lock = NSLock()
     private var localURLs: [String: URL]
+    private var engines: [String: ASREngine] = [:]
     private(set) var deletedIDs: [String] = []
 
     init(
@@ -21,13 +22,19 @@ final class FakeModelManager: ModelManaging, @unchecked Sendable {
         lock.withLock { localURLs[id] = url }
     }
 
-    func state(of id: String) async -> ModelState {
-        guard let url = lock.withLock({ localURLs[id] }) else { return .notDownloaded }
-        return .downloaded(url)
+    func setEngine(_ engine: ASREngine, for id: String) {
+        lock.withLock { engines[id] = engine }
     }
 
-    func localURL(for id: String) async -> URL? {
-        lock.withLock { localURLs[id] }
+    func state(of id: String) async -> ModelState {
+        lock.withLock { localURLs[id] == nil ? .notDownloaded : .downloaded }
+    }
+
+    func resolved(_ id: String) async -> ResolvedLocalModel? {
+        lock.withLock {
+            guard let url = localURLs[id] else { return nil }
+            return ResolvedLocalModel(engine: engines[id] ?? .whisperCpp, files: [.ggml: url])
+        }
     }
 
     func download(_ id: String) -> AsyncThrowingStream<Double, Error> {
