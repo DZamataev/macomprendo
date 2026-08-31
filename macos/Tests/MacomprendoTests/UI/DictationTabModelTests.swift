@@ -416,6 +416,27 @@ import Testing
         #expect(tab.probeCaption.contains("Configured"))
     }
 
+    @Test func aTargetlessFailureDoesNotFollowANewlyAvailableEndpoint() async {
+        var settings = Settings.default
+        settings.endpoints = []
+        settings.lastTranscriptionEndpointModel = "whisper-1"
+        let tab = tabModel(settings)
+
+        await tab.probeEndpoint { _ in
+            Issue.record("a targetless probe must not build a provider")
+            return ScriptedTranscriber(text: "unused")
+        }
+        #expect(tab.probeCaption.contains("No endpoint is configured"))
+
+        tab.holder.settings.endpoints = [
+            Endpoint(id: UUID(), name: "New", kind: .openAICompatible,
+                     baseURL: URL(string: "https://api.example.com")!, apiKeyRef: nil)
+        ]
+
+        #expect(tab.configuredEndpoint != nil)
+        #expect(tab.probeCaption == "Posts a one-second test clip to the real transcription route.")
+    }
+
     @Test func aLateProbeResultStaysAttachedToTheModelThatWasActuallyTested() async {
         let id = UUID()
         let tab = tabModel(endpointSettings(id: id, model: "model-a"))

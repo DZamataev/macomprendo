@@ -292,7 +292,7 @@ extension DictationTabModel {
             "This endpoint transcribed a one-second test clip."
         case .failed(let target, let message) where target == configuredTarget:
             "The last test failed: \(message)"
-        case .failed(target: nil, let message):
+        case .failed(target: nil, let message) where configuredTarget == nil:
             "The last test failed: \(message)"
         case .succeeded, .failed, nil:
             "Posts a one-second test clip to the real transcription route."

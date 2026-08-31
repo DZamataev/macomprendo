@@ -240,15 +240,28 @@ enum BackendReadiness: Sendable, Equatable {
     case notReady(reason: String, fix: FixAction?)
 }
 
+struct EndpointProbeTarget: Sendable, Equatable {
+    let id: UUID
+    let model: String
+}
+
 enum FixAction: Sendable, Equatable {
     case download(modelID: String)
-    case testEndpoint(id: UUID)
+    case testEndpoint(EndpointProbeTarget)
     case selectModel
+}
+
+enum EndpointProbeResult: Sendable, Equatable {
+    case succeeded(EndpointProbeTarget)
+    case failed(target: EndpointProbeTarget?, message: String)
 }
 ```
 
 Computed, never stored. A local model is ready when every file is on disk. An endpoint is
-ready when a probe has succeeded in this session.
+ready only when a probe has succeeded in this session for that exact endpoint UUID and model.
+Successes and request failures retain that target, so neither readiness nor a Fix button can
+be redirected by configuring another endpoint. A failure is targetless only when incomplete
+configuration prevented any request from being made.
 
 The endpoint probe posts a one-second WAV to `/v1/audio/transcriptions`: a quiet, deterministic
 440 Hz tone rather than digital silence, since a server's VAD or no-speech filter can reject pure
