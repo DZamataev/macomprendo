@@ -4,11 +4,13 @@ import Testing
 
 @Suite struct ModelCatalogTests {
 
-    @Test func containsExactlyTheNineOfferedModelsInOrder() {
+    @Test func containsExactlyTheThirteenOfferedModelsInOrder() {
         #expect(ModelCatalog.all.map(\.id) == [
             "tiny", "tiny.en", "base", "base.en",
             "small", "small.en", "medium", "medium.en",
-            "large-v3-turbo"
+            "large-v3-turbo",
+            "gigaam-v3-e2e-ctc", "gigaam-v3-e2e-rnnt",
+            "gigaam-multilingual-ctc", "gigaam-multilingual-large-ctc"
         ])
     }
 
@@ -84,5 +86,48 @@ import Testing
                 #expect(roles == ctc || roles == transducer, "\(model.id) is not a sherpa file set")
             }
         }
+    }
+
+    @Test func offersFourGigaAMModels() {
+        #expect(ModelCatalog.all(for: .gigaAM).map(\.id) == [
+            "gigaam-v3-e2e-ctc",
+            "gigaam-v3-e2e-rnnt",
+            "gigaam-multilingual-ctc",
+            "gigaam-multilingual-large-ctc"
+        ])
+    }
+
+    @Test func theRussianEntriesDeclareRussianAndTheMultilingualOnesDeclareFive() {
+        #expect(ModelCatalog.model(id: "gigaam-v3-e2e-ctc")?.languages == ["ru"])
+        #expect(ModelCatalog.model(id: "gigaam-v3-e2e-rnnt")?.languages == ["ru"])
+        #expect(ModelCatalog.model(id: "gigaam-multilingual-ctc")?.languages == ["ru", "en", "kk", "ky", "uz"])
+        #expect(ModelCatalog.model(id: "gigaam-multilingual-large-ctc")?.languages == ["ru", "en", "kk", "ky", "uz"])
+    }
+
+    @Test func everyGigaAMEntryHasAUsableBrief() {
+        for model in ModelCatalog.all(for: .gigaAM) {
+            #expect(!model.brief.summary.isEmpty, "\(model.id) has no summary")
+            #expect(!model.brief.strengths.isEmpty, "\(model.id) lists no strengths")
+            #expect(!model.brief.limitations.isEmpty, "\(model.id) lists no limitations")
+        }
+    }
+
+    @Test func theMultilingualBriefsWarnThatThereIsNoPunctuation() {
+        for id in ["gigaam-multilingual-ctc", "gigaam-multilingual-large-ctc"] {
+            let model = ModelCatalog.model(id: id)!
+            #expect(model.brief.limitations.contains { $0.lowercased().contains("punctuation") },
+                    "\(id) does not warn about missing punctuation")
+        }
+    }
+
+    @Test func everyBenchmarkIsAttributedToAnHTTPSSource() {
+        for model in ModelCatalog.all where !model.brief.benchmarks.isEmpty {
+            #expect(model.brief.sourceURL.scheme == "https", "\(model.id) benchmark source is not https")
+        }
+    }
+
+    @Test func theTransducerEntryDeclaresFourFiles() {
+        let rnnt = ModelCatalog.model(id: "gigaam-v3-e2e-rnnt")!
+        #expect(Set(rnnt.files.map(\.role)) == [.encoder, .decoder, .joiner, .tokens])
     }
 }

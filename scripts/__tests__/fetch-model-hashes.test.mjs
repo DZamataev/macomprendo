@@ -2,81 +2,87 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  escapeRegExp,
   updateCatalogSource,
   fetchModelMetadata,
 } from '../fetch-model-hashes.mjs';
 
+// Shaped like the real ModelCatalog.swift: fileName is the rewrite key now, not model id
+// — one model can own several files, and two GigaAM entries share the fileName prefix
+// "gigaam-v3-e2e-", the way "tiny" and "tiny.en" used to collide on model id.
 const SOURCE = `enum ModelCatalog {
-    static let all: [WhisperModel] = [
-        WhisperModel(id: "tiny", displayName: "Tiny (multilingual)", fileName: "ggml-tiny.bin", sizeBytes: 77691713, sha256: "", downloadURL: downloadURL(for: "tiny")),
-        WhisperModel(id: "tiny.en", displayName: "Tiny (English)", fileName: "ggml-tiny.en.bin", sizeBytes: 77704715, sha256: "", downloadURL: downloadURL(for: "tiny.en")),
-        WhisperModel(id: "base", displayName: "Base (multilingual)", fileName: "ggml-base.bin", sizeBytes: 147951465, sha256: "abc", downloadURL: downloadURL(for: "base"))
+    static let all: [LocalASRModel] = whisper + gigaAM
+    private static let gigaAM: [LocalASRModel] = [
+        LocalASRModel(
+            id: "gigaam-v3-e2e-ctc",
+            files: [
+                ModelFile(role: .ctcModel, fileName: "gigaam-v3-e2e-ctc-model.onnx", sizeBytes: 224900000, sha256: "", downloadURL: URL(string: "https://example.com/ctc/model.int8.onnx")!),
+                ModelFile(role: .tokens, fileName: "gigaam-v3-e2e-ctc-tokens.txt", sizeBytes: 4000, sha256: "abc", downloadURL: URL(string: "https://example.com/ctc/tokens.txt")!)
+            ]
+        ),
+        LocalASRModel(
+            id: "gigaam-v3-e2e-rnnt",
+            files: [
+                ModelFile(role: .tokens, fileName: "gigaam-v3-e2e-rnnt-tokens.txt", sizeBytes: 13000, sha256: "", downloadURL: URL(string: "https://example.com/rnnt/tokens.txt")!)
+            ]
+        )
     ]
 }
 `;
 
-test('escapeRegExp escapes regex metacharacters', () => {
-  assert.equal(escapeRegExp('tiny.en'), 'tiny\\.en');
-  assert.equal(escapeRegExp('large-v3-turbo'), 'large-v3-turbo');
-});
-
-test('updateCatalogSource rewrites size and hash for one model', () => {
+test('updateCatalogSource rewrites size and hash for one file', () => {
   const out = updateCatalogSource(SOURCE, [
-    { id: 'tiny', sizeBytes: 100, sha256: 'deadbeef' },
+    { fileName: 'gigaam-v3-e2e-ctc-model.onnx', sizeBytes: 100, sha256: 'deadbeef' },
   ]);
-  assert.match(out, /id: "tiny",.*sizeBytes: 100, sha256: "deadbeef"/);
+  assert.match(out, /fileName: "gigaam-v3-e2e-ctc-model\.onnx", sizeBytes: 100, sha256: "deadbeef"/);
   // Other entries untouched.
-  assert.match(out, /id: "tiny\.en",.*sizeBytes: 77704715, sha256: ""/);
-  assert.match(out, /id: "base",.*sizeBytes: 147951465, sha256: "abc"/);
+  assert.match(out, /fileName: "gigaam-v3-e2e-ctc-tokens\.txt", sizeBytes: 4000, sha256: "abc"/);
+  assert.match(out, /fileName: "gigaam-v3-e2e-rnnt-tokens\.txt", sizeBytes: 13000, sha256: ""/);
 });
 
-test('updateCatalogSource does not confuse "tiny" with "tiny.en"', () => {
+test('updateCatalogSource does not confuse fileNames that share a prefix', () => {
   const out = updateCatalogSource(SOURCE, [
-    { id: 'tiny.en', sizeBytes: 200, sha256: 'feed' },
+    { fileName: 'gigaam-v3-e2e-rnnt-tokens.txt', sizeBytes: 200, sha256: 'feed' },
   ]);
-  assert.match(out, /id: "tiny",.*sizeBytes: 77691713, sha256: ""/);
-  assert.match(out, /id: "tiny\.en",.*sizeBytes: 200, sha256: "feed"/);
+  assert.match(out, /fileName: "gigaam-v3-e2e-ctc-tokens\.txt", sizeBytes: 4000, sha256: "abc"/);
+  assert.match(out, /fileName: "gigaam-v3-e2e-rnnt-tokens\.txt", sizeBytes: 200, sha256: "feed"/);
 });
 
 test('updateCatalogSource replaces an existing non-empty hash', () => {
   const out = updateCatalogSource(SOURCE, [
-    { id: 'base', sizeBytes: 147951465, sha256: 'newhash' },
+    { fileName: 'gigaam-v3-e2e-ctc-tokens.txt', sizeBytes: 4000, sha256: 'newhash' },
   ]);
-  assert.match(out, /id: "base",.*sha256: "newhash"/);
+  assert.match(out, /fileName: "gigaam-v3-e2e-ctc-tokens\.txt".*sha256: "newhash"/);
   assert.doesNotMatch(out, /sha256: "abc"/);
 });
 
 test('updateCatalogSource applies several records at once', () => {
   const out = updateCatalogSource(SOURCE, [
-    { id: 'tiny', sizeBytes: 1, sha256: 'a' },
-    { id: 'base', sizeBytes: 3, sha256: 'c' },
+    { fileName: 'gigaam-v3-e2e-ctc-model.onnx', sizeBytes: 1, sha256: 'a' },
+    { fileName: 'gigaam-v3-e2e-rnnt-tokens.txt', sizeBytes: 3, sha256: 'c' },
   ]);
-  assert.match(out, /id: "tiny",.*sizeBytes: 1, sha256: "a"/);
-  assert.match(out, /id: "base",.*sizeBytes: 3, sha256: "c"/);
+  assert.match(out, /fileName: "gigaam-v3-e2e-ctc-model\.onnx", sizeBytes: 1, sha256: "a"/);
+  assert.match(out, /fileName: "gigaam-v3-e2e-rnnt-tokens\.txt", sizeBytes: 3, sha256: "c"/);
 });
 
-test('updateCatalogSource throws for an id that is not in the catalog', () => {
+test('updateCatalogSource throws for a fileName that is not in the catalog', () => {
   assert.throws(
-    () => updateCatalogSource(SOURCE, [{ id: 'ghost', sizeBytes: 1, sha256: 'a' }]),
-    /no catalog entry for model id "ghost"/,
+    () => updateCatalogSource(SOURCE, [{ fileName: 'ghost.onnx', sizeBytes: 1, sha256: 'a' }]),
+    /no catalog entry for file "ghost\.onnx"/,
   );
 });
 
 test('updateCatalogSource preserves existing hash when incoming sha256 is empty', () => {
   const out = updateCatalogSource(SOURCE, [
-    { id: 'base', sizeBytes: 999, sha256: '' },
+    { fileName: 'gigaam-v3-e2e-ctc-tokens.txt', sizeBytes: 999, sha256: '' },
   ]);
-  // Hash should remain "abc", size should change to 999
-  assert.match(out, /id: "base",.*sizeBytes: 999, sha256: "abc"/);
+  assert.match(out, /fileName: "gigaam-v3-e2e-ctc-tokens\.txt", sizeBytes: 999, sha256: "abc"/);
 });
 
 test('updateCatalogSource preserves existing sizeBytes when incoming is 0', () => {
   const out = updateCatalogSource(SOURCE, [
-    { id: 'base', sizeBytes: 0, sha256: 'newhash' },
+    { fileName: 'gigaam-v3-e2e-ctc-tokens.txt', sizeBytes: 0, sha256: 'newhash' },
   ]);
-  // Size should remain 147951465, hash should change to newhash
-  assert.match(out, /id: "base",.*sizeBytes: 147951465, sha256: "newhash"/);
+  assert.match(out, /fileName: "gigaam-v3-e2e-ctc-tokens\.txt", sizeBytes: 4000, sha256: "newhash"/);
 });
 
 test('fetchModelMetadata reads the size from a HEAD Content-Length', async () => {
@@ -87,22 +93,22 @@ test('fetchModelMetadata reads the size from a HEAD Content-Length', async () =>
   };
 
   const record = await fetchModelMetadata(
-    { id: 'tiny', downloadURL: 'https://example.com/ggml-tiny.bin' },
+    { fileName: 'gigaam-v3-e2e-ctc-model.onnx', downloadURL: 'https://example.com/model.int8.onnx' },
     { fetchImpl: fakeFetch },
   );
 
-  assert.deepEqual(record, { id: 'tiny', sizeBytes: 4242, sha256: '' });
-  assert.deepEqual(calls, [{ url: 'https://example.com/ggml-tiny.bin', method: 'HEAD' }]);
+  assert.deepEqual(record, { fileName: 'gigaam-v3-e2e-ctc-model.onnx', sizeBytes: 4242, sha256: '' });
+  assert.deepEqual(calls, [{ url: 'https://example.com/model.int8.onnx', method: 'HEAD' }]);
 });
 
 test('fetchModelMetadata throws when the HEAD request fails', async () => {
   const fakeFetch = async () => ({ ok: false, status: 404, headers: new Headers() });
   await assert.rejects(
     () => fetchModelMetadata(
-      { id: 'tiny', downloadURL: 'https://example.com/ggml-tiny.bin' },
+      { fileName: 'gigaam-v3-e2e-ctc-model.onnx', downloadURL: 'https://example.com/model.int8.onnx' },
       { fetchImpl: fakeFetch },
     ),
-    /HEAD https:\/\/example\.com\/ggml-tiny\.bin failed with 404/,
+    /HEAD https:\/\/example\.com\/model\.int8\.onnx failed with 404/,
   );
 });
 
@@ -129,7 +135,7 @@ test('fetchModelMetadata hashes the body when download is requested', async () =
   };
 
   const record = await fetchModelMetadata(
-    { id: 'tiny', downloadURL: 'https://example.com/ggml-tiny.bin' },
+    { fileName: 'gigaam-v3-e2e-ctc-model.onnx', downloadURL: 'https://example.com/model.int8.onnx' },
     { download: true, fetchImpl: fakeFetch },
   );
 
@@ -162,7 +168,7 @@ test('fetchModelMetadata hashes a body delivered across several chunks', async (
   };
 
   const record = await fetchModelMetadata(
-    { id: 'tiny', downloadURL: 'https://example.com/ggml-tiny.bin' },
+    { fileName: 'gigaam-v3-e2e-ctc-model.onnx', downloadURL: 'https://example.com/model.int8.onnx' },
     { download: true, fetchImpl: fakeFetch },
   );
 
