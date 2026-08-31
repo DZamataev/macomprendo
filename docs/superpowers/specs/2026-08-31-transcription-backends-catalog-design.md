@@ -32,10 +32,11 @@ narrowness rather than the user's actual choice:
    one-file special case rather than the built-in assumption.
 3. Every catalog entry carries a brief: what it is good at, its limitations, the languages
    it handles, and published benchmark numbers with a source link.
-4. The Dictation tab becomes three sub-tabs — whisper.cpp, GigaAM, OpenAI endpoint. The
-   active sub-tab, together with the row selected inside it, *is* the configured backend.
-5. Each sub-tab states readiness explicitly: ready to use, or not ready with the reason and
-   the action that fixes it.
+4. The Dictation tab gets an explicit active-model selector listing only backends that are
+   ready to use, above three sub-tabs — whisper.cpp, GigaAM, OpenAI endpoint — for browsing
+   and configuring each backend. Navigation and selection are separate.
+5. One status block beside the selector states readiness explicitly: ready to use, or not
+   ready with the reason and the action that fixes it.
 6. The HUD shows the active model's name while recording and transcribing.
 
 ## Non-goals (YAGNI)
@@ -258,50 +259,83 @@ at hotkey-press time has run.
 
 ## Settings schema
 
-`transcriptionSource` keeps its shape. Two additions record the per-engine selection so that
-returning to a sub-tab restores what was chosen there rather than resetting to a default:
+`transcriptionSource` keeps its shape and remains the single record of what will transcribe.
+One addition lets the endpoint sub-tab configure a server **without** making it active:
 
 ```swift
-var lastModelByEngine: [String: String]   // ASREngine.rawValue → model id
-var lastTranscriptionEndpointID: UUID?    // endpoint last configured for transcription
+var lastTranscriptionEndpointID: UUID?    // endpoint configured for transcription
 var lastTranscriptionEndpointModel: String?
 ```
 
-The endpoint selection is stored as its two components rather than as a
-`TranscriptionSource?`, because only one of that enum's cases would ever be valid in the
-field and a type that can hold an impossible value invites the bug of writing one.
+It is stored as its two components rather than as a `TranscriptionSource?`, because only one
+of that enum's cases would ever be valid in the field and a type that can hold an impossible
+value invites the bug of writing one.
 
 Both decode through the existing hand-written `init(from:)` with `decodeIfPresent` and a
 default, exactly as `SpeechSettings` does, so `currentSchemaVersion` does **not** move.
 
+An earlier draft of this design also carried `lastModelByEngine: [String: String]`, to restore
+a per-engine selection when returning to a sub-tab. Separating navigation from selection (see
+below) removed the only thing that read it, and it is deleted rather than left as a field
+nothing writes for a reason nobody remembers.
+
 ## The Dictation tab
 
-Sub-tabs across the top: **whisper.cpp**, **GigaAM**, **OpenAI endpoint**. Within a local
-sub-tab, in order:
+An **active-model selector** sits at the top, above the sub-tabs, with a single status block
+beside it. Below them, three sub-tabs — **whisper.cpp**, **GigaAM**, **OpenAI endpoint** —
+for browsing and configuring each backend.
+
+### Selection is explicit, and separate from navigation
+
+The selector is the only control that changes what transcribes. Moving between sub-tabs
+changes nothing but what is on screen.
+
+This replaces an earlier design in which the active sub-tab *was* the selection. That version
+gave a navigation control a persistent side effect, and the cost was not hypothetical: with no
+per-engine memory recorded yet, opening the GigaAM tab to read a brief and returning to
+whisper.cpp silently replaced Large v3 Turbo with the catalog's first entry, Tiny — a model
+the user had never chosen and almost certainly had not downloaded. Rather than mitigate that
+with warnings, the design separates the two concerns, and the whole class of surprise goes
+with it.
+
+### What the selector lists
+
+Every backend that is **ready to use**: a local model whose every file is on disk, and the
+endpoint if its probe has succeeded.
+
+Two cases the list must still handle, because `transcriptionSource` outlives readiness:
+
+- **The active source is no longer ready** — its files were deleted, or the endpoint has not
+  been probed this session. It stays in the list, marked as not ready. A `Picker` whose
+  selection is absent from its options has no defined rendering, and silently dropping the
+  user's setting from view is worse than showing it with its problem.
+- **Nothing is ready at all** — a fresh install with no model downloaded. The selector is
+  disabled and reads "No model is ready — download one below", which is honest where an empty
+  menu is merely puzzling.
+
+### The status block
+
+One block, next to the selector, describing the **selected** model rather than the sub-tab
+being viewed: `Ready to use ✅` with a line naming what dictation will use, or `Not ready ❌`
+with the reason and a button wired to the `FixAction`.
+
+There is deliberately no per-tab status. Two status blocks on one screen would answer the
+question "what runs when I press the hotkey" twice, and a reader has no way to tell which
+answer is the real one. Whether an individual model is usable is already visible on its own
+row, through the download / cancel / delete control.
+
+### Inside a sub-tab
 
 1. **Models** — one row per catalog entry: name, size, languages, the brief (summary,
    strengths, limitations), a benchmark table with its source link, and the
-   download / cancel / delete control that exists today. One row is selected; selecting a
-   row makes it this engine's active model.
+   download / cancel / delete control. A row can be made active from here, which sets the
+   selector; it is a shortcut for the selector, not a second source of truth.
 2. **Parameters** — whisper.cpp: spoken language, thread count, and the `translate` flag now
    surfaced. GigaAM: a sentence explaining that the models take no parameters.
-3. **Status** — `Ready to use ✅` with a line saying this is the model dictation will use,
-   or `Not ready ❌` with the reason and a button wired to the `FixAction`.
 
-The OpenAI endpoint sub-tab keeps the endpoint picker and model field it has today, and
-gains the probe button and the same status block.
-
-### The active sub-tab is the selection
-
-Selecting a sub-tab sets the active engine; the row selected inside it sets the model.
-Together they write `transcriptionSource`.
-
-This deliberately gives a navigation control a persistent side effect, which macOS users do
-not expect: opening the GigaAM tab merely to read a brief changes the dictation backend, and
-if nothing there is downloaded the next hotkey press fails. The mitigation is to make the
-effect visible rather than to hide it — each sub-tab label carries a readiness dot, and the
-status block states in words that this tab is the active dictation backend. The behaviour is
-intended and must be legible; it must not be discoverable only by dictating.
+The OpenAI endpoint sub-tab keeps the endpoint picker and model field it has today and gains
+the probe button. Configuring an endpoint there records it in the settings above; it becomes
+active only when chosen in the selector.
 
 ## The HUD caption
 
