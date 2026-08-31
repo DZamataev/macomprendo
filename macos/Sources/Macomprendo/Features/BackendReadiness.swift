@@ -3,16 +3,24 @@ import Foundation
 /// What the user should do about a backend that cannot run.
 enum FixAction: Sendable, Equatable {
     case download(modelID: String)
-    case testEndpoint(id: UUID)
+    case testEndpoint(EndpointProbeTarget)
     case selectModel
 }
 
-/// The outcome of the last endpoint probe in this session. A success carries *what it
-/// proved* — one server, one model — so that a verdict cannot be read as covering an
-/// endpoint or a model name that was never contacted.
+/// The exact server and model an endpoint probe exercised.
+struct EndpointProbeTarget: Sendable, Equatable {
+    let id: UUID
+    let model: String
+
+    var source: TranscriptionSource { .endpoint(id: id, model: model) }
+}
+
+/// The outcome of the last endpoint probe in this session. Both outcomes carry *what they
+/// proved* so a verdict cannot be read as covering a server or model that was never contacted.
+/// A target is absent only when configuration was incomplete and no request could be made.
 enum EndpointProbeResult: Sendable, Equatable {
-    case succeeded(id: UUID, model: String)
-    case failed(String)
+    case succeeded(EndpointProbeTarget)
+    case failed(target: EndpointProbeTarget?, message: String)
 }
 
 /// Whether the configured transcription backend can actually run right now. Computed on
@@ -46,17 +54,17 @@ enum BackendReadiness: Sendable, Equatable {
             guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return .notReady(reason: "No model name is set.", fix: .selectModel)
             }
+            let target = EndpointProbeTarget(id: id, model: model)
             switch endpointProbe {
-            case .succeeded(let probedID, let probedModel)
-                where probedID == id && probedModel == model:
+            case .succeeded(let probedTarget) where probedTarget == target:
                 return .ready
-            case .failed(let message):
-                return .notReady(reason: message, fix: .testEndpoint(id: id))
-            // A success against a different server or a different model name proves nothing
-            // about this one, so it reads exactly like never having been tested.
-            case .succeeded, nil:
+            case .failed(let probedTarget, let message) where probedTarget == target:
+                return .notReady(reason: message, fix: .testEndpoint(target))
+            // A result against a different server or model proves nothing about this one, so
+            // it reads exactly like never having been tested.
+            case .succeeded, .failed, nil:
                 return .notReady(reason: "This endpoint has not been tested yet.",
-                                 fix: .testEndpoint(id: id))
+                                 fix: .testEndpoint(target))
             }
         }
     }

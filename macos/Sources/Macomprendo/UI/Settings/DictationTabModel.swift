@@ -208,8 +208,8 @@ final class DictationTabModel: ObservableObject {
             "\(activeSourceName) is your active dictation model. Press your dictation hotkey "
                 + "and it will be used."
         case .notReady(let reason, _):
-            "\(reason) \(activeSourceName) is the selected backend, so dictation will fail "
-                + "until this is fixed."
+            "\(reason) \(activeSourceName) is the selected backend, but it is not verified "
+                + "and dictation may fail until this is fixed."
         }
     }
 
@@ -280,14 +280,22 @@ extension DictationTabModel {
             .joined(separator: " · ")
     }
 
-    /// What the Test button's caption says about the last probe. The failure reason itself
-    /// lives in the status block; repeating a long server error beside the button would only
-    /// push the controls apart.
+    /// What the Test button's caption says about the last probe. A failure for the configured
+    /// endpoint is shown here even when a different backend is active and owns the status block.
     var probeCaption: String {
-        switch endpointProbe {
-        case .succeeded: "This endpoint transcribed a one-second test clip."
-        case .failed: "The last test failed — the reason is in the status above."
-        case nil: "Posts a one-second test clip to the real transcription route."
+        let configuredTarget = configuredEndpoint.flatMap { source -> EndpointProbeTarget? in
+            guard case .endpoint(let id, let model) = source else { return nil }
+            return EndpointProbeTarget(id: id, model: model)
+        }
+        return switch endpointProbe {
+        case .succeeded(let target) where target == configuredTarget:
+            "This endpoint transcribed a one-second test clip."
+        case .failed(let target, let message) where target == configuredTarget:
+            "The last test failed: \(message)"
+        case .failed(target: nil, let message):
+            "The last test failed: \(message)"
+        case .succeeded, .failed, nil:
+            "Posts a one-second test clip to the real transcription route."
         }
     }
 
@@ -304,26 +312,41 @@ extension DictationTabModel {
     func probeEndpoint(
         using provider: (TranscriptionSource) async throws -> any TranscriptionProvider
     ) async {
-        guard case .endpoint(let id, let model)? = configuredEndpoint else {
-            endpointProbe = .failed("No endpoint is configured yet — choose one and name a "
-                                    + "model first.")
+        await probeEndpoint(configuredEndpoint, using: provider)
+    }
+
+    /// Runs the probe against exactly the source supplied by the caller. The endpoint tab
+    /// passes its configured source; the active status block passes the active source from its
+    /// `FixAction`, so configuring endpoint B cannot redirect endpoint A's retry button.
+    func probeEndpoint(
+        _ source: TranscriptionSource?,
+        using provider: (TranscriptionSource) async throws -> any TranscriptionProvider
+    ) async {
+        guard case .endpoint(let id, let model)? = source else {
+            endpointProbe = .failed(
+                target: nil,
+                message: "No endpoint is configured yet — choose one and name a model first."
+            )
             return
         }
+        let target = EndpointProbeTarget(id: id, model: model)
         isProbing = true
         defer { isProbing = false }
         do {
-            let built = try await provider(.endpoint(id: id, model: model))
+            let built = try await provider(target.source)
             guard let transcriber = built as? OpenAICompatibleTranscriber else {
-                endpointProbe = .failed("That source is not an endpoint, so there is nothing "
-                                        + "to test.")
+                endpointProbe = .failed(
+                    target: target,
+                    message: "That source is not an endpoint, so there is nothing to test."
+                )
                 return
             }
             try await transcriber.probe()
             // Recorded against what was probed, so the verdict cannot outlive the server and
             // model name it was obtained for.
-            endpointProbe = .succeeded(id: id, model: model)
+            endpointProbe = .succeeded(target)
         } catch {
-            endpointProbe = .failed(ErrorText.describe(error))
+            endpointProbe = .failed(target: target, message: ErrorText.describe(error))
         }
     }
 }

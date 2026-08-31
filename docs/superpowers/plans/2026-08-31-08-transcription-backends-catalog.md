@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add GigaAM as a second local transcription engine beside whisper.cpp, generalise the model catalog to multi-file models with per-model briefs and benchmarks, and rebuild the Dictation tab as three backend sub-tabs where the active tab is the configured backend.
+**Goal:** Add GigaAM as a second local transcription engine beside whisper.cpp, generalise the model catalog to multi-file models with per-model briefs and benchmarks, and rebuild the Dictation tab with an explicit active-model selector above three navigation-only backend sub-tabs.
 
 **Architecture:** sherpa-onnx is vendored as a second prebuilt xcframework (the ADR-0007 pattern, applied again) and exposed through `GigaAMTranscriber`, an actor implementing the existing, unchanged `TranscriptionProvider`. `ModelCatalog` grows from "one model = one ggml file" into `LocalASRModel`, which carries its engine, its file set, its languages and a user-facing brief; `ModelManager` downloads file sets; `ProviderFactory` dispatches on the resolved engine. The UI change is a presentation layer over that data — `TranscriptionSource` itself does not change shape.
 

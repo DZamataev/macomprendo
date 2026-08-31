@@ -122,8 +122,8 @@ struct DictationTab: View {
                     tab.reveal(.local(modelID: modelID))
                     models.download(modelID)
                 }
-            case .testEndpoint:
-                testButton
+            case .testEndpoint(let target):
+                testButton(source: target.source)
             case .selectModel:
                 Button("Name a model") {
                     tab.viewedTab = .endpoint
@@ -133,9 +133,11 @@ struct DictationTab: View {
         }
     }
 
-    private var testButton: some View {
+    private func testButton(source: TranscriptionSource?) -> some View {
         Button(tab.isProbing ? "Testing…" : "Test") {
-            Task { await tab.probeEndpoint { try await model.transcriber(for: $0) } }
+            Task {
+                await tab.probeEndpoint(source) { try await model.transcriber(for: $0) }
+            }
         }
         .disabled(tab.isProbing)
     }
@@ -291,7 +293,7 @@ struct DictationTab: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .firstTextBaseline) {
-                testButton
+                testButton(source: tab.configuredEndpoint)
                 Text(tab.probeCaption)
                     .font(.caption)
                     .foregroundStyle(.secondary)

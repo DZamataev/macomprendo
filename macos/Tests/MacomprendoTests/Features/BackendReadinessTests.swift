@@ -41,44 +41,53 @@ import Testing
     }
 
     @Test func anUnprobedEndpointIsNotReady() {
+        let target = EndpointProbeTarget(id: endpointID, model: "whisper-1")
         #expect(BackendReadiness.of(source: .endpoint(id: endpointID, model: "whisper-1"),
                                     states: [:], endpointProbe: nil)
                 == .notReady(reason: "This endpoint has not been tested yet.",
-                             fix: .testEndpoint(id: endpointID)))
+                             fix: .testEndpoint(target)))
     }
 
     @Test func aSuccessfullyProbedEndpointIsReady() {
         #expect(BackendReadiness.of(source: .endpoint(id: endpointID, model: "whisper-1"),
                                     states: [:],
-                                    endpointProbe: .succeeded(id: endpointID, model: "whisper-1"))
+                                    endpointProbe: .succeeded(
+                                        EndpointProbeTarget(id: endpointID, model: "whisper-1")))
                 == .ready)
     }
 
     @Test func aProbeOfADifferentServerOrModelCountsAsUntested() {
+        let target = EndpointProbeTarget(id: endpointID, model: "whisper-1")
         // A probe proves that one server answered on one model name. Carrying that verdict
         // over to another endpoint — or another model on the same endpoint — would be exactly
         // the false "ready" the probe exists to prevent.
         #expect(BackendReadiness.of(source: .endpoint(id: endpointID, model: "whisper-1"),
                                     states: [:],
-                                    endpointProbe: .succeeded(id: UUID(), model: "whisper-1"))
+                                    endpointProbe: .succeeded(
+                                        EndpointProbeTarget(id: UUID(), model: "whisper-1")))
                 == .notReady(reason: "This endpoint has not been tested yet.",
-                             fix: .testEndpoint(id: endpointID)))
+                             fix: .testEndpoint(target)))
         #expect(BackendReadiness.of(source: .endpoint(id: endpointID, model: "whisper-1"),
                                     states: [:],
-                                    endpointProbe: .succeeded(id: endpointID, model: "gpt-4o-transcribe"))
+                                    endpointProbe: .succeeded(EndpointProbeTarget(
+                                        id: endpointID, model: "gpt-4o-transcribe")))
                 == .notReady(reason: "This endpoint has not been tested yet.",
-                             fix: .testEndpoint(id: endpointID)))
+                             fix: .testEndpoint(target)))
     }
 
     @Test func aFailedProbeReportsWhyAndOffersARetest() {
+        let target = EndpointProbeTarget(id: endpointID, model: "whisper-1")
         #expect(BackendReadiness.of(source: .endpoint(id: endpointID, model: "whisper-1"),
-                                    states: [:], endpointProbe: .failed("HTTP 404"))
-                == .notReady(reason: "HTTP 404", fix: .testEndpoint(id: endpointID)))
+                                    states: [:], endpointProbe: .failed(
+                                        target: target,
+                                        message: "HTTP 404"))
+                == .notReady(reason: "HTTP 404", fix: .testEndpoint(target)))
     }
 
     @Test func anEndpointWithABlankModelNameIsNotReadyEvenAfterASuccessfulProbe() {
         #expect(BackendReadiness.of(source: .endpoint(id: endpointID, model: "  "),
-                                    states: [:], endpointProbe: .succeeded(id: endpointID, model: "  "))
+                                    states: [:], endpointProbe: .succeeded(
+                                        EndpointProbeTarget(id: endpointID, model: "  ")))
                 == .notReady(reason: "No model name is set.", fix: .selectModel))
     }
 }

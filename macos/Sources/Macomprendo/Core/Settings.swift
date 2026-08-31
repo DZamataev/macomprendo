@@ -6,7 +6,7 @@ enum InsertMethod: String, Codable, Sendable { case auto, paste, typing }
 /// `Hashable` so the active-model selector can tag its `Picker` rows with the source itself
 /// rather than with a stringly-typed stand-in.
 enum TranscriptionSource: Codable, Sendable, Equatable, Hashable {
-    /// A whisper ggml model id from `ModelCatalog`, e.g. "large-v3-turbo".
+    /// A local transcription model id from `ModelCatalog`, e.g. "large-v3-turbo".
     case local(modelID: String)
     /// An OpenAI-compatible `/v1/audio/transcriptions` endpoint.
     case endpoint(id: UUID, model: String)

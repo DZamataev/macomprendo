@@ -374,8 +374,9 @@ Unit tests, written first, with fakes from `Tests/…/Fakes`:
   whole catalog
 - `BackendReadiness` derivation for each source kind, including the endpoint-never-probed case
 - the HUD caption string for local and endpoint sources, and its absence in `.speaking`
-- sub-tab ↔ `transcriptionSource` round-tripping, including that returning to a sub-tab
-  restores `lastModelByEngine` rather than the engine default
+- sub-tab navigation leaves `transcriptionSource` unchanged, while only the active-model
+  selector writes it; endpoint configuration writes only the two `lastTranscriptionEndpoint*`
+  fields
 - `ModelsViewModel` rows and disk usage for multi-file models
 - `scripts/__tests__` coverage for `fetch-model-hashes.mjs` rewriting the new literal shape
 

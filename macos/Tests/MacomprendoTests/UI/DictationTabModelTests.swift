@@ -120,7 +120,7 @@ import Testing
     @Test func theSelectorOffersAProbedEndpoint() {
         let id = UUID()
         let tab = tabModel(endpointSettings(id: id))
-        tab.endpointProbe = .succeeded(id: id, model: "whisper-1")
+        tab.endpointProbe = .succeeded(EndpointProbeTarget(id: id, model: "whisper-1"))
 
         let entry = tab.selectableSources.first { $0.source == .endpoint(id: id, model: "whisper-1") }
 
@@ -131,12 +131,13 @@ import Testing
     @Test func theSelectorDoesNotCallAnEndpointReadyOnAProbeOfAnotherServer() {
         let id = UUID()
         let tab = tabModel(endpointSettings(id: id))
-        tab.endpointProbe = .succeeded(id: UUID(), model: "whisper-1")
+        tab.endpointProbe = .succeeded(EndpointProbeTarget(id: UUID(), model: "whisper-1"))
 
         #expect(tab.selectableSources.first { $0.source == .endpoint(id: id, model: "whisper-1") }?
                 .isReady == false)
 
-        tab.endpointProbe = .succeeded(id: id, model: "gpt-4o-transcribe")
+        tab.endpointProbe = .succeeded(
+            EndpointProbeTarget(id: id, model: "gpt-4o-transcribe"))
         #expect(tab.selectableSources.first { $0.source == .endpoint(id: id, model: "whisper-1") }?
                 .isReady == false)
     }
@@ -151,7 +152,7 @@ import Testing
 
         #expect(!tab.selectableSources.contains { $0.source == .endpoint(id: id, model: "whisper-1") })
 
-        tab.endpointProbe = .succeeded(id: id, model: "whisper-1")
+        tab.endpointProbe = .succeeded(EndpointProbeTarget(id: id, model: "whisper-1"))
         #expect(tab.selectableSources.contains { $0.source == .endpoint(id: id, model: "whisper-1") })
     }
 
@@ -168,14 +169,15 @@ import Testing
         #expect(tab.statusDetail.lowercased().contains("dictation"))
     }
 
-    @Test func anUnreadySelectionExplainsWhatIsWrongAndThatDictationWillFail() {
+    @Test func anUnreadySelectionExplainsWhatIsWrongWithoutClaimingCertainFailure() {
         let tab = tabModel()
         tab.activate(.local(modelID: "gigaam-v3-e2e-ctc"))
         tab.modelStates["gigaam-v3-e2e-ctc"] = .notDownloaded
 
         #expect(tab.statusHeadline == "Not ready")
         #expect(tab.statusDetail.contains("has not been downloaded"))
-        #expect(tab.statusDetail.lowercased().contains("will fail"))
+        #expect(tab.statusDetail.lowercased().contains("not verified"))
+        #expect(tab.statusDetail.lowercased().contains("may fail"))
     }
 
     @Test func theStatusBlockDescribesTheSelectionRatherThanTheTabBeingViewed() {
@@ -242,7 +244,7 @@ import Testing
     @Test func changingTheEndpointDropsAProbeThatProvedADifferentServer() {
         let id = UUID()
         let tab = tabModel(endpointSettings(id: id))
-        tab.endpointProbe = .succeeded(id: id, model: "whisper-1")
+        tab.endpointProbe = .succeeded(EndpointProbeTarget(id: id, model: "whisper-1"))
 
         tab.select(endpointID: UUID())
 
@@ -253,7 +255,7 @@ import Testing
     @Test func changingTheEndpointModelDropsAProbeThatProvedADifferentModel() {
         let id = UUID()
         let tab = tabModel(endpointSettings(id: id))
-        tab.endpointProbe = .succeeded(id: id, model: "whisper-1")
+        tab.endpointProbe = .succeeded(EndpointProbeTarget(id: id, model: "whisper-1"))
 
         tab.select(endpointModel: "gpt-4o-transcribe")
 
@@ -267,12 +269,14 @@ import Testing
         let tab = tabModel(endpointSettings(id: id))
         #expect(tab.probeCaption.contains("test clip"))
 
-        tab.endpointProbe = .succeeded(id: id, model: "whisper-1")
+        tab.endpointProbe = .succeeded(EndpointProbeTarget(id: id, model: "whisper-1"))
         #expect(tab.probeCaption == "This endpoint transcribed a one-second test clip.")
 
-        tab.endpointProbe = .failed("Could not reach the server.")
-        // The reason is shown once, in the status block, not twice.
-        #expect(!tab.probeCaption.contains("Could not reach the server."))
+        tab.endpointProbe = .failed(
+            target: EndpointProbeTarget(id: id, model: "whisper-1"),
+            message: "Could not reach the server."
+        )
+        #expect(tab.probeCaption.contains("Could not reach the server."))
         #expect(tab.probeCaption.lowercased().contains("failed"))
     }
 
@@ -297,10 +301,40 @@ import Testing
         }
 
         #expect(asked == .endpoint(id: id, model: "whisper-1"))
-        #expect(tab.endpointProbe == .succeeded(id: id, model: "whisper-1"))
+        #expect(tab.endpointProbe
+                == .succeeded(EndpointProbeTarget(id: id, model: "whisper-1")))
         // Proving the endpoint works does not switch to it.
         #expect(tab.holder.settings.transcriptionSource == .local(modelID: "large-v3-turbo"))
         #expect(tab.selectableSources.contains { $0.source == .endpoint(id: id, model: "whisper-1") })
+    }
+
+    @Test func aProbeCanTargetTheActiveEndpointInsteadOfTheConfiguredEndpoint() async {
+        let activeID = UUID()
+        let configuredID = UUID()
+        let activeSource = TranscriptionSource.endpoint(id: activeID, model: "active-model")
+        var settings = endpointSettings(id: activeID, model: "active-model")
+        settings.lastTranscriptionEndpointID = configuredID
+        settings.lastTranscriptionEndpointModel = "configured-model"
+        let tab = tabModel(settings)
+        var asked: TranscriptionSource?
+
+        await tab.probeEndpoint(activeSource) { source in
+            asked = source
+            throw MacomprendoError.providerUnreachable(endpointName: "Active")
+        }
+
+        #expect(asked == activeSource)
+        guard case .failed(let target, let message) = tab.endpointProbe else {
+            Issue.record("expected a failed probe, got \(String(describing: tab.endpointProbe))")
+            return
+        }
+        #expect(target == EndpointProbeTarget(id: activeID, model: "active-model"))
+        #expect(message.contains("Active"))
+        #expect(tab.readiness
+                == .notReady(
+                    reason: message,
+                    fix: .testEndpoint(EndpointProbeTarget(id: activeID, model: "active-model"))
+                ))
     }
 
     @Test func probingWithNoEndpointConfiguredSaysSoRatherThanReachingForTheActiveSource() async {
@@ -312,7 +346,7 @@ import Testing
         await tab.probeEndpoint { _ in asked = true; return ScriptedTranscriber(text: "hi") }
 
         #expect(!asked)
-        guard case .failed(let message) = tab.endpointProbe else {
+        guard case .failed(_, let message) = tab.endpointProbe else {
             Issue.record("expected a failed probe, got \(String(describing: tab.endpointProbe))")
             return
         }
@@ -331,7 +365,8 @@ import Testing
 
         await tab.probeEndpoint { _ in transcriber }
 
-        #expect(tab.endpointProbe == .succeeded(id: id, model: "whisper-1"))
+        #expect(tab.endpointProbe
+                == .succeeded(EndpointProbeTarget(id: id, model: "whisper-1")))
         #expect(tab.readiness == .ready)
         #expect(!tab.isProbing)
     }
@@ -341,7 +376,7 @@ import Testing
 
         await tab.probeEndpoint { _ in throw MacomprendoError.providerUnreachable(endpointName: "Example") }
 
-        guard case .failed(let message) = tab.endpointProbe else {
+        guard case .failed(_, let message) = tab.endpointProbe else {
             Issue.record("expected a failed probe, got \(String(describing: tab.endpointProbe))")
             return
         }
@@ -349,12 +384,79 @@ import Testing
         #expect(tab.statusHeadline == "Not ready")
     }
 
+    @Test func aConfiguredEndpointsFailureDoesNotContaminateADifferentActiveEndpoint() async {
+        let activeID = UUID()
+        let configuredID = UUID()
+        var settings = endpointSettings(id: activeID, model: "active-model")
+        settings.lastTranscriptionEndpointID = configuredID
+        settings.lastTranscriptionEndpointModel = "configured-model"
+        let tab = tabModel(settings)
+
+        await tab.probeEndpoint { source in
+            #expect(source == .endpoint(id: configuredID, model: "configured-model"))
+            throw MacomprendoError.providerUnreachable(endpointName: "Configured")
+        }
+
+        #expect(tab.readiness
+                == .notReady(reason: "This endpoint has not been tested yet.",
+                             fix: .testEndpoint(
+                                EndpointProbeTarget(id: activeID, model: "active-model"))))
+    }
+
+    @Test func anInactiveConfiguredEndpointsFailureIsVisibleBesideItsTestButton() async {
+        var settings = Settings.default
+        settings.lastTranscriptionEndpointID = UUID()
+        settings.lastTranscriptionEndpointModel = "whisper-1"
+        let tab = tabModel(settings)
+
+        await tab.probeEndpoint { _ in
+            throw MacomprendoError.providerUnreachable(endpointName: "Configured")
+        }
+
+        #expect(tab.probeCaption.contains("Configured"))
+    }
+
+    @Test func aLateProbeResultStaysAttachedToTheModelThatWasActuallyTested() async {
+        let id = UUID()
+        let tab = tabModel(endpointSettings(id: id, model: "model-a"))
+        let gate = AsyncGate()
+        let http = StubHTTPClient()
+        http.stub("POST", path: "/v1/audio/transcriptions", body: Data(#"{"text":"hi"}"#.utf8))
+        let transcriber = OpenAICompatibleTranscriber(
+            endpoint: Endpoint(id: id, name: "Example", kind: .openAICompatible,
+                               baseURL: URL(string: "https://api.example.com")!, apiKeyRef: nil),
+            apiKey: nil, model: "model-a", http: http)
+
+        let probe = Task {
+            await tab.probeEndpoint { _ in
+                await gate.wait()
+                return transcriber
+            }
+        }
+        await waitFor("endpoint probe to reach the gate") { gate.waiterCount > 0 }
+
+        tab.select(endpointModel: "model-b")
+        gate.open()
+        await probe.value
+
+        #expect(tab.endpointProbe == .succeeded(EndpointProbeTarget(id: id, model: "model-a")))
+        #expect(tab.probeCaption == "Posts a one-second test clip to the real transcription route.")
+        #expect(BackendReadiness.of(
+            source: .endpoint(id: id, model: "model-b"),
+            states: [:],
+            endpointProbe: tab.endpointProbe
+        ) == .notReady(
+            reason: "This endpoint has not been tested yet.",
+            fix: .testEndpoint(EndpointProbeTarget(id: id, model: "model-b"))
+        ))
+    }
+
     @Test func probingSomethingThatIsNotAnEndpointSaysSoRatherThanClaimingSuccess() async {
         let tab = tabModel(endpointSettings())
 
         await tab.probeEndpoint { _ in ScriptedTranscriber(text: "hi") }
 
-        guard case .failed(let message) = tab.endpointProbe else {
+        guard case .failed(_, let message) = tab.endpointProbe else {
             Issue.record("expected a failed probe, got \(String(describing: tab.endpointProbe))")
             return
         }
