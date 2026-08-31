@@ -158,4 +158,55 @@ import Testing
             )
         }
     }
+
+    @Test func buildsAWhisperTranscriberForAWhisperModel() async throws {
+        let models = StubModelManager()
+        models.resolvedEngines["base"] = .whisperCpp
+        models.resolvedFiles["base"] = [.ggml: URL(fileURLWithPath: "/models/ggml-base.bin")]
+        let factory = ProviderFactory(http: StubHTTPClient(), keychain: InMemoryKeychainStore())
+
+        let transcriber = try await factory.transcriber(
+            for: .local(modelID: "base"), endpoints: [], models: models
+        )
+
+        #expect(transcriber is WhisperCppTranscriber)
+    }
+
+    @Test func buildsAGigaAMTranscriberForAGigaAMModel() async throws {
+        let models = StubModelManager()
+        models.resolvedEngines["gigaam-v3-e2e-ctc"] = .gigaAM
+        models.resolvedFiles["gigaam-v3-e2e-ctc"] = [
+            .ctcModel: URL(fileURLWithPath: "/models/gigaam-v3-e2e-ctc-model.onnx"),
+            .tokens: URL(fileURLWithPath: "/models/gigaam-v3-e2e-ctc-tokens.txt")
+        ]
+        let factory = ProviderFactory(http: StubHTTPClient(), keychain: InMemoryKeychainStore())
+
+        let transcriber = try await factory.transcriber(
+            for: .local(modelID: "gigaam-v3-e2e-ctc"), endpoints: [], models: models
+        )
+
+        #expect(transcriber is GigaAMTranscriber)
+    }
+
+    @Test func throwsModelMissingWhenTheModelIsNotResolved() async {
+        let factory = ProviderFactory(http: StubHTTPClient(), keychain: InMemoryKeychainStore())
+        await #expect(throws: MacomprendoError.modelMissing("absent")) {
+            _ = try await factory.transcriber(
+                for: .local(modelID: "absent"), endpoints: [], models: StubModelManager()
+            )
+        }
+    }
+
+    @Test func throwsModelMissingWhenAGigaAMFileSetIsIncomplete() async {
+        let models = StubModelManager()
+        models.resolvedEngines["broken"] = .gigaAM
+        models.resolvedFiles["broken"] = [.ctcModel: URL(fileURLWithPath: "/models/m.onnx")]
+        let factory = ProviderFactory(http: StubHTTPClient(), keychain: InMemoryKeychainStore())
+
+        await #expect(throws: MacomprendoError.self) {
+            _ = try await factory.transcriber(
+                for: .local(modelID: "broken"), endpoints: [], models: models
+            )
+        }
+    }
 }

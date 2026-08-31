@@ -36,11 +36,18 @@ struct ProviderFactory: Sendable {
     ) async throws -> any TranscriptionProvider {
         switch source {
         case .local(let modelID):
-            guard let resolved = await models.resolved(modelID),
-                  let modelURL = resolved.files[.ggml] else {
+            guard let resolved = await models.resolved(modelID) else {
                 throw MacomprendoError.modelMissing(modelID)
             }
-            return WhisperCppTranscriber(modelURL: modelURL)
+            switch resolved.engine {
+            case .whisperCpp:
+                guard let modelURL = resolved.files[.ggml] else {
+                    throw MacomprendoError.modelMissing(modelID)
+                }
+                return WhisperCppTranscriber(modelURL: modelURL)
+            case .gigaAM:
+                return try GigaAMTranscriber(files: resolved.files)
+            }
 
         case .endpoint(let id, let model):
             guard let endpoint = endpoints.first(where: { $0.id == id }) else {
