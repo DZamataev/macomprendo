@@ -61,6 +61,13 @@ struct OpenAICompatibleTranscriber: TranscriptionProvider {
         return decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Exercises the same route dictation will use. `listModels()` would only prove
+    /// reachability and credentials; a status that says "ready" must mean that the thing
+    /// which runs at hotkey-press time has run.
+    func probe() async throws {
+        _ = try await transcribe(Array(repeating: 0, count: 16_000), sampleRate: 16_000, language: nil)
+    }
+
     /// Builds a `multipart/form-data` body: the file part first (field name `file`),
     /// then each simple field, then the closing boundary. Every terminator is CRLF.
     static func multipartBody(
