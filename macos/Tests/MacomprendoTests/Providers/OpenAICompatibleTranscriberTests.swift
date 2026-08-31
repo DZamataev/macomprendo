@@ -177,6 +177,42 @@ import Testing
         }
     }
 
+    @Test func probePostsARealOneSecondToneToTheTranscriptionsRoute() async throws {
+        let http = StubHTTPClient()
+        stubOK(http)
+
+        try await makeTranscriber(http).probe()
+
+        let request = http.requests[0]
+        #expect(request.method == "POST")
+        #expect(request.url == URL(string: "https://api.example.com/v1/audio/transcriptions")!)
+
+        // The 44-byte WAV header only depends on sample count and rate, not sample values,
+        // so a silent reference clip of the same length yields byte-identical header bytes.
+        let referenceHeader = WAVEncoder.encode(pcm: Array(repeating: 0, count: 16_000), sampleRate: 16_000)
+            .prefix(44)
+        let body = try #require(request.body)
+        let headerRange = try #require(body.range(of: Data(referenceHeader)))
+        #expect(headerRange.count == 44)
+
+        // The 32,000 bytes of 16-bit audio that follow must not be silence — that is the
+        // whole point of the fix: a VAD/no-speech filter could reject pure silence.
+        let audioStart = headerRange.upperBound
+        let audioEnd = audioStart + 32_000
+        #expect(audioEnd <= body.count)
+        let audioBytes = body[audioStart..<audioEnd]
+        #expect(audioBytes.contains { $0 != 0 })
+    }
+
+    @Test func probePropagatesTheUnderlyingTranscribeError() async {
+        let http = StubHTTPClient()
+        http.stub("POST", path: "/v1/audio/transcriptions", status: 500, body: Data("boom".utf8))
+
+        await #expect(throws: MacomprendoError.providerHTTP(status: 500, body: "boom")) {
+            try await makeTranscriber(http).probe()
+        }
+    }
+
     @Test func generatesAUniqueBoundaryWhenNoneIsSupplied() async throws {
         let http = StubHTTPClient()
         stubOK(http)

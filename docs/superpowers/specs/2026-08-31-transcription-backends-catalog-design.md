@@ -249,11 +249,12 @@ enum FixAction: Sendable, Equatable {
 Computed, never stored. A local model is ready when every file is on disk. An endpoint is
 ready when a probe has succeeded in this session.
 
-The endpoint probe posts a one-second WAV of silence to
-`/v1/audio/transcriptions`. `ProvidersViewModel` already probes LLM endpoints with
-`listModels()`, but that only proves reachability and credentials — it does not prove the
-transcription route exists. A status that says "ready" must mean the thing that will run at
-hotkey-press time has run.
+The endpoint probe posts a one-second WAV to `/v1/audio/transcriptions`: a quiet, deterministic
+440 Hz tone rather than digital silence, since a server's VAD or no-speech filter can reject pure
+silence and turn a working endpoint into a false "not ready". `ProvidersViewModel` already probes
+LLM endpoints with `listModels()`, but that only proves reachability and credentials — it does not
+prove the transcription route exists. A status that says "ready" must mean the thing that will run
+at hotkey-press time has run.
 
 ## Settings schema
 

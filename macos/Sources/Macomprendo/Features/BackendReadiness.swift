@@ -41,7 +41,7 @@ enum BackendReadiness: Sendable, Equatable {
         case .endpoint(let id, let model):
             // Checked before the probe: a probe can only have succeeded against some model
             // name, and a blank one would send an unusable request at hotkey-press time.
-            guard !model.trimmingCharacters(in: .whitespaces).isEmpty else {
+            guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return .notReady(reason: "No model name is set.", fix: .selectModel)
             }
             switch endpointProbe {

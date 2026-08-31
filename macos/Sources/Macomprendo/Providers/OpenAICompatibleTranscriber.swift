@@ -64,8 +64,19 @@ struct OpenAICompatibleTranscriber: TranscriptionProvider {
     /// Exercises the same route dictation will use. `listModels()` would only prove
     /// reachability and credentials; a status that says "ready" must mean that the thing
     /// which runs at hotkey-press time has run.
+    ///
+    /// Sends a quiet tone rather than digital silence: many OpenAI-compatible servers run
+    /// VAD or no-speech detection over the upload and would reject pure silence with an
+    /// HTTP error, turning a perfectly working endpoint into a false "not ready". The tone
+    /// is computed here, not randomised, so the probe is byte-identical on every run.
     func probe() async throws {
-        _ = try await transcribe(Array(repeating: 0, count: 16_000), sampleRate: 16_000, language: nil)
+        let sampleRate = 16_000
+        let frequency: Float = 440
+        let amplitude: Float = 0.05
+        let tone = (0..<sampleRate).map { sample in
+            amplitude * sin(2 * .pi * frequency * Float(sample) / Float(sampleRate))
+        }
+        _ = try await transcribe(tone, sampleRate: sampleRate, language: nil)
     }
 
     /// Builds a `multipart/form-data` body: the file part first (field name `file`),
