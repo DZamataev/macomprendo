@@ -21,9 +21,9 @@ enum TranscriptionLanguages {
     ]
 }
 
-/// One sub-tab per transcription backend. The sub-tab *is* the selection: opening GigaAM makes
-/// GigaAM the engine dictation runs. That is deliberate, and the status block right under the
-/// tabs says so in words rather than leaving it to be discovered by pressing the hotkey.
+/// The active-model selector and its status sit at the top; the three sub-tabs below are pure
+/// navigation. Moving between them changes what is on screen and nothing else — only the
+/// selector changes what transcribes.
 struct DictationTab: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var tab: DictationTabModel
@@ -32,26 +32,23 @@ struct DictationTab: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: tabBinding) {
+            header
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+
+            Divider()
+
+            Picker("", selection: $tab.viewedTab) {
                 ForEach(DictationBackendTab.allCases) { candidate in
-                    Text(tab.tabTitle(for: candidate)).tag(candidate)
+                    Text(candidate.title).tag(candidate)
                 }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .padding([.horizontal, .top])
 
-            // Pinned above the scrolling form rather than filed at the bottom of it: on a tab
-            // listing nine models with their briefs, a status block below the fold would be
-            // exactly the "you can only find this out by dictating" failure it exists to avoid.
-            statusBanner
-                .padding(.horizontal)
-                .padding(.vertical, 10)
-
-            Divider()
-
             Form {
-                switch tab.activeTab {
+                switch tab.viewedTab {
                 case .whisperCpp, .gigaAM:
                     modelsSection
                     parametersSection
@@ -68,11 +65,38 @@ struct DictationTab: View {
         .onChange(of: models.rows) { _, rows in tab.adopt(rows) }
     }
 
-    // MARK: - Status
+    // MARK: - Selector and status
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Picker("Active model", selection: activeSource) {
+                    ForEach(tab.selectableSources) { entry in
+                        Text(entry.menuTitle).tag(entry.source)
+                    }
+                }
+                .disabled(!tab.hasReadySource)
+
+                if !tab.selectorCaption.isEmpty {
+                    Text(tab.selectorCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            statusBlock
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 
     private var isReady: Bool { tab.readiness == .ready }
 
-    private var statusBanner: some View {
+    /// The only status on this screen, and it describes the selection rather than whatever
+    /// sub-tab happens to be open. Two blocks would answer "what runs when I press the
+    /// hotkey" twice with no way to tell which answer is real.
+    private var statusBlock: some View {
         HStack(alignment: .top, spacing: 8) {
             Icon(isReady ? .success : .warning, size: 14)
                 .foregroundStyle(isReady ? Color.green : Color.orange)
@@ -94,19 +118,24 @@ struct DictationTab: View {
         if case .notReady(_, let fix) = tab.readiness, let fix {
             switch fix {
             case .download(let modelID):
-                Button("Download") { models.download(modelID) }
+                Button("Download") {
+                    tab.reveal(.local(modelID: modelID))
+                    models.download(modelID)
+                }
             case .testEndpoint:
                 testButton
             case .selectModel:
-                Button("Name a model") { endpointModelFocused = true }
+                Button("Name a model") {
+                    tab.viewedTab = .endpoint
+                    endpointModelFocused = true
+                }
             }
         }
     }
 
     private var testButton: some View {
         Button(tab.isProbing ? "Testing…" : "Test") {
-            let provider = model.transcriberProvider
-            Task { await tab.probeEndpoint { try await provider() } }
+            Task { await tab.probeEndpoint { try await model.transcriber(for: $0) } }
         }
         .disabled(tab.isProbing)
     }
@@ -115,7 +144,7 @@ struct DictationTab: View {
 
     private var modelsSection: some View {
         Section("Models") {
-            ForEach(tab.rows(for: tab.activeTab)) { entry in
+            ForEach(tab.rows(for: tab.viewedTab)) { entry in
                 modelRow(entry)
             }
 
@@ -133,21 +162,21 @@ struct DictationTab: View {
     @ViewBuilder
     private func modelRow(_ entry: LocalASRModel) -> some View {
         let state = models.rows.first { $0.id == entry.id }?.state
-        let selected = tab.selectedModelID == entry.id
+        let active = tab.selectedModelID == entry.id
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(entry.displayName)
-                            .fontWeight(selected ? .semibold : .regular)
-                        if selected { activeBadge }
+                            .fontWeight(active ? .semibold : .regular)
+                        if active { activeBadge }
                     }
                     Text("\(ModelsViewModel.sizeText(entry.totalSizeBytes)) · "
                          + DictationTabModel.languagesText(entry.languages))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if selected {
+                    if active {
                         Text(Self.stateCaption(for: state))
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -155,7 +184,10 @@ struct DictationTab: View {
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 6) {
-                    if !selected {
+                    // Offered only for a model that can actually run: a shortcut for the
+                    // selector, which lists exactly those. A model still downloading or
+                    // missing offers its download control instead.
+                    if !active, case .downloaded = state {
                         Button("Use this model") { tab.select(modelID: entry.id) }
                     }
                     modelStateView(entry.id, state)
@@ -210,7 +242,7 @@ struct DictationTab: View {
             // What a tab offers is the model's statement, not the view's: an empty
             // `parameterSummary` means "this tab has real controls". Only the two local tabs
             // reach here — the outer switch sends `.endpoint` to its own section.
-            if tab.activeTab.parameterSummary.isEmpty {
+            if tab.viewedTab.parameterSummary.isEmpty {
                 Picker("Spoken language", selection: language) {
                     ForEach(TranscriptionLanguages.options, id: \.name) { option in
                         Text(option.name).tag(option.code)
@@ -228,7 +260,7 @@ struct DictationTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text(tab.activeTab.parameterSummary)
+                Text(tab.viewedTab.parameterSummary)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -240,7 +272,6 @@ struct DictationTab: View {
 
     // MARK: - Endpoint
 
-    @ViewBuilder
     private var endpointSection: some View {
         Section("Endpoint") {
             Picker("Endpoint", selection: endpointID) {
@@ -251,12 +282,13 @@ struct DictationTab: View {
             TextField("Model", text: endpointModel)
                 .focused($endpointModelFocused)
 
-            if case .endpoint(let id, let modelName) = model.settings.transcriptionSource {
-                Text("Sends WAV audio to \(baseURL(for: id))/v1/audio/transcriptions "
-                     + "as \u{201c}\(modelName)\u{201d}. Your dictation is sent to that server.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text("Sends WAV audio to \(baseURL(for: tab.configuredEndpointID))"
+                 + "/v1/audio/transcriptions as \u{201c}\(tab.configuredEndpointModel)\u{201d}. "
+                 + "Your dictation is sent to that server. Configuring it here does not switch "
+                 + "to it — once its test passes it joins the Active model list above.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .firstTextBaseline) {
                 testButton
@@ -270,26 +302,18 @@ struct DictationTab: View {
 
     // MARK: - Bindings
 
-    private var tabBinding: Binding<DictationBackendTab> {
-        Binding(get: { tab.activeTab }, set: { tab.select(tab: $0) })
+    private var activeSource: Binding<TranscriptionSource> {
+        Binding(get: { tab.activeSource }, set: { tab.activate($0) })
     }
 
     private var endpointID: Binding<UUID> {
         Binding(
-            get: {
-                if case .endpoint(let id, _) = model.settings.transcriptionSource { return id }
-                return Endpoint.ollamaLocalID
-            },
+            get: { tab.configuredEndpointID ?? model.settings.endpoints.first?.id ?? Endpoint.ollamaLocalID },
             set: { tab.select(endpointID: $0) })
     }
 
     private var endpointModel: Binding<String> {
-        Binding(
-            get: {
-                if case .endpoint(_, let modelName) = model.settings.transcriptionSource { return modelName }
-                return ""
-            },
-            set: { tab.select(endpointModel: $0) })
+        Binding(get: { tab.configuredEndpointModel }, set: { tab.select(endpointModel: $0) })
     }
 
     private var language: Binding<String?> {
@@ -322,7 +346,8 @@ struct DictationTab: View {
         }
     }
 
-    private func baseURL(for id: UUID) -> String {
-        model.settings.endpoints.first { $0.id == id }?.baseURL.absoluteString ?? "the endpoint"
+    private func baseURL(for id: UUID?) -> String {
+        guard let id else { return "the endpoint" }
+        return model.settings.endpoints.first { $0.id == id }?.baseURL.absoluteString ?? "the endpoint"
     }
 }

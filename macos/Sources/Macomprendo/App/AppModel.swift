@@ -117,6 +117,17 @@ final class AppModel: ObservableObject {
         persist()
     }
 
+    /// A provider for an arbitrary source, for the Dictation tab's endpoint test: the endpoint
+    /// being configured there is not necessarily the one that transcribes.
+    func transcriber(for source: TranscriptionSource) async throws -> any TranscriptionProvider {
+        try await env.factory.transcriber(
+            for: source,
+            endpoints: settings.endpoints,
+            models: env.models,
+            whisper: WhisperOptions(threads: settings.whisperThreads,
+                                    translate: settings.whisperTranslate))
+    }
+
     /// Called once at launch: applies hotkey enablement and starts routing hotkey events.
     func start() {
         if textFeatures == nil {

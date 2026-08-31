@@ -49,7 +49,25 @@ import Testing
 
     @Test func aSuccessfullyProbedEndpointIsReady() {
         #expect(BackendReadiness.of(source: .endpoint(id: endpointID, model: "whisper-1"),
-                                    states: [:], endpointProbe: .succeeded) == .ready)
+                                    states: [:],
+                                    endpointProbe: .succeeded(id: endpointID, model: "whisper-1"))
+                == .ready)
+    }
+
+    @Test func aProbeOfADifferentServerOrModelCountsAsUntested() {
+        // A probe proves that one server answered on one model name. Carrying that verdict
+        // over to another endpoint — or another model on the same endpoint — would be exactly
+        // the false "ready" the probe exists to prevent.
+        #expect(BackendReadiness.of(source: .endpoint(id: endpointID, model: "whisper-1"),
+                                    states: [:],
+                                    endpointProbe: .succeeded(id: UUID(), model: "whisper-1"))
+                == .notReady(reason: "This endpoint has not been tested yet.",
+                             fix: .testEndpoint(id: endpointID)))
+        #expect(BackendReadiness.of(source: .endpoint(id: endpointID, model: "whisper-1"),
+                                    states: [:],
+                                    endpointProbe: .succeeded(id: endpointID, model: "gpt-4o-transcribe"))
+                == .notReady(reason: "This endpoint has not been tested yet.",
+                             fix: .testEndpoint(id: endpointID)))
     }
 
     @Test func aFailedProbeReportsWhyAndOffersARetest() {
@@ -60,7 +78,7 @@ import Testing
 
     @Test func anEndpointWithABlankModelNameIsNotReadyEvenAfterASuccessfulProbe() {
         #expect(BackendReadiness.of(source: .endpoint(id: endpointID, model: "  "),
-                                    states: [:], endpointProbe: .succeeded)
+                                    states: [:], endpointProbe: .succeeded(id: endpointID, model: "  "))
                 == .notReady(reason: "No model name is set.", fix: .selectModel))
     }
 }

@@ -7,9 +7,11 @@ enum FixAction: Sendable, Equatable {
     case selectModel
 }
 
-/// The outcome of the last endpoint probe in this session.
+/// The outcome of the last endpoint probe in this session. A success carries *what it
+/// proved* — one server, one model — so that a verdict cannot be read as covering an
+/// endpoint or a model name that was never contacted.
 enum EndpointProbeResult: Sendable, Equatable {
-    case succeeded
+    case succeeded(id: UUID, model: String)
     case failed(String)
 }
 
@@ -45,11 +47,14 @@ enum BackendReadiness: Sendable, Equatable {
                 return .notReady(reason: "No model name is set.", fix: .selectModel)
             }
             switch endpointProbe {
-            case .succeeded:
+            case .succeeded(let probedID, let probedModel)
+                where probedID == id && probedModel == model:
                 return .ready
             case .failed(let message):
                 return .notReady(reason: message, fix: .testEndpoint(id: id))
-            case nil:
+            // A success against a different server or a different model name proves nothing
+            // about this one, so it reads exactly like never having been tested.
+            case .succeeded, nil:
                 return .notReady(reason: "This endpoint has not been tested yet.",
                                  fix: .testEndpoint(id: id))
             }

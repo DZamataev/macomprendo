@@ -3,7 +3,9 @@ import Foundation
 enum DictationMode: String, Codable, Sendable { case hold, toggle }
 enum InsertMethod: String, Codable, Sendable { case auto, paste, typing }
 
-enum TranscriptionSource: Codable, Sendable, Equatable {
+/// `Hashable` so the active-model selector can tag its `Picker` rows with the source itself
+/// rather than with a stringly-typed stand-in.
+enum TranscriptionSource: Codable, Sendable, Equatable, Hashable {
     /// A whisper ggml model id from `ModelCatalog`, e.g. "large-v3-turbo".
     case local(modelID: String)
     /// An OpenAI-compatible `/v1/audio/transcriptions` endpoint.
@@ -157,10 +159,9 @@ struct Settings: Codable, Sendable, Equatable {
     var defaultPresetIDs: [String: UUID]
     /// Key: screen identifier, value: the remembered Quick Panel frame.
     var quickPanelFrames: [String: CGRect]
-    /// `ASREngine.rawValue` → the model id last selected for that engine, so returning to a
-    /// backend's sub-tab restores what was chosen there rather than the engine's default.
-    var lastModelByEngine: [String: String]
-    /// The endpoint last configured for transcription. Stored as its two components rather
+    /// The endpoint configured for transcription, which is not necessarily the active one:
+    /// the endpoint sub-tab configures a server, and the selector activates it. Stored as its
+    /// two components rather
     /// than as a `TranscriptionSource?`, because only one of that enum's cases would ever be
     /// valid here and a type that can hold an impossible value invites the bug of writing one.
     var lastTranscriptionEndpointID: UUID?
@@ -191,7 +192,6 @@ struct Settings: Codable, Sendable, Equatable {
             seededFactoryVersion: 0,
             defaultPresetIDs: [:],
             quickPanelFrames: [:],
-            lastModelByEngine: [:],
             lastTranscriptionEndpointID: nil,
             lastTranscriptionEndpointModel: nil,
             whisperThreads: nil,
@@ -245,7 +245,6 @@ extension Settings {
         defaultPresetIDs = try c.decodeIfPresent([String: UUID].self, forKey: .defaultPresetIDs)
             ?? d.defaultPresetIDs
         quickPanelFrames = try c.decodeIfPresent([String: CGRect].self, forKey: .quickPanelFrames) ?? d.quickPanelFrames
-        lastModelByEngine = try c.decodeIfPresent([String: String].self, forKey: .lastModelByEngine) ?? [:]
         lastTranscriptionEndpointID = try c.decodeIfPresent(UUID.self, forKey: .lastTranscriptionEndpointID)
         lastTranscriptionEndpointModel = try c.decodeIfPresent(String.self, forKey: .lastTranscriptionEndpointModel)
         whisperThreads = try c.decodeIfPresent(Int.self, forKey: .whisperThreads)

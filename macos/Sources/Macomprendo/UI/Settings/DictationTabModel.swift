@@ -38,12 +38,29 @@ enum DictationBackendTab: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// One row of the active-model selector.
+struct SelectableSource: Identifiable, Equatable, Sendable {
+    let source: TranscriptionSource
+    let name: String
+    /// False only for the active source when it can no longer run — it is listed anyway, so
+    /// the `Picker`'s selection is always among its options and the user's own setting stays
+    /// visible with its problem rather than silently vanishing.
+    let isReady: Bool
+
+    var id: TranscriptionSource { source }
+
+    var menuTitle: String { isReady ? name : "\(name) — not ready" }
+}
+
 @MainActor
 final class DictationTabModel: ObservableObject {
     @Published var modelStates: [String: ModelState] = [:]
     @Published var endpointProbe: EndpointProbeResult?
     /// True while a probe is in flight, so the Test button can say so and not be pressed twice.
     @Published private(set) var isProbing = false
+    /// Which sub-tab is on screen. Pure view state: selection is the selector's job, so moving
+    /// between tabs writes nothing and cannot change what transcribes.
+    @Published var viewedTab: DictationBackendTab
 
     /// Read/write access to the live document, the same seam `PromptsTab`, `SpeechTab` and
     /// `QuickPanelController` use. `AppModel` conforms; tests pass `ScriptedSettingsHolder`.
@@ -53,10 +70,14 @@ final class DictationTabModel: ObservableObject {
     init(holder: any SettingsHolding, catalog: [LocalASRModel] = ModelCatalog.all) {
         self.holder = holder
         self.catalog = catalog
+        // Open where the active model lives. A read, not a write.
+        viewedTab = Self.tab(of: holder.settings.transcriptionSource, in: catalog)
     }
 
-    var activeTab: DictationBackendTab {
-        switch holder.settings.transcriptionSource {
+    /// The sub-tab a source belongs to.
+    static func tab(of source: TranscriptionSource,
+                    in catalog: [LocalASRModel]) -> DictationBackendTab {
+        switch source {
         case .endpoint:
             return .endpoint
         case .local(let modelID):
@@ -65,56 +86,121 @@ final class DictationTabModel: ObservableObject {
         }
     }
 
+    /// Brings the sub-tab a source lives on into view, so a fix button can point at the thing
+    /// it is about. Navigation only — nothing is written.
+    func reveal(_ source: TranscriptionSource) {
+        viewedTab = Self.tab(of: source, in: catalog)
+    }
+
     func rows(for tab: DictationBackendTab) -> [LocalASRModel] {
         guard let engine = tab.engine else { return [] }
         return catalog.filter { $0.engine == engine }
     }
 
-    /// Selecting a tab configures that backend. This deliberately gives a navigation control
-    /// a persistent side effect — see the spec — so the status block states it in words
-    /// rather than leaving it to be discovered by dictating.
-    func select(tab: DictationBackendTab) {
-        guard tab != activeTab else { return }
-        switch tab {
-        case .endpoint:
-            holder.settings.transcriptionSource = .endpoint(
-                id: holder.settings.lastTranscriptionEndpointID
-                    ?? holder.settings.endpoints.first?.id
-                    ?? Endpoint.ollamaLocalID,
-                model: holder.settings.lastTranscriptionEndpointModel ?? "whisper-1"
-            )
-        case .whisperCpp, .gigaAM:
-            guard let engine = tab.engine else { return }
-            let remembered = holder.settings.lastModelByEngine[engine.rawValue]
-            let fallback = catalog.first { $0.engine == engine }?.id
-            guard let modelID = remembered ?? fallback else { return }
-            holder.settings.transcriptionSource = .local(modelID: modelID)
+    // MARK: - The active-model selector
+
+    var activeSource: TranscriptionSource { holder.settings.transcriptionSource }
+
+    /// The one control that changes what transcribes.
+    func activate(_ source: TranscriptionSource) {
+        guard source != holder.settings.transcriptionSource else { return }
+        if case .endpoint(let id, let model) = source {
+            holder.settings.lastTranscriptionEndpointID = id
+            holder.settings.lastTranscriptionEndpointModel = model
+        }
+        holder.settings.transcriptionSource = source
+    }
+
+    /// The per-row shortcut. A shortcut for the selector, not a second source of truth.
+    func select(modelID: String) {
+        guard catalog.contains(where: { $0.id == modelID }) else { return }
+        activate(.local(modelID: modelID))
+    }
+
+    /// Everything that can run right now, plus the active source when it cannot.
+    var selectableSources: [SelectableSource] {
+        var entries = catalog
+            .filter { isReady(.local(modelID: $0.id)) }
+            .map { SelectableSource(source: .local(modelID: $0.id),
+                                    name: $0.displayName,
+                                    isReady: true) }
+
+        if let endpoint = configuredEndpoint, isReady(endpoint) {
+            entries.append(SelectableSource(source: endpoint, name: name(of: endpoint), isReady: true))
+        }
+
+        let active = holder.settings.transcriptionSource
+        if !entries.contains(where: { $0.source == active }) {
+            entries.append(SelectableSource(source: active, name: name(of: active), isReady: false))
+        }
+        return entries
+    }
+
+    /// Whether anything in the list can actually run. False on a fresh install, where the
+    /// selector has nothing to offer and says so instead of showing a menu that cannot help.
+    var hasReadySource: Bool {
+        selectableSources.contains { $0.isReady }
+    }
+
+    /// Empty when the selector is usable — the same convention as `parameterSummary`.
+    var selectorCaption: String {
+        hasReadySource ? "" : "No model is ready — download one below."
+    }
+
+    /// Can this source transcribe right now? The same rule the status block uses, so the list
+    /// and the status can never disagree.
+    func isReady(_ source: TranscriptionSource) -> Bool {
+        BackendReadiness.of(source: source, states: modelStates, endpointProbe: endpointProbe) == .ready
+    }
+
+    /// The endpoint the endpoint sub-tab has configured, which is not necessarily active.
+    /// `nil` when no model name has been given: an endpoint without one cannot be probed and
+    /// cannot transcribe.
+    var configuredEndpoint: TranscriptionSource? {
+        guard let id = configuredEndpointID else { return nil }
+        let model = configuredEndpointModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else { return nil }
+        return .endpoint(id: id, model: model)
+    }
+
+    // MARK: - Configuring the endpoint
+
+    /// What the endpoint sub-tab's own controls show. An active endpoint source wins; failing
+    /// that, whatever was configured; failing that, the first endpoint, which is what the
+    /// picker would land on anyway — so the Test button reaches the server on screen rather
+    /// than reporting that nothing is configured.
+    var configuredEndpointID: UUID? {
+        if case .endpoint(let id, _) = holder.settings.transcriptionSource { return id }
+        return holder.settings.lastTranscriptionEndpointID ?? holder.settings.endpoints.first?.id
+    }
+
+    var configuredEndpointModel: String {
+        if case .endpoint(_, let model) = holder.settings.transcriptionSource { return model }
+        return holder.settings.lastTranscriptionEndpointModel ?? ""
+    }
+
+    /// Configuring an endpoint records it; it becomes active only when chosen in the selector.
+    /// The one exception is the endpoint that is *already* transcribing: editing that is not
+    /// an activation, and leaving the active source on the old value would be a lie.
+    ///
+    /// Either edit invalidates the probe, which proved that *that* server answered on *that*
+    /// model name.
+    func select(endpointID: UUID) {
+        guard configuredEndpointID != endpointID else { return }
+        endpointProbe = nil
+        holder.settings.lastTranscriptionEndpointID = endpointID
+        if case .endpoint(_, let model) = holder.settings.transcriptionSource {
+            holder.settings.transcriptionSource = .endpoint(id: endpointID, model: model)
         }
     }
 
-    func select(modelID: String) {
-        guard let engine = catalog.first(where: { $0.id == modelID })?.engine else { return }
-        holder.settings.lastModelByEngine[engine.rawValue] = modelID
-        holder.settings.transcriptionSource = .local(modelID: modelID)
-    }
-
-    /// Choosing a different endpoint or model invalidates any probe: it proved that *that*
-    /// server answered on *that* model, and saying "ready" about a server never contacted is
-    /// exactly the false positive the probe exists to prevent.
-    func select(endpointID: UUID) {
-        guard case .endpoint(let current, let model) = holder.settings.transcriptionSource,
-              current != endpointID else { return }
-        endpointProbe = nil
-        holder.settings.lastTranscriptionEndpointID = endpointID
-        holder.settings.transcriptionSource = .endpoint(id: endpointID, model: model)
-    }
-
     func select(endpointModel: String) {
-        guard case .endpoint(let id, let current) = holder.settings.transcriptionSource,
-              current != endpointModel else { return }
+        guard configuredEndpointModel != endpointModel else { return }
         endpointProbe = nil
         holder.settings.lastTranscriptionEndpointModel = endpointModel
-        holder.settings.transcriptionSource = .endpoint(id: id, model: endpointModel)
+        if case .endpoint(let id, _) = holder.settings.transcriptionSource {
+            holder.settings.transcriptionSource = .endpoint(id: id, model: endpointModel)
+        }
     }
 
     var readiness: BackendReadiness {
@@ -138,8 +224,12 @@ final class DictationTabModel: ObservableObject {
         }
     }
 
-    var activeSourceName: String {
-        switch holder.settings.transcriptionSource {
+    var activeSourceName: String { name(of: holder.settings.transcriptionSource) }
+
+    /// How a source is named everywhere on this screen: the catalog's display name, or the
+    /// endpoint's model. Falls back to the raw id for a model no longer in the catalog.
+    func name(of source: TranscriptionSource) -> String {
+        switch source {
         case .local(let modelID):
             catalog.first { $0.id == modelID }?.displayName ?? modelID
         case .endpoint(_, let model):
@@ -156,41 +246,6 @@ extension DictationTabModel {
     var selectedModelID: String? {
         if case .local(let modelID) = holder.settings.transcriptionSource { return modelID }
         return nil
-    }
-
-    /// What a sub-tab's label says about itself.
-    enum TabIndicator: Sendable, Equatable {
-        case ready
-        case notReady
-        /// Not the configured backend, so nothing about it is ready or broken — it simply is
-        /// not what dictation will run. Marking it "not ready" would read as a fault.
-        case inactive
-
-        /// Empty for `.inactive`: an unconfigured backend must look different from a broken
-        /// one, or a fresh install would show three alarming tabs.
-        var marker: String {
-            switch self {
-            case .ready: "✅"
-            case .notReady: "❌"
-            case .inactive: ""
-            }
-        }
-    }
-
-    /// Only the active tab is ever `.ready` or `.notReady`: readiness is about what will run
-    /// at hotkey-press time, and only one backend ever will.
-    func indicator(for tab: DictationBackendTab) -> TabIndicator {
-        guard tab == activeTab else { return .inactive }
-        return readiness == .ready ? .ready : .notReady
-    }
-
-    /// The sub-tab's label, marker included. The marker is part of the *string* rather than a
-    /// sibling icon because a segmented control renders its own title for certain, while a
-    /// `Label`'s icon may be dropped by the style — and a readiness warning that might not
-    /// render is not a warning. `✅`/`❌` are the symbols the spec itself uses for this screen.
-    func tabTitle(for tab: DictationBackendTab) -> String {
-        let marker = indicator(for: tab).marker
-        return marker.isEmpty ? tab.title : "\(tab.title) \(marker)"
     }
 
     /// What a model's `languages` says, in words. `nil` means multilingual with no published
@@ -253,20 +308,31 @@ extension DictationTabModel {
         modelStates = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.state) })
     }
 
-    /// Runs the real `/v1/audio/transcriptions` probe and records the outcome. Takes the
-    /// provider as a closure — `AppModel.transcriberProvider` in the app — so the whole
-    /// path is testable and the view still never builds a provider itself.
-    func probeEndpoint(using provider: () async throws -> any TranscriptionProvider) async {
+    /// Runs the real `/v1/audio/transcriptions` probe against the **configured** endpoint,
+    /// which is not necessarily the active source — testing a server before switching to it is
+    /// the point of the endpoint sub-tab. The model decides *what* to probe and the caller
+    /// only says how to build a provider for it, so the view still never builds one itself.
+    func probeEndpoint(
+        using provider: (TranscriptionSource) async throws -> any TranscriptionProvider
+    ) async {
+        guard case .endpoint(let id, let model)? = configuredEndpoint else {
+            endpointProbe = .failed("No endpoint is configured yet — choose one and name a "
+                                    + "model first.")
+            return
+        }
         isProbing = true
         defer { isProbing = false }
         do {
-            guard let transcriber = try await provider() as? OpenAICompatibleTranscriber else {
-                endpointProbe = .failed("The active source is not an endpoint, so there is "
-                                        + "nothing to test.")
+            let built = try await provider(.endpoint(id: id, model: model))
+            guard let transcriber = built as? OpenAICompatibleTranscriber else {
+                endpointProbe = .failed("That source is not an endpoint, so there is nothing "
+                                        + "to test.")
                 return
             }
             try await transcriber.probe()
-            endpointProbe = .succeeded
+            // Recorded against what was probed, so the verdict cannot outlive the server and
+            // model name it was obtained for.
+            endpointProbe = .succeeded(id: id, model: model)
         } catch {
             endpointProbe = .failed(ErrorText.describe(error))
         }
