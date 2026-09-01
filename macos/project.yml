@@ -47,6 +47,7 @@ targets:
         product: SherpaOnnx
       - package: KeyboardShortcuts
         product: KeyboardShortcuts
+      - sdk: libsqlite3.tbd
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dzamataev.macomprendo

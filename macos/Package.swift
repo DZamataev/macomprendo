@@ -22,7 +22,8 @@ let package = Package(
             ],
             path: "Sources/Macomprendo",
             resources: [.copy("Resources/Icons")],
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         .testTarget(
             name: "MacomprendoTests",
