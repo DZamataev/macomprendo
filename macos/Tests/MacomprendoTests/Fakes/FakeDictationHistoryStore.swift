@@ -18,24 +18,24 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
     private(set) var clearCallCount = 0
 
     private var pages: [DictationHistoryPage] = []
-    private var appendError: MacomprendoError?
-    private var fetchError: MacomprendoError?
-    private var clearError: MacomprendoError?
+    private var appendError: (any Error)?
+    private var fetchError: (any Error)?
+    private var clearError: (any Error)?
     private var fetchGate: AsyncGate?
 
     func setPages(_ pages: [DictationHistoryPage]) {
         self.pages = pages
     }
 
-    func setAppendError(_ error: MacomprendoError?) {
+    func setAppendError(_ error: (any Error)?) {
         appendError = error
     }
 
-    func setFetchError(_ error: MacomprendoError?) {
+    func setFetchError(_ error: (any Error)?) {
         fetchError = error
     }
 
-    func setClearError(_ error: MacomprendoError?) {
+    func setClearError(_ error: (any Error)?) {
         clearError = error
     }
 
@@ -54,11 +54,14 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
     func fetchPage(beforeID: Int64?, limit: Int) async throws -> DictationHistoryPage {
         fetchRequests.append(FetchRequest(beforeID: beforeID, limit: limit))
         if let fetchError { throw fetchError }
-        if let fetchGate { await fetchGate.wait() }
-        guard !pages.isEmpty else {
-            return DictationHistoryPage(entries: [], nextCursor: nil)
+        let response: DictationHistoryPage
+        if pages.isEmpty {
+            response = DictationHistoryPage(entries: [], nextCursor: nil)
+        } else {
+            response = pages.removeFirst()
         }
-        return pages.removeFirst()
+        if let fetchGate { await fetchGate.wait() }
+        return response
     }
 
     func clear() async throws {

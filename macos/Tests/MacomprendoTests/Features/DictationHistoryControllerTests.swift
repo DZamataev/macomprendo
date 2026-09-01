@@ -5,14 +5,44 @@ import Testing
 @MainActor
 @Suite struct DictationHistoryControllerTests {
     private let date = Date(timeIntervalSince1970: 1_700_000_000)
+    private let safeHistoryError = MacomprendoError.dictationHistory(
+        "An error occurred while accessing history."
+    )
+
+    private struct TranscriptBearingStoreError: LocalizedError, Sendable {
+        let transcript: String
+
+        var errorDescription: String? {
+            "The history store rejected: \(transcript)"
+        }
+    }
+
+    private actor CopyFeedbackSleeper {
+        private let gates: [AsyncGate]
+        private(set) var callCount = 0
+        private(set) var completedCallCount = 0
+
+        init(gates: [AsyncGate]) {
+            self.gates = gates
+        }
+
+        func sleep(for _: Duration) async {
+            let gate = gates[callCount]
+            callCount += 1
+            await gate.wait()
+            completedCallCount += 1
+        }
+    }
 
     private func makeController(store: FakeDictationHistoryStore = FakeDictationHistoryStore(),
                                 pasteboard: FakePasteboard = FakePasteboard(),
                                 enabled: Bool = true,
-                                pageSize: Int = 2) -> DictationHistoryController {
+                                pageSize: Int = 2,
+                                copyFeedbackSleep: @escaping @Sendable (Duration) async -> Void = { _ in })
+        -> DictationHistoryController {
         DictationHistoryController(store: store, pasteboard: pasteboard,
                                    isEnabled: { enabled }, pageSize: pageSize,
-                                   now: { date })
+                                   now: { date }, copyFeedbackSleep: copyFeedbackSleep)
     }
 
     private func entry(_ id: Int64, text: String = "entry") -> DictationHistoryEntry {
@@ -26,6 +56,24 @@ import Testing
             await Task.yield()
         }
         Issue.record("Timed out waiting for \(count) fetch requests")
+    }
+
+    private func waitForCopySleeps(_ count: Int, in sleeper: CopyFeedbackSleeper) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if await sleeper.callCount == count { return }
+            await Task.yield()
+        }
+        Issue.record("Timed out waiting for \(count) copy-feedback sleeps")
+    }
+
+    private func waitForCompletedCopySleeps(_ count: Int, in sleeper: CopyFeedbackSleeper) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if await sleeper.completedCallCount == count { return }
+            await Task.yield()
+        }
+        Issue.record("Timed out waiting for \(count) completed copy-feedback sleeps")
     }
 
     @Test func disabledRecordingDoesNotTouchTheStore() async {
@@ -56,8 +104,20 @@ import Testing
         await store.setAppendError(failure)
         let controller = makeController(store: store)
 
-        #expect(await controller.record(text: "hello", kind: .dictation) == failure)
-        #expect(controller.errorMessage == ErrorText.describe(failure))
+        #expect(await controller.record(text: "hello", kind: .dictation) == safeHistoryError)
+        #expect(controller.errorMessage == ErrorText.describe(safeHistoryError))
+    }
+
+    @Test func storageFailureNeverDisplaysTranscriptFromTheThrownError() async {
+        let transcript = "private dictated words"
+        let store = FakeDictationHistoryStore()
+        await store.setAppendError(TranscriptBearingStoreError(transcript: transcript))
+        let controller = makeController(store: store)
+
+        _ = await controller.record(text: transcript, kind: .dictation)
+
+        #expect(controller.errorMessage == "Dictation history is unavailable: An error occurred while accessing history. Open Dictation History and clear it, or check that Macomprendo can write to Application Support.")
+        #expect(!controller.errorMessage!.contains(transcript))
     }
 
     @Test func initialLoadReplacesThePreviousPage() async {
@@ -89,6 +149,20 @@ import Testing
         #expect(controller.entries.map(\.id) == [3, 2, 1])
         #expect(await store.fetchRequests.map(\.beforeID) == [nil, 2])
         #expect(!controller.hasMore)
+    }
+
+    @Test func nextPageDropsDuplicatesWithinTheFetchedPage() async {
+        let store = FakeDictationHistoryStore()
+        await store.setPages([
+            DictationHistoryPage(entries: [entry(4)], nextCursor: 4),
+            DictationHistoryPage(entries: [entry(3), entry(3), entry(2)], nextCursor: nil)
+        ])
+        let controller = makeController(store: store)
+
+        await controller.loadInitial()
+        await controller.loadNextPage()
+
+        #expect(controller.entries.map(\.id) == [4, 3, 2])
     }
 
     @Test func secondPageLoadIsIgnoredWhileTheFirstIsActive() async {
@@ -137,7 +211,7 @@ import Testing
         await controller.loadInitial()
 
         #expect(controller.entries.isEmpty)
-        #expect(controller.errorMessage == ErrorText.describe(failure))
+        #expect(controller.errorMessage == ErrorText.describe(safeHistoryError))
         #expect(!controller.isLoading)
     }
 
@@ -149,7 +223,7 @@ import Testing
 
         await controller.clear()
 
-        #expect(controller.errorMessage == ErrorText.describe(failure))
+        #expect(controller.errorMessage == ErrorText.describe(safeHistoryError))
         #expect(!controller.isLoading)
     }
 
@@ -204,5 +278,40 @@ import Testing
                                               kind: .dictation, text: "full text"))
         #expect(pasteboard.readString() == "full text")
         #expect(controller.copiedEntryID == 1)
+    }
+
+    @Test func copyFeedbackExpiresAfterItsControlledLifetime() async {
+        let gate = AsyncGate()
+        let sleeper = CopyFeedbackSleeper(gates: [gate])
+        let controller = makeController(copyFeedbackSleep: { duration in
+            await sleeper.sleep(for: duration)
+        })
+
+        controller.copy(entry(1, text: "full text"))
+        await waitForCopySleeps(1, in: sleeper)
+        #expect(controller.copiedEntryID == 1)
+
+        gate.open()
+        await waitForCompletedCopySleeps(1, in: sleeper)
+        #expect(controller.copiedEntryID == nil)
+    }
+
+    @Test func olderCopyFeedbackExpiryCannotClearNewerCopyFeedback() async {
+        let firstGate = AsyncGate()
+        let secondGate = AsyncGate()
+        let sleeper = CopyFeedbackSleeper(gates: [firstGate, secondGate])
+        let controller = makeController(copyFeedbackSleep: { duration in
+            await sleeper.sleep(for: duration)
+        })
+
+        controller.copy(entry(1, text: "first"))
+        await waitForCopySleeps(1, in: sleeper)
+        controller.copy(entry(2, text: "second"))
+        await waitForCopySleeps(2, in: sleeper)
+
+        firstGate.open()
+        await waitForCompletedCopySleeps(1, in: sleeper)
+
+        #expect(controller.copiedEntryID == 2)
     }
 }

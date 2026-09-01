@@ -14,6 +14,7 @@ final class DictationHistoryController: ObservableObject {
     private let isEnabled: @MainActor () -> Bool
     private let pageSize: Int
     private let now: @Sendable () -> Date
+    private let copyFeedbackSleep: @Sendable (Duration) async -> Void
 
     private var nextCursor: Int64?
     private var loadGeneration = 0
@@ -23,12 +24,16 @@ final class DictationHistoryController: ObservableObject {
          pasteboard: any PasteboardProtocol,
          isEnabled: @escaping @MainActor () -> Bool,
          pageSize: Int = 100,
-         now: @escaping @Sendable () -> Date = Date.init) {
+         now: @escaping @Sendable () -> Date = Date.init,
+         copyFeedbackSleep: @escaping @Sendable (Duration) async -> Void = { duration in
+             try? await Task.sleep(for: duration)
+         }) {
         self.store = store
         self.pasteboard = pasteboard
         self.isEnabled = isEnabled
         self.pageSize = max(1, pageSize)
         self.now = now
+        self.copyFeedbackSleep = copyFeedbackSleep
     }
 
     func record(text: String, kind: DictationHistoryKind) async -> MacomprendoError? {
@@ -86,9 +91,9 @@ final class DictationHistoryController: ObservableObject {
         let generation = copyGeneration
 
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1))
+            guard let self else { return }
+            await self.copyFeedbackSleep(.seconds(1))
             guard !Task.isCancelled,
-                  let self,
                   generation == self.copyGeneration
             else { return }
             self.copiedEntryID = nil
@@ -114,8 +119,8 @@ final class DictationHistoryController: ObservableObject {
             if replacingEntries {
                 entries = deduplicating(page.entries)
             } else {
-                let existingIDs = Set(entries.map(\.id))
-                entries.append(contentsOf: page.entries.filter { !existingIDs.contains($0.id) })
+                var seenIDs = Set(entries.map(\.id))
+                entries.append(contentsOf: page.entries.filter { seenIDs.insert($0.id).inserted })
             }
             nextCursor = page.nextCursor
             hasMore = page.nextCursor != nil
@@ -134,8 +139,7 @@ final class DictationHistoryController: ObservableObject {
     }
 
     private func mappedHistoryError(from error: Error) -> MacomprendoError {
-        if let error = error as? MacomprendoError { return error }
         if error is CancellationError { return .cancelled }
-        return .dictationHistory(ErrorText.describe(error))
+        return .dictationHistory("An error occurred while accessing history.")
     }
 }
