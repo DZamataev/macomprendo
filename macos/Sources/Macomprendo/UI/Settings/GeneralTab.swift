@@ -36,7 +36,7 @@ struct GeneralTab: View {
                     .foregroundStyle(.secondary)
 
                 Toggle("Save dictation history", isOn: $model.settings.dictationHistoryEnabled)
-                Text("Stores transcribed text locally. Audio is never saved.")
+                Text("Transcripts are stored locally in plaintext. Audio is never saved.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
