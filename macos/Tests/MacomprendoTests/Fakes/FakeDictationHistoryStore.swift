@@ -21,6 +21,7 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
     private var appendError: (any Error)?
     private var fetchError: (any Error)?
     private var clearError: (any Error)?
+    private var appendGate: AsyncGate?
     private var fetchGate: AsyncGate?
 
     func setPages(_ pages: [DictationHistoryPage]) {
@@ -39,6 +40,12 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
         clearError = error
     }
 
+    /// Suspends an append only after its request has been accepted, so callers can
+    /// deterministically exercise cancellation and ordering at the durable commit point.
+    func setAppendGate(_ gate: AsyncGate?) {
+        appendGate = gate
+    }
+
     func setFetchGate(_ gate: AsyncGate?) {
         fetchGate = gate
     }
@@ -46,6 +53,7 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
     func append(text: String, kind: DictationHistoryKind, at date: Date) async throws
         -> DictationHistoryEntry {
         appendRequests.append(AppendRequest(text: text, kind: kind, date: date))
+        if let appendGate { await appendGate.wait() }
         if let appendError { throw appendError }
         return DictationHistoryEntry(id: Int64(appendRequests.count), createdAt: date,
                                      kind: kind, text: text)

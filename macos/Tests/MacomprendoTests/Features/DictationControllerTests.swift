@@ -77,10 +77,22 @@ import Testing
     /// the accepted, trimmed direct dictation absent from history even though it pasted.
     @Test func acceptedTranscriptIsRecordedBeforeInsertion() async {
         let h = makeHarness(historyEnabled: true, transcript: "  recorded text \n")
-        await recordAndFinish(h)
+        let appendGate = AsyncGate()
+        await h.historyStore.setAppendGate(appendGate)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await waitFor("history append to suspend") { appendGate.waiterCount == 1 }
 
         #expect(await h.historyStore.appendRequests.map(\.text) == ["recorded text"])
         #expect(await h.historyStore.appendRequests.map(\.kind) == [.dictation])
+        #expect(h.inserter.inserted.isEmpty)
+
+        let pending = h.controller.activeTask
+        appendGate.open()
+        await pending?.value
+
         #expect(h.inserter.inserted.map(\.text) == ["recorded text"])
     }
 
@@ -122,19 +134,26 @@ import Testing
         #expect(h.inserter.inserted.isEmpty)
     }
 
-    /// Explicit cancellation while transcription is in flight must not commit history.
-    @Test func explicitCancellationDoesNotRecordHistory() async {
-        let h = makeHarness()
-        h.transcriber.delay = .seconds(5)
+    /// Cancelling after the history store has accepted an append but before it completes
+    /// must leave that accepted row durable and stop before insertion starts.
+    @Test func cancellationAfterHistoryAppendAcceptanceKeepsTheRowButDoesNotInsert() async {
+        let h = makeHarness(transcript: "record then cancel")
+        let appendGate = AsyncGate()
+        await h.historyStore.setAppendGate(appendGate)
 
         h.controller.handle(.keyDown(.dictate))
         await h.controller.activeTask?.value
         h.controller.handle(.keyUp(.dictate))
-        await waitFor("state transcribing") { h.controller.state == .transcribing }
-        h.controller.cancel()
-        await h.controller.activeTask?.value
+        await waitFor("history append to suspend") { appendGate.waiterCount == 1 }
 
-        #expect(await h.historyStore.appendRequests.isEmpty)
+        let pending = h.controller.activeTask
+        h.controller.cancel()
+        #expect(await h.historyStore.appendRequests.map(\.text) == ["record then cancel"])
+        #expect(h.inserter.inserted.isEmpty)
+
+        appendGate.open()
+        await pending?.value
+
         #expect(h.inserter.inserted.isEmpty)
     }
 
@@ -162,6 +181,23 @@ import Testing
             return
         }
         #expect(message.contains("Dictation history is unavailable"))
+    }
+
+    /// A failed history write is non-fatal, but it must not replace the insertion failure
+    /// that owns this action's terminal state and HUD while remaining visible in history.
+    @Test func simultaneousHistoryAndInsertionFailuresKeepInsertionAsThePrimaryError() async {
+        let h = makeHarness(transcript: "both failures")
+        let insertionError = MacomprendoError.audio("Insertion service is unavailable.")
+        let expectedHistoryError = MacomprendoError.dictationHistory(
+            "An error occurred while accessing history.")
+        h.inserter.error = insertionError
+        await h.historyStore.setAppendError(MacomprendoError.dictationHistory("disk full"))
+
+        await recordAndFinish(h)
+
+        #expect(h.controller.state == .failed(ErrorText.describe(insertionError)))
+        #expect(h.hud.state == .error(ErrorText.describe(insertionError)))
+        #expect(h.history.errorMessage == ErrorText.describe(expectedHistoryError))
     }
 
     // MARK: - Hold mode
@@ -313,6 +349,7 @@ import Testing
         #expect(h.controller.state == .idle)
         #expect(h.hud.state == .toast("Cancelled"))
         #expect(h.inserter.inserted.map(\.text) == ["won't be shown"])   // the paste still ran
+        #expect(await h.historyStore.appendRequests.map(\.text) == ["won't be shown"])
     }
 
     /// `AVAudioEngineRecorder` finishes its level stream when it auto-stops after
