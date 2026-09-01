@@ -15,8 +15,12 @@ phones home.
 **What is stored.** Settings live in `UserDefaults` under the key `settings.v1`.
 API keys live in the login Keychain under the service
 `com.dzamataev.macomprendo` — never in settings, logs, or exported files.
-Transcripts are not stored: text goes to the frontmost app or the clipboard and
-is then forgotten.
+Dictation history is off by default. When enabled, it stores only the accepted text from
+Dictate and Dictate & Refine in the local SQLite database at
+`~/Library/Application Support/Macomprendo/dictation-history.sqlite3`; audio is never saved.
+The newest 100,000 entries are retained. Disabling history stops new writes but preserves
+existing entries, while Clear History removes them. The database is plaintext protected by
+your macOS account and, when enabled, FileVault.
 
 **Logging.** Macomprendo logs to the unified system log under the subsystem
 `com.dzamataev.macomprendo`. Transcript and LLM text are never logged at the

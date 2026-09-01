@@ -125,6 +125,47 @@ Assign a shortcut in Settings ▸ Hotkeys first.
 - [ ] Deny microphone permission in System Settings, trigger the hotkey: the permission error
       toast appears with a link to the correct System Settings pane. Re-grant afterwards.
 
+## Dictation history
+
+Use a recognizable short sentence for each successful recording in this section. The history
+preference controls recording only; it never records audio.
+
+- [ ] **Default off and persistence.** On a fresh settings document, Settings ▸ General shows
+      “Save dictation history” off and the menubar has no “Dictation History…” item. Enable it,
+      quit and relaunch, and confirm it remains enabled; turn it off again and confirm it also
+      remains off after relaunch.
+- [ ] **Conditional menu and single window.** With history enabled, “Dictation History…” appears
+      between the action controls and Settings. Open it twice from the menubar: the existing
+      Dictation History window is activated rather than a second window appearing. Disable the
+      setting while it is open; the item disappears but the open window remains usable, and after
+      closing it cannot be reopened until history is enabled again.
+- [ ] **Both microphone actions record.** Enable history, use Dictate for one recognizable
+      sentence and Dictate & Refine for another, then open History. Both complete original
+      transcripts appear with the Dictation and Dictation & Refine labels; no audio is present.
+- [ ] **Excluded flows.** With history enabled, run Refine Selection, cancel a Dictate while
+      recording or transcribing, dictate silence/blank text, and force a transcription failure
+      (for example by selecting a missing model). None creates an entry.
+- [ ] **Newest-first paging and complete Copy.** With more entries than the initial page, the
+      newest entry appears first and scrolling to the last visible row loads older entries without
+      duplicates. Use a transcript longer than its row preview, click that row’s accessible Copy
+      button, and paste elsewhere: the complete transcript—not the truncated preview—is pasted.
+- [ ] **100,000-entry retention fixture.** Before launching the app, prepare a disposable
+      `dictation-history.sqlite3` fixture containing 100,000 sequential entries. Enable history,
+      record one more recognizable transcript, and confirm the new entry is present, the oldest
+      fixture entry is gone, and the count remains 100,000.
+- [ ] **Clear and disable behavior.** With several entries present, choose Clear History… and
+      dismiss the confirmation: entries remain. Confirm Clear History: the empty state appears.
+      Add an entry, disable history, and confirm existing entries remain visible while a new
+      Dictate or Dictate & Refine transcript is not added.
+- [ ] **Storage-error recovery.** With history enabled, make its Application Support directory
+      temporarily unwritable, then dictate. The transcript still inserts or reaches Dictate &
+      Refine, and a non-fatal history error is shown with recovery guidance. Separately, open a
+      corrupt disposable database: the history window renders its error state, and confirmed
+      Clear History restores an empty usable database.
+- [ ] **Dock lifecycle.** With no Settings or onboarding window open, opening Dictation History
+      makes the Dock icon appear. Closing it removes the icon; if Settings is also open, closing
+      History leaves the icon visible until Settings closes.
+
 ## Summarize selection (hotkey #4, ⌥M)
 
 - [ ] Select three paragraphs in Safari and press ⌥M: the Quick Panel opens in the single-pane

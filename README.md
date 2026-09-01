@@ -23,6 +23,8 @@ Other things it does:
   downloaded on demand and stored in
   `~/Library/Application Support/Macomprendo/models/`.
 - **Remote transcription** through any `/v1/audio/transcriptions` endpoint, if you prefer.
+- **Optional local dictation history** for text-only Dictate and Dictate & Refine transcripts,
+  browsed newest-first in a paged window and capped at 100,000 entries; audio is never saved.
 - **Editable prompt presets** for both refine and summarize — Clean up, Formal, Casual,
   Shorten, Expand, Fix grammar, Translate, Brief, Bullets, TL;DR, Key actions — all of which
   you can rename, rewrite, reorder, delete, or add to.
@@ -80,6 +82,8 @@ All hotkeys are rebindable in Settings → Hotkeys.
 - **Text never leaves your Mac** unless you use Refine or Summarize, which send it to the
   endpoint you configured — your local Ollama by default.
 - **API keys live in the Keychain only.** They are never written to settings, logs, or exports.
+- **Dictation history is opt-in.** When enabled, it stores text locally in SQLite; disabling
+  preserves existing entries and Clear History removes them.
 - **Transcripts and LLM output are never logged** at the default log level.
 - **The clipboard is restored.** Copy/paste simulation snapshots the pasteboard and puts it
   back 300 ms later, guarded by a change-count check so anything you copied meanwhile survives.

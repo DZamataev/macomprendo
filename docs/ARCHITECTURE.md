@@ -5,12 +5,13 @@
 ```
 ┌────────────────────────────────────────────────────────────┐
 │ UI            MenuBar · Settings · QuickPanel · HUD         │
-│               Onboarding · Components                       │
+│               Onboarding · History · Components             │
 └───────────────────────────┬────────────────────────────────┘
                             │ observes / calls
 ┌───────────────────────────▼────────────────────────────────┐
-│ Features      DictationController · RefineController        │
-│               SummarizeController · SpeakController         │
+│ Features      DictationController · DictationHistory…       │
+│               RefineController · SummarizeController        │
+│               SpeakController                               │
 │               Prompts (PromptPreset, Renderer, Factory)     │
 │               @MainActor, explicit state enums              │
 └─────────────┬────────────────────────────┬─────────────────┘
@@ -27,12 +28,13 @@
 │ PermissionsChecking        │ │ Streaming (SSE, NDJSON)     │
 │ LanguageDetecting          │ │                             │
 │ ActivationPolicyControlling│ │                             │
+│ DictationHistoryStoring    │ │                             │
 └─────────────┬──────────────┘ └───────────┬─────────────────┘
               │                            │
 ┌─────────────▼────────────────────────────▼─────────────────┐
-│ Core          Settings · Endpoint · SettingsStore           │
-│               KeychainStore · MacomprendoError · Log        │
-│               Pasteboard                                    │
+│ Core          Settings · DictationHistoryEntry · Endpoint   │
+│               SettingsStore · KeychainStore                 │
+│               MacomprendoError · Log · Pasteboard           │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,6 +45,22 @@ languages) — 84 presets in all, with content for each language written nativel
 `FactoryPresets.presetID(role:language:)` derives it from the role's and the language's fixed
 hex slots, so `restoreMissing(into:)` can tell "deleted factory preset" from "custom preset"
 across all seven languages without a lookup table.
+
+### Dictation history
+
+`Settings.dictationHistoryEnabled` is off by default. At the two accepted microphone
+transcript commit points, `DictationController` and `DictationCapture` ask the shared
+`@MainActor` `DictationHistoryController` to record the text for Dictate or Dictate & Refine.
+The controller depends on `DictationHistoryStoring` and `PasteboardProtocol`; `AppModel` owns
+it, and `AppEnvironment` constructs the actor-backed `SQLiteDictationHistoryStore` at
+`~/Library/Application Support/Macomprendo/dictation-history.sqlite3`.
+
+The store retains the newest 100,000 text records, pages them by descending insertion ID, and
+clears records only on the confirmed user action. Disabling the preference stops new writes
+without purging existing records. `DictationHistoryView` is the UI consumer in the history
+window; the menu opens that single SwiftUI window only while the preference is enabled, and
+the existing `DockIconCoordinator` keeps the Dock icon visible while the window is open.
+This preserves the UI → Features → Services → Core dependency direction.
 
 ## Rules
 
