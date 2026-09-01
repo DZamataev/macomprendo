@@ -30,6 +30,31 @@ import Testing
         }
     }
 
+    private func executeRaw(_ sql: String, at databaseURL: URL) throws {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database,
+                              SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+              let database
+        else {
+            throw MacomprendoError.dictationHistory("open raw history fixture")
+        }
+        defer { sqlite3_close_v2(database) }
+
+        guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+            throw MacomprendoError.dictationHistory("execute raw history fixture")
+        }
+    }
+
+    private func createSidecarSentinels(at databaseURL: URL) throws {
+        for suffix in ["-wal", "-shm"] {
+            let sidecarURL = URL(fileURLWithPath: databaseURL.path + suffix)
+            guard FileManager.default.createFile(atPath: sidecarURL.path,
+                                                 contents: Data("sentinel".utf8)) else {
+                throw MacomprendoError.dictationHistory("create \(suffix) fixture")
+            }
+        }
+    }
+
     // Catches using timestamp order, losing data across a reopen, or persisting the wrong kind.
     @Test func appendPersistsAcrossReopenAndFetchesNewestFirst() async throws {
         let (store, url) = makeStore()
@@ -144,10 +169,16 @@ import Testing
         #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.isEmpty)
     }
 
-    // Catches clear failing permanently when an unsupported future schema prevents opening.
-    @Test func clearResetsAnUnsupportedFutureSchema() async throws {
+    // Catches recovery leaving stale WAL or SHM files beside a replaced future-schema database.
+    @Test func clearRecoveryRemovesFutureSchemaSidecars() async throws {
         let (store, url) = makeStore()
         try setUserVersion(2, at: url)
+        try createSidecarSentinels(at: url)
+        let walURL = URL(fileURLWithPath: url.path + "-wal")
+        let shmURL = URL(fileURLWithPath: url.path + "-shm")
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        #expect(FileManager.default.fileExists(atPath: walURL.path))
+        #expect(FileManager.default.fileExists(atPath: shmURL.path))
 
         do {
             _ = try await store.fetchPage(beforeID: nil, limit: 10)
@@ -160,8 +191,45 @@ import Testing
         }
 
         try await store.clear()
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        #expect(!FileManager.default.fileExists(atPath: walURL.path))
+        #expect(!FileManager.default.fileExists(atPath: shmURL.path))
         _ = try await store.append(text: "after reset", kind: .dictation, at: .now)
         #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.map(\.text) == ["after reset"])
+    }
+
+    // Catches clear resetting a healthy database after a transactional delete failure.
+    @Test func clearFailurePreservesRowsDatabaseAndSidecars() async throws {
+        let (store, url) = makeStore()
+        _ = try await store.append(text: "preserve me", kind: .dictation, at: .now)
+        try executeRaw(
+            """
+            CREATE TRIGGER reject_history_clear
+            BEFORE DELETE ON dictation_history
+            BEGIN
+                SELECT RAISE(ABORT, 'reject clear');
+            END;
+            """,
+            at: url
+        )
+        try createSidecarSentinels(at: url)
+        let walURL = URL(fileURLWithPath: url.path + "-wal")
+        let shmURL = URL(fileURLWithPath: url.path + "-shm")
+
+        do {
+            try await store.clear()
+            Issue.record("expected clear to report the aborting delete trigger")
+        } catch let error as MacomprendoError {
+            guard case .dictationHistory = error else {
+                Issue.record("expected a dictation history error, got \(error)")
+                return
+            }
+        }
+
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        #expect(FileManager.default.fileExists(atPath: walURL.path))
+        #expect(FileManager.default.fileExists(atPath: shmURL.path))
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.map(\.text) == ["preserve me"])
     }
 
     // Catches allowing a retention configuration that deletes every appended row.
