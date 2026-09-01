@@ -14,6 +14,7 @@ import Testing
         let recorder: LLMCallRecorder
         let holder: ScriptedSettingsHolder
         let audioRecorder: ScriptedRecorder
+        let historyStore: FakeDictationHistoryStore
     }
 
     private func makeRig(deltas: [String] = ["Hello", " there"],
@@ -34,13 +35,17 @@ import Testing
         let inserter = ScriptedInserter()
         let toaster = ScriptedToaster()
         let audioRecorder = ScriptedRecorder()
+        let historyStore = FakeDictationHistoryStore()
+        let history = DictationHistoryController(store: historyStore, pasteboard: pasteboard,
+                                                  isEnabled: { true })
 
         let capture = DictationCapture(
             recorder: audioRecorder,
             transcriberProvider: { ScriptedTranscriber(text: "spoken words") },
             permissions: ScriptedPermissions(),
             mode: { holder.settings.dictationMode },
-            language: { "en" })
+            language: { "en" },
+            history: history)
 
         let controller = RefineController(
             capture: capture,
@@ -57,7 +62,7 @@ import Testing
 
         return Rig(controller: controller, panel: panel, host: host, pasteboard: pasteboard,
                    inserter: inserter, toaster: toaster, recorder: recorder, holder: holder,
-                   audioRecorder: audioRecorder)
+                   audioRecorder: audioRecorder, historyStore: historyStore)
     }
 
     @Test func startingFromASelectionOpensThePanelAndStreamsTheResult() async {
@@ -73,6 +78,7 @@ import Testing
         #expect(rig.controller.refined == "Hello there")
         #expect(!rig.controller.isStreaming)
         #expect(rig.controller.error == nil)
+        #expect(await rig.historyStore.appendRequests.isEmpty)
     }
 
     @Test func theRenderedPromptUsesTheDefaultPresetAndTheInstruction() async {
@@ -184,6 +190,7 @@ import Testing
         #expect(rig.controller.original == "spoken words")
         #expect(rig.panel.isVisible)
         #expect(rig.controller.refined == "Hello there")
+        #expect(await rig.historyStore.appendRequests.map(\.kind) == [.dictationAndRefine])
     }
 
     // In hold mode, show nothing while recording because

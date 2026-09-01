@@ -97,7 +97,8 @@ extension TextFeatures {
     static func live(model: AppModel,
                      env: AppEnvironment,
                      hud: HUDController,
-                     transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider)
+                     transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider,
+                     history: DictationHistoryController)
         -> TextFeatures {
 
         // Built before the panel so the panel can be handed its dismissal hook at construction:
@@ -115,7 +116,8 @@ extension TextFeatures {
             transcriberProvider: transcriberProvider,
             permissions: env.permissions,
             mode: { model.settings.dictationMode },
-            language: { model.settings.transcriptionLanguage })
+            language: { model.settings.transcriptionLanguage },
+            history: history)
 
         let refine = RefineController(
             capture: capture,

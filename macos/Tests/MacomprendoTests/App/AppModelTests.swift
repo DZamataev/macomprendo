@@ -32,6 +32,40 @@ import Testing
         #expect(model.dictation.state == .recording)
     }
 
+    /// The graph must hand both microphone features one controller, backed by the exact store
+    /// supplied by the environment; separate instances would split the user's timeline.
+    @Test func directDictationAndDictateAndRefineShareTheEnvironmentHistoryStore() async {
+        let recorder = FakeAudioRecorder()
+        let http = FakeHTTPClient()
+        http.response = HTTPResponse(status: 200, headers: [:], body: Data(#"{"text":"spoken"}"#.utf8))
+        let historyStore = FakeDictationHistoryStore()
+        let endpoint = Endpoint(name: "Test", kind: .openAICompatible,
+                                baseURL: URL(string: "https://example.test")!)
+        let model = AppModel(
+            store: InMemorySettingsStore(),
+            keychain: InMemoryKeychainStore(),
+            env: .fake(recorder: recorder, http: http, dictationHistory: historyStore))
+        model.settings.dictationHistoryEnabled = true
+        model.settings.endpoints = [endpoint]
+        model.settings.transcriptionSource = .endpoint(id: endpoint.id, model: "whisper")
+        model.start()
+
+        model.route(.keyDown(.dictate))
+        await model.dictation.activeTask?.value
+        model.route(.keyUp(.dictate))
+        await model.dictation.activeTask?.value
+
+        model.route(.keyDown(.dictateAndRefine))
+        await waitFor("Dictate & Refine recording to start") {
+            model.textFeatures?.refine.isCapturing == true
+        }
+        model.route(.keyUp(.dictateAndRefine))
+        await model.textFeatures?.refine.drainCapture()
+
+        #expect(await historyStore.appendRequests.map(\.kind) == [.dictation, .dictationAndRefine])
+        #expect(await historyStore.appendRequests.map(\.text) == ["spoken", "spoken"])
+    }
+
     @Test func routesSelectionActionsToTheTextFeatures() async {
         let hotkeys = FakeHotkeyService()
         let model = AppModel(store: InMemorySettingsStore(),

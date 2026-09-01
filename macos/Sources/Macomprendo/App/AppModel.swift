@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     let keychain: any KeychainStoring
     let env: AppEnvironment
     let hud: HUDController
+    let history: DictationHistoryController
     let dictation: DictationController
     let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
     private(set) var textFeatures: TextFeatures?
@@ -83,6 +84,11 @@ final class AppModel: ObservableObject {
         hud.modelCaption = HUDController.caption(for: loaded.transcriptionSource)
         self.hud = hud
 
+        history = DictationHistoryController(
+            store: env.dictationHistory,
+            pasteboard: env.pasteboard,
+            isEnabled: { snapshot.current.dictationHistoryEnabled })
+
         let factory = env.factory
         let models = env.models
         let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider = {
@@ -104,7 +110,8 @@ final class AppModel: ObservableObject {
                                         hud: hud,
                                         pasteboard: env.pasteboard,
                                         settings: { snapshot.current },
-                                        escapeMonitor: env.escapeMonitor)
+                                        escapeMonitor: env.escapeMonitor,
+                                        history: history)
 
         var seeded = settings
         FactoryPresets.seed(into: &seeded)
@@ -136,7 +143,8 @@ final class AppModel: ObservableObject {
     func start() {
         if textFeatures == nil {
             textFeatures = TextFeatures.live(model: self, env: env, hud: hud,
-                                             transcriberProvider: transcriberProvider)
+                                             transcriberProvider: transcriberProvider,
+                                             history: history)
         }
 
         for action in HotkeyAction.allCases {

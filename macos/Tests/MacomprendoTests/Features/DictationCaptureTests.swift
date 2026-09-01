@@ -7,16 +7,24 @@ import Testing
     private var transcripts: [String] = []
     private var errors: [Error] = []
 
+    private func history(store: FakeDictationHistoryStore, enabled: Bool = true)
+        -> DictationHistoryController {
+        DictationHistoryController(store: store, pasteboard: ScriptedPasteboard(), isEnabled: { enabled })
+    }
+
     private func make(mode: DictationMode = .hold,
                       recorder: ScriptedRecorder = ScriptedRecorder(),
                       transcriber: ScriptedTranscriber = ScriptedTranscriber(),
-                      permissions: ScriptedPermissions = ScriptedPermissions()) -> DictationCapture {
+                      permissions: ScriptedPermissions = ScriptedPermissions(),
+                      historyStore: FakeDictationHistoryStore = FakeDictationHistoryStore(),
+                      historyEnabled: Bool = true) -> DictationCapture {
         let capture = DictationCapture(
             recorder: recorder,
             transcriberProvider: { transcriber },
             permissions: permissions,
             mode: { mode },
-            language: { "en" })
+            language: { "en" },
+            history: history(store: historyStore, enabled: historyEnabled))
         capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
         capture.onError = { [weak self] in self?.errors.append($0) }
         return capture
@@ -55,14 +63,88 @@ import Testing
         #expect(capture.state == .idle)
     }
 
+    /// The capture commit point must durable-write the accepted transcript before handing it
+    /// to refinement; removing that write leaves Dictate & Refine absent from history.
+    @Test func acceptedTranscriptIsRecordedBeforeItIsDeliveredForRefinement() async {
+        let store = FakeDictationHistoryStore()
+        let appendGate = AsyncGate()
+        await store.setAppendGate(appendGate)
+        let capture = DictationCapture(
+            recorder: ScriptedRecorder(),
+            transcriberProvider: { ScriptedTranscriber(text: "  hello world  ") },
+            permissions: ScriptedPermissions(),
+            mode: { .hold },
+            language: { "en" },
+            history: history(store: store))
+        capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        capture.handle(.keyUp(.dictateAndRefine))
+        await waitFor("history append to suspend") { appendGate.waiterCount == 1 }
+
+        #expect(await store.appendRequests.map(\.text) == ["hello world"])
+        #expect(await store.appendRequests.map(\.kind) == [.dictationAndRefine])
+        #expect(transcripts.isEmpty)
+
+        appendGate.open()
+        await capture.drain()
+        #expect(transcripts == ["hello world"])
+    }
+
+    /// History is optional, so a failed durable write must warn once without discarding the
+    /// accepted transcript that refinement needs to continue.
+    @Test func historyFailureWarnsOnceAndStillDeliversTheTranscript() async {
+        let store = FakeDictationHistoryStore()
+        await store.setAppendError(MacomprendoError.dictationHistory("disk full"))
+        var warnings: [MacomprendoError] = []
+        let capture = DictationCapture(
+            recorder: ScriptedRecorder(),
+            transcriberProvider: { ScriptedTranscriber(text: "hello world") },
+            permissions: ScriptedPermissions(),
+            mode: { .hold },
+            language: { "en" },
+            history: history(store: store))
+        capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
+        capture.onHistoryError = { warnings.append($0) }
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        capture.handle(.keyUp(.dictateAndRefine))
+        await capture.drain()
+
+        #expect(await store.appendRequests.map(\.text) == ["hello world"])
+        #expect(transcripts == ["hello world"])
+        #expect(warnings == [.dictationHistory("An error occurred while accessing history.")])
+        #expect(errors.isEmpty)
+    }
+
+    @Test func disabledHistoryDoesNotRecordAnAcceptedTranscript() async {
+        let store = FakeDictationHistoryStore()
+        let capture = DictationCapture(
+            recorder: ScriptedRecorder(),
+            transcriberProvider: { ScriptedTranscriber(text: "hello world") },
+            permissions: ScriptedPermissions(),
+            mode: { .hold },
+            language: { "en" },
+            history: history(store: store, enabled: false))
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        capture.handle(.keyUp(.dictateAndRefine))
+        await capture.drain()
+
+        #expect(await store.appendRequests.isEmpty)
+    }
+
     @Test func blankTranscriptIsReportedAsNothingHeard() async {
-        let capture = make(transcriber: ScriptedTranscriber(text: "   "))
+        let store = FakeDictationHistoryStore()
+        let capture = make(transcriber: ScriptedTranscriber(text: "   "), historyStore: store)
         capture.handle(.keyDown(.dictateAndRefine))
         capture.handle(.keyUp(.dictateAndRefine))
         await capture.drain()
         #expect(transcripts.isEmpty)
         #expect(errors.count == 1)
         #expect(errors.first as? MacomprendoError == MacomprendoError.audio("Nothing heard."))
+        #expect(await store.appendRequests.isEmpty)
     }
 
     @Test func deniedMicrophonePermissionIsReported() async {
@@ -77,7 +159,10 @@ import Testing
     }
 
     @Test func transcriberFailureIsReportedAndStateReturnsToIdle() async {
-        let capture = make(transcriber: ScriptedTranscriber(failure: .providerUnreachable(endpointName: "Ollama (local)")))
+        let store = FakeDictationHistoryStore()
+        let capture = make(
+            transcriber: ScriptedTranscriber(failure: .providerUnreachable(endpointName: "Ollama (local)")),
+            historyStore: store)
         capture.handle(.keyDown(.dictateAndRefine))
         capture.handle(.keyUp(.dictateAndRefine))
         await capture.drain()
@@ -85,11 +170,13 @@ import Testing
         #expect(errors.first as? MacomprendoError
                 == MacomprendoError.providerUnreachable(endpointName: "Ollama (local)"))
         #expect(capture.state == .idle)
+        #expect(await store.appendRequests.isEmpty)
     }
 
     @Test func cancelDuringRecordingProducesNoTranscript() async {
         let recorder = ScriptedRecorder()
-        let capture = make(recorder: recorder)
+        let store = FakeDictationHistoryStore()
+        let capture = make(recorder: recorder, historyStore: store)
         capture.handle(.keyDown(.dictateAndRefine))
         await capture.drain()
         capture.cancel()
@@ -97,6 +184,7 @@ import Testing
         #expect(capture.state == .idle)
         #expect(transcripts.isEmpty)
         #expect(errors.isEmpty)
+        #expect(await store.appendRequests.isEmpty)
     }
 
     // MARK: - Fix-review findings

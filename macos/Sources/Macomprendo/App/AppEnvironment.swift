@@ -30,6 +30,7 @@ struct AppEnvironment {
     var hudPresenter: (any HUDPresenting)?
     var ollamaDetector: any OllamaDetecting
     var pasteboard: any PasteboardProtocol
+    var dictationHistory: any DictationHistoryStoring
     var launchAtLogin: any LaunchAtLoginManaging
     var escapeMonitor: any EscapeMonitoring
     var keySimulator: any KeySimulating
@@ -43,9 +44,13 @@ struct AppEnvironment {
     static func live() -> AppEnvironment {
         let http = URLSessionHTTPClient()
         let keychain = SystemKeychainStore()
-        let modelsDirectory = FileManager.default
+        let applicationSupportDirectory = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Macomprendo/models", isDirectory: true)
+            .appendingPathComponent("Macomprendo", isDirectory: true)
+        let modelsDirectory = applicationSupportDirectory
+            .appendingPathComponent("models", isDirectory: true)
+        let dictationHistory = SQLiteDictationHistoryStore(
+            databaseURL: applicationSupportDirectory.appendingPathComponent("dictation-history.sqlite3"))
         let pasteboard = SystemPasteboard()
         let tracker = NSWorkspaceTracker()
         let keySimulator = CGEventKeySimulator()
@@ -65,6 +70,7 @@ struct AppEnvironment {
             hudPresenter: HUDWindowPresenter(),
             ollamaDetector: HTTPOllamaDetector(http: http),
             pasteboard: pasteboard,
+            dictationHistory: dictationHistory,
             launchAtLogin: SMAppServiceLaunchAtLogin(),
             escapeMonitor: GlobalEscapeMonitor(),
             keySimulator: keySimulator,

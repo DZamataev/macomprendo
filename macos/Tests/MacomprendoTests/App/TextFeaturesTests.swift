@@ -11,6 +11,7 @@ import Testing
         let panelHost: ScriptedPanelHost
         let keys: ScriptedKeySimulator
         let pasteboard: ScriptedPasteboard
+        let historyStore: FakeDictationHistoryStore
     }
 
     private func makeRig(selection: String?, ax: (any AXReading)? = nil,
@@ -25,13 +26,17 @@ import Testing
         let keys = ScriptedKeySimulator()
         let toaster = ScriptedToaster()
         let speech = ScriptedSpeech()
+        let historyStore = FakeDictationHistoryStore()
+        let history = DictationHistoryController(store: historyStore, pasteboard: pasteboard,
+                                                  isEnabled: { true })
 
         let capture = DictationCapture(
             recorder: ScriptedRecorder(),
             transcriberProvider: { ScriptedTranscriber(text: "spoken") },
             permissions: ScriptedPermissions(),
             mode: { .hold },
-            language: { nil })
+            language: { nil },
+            history: history)
 
         let refine = RefineController(
             capture: capture,
@@ -53,7 +58,7 @@ import Testing
         let features = TextFeatures(quickPanel: panel, refine: refine, summarize: summarize,
                                     speak: speak, selectedText: selectedText, toaster: toaster)
         return Rig(features: features, speech: speech, toaster: toaster, panelHost: host, keys: keys,
-                   pasteboard: pasteboard)
+                   pasteboard: pasteboard, historyStore: historyStore)
     }
 
     @Test func summarizeHotkeyReadsTheSelectionAndOpensTheSummaryPanel() async {
@@ -75,6 +80,7 @@ import Testing
 
         #expect(rig.features.refine.original == "some prose")
         #expect(rig.features.quickPanel.layout == .refine)
+        #expect(await rig.historyStore.appendRequests.isEmpty)
     }
 
     @Test func speakHotkeySpeaksTheSelectionAndTheSecondPressStops() async {
@@ -109,6 +115,7 @@ import Testing
         #expect(rig.features.refine.original == "spoken")
         #expect(rig.features.quickPanel.isVisible)
         #expect(rig.keys.presses.isEmpty)          // the microphone path never touches the clipboard
+        #expect(await rig.historyStore.appendRequests.map(\.kind) == [.dictationAndRefine])
     }
 
     // F2+F3: a second selection hotkey arriving while the first read is still in flight

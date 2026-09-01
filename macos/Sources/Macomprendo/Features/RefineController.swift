@@ -59,6 +59,9 @@ enum RefineSide: Equatable, Sendable {
         capture.onError = { [weak self] error in
             self?.toaster.toast(ErrorText.describe(error), duration: 2.5)
         }
+        capture.onHistoryError = { [weak self] error in
+            self?.toaster.toast(ErrorText.describe(error), duration: 2.5)
+        }
         capture.onStateChange = { [weak self] state in
             guard let self else { return }
             self.isCapturing = state != .idle

@@ -14,10 +14,12 @@ import Foundation
     var onStateChange: (@MainActor (State) -> Void)?
     var onTranscript: (@MainActor (String) -> Void)?
     var onError: (@MainActor (Error) -> Void)?
+    var onHistoryError: (@MainActor (MacomprendoError) -> Void)?
 
     private let recorder: any AudioRecording
     private let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
     private let permissions: any PermissionsChecking
+    private let history: DictationHistoryController
     private let mode: @MainActor () -> DictationMode
     private let language: @MainActor () -> String?
     private var task: Task<Void, Never>?
@@ -26,10 +28,12 @@ import Foundation
          transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider,
          permissions: any PermissionsChecking,
          mode: @escaping @MainActor () -> DictationMode,
-         language: @escaping @MainActor () -> String?) {
+         language: @escaping @MainActor () -> String?,
+         history: DictationHistoryController) {
         self.recorder = recorder
         self.transcriberProvider = transcriberProvider
         self.permissions = permissions
+        self.history = history
         self.mode = mode
         self.language = language
     }
@@ -107,6 +111,9 @@ import Foundation
                 self.setState(.idle)
                 let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { throw MacomprendoError.audio("Nothing heard.") }
+                if let error = await history.record(text: text, kind: .dictationAndRefine) {
+                    onHistoryError?(error)
+                }
                 self.onTranscript?(text)
             } catch {
                 self.setState(.idle)
