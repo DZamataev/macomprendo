@@ -187,6 +187,47 @@ import Testing
         #expect(await store.appendRequests.isEmpty)
     }
 
+    /// A new hold hotkey while the durable append is suspended cancels the superseded
+    /// capture. The accepted row remains, but it must neither start another recorder
+    /// nor deliver stale refinement work or a stale history warning after the append.
+    /// This fails if capture becomes idle before its append finishes, or if the
+    /// post-append cancellation guard is removed.
+    @Test func newerHoldHotkeyAfterAcceptedHistoryAppendCancelsStaleCapture() async {
+        let recorder = ScriptedRecorder()
+        let store = FakeDictationHistoryStore()
+        let appendGate = AsyncGate()
+        await store.setAppendGate(appendGate)
+        await store.setAppendError(MacomprendoError.dictationHistory("disk full"))
+        var warnings: [MacomprendoError] = []
+        let capture = DictationCapture(
+            recorder: recorder,
+            transcriberProvider: { ScriptedTranscriber(text: "record then supersede") },
+            permissions: ScriptedPermissions(),
+            mode: { .hold },
+            language: { "en" },
+            history: history(store: store))
+        capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
+        capture.onHistoryError = { warnings.append($0) }
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        capture.handle(.keyUp(.dictateAndRefine))
+        await waitFor("history append to suspend") { appendGate.waiterCount == 1 }
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        #expect(await store.appendRequests.map(\.text) == ["record then supersede"])
+        #expect(recorder.startCount == 1)
+
+        appendGate.open()
+        await Task.yield()
+        await Task.yield()
+
+        #expect(transcripts.isEmpty)
+        #expect(warnings.isEmpty)
+        #expect(capture.state == .idle)
+    }
+
     // MARK: - Fix-review findings
 
     /// `HTTPClient` maps transport-level cancellation (`URLError.cancelled`) to

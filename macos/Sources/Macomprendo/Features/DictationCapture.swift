@@ -41,7 +41,11 @@ import Foundation
     func handle(_ event: HotkeyEvent) {
         switch (event, mode()) {
         case (.keyDown, .hold):
-            startRecording()
+            switch state {
+            case .idle: startRecording()
+            case .recording: break
+            case .transcribing: cancel()
+            }
         case (.keyUp, .hold):
             finishRecording()
         case (.keyDown, .toggle):
@@ -108,11 +112,13 @@ import Foundation
                 let raw = try await transcriber.transcribe(samples, sampleRate: 16_000,
                                                            language: self.language())
                 try Task.checkCancellation()
-                self.setState(.idle)
                 let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { throw MacomprendoError.audio("Nothing heard.") }
-                if let error = await history.record(text: text, kind: .dictationAndRefine) {
-                    onHistoryError?(error)
+                let historyError = await history.record(text: text, kind: .dictationAndRefine)
+                try Task.checkCancellation()
+                self.setState(.idle)
+                if let historyError {
+                    onHistoryError?(historyError)
                 }
                 self.onTranscript?(text)
             } catch {
