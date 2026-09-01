@@ -21,8 +21,9 @@ summarize) run through **Ollama** (local, default `http://localhost:11434`) or a
 **OpenAI-compatible** chat-completions endpoint with an API key. No telemetry, no
 network calls except those the user configures.
 
-Non-goals for v1: file transcription, meeting recording, history/database of
-transcripts, App Store sandboxing, bundled LLM inference, iOS.
+Non-goals for v1: file transcription, meeting recording, App Store sandboxing,
+bundled LLM inference, iOS. The later opt-in transcript-history design is specified in
+`2026-09-01-dictation-history.md` and supersedes history as a non-goal.
 
 ## 2. Platform & project layout
 
