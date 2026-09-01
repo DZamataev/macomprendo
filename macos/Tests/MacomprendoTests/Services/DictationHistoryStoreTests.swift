@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import Testing
 @testable import Macomprendo
 
@@ -10,6 +11,23 @@ import Testing
         let url = directory.appendingPathComponent("history.sqlite3")
         return (SQLiteDictationHistoryStore(databaseURL: url,
                                             maximumEntryCount: maximumEntryCount), url)
+    }
+
+    private func setUserVersion(_ version: Int32, at databaseURL: URL) throws {
+        try FileManager.default.createDirectory(at: databaseURL.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database,
+                              SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+              let database
+        else {
+            throw MacomprendoError.dictationHistory("create future-schema fixture")
+        }
+        defer { sqlite3_close_v2(database) }
+
+        guard sqlite3_exec(database, "PRAGMA user_version = \(version)", nil, nil, nil) == SQLITE_OK else {
+            throw MacomprendoError.dictationHistory("set future-schema fixture version")
+        }
     }
 
     // Catches using timestamp order, losing data across a reopen, or persisting the wrong kind.
@@ -74,5 +92,90 @@ import Testing
         _ = try await store.fetchPage(beforeID: nil, limit: 1)
 
         #expect(FileManager.default.fileExists(atPath: parentDirectory.path))
+    }
+
+    // Catches retaining entries by timestamp rather than insertion ID, or trimming after commit.
+    @Test func appendTrimsTheOldestEntryInTheSameCommit() async throws {
+        let (store, _) = makeStore(maximumEntryCount: 3)
+        for value in 1...4 {
+            _ = try await store.append(text: "\(value)", kind: .dictation,
+                                       at: Date(timeIntervalSince1970: Double(value)))
+        }
+        let page = try await store.fetchPage(beforeID: nil, limit: 10)
+        #expect(page.entries.map(\.text) == ["4", "3", "2"])
+        #expect(SQLiteDictationHistoryStore.defaultMaximumEntryCount == 100_000)
+    }
+
+    // Catches non-isolated connection access that drops rows during simultaneous writes.
+    @Test func simultaneousAppendsLoseNoEntries() async throws {
+        let (store, _) = makeStore(maximumEntryCount: 500)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for value in 0..<200 {
+                group.addTask {
+                    _ = try await store.append(text: "entry \(value)", kind: .dictation,
+                                               at: Date(timeIntervalSince1970: Double(value)))
+                }
+            }
+            try await group.waitForAll()
+        }
+        #expect(try await store.fetchPage(beforeID: nil, limit: 500).entries.count == 200)
+    }
+
+    // Catches clear leaving the store unable to accept and retrieve new entries.
+    @Test func clearLeavesAnEmptyUsableStore() async throws {
+        let (store, _) = makeStore()
+        _ = try await store.append(text: "before clear", kind: .dictation, at: .now)
+
+        try await store.clear()
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.isEmpty)
+
+        let entry = try await store.append(text: "after clear", kind: .dictation, at: .now)
+        #expect(entry.id == 1)
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.map(\.text) == ["after clear"])
+    }
+
+    // Catches clear treating an already-empty store as an error.
+    @Test func clearIsIdempotent() async throws {
+        let (store, _) = makeStore()
+
+        try await store.clear()
+        try await store.clear()
+
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.isEmpty)
+    }
+
+    // Catches clear failing permanently when an unsupported future schema prevents opening.
+    @Test func clearResetsAnUnsupportedFutureSchema() async throws {
+        let (store, url) = makeStore()
+        try setUserVersion(2, at: url)
+
+        do {
+            _ = try await store.fetchPage(beforeID: nil, limit: 10)
+            Issue.record("expected a history error for an unsupported schema")
+        } catch let error as MacomprendoError {
+            guard case .dictationHistory = error else {
+                Issue.record("expected a dictation history error, got \(error)")
+                return
+            }
+        }
+
+        try await store.clear()
+        _ = try await store.append(text: "after reset", kind: .dictation, at: .now)
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.map(\.text) == ["after reset"])
+    }
+
+    // Catches allowing a retention configuration that deletes every appended row.
+    @Test func appendRejectsANonPositiveMaximumEntryCount() async throws {
+        let (store, _) = makeStore(maximumEntryCount: 0)
+
+        do {
+            _ = try await store.append(text: "entry", kind: .dictation, at: .now)
+            Issue.record("expected a dictation history error for a non-positive maximum entry count")
+        } catch let error as MacomprendoError {
+            guard case .dictationHistory = error else {
+                Issue.record("expected a dictation history error, got \(error)")
+                return
+            }
+        }
     }
 }

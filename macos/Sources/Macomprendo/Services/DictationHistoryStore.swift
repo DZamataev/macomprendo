@@ -23,6 +23,10 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
 
     func append(text: String, kind: DictationHistoryKind, at: Date) throws
         -> DictationHistoryEntry {
+        guard maximumEntryCount > 0 else {
+            throw MacomprendoError.dictationHistory("append: maximum entry count must be positive")
+        }
+
         let database = try connection()
         try execute("BEGIN IMMEDIATE", on: database, operation: "begin append")
 
@@ -107,8 +111,43 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
     }
 
     func clear() throws {
-        let database = try connection()
-        try execute("DELETE FROM dictation_history", on: database, operation: "clear history")
+        let activeDatabase: OpaquePointer
+        if let existingDatabase = database {
+            activeDatabase = existingDatabase.pointer
+        } else {
+            do {
+                activeDatabase = try connection()
+            } catch {
+                try resetDatabase()
+                return
+            }
+        }
+
+        try execute("BEGIN IMMEDIATE", on: activeDatabase, operation: "begin clear history")
+        do {
+            try execute("DELETE FROM dictation_history", on: activeDatabase, operation: "clear history")
+            try execute("DELETE FROM sqlite_sequence WHERE name = 'dictation_history'",
+                        on: activeDatabase, operation: "reset history sequence")
+            try execute("COMMIT", on: activeDatabase, operation: "commit clear history")
+        } catch {
+            sqlite3_exec(activeDatabase, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+    }
+
+    private func resetDatabase() throws {
+        database = nil
+        let sidecarURLs = [databaseURL,
+                           URL(fileURLWithPath: databaseURL.path + "-wal"),
+                           URL(fileURLWithPath: databaseURL.path + "-shm")]
+        for url in sidecarURLs where FileManager.default.fileExists(atPath: url.path) {
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                throw MacomprendoError.dictationHistory("reset database: \(error.localizedDescription)")
+            }
+        }
+        _ = try connection()
     }
 
     private func connection() throws -> OpaquePointer {
