@@ -2,6 +2,12 @@ import Foundation
 @testable import Macomprendo
 
 final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
+    final class StopControl: @unchecked Sendable {
+        let invoked = AsyncGate()
+        let allowCompletion = AsyncGate()
+        let completed = AsyncGate()
+    }
+
     let level: AsyncStream<Float>
     let autoStopped: AsyncStream<Void>
     private let levelContinuation: AsyncStream<Float>.Continuation
@@ -13,6 +19,7 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
     private var _samplesToReturn: [Float] = [0.1, 0.2]
     private var _startError: Error?
     private var _stopGate: AsyncGate?
+    private var _stopControls: [StopControl] = []
 
     init() {
         var continuation: AsyncStream<Float>.Continuation!
@@ -44,6 +51,12 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
         set { lock.withLock { _stopGate = newValue } }
     }
 
+    /// Scripts independently controlled stop calls and exposes acknowledged invocation and
+    /// completion points for overlapping-stop ordering tests.
+    func enqueueStopControl(_ control: StopControl) {
+        lock.withLock { _stopControls.append(control) }
+    }
+
     func start() async throws {
         if let error = startError { throw error }
         // Mirrors `AVAudioEngineRecorder.start()`'s double-start guard (AudioRecorder.swift):
@@ -60,12 +73,22 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
     }
 
     func stop() async -> [Float] {
-        if let stopGate { await stopGate.wait() }
-        return lock.withLock {
+        let control = lock.withLock {
+            _stopControls.isEmpty ? nil : _stopControls.removeFirst()
+        }
+        control?.invoked.open()
+        if let control {
+            await control.allowCompletion.wait()
+        } else if let stopGate {
+            await stopGate.wait()
+        }
+        let samples = lock.withLock {
             _stopCount += 1
             _recording = false
             return _samplesToReturn
         }
+        control?.completed.open()
+        return samples
     }
 
     func emitLevel(_ value: Float) {

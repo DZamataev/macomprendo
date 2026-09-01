@@ -65,8 +65,12 @@ import Foundation
         generation += 1
         task?.cancel()
         task = nil
+        let previousStopTask = pendingStopTask
         let recorder = self.recorder
-        pendingStopTask = Task { _ = await recorder.stop() }
+        pendingStopTask = Task {
+            _ = await previousStopTask?.value
+            _ = await recorder.stop()
+        }
         setState(.idle)
     }
 

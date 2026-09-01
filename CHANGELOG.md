@@ -132,6 +132,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   app's lifetime after a dictation hits the maximum recording length once.
 - Cancelling dictation mid-paste can no longer restore your previous
   clipboard before the dictated text has actually been pasted.
+- Repeated rapid cancel/restart cycles in Dictate & Refine can no longer let
+  an older recorder stop tear down the newest recording.
 - Speak selection now shows a "Speaking…" HUD state with a stop hint for the
   whole utterance, instead of leaving the HUD blank while audio plays.
 - A second "Test" run in the Prompts settings tab no longer lets a stale

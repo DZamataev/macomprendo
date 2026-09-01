@@ -262,6 +262,47 @@ import Testing
         #expect(capture.state == .recording)
     }
 
+    /// Overwriting stop 1's ownership with stop 2 lets stop 2 finish, starts the final
+    /// recording, and then lets the orphaned stop 1 tear that recording down. Chaining every
+    /// stop makes the same adversarial release order complete stop 1 before stop 2 instead.
+    @Test func repeatedCancelStopsCannotFinishInReverseAndStopTheFinalRecording() async {
+        let recorder = FakeAudioRecorder()
+        let firstStop = FakeAudioRecorder.StopControl()
+        let secondStop = FakeAudioRecorder.StopControl()
+        recorder.enqueueStopControl(firstStop)
+        recorder.enqueueStopControl(secondStop)
+        let capture = make(recorder: recorder)
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        #expect(recorder.isRecording)
+
+        capture.cancel()
+        await firstStop.invoked.wait()
+        capture.handle(.keyDown(.dictateAndRefine))
+        capture.cancel()
+        capture.handle(.keyDown(.dictateAndRefine))
+
+        // Pre-release stop 2, then cross an acknowledged MainActor scheduling checkpoint.
+        // With the ownership bug, stop 2 and the final restart complete before stop 1 is
+        // released. With a stop chain, both tasks are suspended behind stop 1 here.
+        secondStop.allowCompletion.open()
+        let stopCheckpoint = Task { @MainActor in () }
+        await stopCheckpoint.value
+        let restartCheckpoint = Task { @MainActor in () }
+        await restartCheckpoint.value
+
+        firstStop.allowCompletion.open()
+        await firstStop.completed.wait()
+        await secondStop.completed.wait()
+        await capture.drain()
+
+        #expect(recorder.startCount == 2)
+        #expect(recorder.stopCount == 2)
+        #expect(recorder.isRecording)
+        #expect(capture.state == .recording)
+    }
+
     /// A new hold hotkey while the durable append is suspended cancels the superseded
     /// capture. The accepted row remains, but it must neither start another recorder
     /// nor deliver stale refinement work or a stale history warning after the append.
