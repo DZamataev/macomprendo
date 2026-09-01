@@ -67,6 +67,15 @@ import Testing
         Issue.record("Timed out waiting for \(count) copy-feedback sleeps")
     }
 
+    private func waitForCopiedEntryID(_ entryID: Int64?, in controller: DictationHistoryController) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if controller.copiedEntryID == entryID { return }
+            await Task.yield()
+        }
+        Issue.record("Timed out waiting for copied entry ID \(String(describing: entryID))")
+    }
+
     private func waitForCompletedCopySleeps(_ count: Int, in sleeper: CopyFeedbackSleeper) async {
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while ContinuousClock.now < deadline {
@@ -292,7 +301,7 @@ import Testing
         #expect(controller.copiedEntryID == 1)
 
         gate.open()
-        await waitForCompletedCopySleeps(1, in: sleeper)
+        await waitForCopiedEntryID(nil, in: controller)
         #expect(controller.copiedEntryID == nil)
     }
 
