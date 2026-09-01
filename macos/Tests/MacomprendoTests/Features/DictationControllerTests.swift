@@ -134,6 +134,25 @@ import Testing
         #expect(h.inserter.inserted.isEmpty)
     }
 
+    /// A regression that records before transcription is accepted would leave a history
+    /// row after an explicit cancellation while the provider is still transcribing.
+    @Test func explicitCancellationBeforeTranscriptAcceptanceDoesNotRecordHistory() async {
+        let h = makeHarness()
+        h.transcriber.delay = .seconds(5)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await waitFor("state transcribing") { h.controller.state == .transcribing }
+
+        let pending = h.controller.activeTask
+        h.controller.cancel()
+        await pending?.value
+
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+    }
+
     /// Cancelling after the history store has accepted an append but before it completes
     /// must leave that accepted row durable and stop before insertion starts.
     @Test func cancellationAfterHistoryAppendAcceptanceKeepsTheRowButDoesNotInsert() async {
