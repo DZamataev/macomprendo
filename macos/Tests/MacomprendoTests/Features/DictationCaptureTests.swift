@@ -214,18 +214,56 @@ import Testing
         capture.handle(.keyUp(.dictateAndRefine))
         await waitFor("history append to suspend") { appendGate.waiterCount == 1 }
 
+        let staleCompletion = Task { await capture.drain() }
+        await Task.yield() // let the drainer snapshot the still-gated append task
         capture.handle(.keyDown(.dictateAndRefine))
         await capture.drain()
         #expect(await store.appendRequests.map(\.text) == ["record then supersede"])
         #expect(recorder.startCount == 1)
 
         appendGate.open()
-        await Task.yield()
-        await Task.yield()
+        await staleCompletion.value
 
         #expect(transcripts.isEmpty)
         #expect(warnings.isEmpty)
         #expect(capture.state == .idle)
+    }
+
+    /// A cancelled append belongs to the capture generation that accepted it. Once a
+    /// newer hold recording has started, resuming that stale append must not reset the
+    /// newer recording to idle and make its key-up a no-op.
+    @Test func staleAppendCompletionCannotClobberANewerRecording() async {
+        let recorder = ScriptedRecorder()
+        let store = FakeDictationHistoryStore()
+        let appendGate = AsyncGate()
+        await store.setAppendGate(appendGate)
+        let capture = make(recorder: recorder, historyStore: store)
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        capture.handle(.keyUp(.dictateAndRefine))
+        await waitFor("first history append to suspend") { appendGate.waiterCount == 1 }
+
+        let staleCompletion = Task { await capture.drain() }
+        await Task.yield() // let the drainer snapshot the still-gated append task
+        capture.handle(.keyDown(.dictateAndRefine)) // cancel the stale generation
+        await capture.drain()
+        capture.handle(.keyDown(.dictateAndRefine)) // start a newer generation
+        await capture.drain()
+        #expect(capture.state == .recording)
+        #expect(recorder.startCount == 2)
+
+        appendGate.open()
+        await staleCompletion.value
+
+        #expect(capture.state == .recording)
+        capture.handle(.keyUp(.dictateAndRefine))
+        await capture.drain()
+
+        #expect(capture.state == .idle)
+        #expect(transcripts == ["hello world"])
+        #expect(await store.appendRequests.map(\.text) == ["hello world", "hello world"])
+        #expect(errors.isEmpty)
     }
 
     // MARK: - Fix-review findings

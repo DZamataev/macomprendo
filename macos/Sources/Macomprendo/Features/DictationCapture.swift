@@ -23,6 +23,7 @@ import Foundation
     private let mode: @MainActor () -> DictationMode
     private let language: @MainActor () -> String?
     private var task: Task<Void, Never>?
+    private var generation = 0
 
     init(recorder: any AudioRecording,
          transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider,
@@ -60,6 +61,7 @@ import Foundation
     }
 
     func cancel() {
+        generation += 1
         task?.cancel()
         let recorder = self.recorder
         task = Task { _ = await recorder.stop() }
@@ -73,6 +75,8 @@ import Foundation
 
     private func startRecording() {
         guard state == .idle else { return }
+        generation += 1
+        let generation = generation
         setState(.recording)
         task = Task { [weak self] in
             guard let self else { return }
@@ -83,14 +87,15 @@ import Foundation
                 // `recorder.start()` after `cancel()` already kicked off `recorder.stop()`,
                 // so every suspension point below must be checked explicitly. Mirrors
                 // `DictationController.startRecording()`'s guards.
-                guard !Task.isCancelled else { return }
+                guard self.generation == generation, !Task.isCancelled else { return }
                 if currentStatus != .granted {
                     let granted = await self.permissions.request(.microphone)
-                    guard !Task.isCancelled else { return }
+                    guard self.generation == generation, !Task.isCancelled else { return }
                     guard granted == .granted else { throw MacomprendoError.permissionDenied(.microphone) }
                 }
                 try await self.recorder.start()
             } catch {
+                guard self.generation == generation else { return }
                 self.setState(.idle)
                 self.onError?(error)
             }
@@ -99,29 +104,36 @@ import Foundation
 
     private func finishRecording() {
         guard state == .recording else { return }
+        let generation = generation
         setState(.transcribing)
         let previous = task
         task = Task { [weak self] in
             guard let self else { return }
             _ = await previous?.value              // let start() settle before stopping
+            guard self.generation == generation, !Task.isCancelled else { return }
             let samples = await self.recorder.stop()
             do {
                 try Task.checkCancellation()
+                guard self.generation == generation else { return }
                 guard !samples.isEmpty else { throw MacomprendoError.audio("Nothing heard.") }
                 let transcriber = try await self.transcriberProvider()
+                guard self.generation == generation else { return }
                 let raw = try await transcriber.transcribe(samples, sampleRate: 16_000,
                                                            language: self.language())
                 try Task.checkCancellation()
+                guard self.generation == generation else { return }
                 let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { throw MacomprendoError.audio("Nothing heard.") }
                 let historyError = await history.record(text: text, kind: .dictationAndRefine)
                 try Task.checkCancellation()
+                guard self.generation == generation else { return }
                 self.setState(.idle)
                 if let historyError {
                     onHistoryError?(historyError)
                 }
                 self.onTranscript?(text)
             } catch {
+                guard self.generation == generation else { return }
                 self.setState(.idle)
                 // `HTTPClient` maps both `CancellationError` and transport-level
                 // `URLError.cancelled` to `MacomprendoError.cancelled` — treat that
