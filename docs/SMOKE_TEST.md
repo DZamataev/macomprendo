@@ -145,10 +145,13 @@ preference controls recording only; it never records audio.
 - [ ] **Excluded flows.** With history enabled, run Refine Selection, cancel a Dictate while
       recording or transcribing, dictate silence/blank text, and force a transcription failure
       (for example by selecting a missing model). None creates an entry.
-- [ ] **Newest-first paging and complete Copy.** With more entries than the initial page, the
-      newest entry appears first and scrolling to the last visible row loads older entries without
-      duplicates. Use a transcript longer than its row preview, click that row’s accessible Copy
-      button, and paste elsewhere: the complete transcript—not the truncated preview—is pasted.
+- [ ] **Newest-first cursor paging and complete Copy.** With more entries than the initial page,
+      fetch page 1 and note its oldest visible entry. Before fetching page 2, record a new
+      recognizable transcript; then scroll to the last visible row. The older page continues from
+      the noted entry with no duplicates or gaps, and loading a further older page remains stable
+      despite the new row (an offset-based page would shift). Use a transcript longer than its row
+      preview, click that row’s accessible Copy button, and paste elsewhere: the complete
+      transcript—not the truncated preview—is pasted.
 - [ ] **100,000-entry retention fixture.** Before launching the app, prepare a disposable
       `dictation-history.sqlite3` fixture containing 100,000 sequential entries. Enable history,
       record one more recognizable transcript, and confirm the new entry is present, the oldest
