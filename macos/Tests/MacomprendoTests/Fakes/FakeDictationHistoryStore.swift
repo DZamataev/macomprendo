@@ -15,6 +15,7 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
 
     private(set) var appendRequests: [AppendRequest] = []
     private(set) var fetchRequests: [FetchRequest] = []
+    private(set) var cancelledFetchCount = 0
     private(set) var clearCallCount = 0
 
     private var pages: [DictationHistoryPage] = []
@@ -69,6 +70,10 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
             response = pages.removeFirst()
         }
         if let fetchGate { await fetchGate.wait() }
+        if Task.isCancelled {
+            cancelledFetchCount += 1
+            throw CancellationError()
+        }
         return response
     }
 

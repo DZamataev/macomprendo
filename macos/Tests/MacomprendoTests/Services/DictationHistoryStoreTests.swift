@@ -55,6 +55,61 @@ import Testing
         }
     }
 
+    private func createDatabaseWithDamagedHistoryTablePage(at databaseURL: URL) throws {
+        try FileManager.default.createDirectory(at: databaseURL.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database,
+                              SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+              let database
+        else {
+            throw MacomprendoError.dictationHistory("create damaged-page fixture")
+        }
+
+        let schema = """
+        CREATE TABLE dictation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at REAL NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('dictation', 'dictationAndRefine')),
+            text TEXT NOT NULL CHECK(length(trim(text)) > 0)
+        );
+        INSERT INTO dictation_history (created_at, kind, text)
+        VALUES (1, 'dictation', 'before corruption');
+        PRAGMA user_version = 1;
+        """
+        guard sqlite3_exec(database, schema, nil, nil, nil) == SQLITE_OK else {
+            sqlite3_close_v2(database)
+            throw MacomprendoError.dictationHistory("seed damaged-page fixture")
+        }
+
+        func scalar(_ sql: String) throws -> Int64 {
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+                  let statement
+            else {
+                throw MacomprendoError.dictationHistory("prepare damaged-page fixture metadata")
+            }
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_step(statement) == SQLITE_ROW else {
+                throw MacomprendoError.dictationHistory("read damaged-page fixture metadata")
+            }
+            return sqlite3_column_int64(statement, 0)
+        }
+
+        let pageSize = try scalar("PRAGMA page_size")
+        let rootPage = try scalar(
+            "SELECT rootpage FROM sqlite_master WHERE name = 'dictation_history'"
+        )
+        guard sqlite3_close_v2(database) == SQLITE_OK else {
+            throw MacomprendoError.dictationHistory("close damaged-page fixture")
+        }
+
+        let file = try FileHandle(forWritingTo: databaseURL)
+        defer { try? file.close() }
+        try file.seek(toOffset: UInt64((rootPage - 1) * pageSize))
+        try file.write(contentsOf: Data(repeating: 0, count: Int(pageSize)))
+    }
+
     // Catches using timestamp order, losing data across a reopen, or persisting the wrong kind.
     @Test func appendPersistsAcrossReopenAndFetchesNewestFirst() async throws {
         let (store, url) = makeStore()
@@ -69,6 +124,18 @@ import Testing
         #expect(page.entries.map(\.text) == ["second", "first"])
         #expect(page.entries.map(\.kind) == [.dictationAndRefine, .dictation])
         #expect(page.nextCursor == nil)
+    }
+
+    // Catches binding or decoding SQLite text as a NUL-terminated C string, which truncates
+    // otherwise-valid Swift text at U+0000.
+    @Test func appendRoundTripsEmbeddedNULAndNonASCIIText() async throws {
+        let (store, _) = makeStore()
+        let text = "до\0после — 世界"
+
+        _ = try await store.append(text: text, kind: .dictation, at: .now)
+
+        let page = try await store.fetchPage(beforeID: nil, limit: 1)
+        #expect(page.entries.map(\.text) == [text])
     }
 
     // Catches including the cursor again, which would duplicate rows between pages.
@@ -129,6 +196,36 @@ import Testing
         let page = try await store.fetchPage(beforeID: nil, limit: 10)
         #expect(page.entries.map(\.text) == ["4", "3", "2"])
         #expect(SQLiteDictationHistoryStore.defaultMaximumEntryCount == 100_000)
+    }
+
+    // Catches committing the insert separately from retention trimming: an aborting trim must
+    // roll the new row back and leave the pre-transaction history intact.
+    @Test func trimFailureRollsBackTheInsertion() async throws {
+        let (store, url) = makeStore(maximumEntryCount: 1)
+        _ = try await store.append(text: "preserve me", kind: .dictation, at: .now)
+        try executeRaw(
+            """
+            CREATE TRIGGER reject_history_trim
+            BEFORE DELETE ON dictation_history
+            BEGIN
+                SELECT RAISE(ABORT, 'reject trim');
+            END;
+            """,
+            at: url
+        )
+
+        do {
+            _ = try await store.append(text: "must roll back", kind: .dictation, at: .now)
+            Issue.record("expected retention trimming to abort the append transaction")
+        } catch let error as MacomprendoError {
+            guard case .dictationHistory = error else {
+                Issue.record("expected a dictation history error, got \(error)")
+                return
+            }
+        }
+
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.map(\.text)
+                == ["preserve me"])
     }
 
     // Catches non-isolated connection access that drops rows during simultaneous writes.
@@ -196,6 +293,30 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: shmURL.path))
         _ = try await store.append(text: "after reset", kind: .dictation, at: .now)
         #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.map(\.text) == ["after reset"])
+    }
+
+    // Catches confirmed clear retrying DELETE forever on a cached connection after a table page
+    // becomes corrupt, instead of using the promised destructive recovery path.
+    @Test func clearRecoversAfterFetchCachesAPostOpenCorruption() async throws {
+        let (store, url) = makeStore()
+        try createDatabaseWithDamagedHistoryTablePage(at: url)
+
+        do {
+            _ = try await store.fetchPage(beforeID: nil, limit: 10)
+            Issue.record("expected fetch to report the damaged table page")
+        } catch let error as MacomprendoError {
+            guard case .dictationHistory = error else {
+                Issue.record("expected a dictation history error, got \(error)")
+                return
+            }
+        }
+
+        try await store.clear()
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.isEmpty)
+
+        _ = try await store.append(text: "after recovery", kind: .dictation, at: .now)
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.map(\.text)
+                == ["after recovery"])
     }
 
     // Catches clear resetting a healthy database after a transactional delete failure.

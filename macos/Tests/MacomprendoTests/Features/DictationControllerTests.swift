@@ -40,11 +40,12 @@ import Testing
         settings.value.dictationMode = mode
         settings.value.insertMethod = insertMethod
         settings.value.transcriptionLanguage = "en"
+        settings.value.dictationHistoryEnabled = historyEnabled
         let escapeMonitor = FakeEscapeMonitor()
         let historyStore = FakeDictationHistoryStore()
         let history = DictationHistoryController(store: historyStore,
                                                   pasteboard: pasteboard,
-                                                  isEnabled: { historyEnabled })
+                                                  isEnabled: { settings.value.dictationHistoryEnabled })
         if let transcript { transcriber.result = .success(transcript) }
 
         let controller = DictationController(
@@ -103,6 +104,39 @@ import Testing
 
         #expect(await h.historyStore.appendRequests.isEmpty)
         #expect(h.inserter.inserted.map(\.text) == ["not recorded"])
+    }
+
+    @Test func disablingHistoryBeforeDirectTranscriptAcceptancePreventsPersistence() async {
+        let h = makeHarness(historyEnabled: true, transcript: "not persisted")
+        let transcriptionGate = AsyncGate()
+        h.transcriber.gate = transcriptionGate
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await waitFor("direct transcription to suspend") { transcriptionGate.waiterCount == 1 }
+        h.settings.value.dictationHistoryEnabled = false
+        transcriptionGate.open()
+        await h.controller.activeTask?.value
+
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(h.inserter.inserted.map(\.text) == ["not persisted"])
+    }
+
+    @Test func enablingHistoryBeforeDirectTranscriptAcceptancePermitsPersistence() async {
+        let h = makeHarness(historyEnabled: false, transcript: "persisted after enabling")
+        let transcriptionGate = AsyncGate()
+        h.transcriber.gate = transcriptionGate
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await waitFor("direct transcription to suspend") { transcriptionGate.waiterCount == 1 }
+        h.settings.value.dictationHistoryEnabled = true
+        transcriptionGate.open()
+        await h.controller.activeTask?.value
+
+        #expect(await h.historyStore.appendRequests.map(\.text) == ["persisted after enabling"])
     }
 
     /// Blank transcription has no accepted text, so it must not create a history row.

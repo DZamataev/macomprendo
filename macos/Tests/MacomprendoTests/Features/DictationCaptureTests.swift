@@ -7,13 +7,15 @@ import Testing
     private var transcripts: [String] = []
     private var errors: [Error] = []
 
-    private func history(store: FakeDictationHistoryStore, enabled: Bool = true)
+    private func history(store: FakeDictationHistoryStore, enabled: Bool = true,
+                         preference: Box<Bool>? = nil)
         -> DictationHistoryController {
-        DictationHistoryController(store: store, pasteboard: ScriptedPasteboard(), isEnabled: { enabled })
+        DictationHistoryController(store: store, pasteboard: ScriptedPasteboard(),
+                                   isEnabled: { preference?.value ?? enabled })
     }
 
     private func make(mode: DictationMode = .hold,
-                      recorder: ScriptedRecorder = ScriptedRecorder(),
+                      recorder: any AudioRecording = ScriptedRecorder(),
                       transcriber: ScriptedTranscriber = ScriptedTranscriber(),
                       permissions: ScriptedPermissions = ScriptedPermissions(),
                       historyStore: FakeDictationHistoryStore = FakeDictationHistoryStore(),
@@ -135,6 +137,54 @@ import Testing
         #expect(await store.appendRequests.isEmpty)
     }
 
+    @Test func disablingHistoryBeforeRefineTranscriptAcceptancePreventsPersistence() async {
+        let store = FakeDictationHistoryStore()
+        let preference = Box(true)
+        let transcriptionGate = AsyncGate()
+        let capture = DictationCapture(
+            recorder: ScriptedRecorder(),
+            transcriberProvider: {
+                ScriptedTranscriber(text: "not persisted", gate: transcriptionGate)
+            },
+            permissions: ScriptedPermissions(),
+            mode: { .hold },
+            language: { "en" },
+            history: history(store: store, preference: preference))
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        capture.handle(.keyUp(.dictateAndRefine))
+        await waitFor("refine transcription to suspend") { transcriptionGate.waiterCount == 1 }
+        preference.value = false
+        transcriptionGate.open()
+        await capture.drain()
+
+        #expect(await store.appendRequests.isEmpty)
+    }
+
+    @Test func enablingHistoryBeforeRefineTranscriptAcceptancePermitsPersistence() async {
+        let store = FakeDictationHistoryStore()
+        let preference = Box(false)
+        let transcriptionGate = AsyncGate()
+        let capture = DictationCapture(
+            recorder: ScriptedRecorder(),
+            transcriberProvider: {
+                ScriptedTranscriber(text: "persisted after enabling", gate: transcriptionGate)
+            },
+            permissions: ScriptedPermissions(),
+            mode: { .hold },
+            language: { "en" },
+            history: history(store: store, preference: preference))
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        capture.handle(.keyUp(.dictateAndRefine))
+        await waitFor("refine transcription to suspend") { transcriptionGate.waiterCount == 1 }
+        preference.value = true
+        transcriptionGate.open()
+        await capture.drain()
+
+        #expect(await store.appendRequests.map(\.text) == ["persisted after enabling"])
+    }
+
     @Test func blankTranscriptIsReportedAsNothingHeard() async {
         let store = FakeDictationHistoryStore()
         let capture = make(transcriber: ScriptedTranscriber(text: "   "), historyStore: store)
@@ -185,6 +235,31 @@ import Testing
         #expect(transcripts.isEmpty)
         #expect(errors.isEmpty)
         #expect(await store.appendRequests.isEmpty)
+    }
+
+    /// Catches overwriting the asynchronous cancel-stop task with a fast restart, which lets
+    /// `recorder.start()` race the still-pending stop and invalidates the new capture generation.
+    @Test func cancelledRecorderStopIsAwaitedBeforeAFastRestart() async {
+        let recorder = FakeAudioRecorder()
+        let capture = make(recorder: recorder)
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        #expect(capture.state == .recording)
+
+        let stopGate = AsyncGate()
+        recorder.stopGate = stopGate
+        capture.cancel()
+        await waitFor("cancelled recorder stop to suspend") { stopGate.waiterCount == 1 }
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(recorder.startCount == 1)
+
+        stopGate.open()
+        await capture.drain()
+        #expect(recorder.startCount == 2)
+        #expect(recorder.isRecording)
+        #expect(capture.state == .recording)
     }
 
     /// A new hold hotkey while the durable append is suspended cancels the superseded

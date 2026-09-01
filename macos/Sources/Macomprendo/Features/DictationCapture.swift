@@ -23,6 +23,7 @@ import Foundation
     private let mode: @MainActor () -> DictationMode
     private let language: @MainActor () -> String?
     private var task: Task<Void, Never>?
+    private var pendingStopTask: Task<Void, Never>?
     private var generation = 0
 
     init(recorder: any AudioRecording,
@@ -63,8 +64,9 @@ import Foundation
     func cancel() {
         generation += 1
         task?.cancel()
+        task = nil
         let recorder = self.recorder
-        task = Task { _ = await recorder.stop() }
+        pendingStopTask = Task { _ = await recorder.stop() }
         setState(.idle)
     }
 
@@ -93,7 +95,12 @@ import Foundation
                     guard self.generation == generation, !Task.isCancelled else { return }
                     guard granted == .granted else { throw MacomprendoError.permissionDenied(.microphone) }
                 }
+                let pendingStopTask = self.pendingStopTask
+                await pendingStopTask?.value
+                guard self.generation == generation, !Task.isCancelled else { return }
+                self.pendingStopTask = nil
                 try await self.recorder.start()
+                guard self.generation == generation, !Task.isCancelled else { return }
             } catch {
                 guard self.generation == generation else { return }
                 self.setState(.idle)

@@ -280,6 +280,25 @@ import Testing
         #expect(!controller.isLoading)
     }
 
+    // Catches lifecycle cancellation invalidating publication without cancelling the actual
+    // store request, leaving scene-launched page work running after the window closes.
+    @Test func cancelLoadingCancelsTheControllerOwnedStoreRequest() async {
+        let store = FakeDictationHistoryStore()
+        let gate = AsyncGate()
+        await store.setFetchGate(gate)
+        let controller = makeController(store: store)
+
+        let loading = Task { await controller.loadInitial() }
+        await waitForFetches(1, in: store)
+        controller.cancelLoading()
+        gate.open()
+        await loading.value
+
+        #expect(await store.cancelledFetchCount == 1)
+        #expect(controller.entries.isEmpty)
+        #expect(!controller.isLoading)
+    }
+
     @Test func copyWritesTheCompleteTranscript() {
         let pasteboard = FakePasteboard()
         let controller = makeController(pasteboard: pasteboard)

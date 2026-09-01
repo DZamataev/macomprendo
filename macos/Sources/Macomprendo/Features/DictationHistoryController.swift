@@ -18,6 +18,7 @@ final class DictationHistoryController: ObservableObject {
 
     private var nextCursor: Int64?
     private var loadGeneration = 0
+    private var loadTask: Task<DictationHistoryPage, Error>?
     private var copyGeneration = 0
 
     init(store: any DictationHistoryStoring,
@@ -102,18 +103,29 @@ final class DictationHistoryController: ObservableObject {
 
     func cancelLoading() {
         loadGeneration += 1
+        loadTask?.cancel()
+        loadTask = nil
         isLoading = false
     }
 
     private func beginLoading() -> Int {
         loadGeneration += 1
+        loadTask?.cancel()
+        loadTask = nil
         isLoading = true
         return loadGeneration
     }
 
     private func loadPage(beforeID: Int64?, replacingEntries: Bool, generation: Int) async {
+        let store = self.store
+        let pageSize = self.pageSize
+        let loadTask = Task {
+            try await store.fetchPage(beforeID: beforeID, limit: pageSize)
+        }
+        self.loadTask = loadTask
+
         do {
-            let page = try await store.fetchPage(beforeID: beforeID, limit: pageSize)
+            let page = try await loadTask.value
             guard generation == loadGeneration else { return }
 
             if replacingEntries {
@@ -130,7 +142,10 @@ final class DictationHistoryController: ObservableObject {
             errorMessage = ErrorText.describe(mappedHistoryError(from: error))
         }
 
-        if generation == loadGeneration { isLoading = false }
+        if generation == loadGeneration {
+            self.loadTask = nil
+            isLoading = false
+        }
     }
 
     private func deduplicating(_ pageEntries: [DictationHistoryEntry]) -> [DictationHistoryEntry] {

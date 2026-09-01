@@ -14,6 +14,7 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
     private let databaseURL: URL
     private let maximumEntryCount: Int
     private var database: DatabaseHandle?
+    private var requiresConfirmedReset = false
 
     init(databaseURL: URL,
          maximumEntryCount: Int = SQLiteDictationHistoryStore.defaultMaximumEntryCount) {
@@ -89,9 +90,9 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             if result == SQLITE_DONE { break }
             try check(result, expected: SQLITE_ROW, on: database, operation: "fetch page")
 
-            guard let kindValue = sqlite3_column_text(statement, 2),
-                  let kind = DictationHistoryKind(rawValue: String(cString: kindValue)),
-                  let textValue = sqlite3_column_text(statement, 3)
+            guard let kindValue = text(from: statement, index: 2),
+                  let kind = DictationHistoryKind(rawValue: kindValue),
+                  let textValue = text(from: statement, index: 3)
             else {
                 throw MacomprendoError.dictationHistory("fetch page: invalid stored entry")
             }
@@ -100,7 +101,7 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
                 id: sqlite3_column_int64(statement, 0),
                 createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
                 kind: kind,
-                text: String(cString: textValue)
+                text: textValue
             ))
         }
 
@@ -118,19 +119,25 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             do {
                 activeDatabase = try connection()
             } catch {
+                guard requiresConfirmedReset else { throw error }
                 try resetDatabase()
                 return
             }
         }
 
-        try execute("BEGIN IMMEDIATE", on: activeDatabase, operation: "begin clear history")
         do {
+            try execute("BEGIN IMMEDIATE", on: activeDatabase, operation: "begin clear history")
             try execute("DELETE FROM dictation_history", on: activeDatabase, operation: "clear history")
             try execute("DELETE FROM sqlite_sequence WHERE name = 'dictation_history'",
                         on: activeDatabase, operation: "reset history sequence")
             try execute("COMMIT", on: activeDatabase, operation: "commit clear history")
         } catch {
+            let result = sqlite3_extended_errcode(activeDatabase)
             sqlite3_exec(activeDatabase, "ROLLBACK", nil, nil, nil)
+            if isCorruption(result) {
+                try resetDatabase()
+                return
+            }
             throw error
         }
     }
@@ -152,6 +159,7 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
 
     private func connection() throws -> OpaquePointer {
         if let database { return database.pointer }
+        requiresConfirmedReset = false
 
         let parentDirectory = databaseURL.deletingLastPathComponent()
         do {
@@ -174,6 +182,7 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             try execute("PRAGMA foreign_keys = ON", on: openedDatabase, operation: "enable foreign keys")
             let version = try userVersion(on: openedDatabase)
             guard version == 0 || version == 1 else {
+                requiresConfirmedReset = true
                 throw MacomprendoError.dictationHistory("open database: unsupported schema version \(version)")
             }
             if version == 0 {
@@ -194,6 +203,9 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             database = DatabaseHandle(openedDatabase)
             return openedDatabase
         } catch {
+            if isCorruption(sqlite3_extended_errcode(openedDatabase)) {
+                requiresConfirmedReset = true
+            }
             sqlite3_close_v2(openedDatabase)
             throw error
         }
@@ -241,8 +253,21 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
     private func bind(_ value: String, to statement: OpaquePointer, index: Int32,
                       on database: OpaquePointer, operation: String) throws {
         let destructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        try check(sqlite3_bind_text(statement, index, value, -1, destructor),
-                  on: database, operation: operation)
+        let result = value.utf8CString.withUnsafeBufferPointer { bytes in
+            sqlite3_bind_text64(statement, index, bytes.baseAddress,
+                                UInt64(bytes.count - 1), destructor, UInt8(SQLITE_UTF8))
+        }
+        try check(result, on: database, operation: operation)
+    }
+
+    private func text(from statement: OpaquePointer, index: Int32) -> String? {
+        guard sqlite3_column_type(statement, index) == SQLITE_TEXT,
+              let value = sqlite3_column_text(statement, index)
+        else { return nil }
+
+        let bytes = UnsafeBufferPointer(start: value,
+                                        count: Int(sqlite3_column_bytes(statement, index)))
+        return String(bytes: bytes, encoding: .utf8)
     }
 
     private func check(_ result: Int32, expected: Int32 = SQLITE_OK,
@@ -250,6 +275,11 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
         guard result == expected else {
             throw MacomprendoError.dictationHistory("\(operation): \(sqliteMessage(from: database))")
         }
+    }
+
+    private func isCorruption(_ result: Int32) -> Bool {
+        let primaryResult = result & 0xff
+        return primaryResult == SQLITE_CORRUPT || primaryResult == SQLITE_NOTADB
     }
 
     private func sqliteMessage(from database: OpaquePointer?) -> String {
