@@ -24,6 +24,7 @@ final class DictationController: ObservableObject {
     private let pasteboard: any PasteboardProtocol
     private let settings: @MainActor () -> Settings
     private let escapeMonitor: any EscapeMonitoring
+    private let history: DictationHistoryController?
 
     private var target: FrontmostApp?
     private var startedAt: Date?
@@ -53,7 +54,8 @@ final class DictationController: ObservableObject {
          hud: HUDController,
          pasteboard: any PasteboardProtocol,
          settings: @escaping @MainActor () -> Settings,
-         escapeMonitor: any EscapeMonitoring) {
+         escapeMonitor: any EscapeMonitoring,
+         history: DictationHistoryController? = nil) {
         self.recorder = recorder
         self.transcriberProvider = transcriberProvider
         self.inserter = inserter
@@ -63,6 +65,7 @@ final class DictationController: ObservableObject {
         self.pasteboard = pasteboard
         self.settings = settings
         self.escapeMonitor = escapeMonitor
+        self.history = history
         escapeMonitor.onEscape = { [weak self] in self?.cancel() }
 
         // One long-lived consumer each: an `AsyncStream` can only be iterated once, so
@@ -191,6 +194,13 @@ final class DictationController: ObservableObject {
                 return
             }
 
+            let historyError: MacomprendoError? = if let history {
+                await history.record(text: text, kind: .dictation)
+            } else {
+                nil
+            }
+            try Task.checkCancellation()
+
             state = .inserting
             isInserting = true
             let insertOutcome: Result<Void, Error>
@@ -216,7 +226,11 @@ final class DictationController: ObservableObject {
                 state = .idle
                 target = nil
                 escapeMonitor.stop()
-                hud.show(.success("Inserted"))
+                if let historyError {
+                    hud.show(.error(ErrorText.describe(historyError)))
+                } else {
+                    hud.show(.success("Inserted"))
+                }
             case .failure(MacomprendoError.insertFailed):
                 // `PasteTextInserter` throws `insertFailed` before it ever writes to the
                 // pasteboard when it cannot re-activate the target app, but its recovery

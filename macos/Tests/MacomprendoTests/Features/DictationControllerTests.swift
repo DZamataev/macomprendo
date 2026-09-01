@@ -15,10 +15,14 @@ import Testing
         let pasteboard: FakePasteboard
         let settings: SettingsHolder
         let escapeMonitor: FakeEscapeMonitor
+        let historyStore: FakeDictationHistoryStore
+        let history: DictationHistoryController
     }
 
     private func makeHarness(mode: DictationMode = .hold,
-                             insertMethod: InsertMethod = .auto) -> Harness {
+                             insertMethod: InsertMethod = .auto,
+                             historyEnabled: Bool = true,
+                             transcript: String? = nil) -> Harness {
         let recorder = FakeAudioRecorder()
         let transcriber = FakeTranscriptionProvider()
         let inserter = FakeTextInserter()
@@ -37,6 +41,11 @@ import Testing
         settings.value.insertMethod = insertMethod
         settings.value.transcriptionLanguage = "en"
         let escapeMonitor = FakeEscapeMonitor()
+        let historyStore = FakeDictationHistoryStore()
+        let history = DictationHistoryController(store: historyStore,
+                                                  pasteboard: pasteboard,
+                                                  isEnabled: { historyEnabled })
+        if let transcript { transcriber.result = .success(transcript) }
 
         let controller = DictationController(
             recorder: recorder,
@@ -47,10 +56,112 @@ import Testing
             hud: hud,
             pasteboard: pasteboard,
             settings: { settings.value },
-            escapeMonitor: escapeMonitor)
+            escapeMonitor: escapeMonitor,
+            history: history)
         return Harness(controller: controller, recorder: recorder, transcriber: transcriber,
                        inserter: inserter, tracker: tracker, permissions: permissions,
-                       hud: hud, pasteboard: pasteboard, settings: settings, escapeMonitor: escapeMonitor)
+                       hud: hud, pasteboard: pasteboard, settings: settings, escapeMonitor: escapeMonitor,
+                       historyStore: historyStore, history: history)
+    }
+
+    private func recordAndFinish(_ h: Harness) async {
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await h.controller.activeTask?.value
+    }
+
+    // MARK: - Dictation history
+
+    /// A regression where the controller bypasses its history commit point would leave
+    /// the accepted, trimmed direct dictation absent from history even though it pasted.
+    @Test func acceptedTranscriptIsRecordedBeforeInsertion() async {
+        let h = makeHarness(historyEnabled: true, transcript: "  recorded text \n")
+        await recordAndFinish(h)
+
+        #expect(await h.historyStore.appendRequests.map(\.text) == ["recorded text"])
+        #expect(await h.historyStore.appendRequests.map(\.kind) == [.dictation])
+        #expect(h.inserter.inserted.map(\.text) == ["recorded text"])
+    }
+
+    /// A disabled setting must reject the history side effect without changing insertion.
+    @Test func disabledHistoryDoesNotRecordAnAcceptedTranscript() async {
+        let h = makeHarness(historyEnabled: false, transcript: "not recorded")
+        await recordAndFinish(h)
+
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(h.inserter.inserted.map(\.text) == ["not recorded"])
+    }
+
+    /// Blank transcription has no accepted text, so it must not create a history row.
+    @Test func blankTranscriptDoesNotRecordHistory() async {
+        let h = makeHarness(transcript: " \n ")
+        await recordAndFinish(h)
+
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+    }
+
+    /// Provider failures happen before acceptance and must not leave history behind.
+    @Test func transcriptionFailureDoesNotRecordHistory() async {
+        let h = makeHarness()
+        h.transcriber.result = .failure(MacomprendoError.providerUnreachable(endpointName: "Ollama (local)"))
+        await recordAndFinish(h)
+
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+    }
+
+    /// A provider-originated cancellation is not an accepted transcript.
+    @Test func providerCancellationDoesNotRecordHistory() async {
+        let h = makeHarness()
+        h.transcriber.result = .failure(MacomprendoError.cancelled)
+        await recordAndFinish(h)
+
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+    }
+
+    /// Explicit cancellation while transcription is in flight must not commit history.
+    @Test func explicitCancellationDoesNotRecordHistory() async {
+        let h = makeHarness()
+        h.transcriber.delay = .seconds(5)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await waitFor("state transcribing") { h.controller.state == .transcribing }
+        h.controller.cancel()
+        await h.controller.activeTask?.value
+
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+    }
+
+    /// Insertion can fail after acceptance; the history commit must already be durable.
+    @Test func insertionFailureStillRecordsAcceptedTranscript() async {
+        let h = makeHarness(transcript: "record despite insert failure")
+        h.inserter.error = MacomprendoError.insertFailed
+        await recordAndFinish(h)
+
+        #expect(await h.historyStore.appendRequests.map(\.text) == ["record despite insert failure"])
+        #expect(h.controller.state == .failed(ErrorText.describe(MacomprendoError.insertFailed)))
+    }
+
+    /// A history-store failure is a warning: insertion succeeds and the action remains idle.
+    @Test func historyStoreFailureWarnsButStillInserts() async {
+        let h = makeHarness(transcript: "insert despite history failure")
+        await h.historyStore.setAppendError(MacomprendoError.dictationHistory("disk full"))
+        await recordAndFinish(h)
+
+        #expect(await h.historyStore.appendRequests.map(\.text) == ["insert despite history failure"])
+        #expect(h.inserter.inserted.map(\.text) == ["insert despite history failure"])
+        #expect(h.controller.state == .idle)
+        guard case .error(let message) = h.hud.state else {
+            Issue.record("Expected a user-visible history warning")
+            return
+        }
+        #expect(message.contains("Dictation history is unavailable"))
     }
 
     // MARK: - Hold mode
