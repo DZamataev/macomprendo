@@ -138,6 +138,7 @@ struct Settings: Codable, Sendable, Equatable {
     var dictationMode: DictationMode
     var insertMethod: InsertMethod
     var launchAtLogin: Bool
+    var dictationHistoryEnabled: Bool
     var transcriptionSource: TranscriptionSource
     /// nil = detect the language automatically.
     var transcriptionLanguage: String?
@@ -179,6 +180,7 @@ struct Settings: Codable, Sendable, Equatable {
             dictationMode: .hold,
             insertMethod: .auto,
             launchAtLogin: false,
+            dictationHistoryEnabled: false,
             transcriptionSource: .local(modelID: "large-v3-turbo"),
             transcriptionLanguage: nil,
             endpoints: [Endpoint.ollamaLocal()],
@@ -228,6 +230,9 @@ extension Settings {
         dictationMode = try c.decodeIfPresent(DictationMode.self, forKey: .dictationMode) ?? d.dictationMode
         insertMethod = try c.decodeIfPresent(InsertMethod.self, forKey: .insertMethod) ?? d.insertMethod
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
+        dictationHistoryEnabled = try c.decodeIfPresent(Bool.self,
+                                                         forKey: .dictationHistoryEnabled)
+            ?? d.dictationHistoryEnabled
         transcriptionSource = try c.decodeIfPresent(TranscriptionSource.self, forKey: .transcriptionSource) ?? d.transcriptionSource
         transcriptionLanguage = try c.decodeIfPresent(String.self, forKey: .transcriptionLanguage)
         endpoints = try c.decodeIfPresent([Endpoint].self, forKey: .endpoints) ?? d.endpoints

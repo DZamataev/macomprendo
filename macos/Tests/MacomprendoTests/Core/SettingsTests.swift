@@ -18,6 +18,24 @@ import Testing
     #expect(s.quickPanelFrames.isEmpty)
 }
 
+@Test func dictationHistoryDefaultsOff() {
+    #expect(Settings.default.dictationHistoryEnabled == false)
+}
+
+@Test func legacySettingsDecodeHistoryAsDisabled() throws {
+    var object = try #require(JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(Settings.default)) as? [String: Any])
+    object.removeValue(forKey: "dictationHistoryEnabled")
+    let decoded = try Settings.migrate(JSONSerialization.data(withJSONObject: object))
+    #expect(decoded.dictationHistoryEnabled == false)
+}
+
+@Test func enabledHistoryRoundTrips() throws {
+    var settings = Settings.default
+    settings.dictationHistoryEnabled = true
+    #expect(try Settings.migrate(JSONEncoder().encode(settings)).dictationHistoryEnabled)
+}
+
 @Test func speechSettingsUseTheDocumentedDefaults() {
     let speech = SpeechSettings()
     #expect(speech.voiceID == nil)

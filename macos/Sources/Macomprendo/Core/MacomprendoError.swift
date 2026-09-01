@@ -19,6 +19,7 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case speechKeyMissing
     case noSelection
     case insertFailed
+    case dictationHistory(String)
     case cancelled
 
     var errorDescription: String? {
@@ -47,6 +48,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "No text is selected."
         case .insertFailed:
             return "Macomprendo could not insert the text."
+        case .dictationHistory(let reason):
+            return "Dictation history is unavailable: \(reason)"
         case .cancelled:
             return "Cancelled."
         }
@@ -78,6 +81,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Select some text and press the shortcut again."
         case .insertFailed:
             return "The text is on the clipboard — paste it manually with ⌘V."
+        case .dictationHistory:
+            return "Open Dictation History and clear it, or check that Macomprendo can write to Application Support."
         case .cancelled:
             return nil
         }

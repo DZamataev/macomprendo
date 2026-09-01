@@ -13,7 +13,8 @@ import Testing
     .audioPlayback("format not supported"),
     .speechKeyMissing,
     .noSelection,
-    .insertFailed
+    .insertFailed,
+    .dictationHistory("database is read-only")
 ])
 func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
     #expect(error.errorDescription?.isEmpty == false)
@@ -53,4 +54,14 @@ func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
             == "No speech API key. Add one in Settings ▸ Speech.")
     // Playback failures are distinct from recording failures.
     #expect(MacomprendoError.audioPlayback("x").errorDescription?.contains("Playing") == true)
+}
+
+@Test func dictationHistoryErrorDescribesFailureAndRecoveryWithoutTranscript() {
+    let transcript = "hello, this is a transcript"
+    let error = MacomprendoError.dictationHistory("database is read-only")
+    let text = ErrorText.describe(error)
+
+    #expect(text.contains("Dictation history is unavailable: database is read-only"))
+    #expect(text.contains("Open Dictation History and clear it"))
+    #expect(!text.contains(transcript))
 }
