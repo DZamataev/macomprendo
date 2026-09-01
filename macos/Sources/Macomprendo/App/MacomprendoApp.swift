@@ -38,5 +38,18 @@ struct MacomprendoApp: App {
                 .onAppear { model.dockIcon.open(.settings) }
                 .onDisappear { model.dockIcon.close(.settings) }
         }
+
+        Window("Dictation History", id: "dictation-history") {
+            DictationHistoryView(controller: model.history)
+                .onAppear {
+                    model.dockIcon.open(.history)
+                    Task { await model.history.loadInitial() }
+                }
+                .onDisappear {
+                    model.history.cancelLoading()
+                    model.dockIcon.close(.history)
+                }
+        }
+        .defaultSize(width: 720, height: 560)
     }
 }

@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Dictation history can now be saved locally and browsed in its own paged window, with
+  per-entry copying and a confirmed clear action; audio is never saved.
 - GigaAM local transcription: four Sber models covering Russian with punctuation, and
   Russian, English, Kazakh, Kyrgyz and Uzbek without it, alongside whisper.cpp.
 - Dictation settings now separate backends into sub-tabs with local-model briefs, published

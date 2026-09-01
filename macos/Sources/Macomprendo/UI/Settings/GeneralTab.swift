@@ -34,6 +34,11 @@ struct GeneralTab: View {
                 Text("Typing is slower but works in apps that block pasting.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle("Save dictation history", isOn: $model.settings.dictationHistoryEnabled)
+                Text("Stores transcribed text locally. Audio is never saved.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

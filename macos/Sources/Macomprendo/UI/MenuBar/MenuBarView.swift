@@ -4,6 +4,7 @@ import SwiftUI
 struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Text(model.statusText)
@@ -22,6 +23,13 @@ struct MenuBarView: View {
                                + action.menuTrailing(shortcut: action.currentShortcutText()))
                         .foregroundStyle(.secondary)
                 }
+        }
+
+        if model.settings.dictationHistoryEnabled {
+            Button("Dictation History…") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "dictation-history")
+            }
         }
 
         Divider()

@@ -8,6 +8,7 @@ import Foundation
     enum Owner: Hashable, Sendable {
         case settings
         case onboarding
+        case history
     }
 
     private(set) var owners: Set<Owner> = []
