@@ -16,7 +16,7 @@ final class ModelsViewModel: ObservableObject {
     private let models: any ModelManaging
     private let catalog: [LocalModel]
 
-    init(models: any ModelManaging, catalog: [LocalModel] = ModelCatalog.all) {
+    init(models: any ModelManaging, catalog: [LocalModel] = ModelCatalog.all(kind: .asr)) {
         self.models = models
         self.catalog = catalog
     }

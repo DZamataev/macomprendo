@@ -67,7 +67,7 @@ final class DictationTabModel: ObservableObject {
     let holder: any SettingsHolding
     private let catalog: [LocalModel]
 
-    init(holder: any SettingsHolding, catalog: [LocalModel] = ModelCatalog.all) {
+    init(holder: any SettingsHolding, catalog: [LocalModel] = ModelCatalog.all(kind: .asr)) {
         self.holder = holder
         self.catalog = catalog
         // Open where the active model lives. A read, not a write.

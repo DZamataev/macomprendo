@@ -53,6 +53,22 @@ import Testing
         #expect(tab.rows(for: .endpoint).isEmpty)
     }
 
+    /// Guards the one way the TTS catalog added in Plan 2 could leak into transcription: a
+    /// consumer that took `ModelCatalog.all` and meant "the ASR models". Written while the
+    /// catalog is still all-ASR, so it starts green and turns red the moment a TTS entry lands
+    /// on a screen that cannot use it.
+    @Test func everyTranscriptionConsumerSeesASREntriesOnly() {
+        let dictation = DictationTabModel(holder: ScriptedSettingsHolder())
+        #expect(dictation.rows(for: .whisperCpp).allSatisfy { $0.kind == .asr })
+        #expect(dictation.rows(for: .gigaAM).allSatisfy { $0.kind == .asr })
+        #expect(dictation.selectableSources.allSatisfy { source in
+            if case .local(let id) = source.source {
+                return ModelCatalog.model(id: id)?.kind == .asr
+            }
+            return true
+        })
+    }
+
     // MARK: - The active-model selector
 
     @Test func activatingAModelMakesItTheConfiguredSource() {

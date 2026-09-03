@@ -50,6 +50,7 @@ actor LocalModelManager: ModelManaging {
     /// one over the same `.partial` file.
     private var inFlight: Set<String> = []
 
+    // Both kinds: this manager downloads TTS models too.
     init(directory: URL, http: any HTTPClient) {
         self.init(directory: directory, http: http, catalog: ModelCatalog.all)
     }
