@@ -34,6 +34,7 @@ final class AppModel: ObservableObject {
                                                   catalog: ModelCatalog.all(kind: .tts))
     lazy var dictationTabModel = DictationTabModel(holder: self)
     lazy var speechTabModel = SpeechTabModel(speech: env.speech, holder: self, keychain: keychain)
+    lazy var speechSourceModel = SpeechSourceModel(holder: self)
     lazy var promptsTabModel = PromptsTabModel(
         holder: self,
         llm: { [unowned self] kind in try self.llmTarget(for: kind) })

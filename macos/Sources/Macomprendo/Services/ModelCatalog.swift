@@ -104,6 +104,22 @@ struct LocalModel: Identifiable, Sendable, Equatable {
     var kind: ModelKind { engine.kind }
 
     func file(_ role: ModelFileRole) -> ModelFile? { files.first { $0.role == role } }
+
+    /// What `languages` says, in words. `nil` means multilingual with no published list, which
+    /// is whisper — not "no languages". Named in English, like the rest of the UI, rather than
+    /// in the system language.
+    var languagesText: String { Self.languagesText(languages) }
+
+    /// Same wording, usable without a full `LocalModel` — `ModelBriefView` names one language
+    /// per benchmark row rather than a model's whole list.
+    static func languagesText(_ languages: [String]?) -> String {
+        guard let languages, !languages.isEmpty else { return "90+ languages" }
+        let english = Locale(identifier: "en_US")
+        let names = languages.map { code in
+            english.localizedString(forLanguageCode: code) ?? code
+        }
+        return names.joined(separator: ", ")
+    }
 }
 
 /// The models Macomprendo offers.

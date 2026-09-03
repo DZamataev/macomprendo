@@ -61,7 +61,7 @@ struct ModelBriefView: View {
 
                 ForEach(Array(brief.benchmarks.enumerated()), id: \.offset) { _, benchmark in
                     GridRow {
-                        Text(DictationTabModel.languagesText([benchmark.language]))
+                        Text(LocalModel.languagesText([benchmark.language]))
                         Text(benchmark.dataset)
                         Text(benchmark.metric)
                         Text(DictationTabModel.benchmarkValue(benchmark.value))

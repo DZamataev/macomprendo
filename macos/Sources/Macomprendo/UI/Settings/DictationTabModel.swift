@@ -248,18 +248,6 @@ extension DictationTabModel {
         return nil
     }
 
-    /// What a model's `languages` says, in words. `nil` means multilingual with no published
-    /// list, which is whisper — not "no languages". Named in English, like the rest of the UI,
-    /// rather than in the system language.
-    static func languagesText(_ languages: [String]?) -> String {
-        guard let languages, !languages.isEmpty else { return "90+ languages" }
-        let english = Locale(identifier: "en_US")
-        let names = languages.map { code in
-            english.localizedString(forLanguageCode: code) ?? code
-        }
-        return names.joined(separator: ", ")
-    }
-
     /// Thread counts offered for whisper.cpp. `nil` is "Automatic"; the rest are every count
     /// this machine could use.
     static func threadChoices(processorCount: Int) -> [Int?] {

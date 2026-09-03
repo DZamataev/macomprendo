@@ -141,4 +141,28 @@ import Testing
         let rnnt = ModelCatalog.model(id: "gigaam-v3-e2e-rnnt")!
         #expect(Set(rnnt.files.map(\.role)) == [.encoder, .decoder, .joiner, .tokens])
     }
+
+    // MARK: - languagesText
+
+    @Test func aModelWithNoPublishedLanguageListIsCalledMultilingualRatherThanBlank() {
+        #expect(LocalModel.languagesText(nil) == "90+ languages")
+        #expect(LocalModel.languagesText([]) == "90+ languages")
+    }
+
+    @Test func aPublishedLanguageListIsNamedInWords() {
+        #expect(LocalModel.languagesText(["ru"]) == "Russian")
+        #expect(LocalModel.languagesText(["ru", "en"]) == "Russian, English")
+        // An unknown code is shown as itself rather than dropped.
+        #expect(LocalModel.languagesText(["zzz"]).contains("zzz"))
+    }
+
+    @Test func theInstancePropertyMatchesTheStaticFunctionForTheModelsOwnLanguages() {
+        let model = LocalModel(id: "x", displayName: "X", engine: .gigaAM, languages: ["ru", "en"],
+                                files: [],
+                                brief: ModelBrief(summary: "", strengths: [], limitations: [],
+                                                  benchmarks: [],
+                                                  sourceURL: URL(string: "https://example.com")!))
+        #expect(model.languagesText == "Russian, English")
+        #expect(model.languagesText == LocalModel.languagesText(model.languages))
+    }
 }

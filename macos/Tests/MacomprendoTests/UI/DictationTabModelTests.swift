@@ -514,18 +514,6 @@ import Testing
 
     // MARK: - What the view renders
 
-    @Test func aModelWithNoPublishedLanguageListIsCalledMultilingualRatherThanBlank() {
-        #expect(DictationTabModel.languagesText(nil) == "90+ languages")
-        #expect(DictationTabModel.languagesText([]) == "90+ languages")
-    }
-
-    @Test func aPublishedLanguageListIsNamedInWords() {
-        #expect(DictationTabModel.languagesText(["ru"]) == "Russian")
-        #expect(DictationTabModel.languagesText(["ru", "en"]) == "Russian, English")
-        // An unknown code is shown as itself rather than dropped.
-        #expect(DictationTabModel.languagesText(["zzz"]).contains("zzz"))
-    }
-
     @Test func theSelectedModelIDIsNilOnAnEndpointSource() {
         #expect(tabModel(endpointSettings()).selectedModelID == nil)
         #expect(tabModel().selectedModelID == "large-v3-turbo")

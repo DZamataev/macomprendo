@@ -175,7 +175,7 @@ struct DictationTab: View {
                         if active { activeBadge }
                     }
                     Text("\(ModelsViewModel.sizeText(entry.totalSizeBytes)) · "
-                         + DictationTabModel.languagesText(entry.languages))
+                         + entry.languagesText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if active {
