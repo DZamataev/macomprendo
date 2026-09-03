@@ -110,7 +110,13 @@ extension TextFeatures {
         // Built before the panel so the panel can be handed its dismissal hook at construction:
         // dismissing the panel stops a read the panel itself started (a hotkey read is left
         // alone — see `SpeakController.stopPanelPlayback`).
-        let speak = SpeakController(speech: env.speech, toaster: hud, settings: { model.settings })
+        let speak = SpeakController(
+            speech: env.speech,
+            toaster: hud,
+            settings: { model.settings },
+            modelStates: { [unowned model] in
+                model.ttsModelsViewModel.rows.reduce(into: [:]) { $0[$1.id] = $1.state }
+            })
 
         let quickPanel = QuickPanelController(holder: model,
                                               onDismiss: { [weak speak] in
