@@ -74,6 +74,31 @@ struct LocalModel: Identifiable, Sendable, Equatable {
     let languages: [String]?
     let files: [ModelFile]
     let brief: ModelBrief
+    /// How many speakers the model exposes; 1 for the single-speaker Piper voices and for
+    /// every ASR entry, which has no such concept. The Local tab offers a speaker picker
+    /// only above 1.
+    let speakerCount: Int
+    /// For a model downloaded as an archive: the path inside the unpacked directory that
+    /// proves the unpack succeeded. `nil` for a model stored as loose files.
+    let archiveSentinel: String?
+
+    init(id: String,
+         displayName: String,
+         engine: LocalEngine,
+         languages: [String]?,
+         files: [ModelFile],
+         brief: ModelBrief,
+         speakerCount: Int = 1,
+         archiveSentinel: String? = nil) {
+        self.id = id
+        self.displayName = displayName
+        self.engine = engine
+        self.languages = languages
+        self.files = files
+        self.brief = brief
+        self.speakerCount = speakerCount
+        self.archiveSentinel = archiveSentinel
+    }
 
     var totalSizeBytes: Int64 { files.reduce(0) { $0 + $1.sizeBytes } }
     var kind: ModelKind { engine.kind }
