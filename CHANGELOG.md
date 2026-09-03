@@ -111,6 +111,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   translated — including a new "Translate & organize" preset.
 
 ### Changed
+- Settings ▸ Speech now has an active-source selector with an explicit readiness status above
+  three sub-tabs — System voices, Local TTS and Endpoint — matching Settings ▸ Dictation.
+  Moving between sub-tabs no longer changes which source speaks.
+- The Speak hotkey reports why it cannot speak instead of failing silently when the selected
+  source is not ready.
 - Models are described as file sets, so a model can consist of more than one file.
 - The Models tab is gone; speech models are now configured in Settings ▸
   Dictation.
