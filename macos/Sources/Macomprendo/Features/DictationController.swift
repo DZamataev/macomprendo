@@ -15,6 +15,9 @@ enum DictationState: Equatable, Sendable {
 final class DictationController: ObservableObject {
     @Published private(set) var state: DictationState = .idle
 
+    /// At the recorder's 16 kHz mono output, this is half a second of captured audio.
+    private static let shortDictationMaximumSamples = Int(AVAudioEngineRecorder.targetSampleRate * 0.5)
+
     private let recorder: any AudioRecording
     private let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
     private let inserter: any TextInserting
@@ -179,12 +182,18 @@ final class DictationController: ObservableObject {
         startedAt = nil
         do {
             try Task.checkCancellation()
-            let provider = try await transcriberProvider()
-            let language = settings().transcriptionLanguage
-            let raw = try await provider.transcribe(pcm,
-                                                    sampleRate: Int(AVAudioEngineRecorder.targetSampleRate),
-                                                    language: language)
-            try Task.checkCancellation()
+            let raw: String
+            if settings().shortDictationInsertsOK, pcm.count < Self.shortDictationMaximumSamples {
+                raw = "OK"
+            } else {
+                let provider = try await transcriberProvider()
+                let language = settings().transcriptionLanguage
+                raw = try await provider.transcribe(
+                    pcm,
+                    sampleRate: Int(AVAudioEngineRecorder.targetSampleRate),
+                    language: language)
+                try Task.checkCancellation()
+            }
 
             let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else {

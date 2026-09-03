@@ -168,6 +168,8 @@ struct Settings: Codable, Sendable, Equatable {
     var insertMethod: InsertMethod
     var launchAtLogin: Bool
     var dictationHistoryEnabled: Bool
+    /// Replaces direct Dictate recordings shorter than half a second with "OK" without loading ASR.
+    var shortDictationInsertsOK: Bool
     /// Adds one separating space after direct Dictate insertion; history keeps the raw transcript.
     var appendSpaceAfterDictation: Bool
     /// nil disables middle-mouse triggering; a value selects one existing action.
@@ -218,6 +220,7 @@ struct Settings: Codable, Sendable, Equatable {
             insertMethod: .auto,
             launchAtLogin: false,
             dictationHistoryEnabled: false,
+            shortDictationInsertsOK: false,
             appendSpaceAfterDictation: false,
             middleMouseAction: nil,
             middleMouseMode: .hold,
@@ -274,6 +277,8 @@ extension Settings {
         dictationHistoryEnabled = try c.decodeIfPresent(Bool.self,
                                                          forKey: .dictationHistoryEnabled)
             ?? d.dictationHistoryEnabled
+        shortDictationInsertsOK = try c.decodeIfPresent(Bool.self, forKey: .shortDictationInsertsOK)
+            ?? d.shortDictationInsertsOK
         appendSpaceAfterDictation = try c.decodeIfPresent(Bool.self, forKey: .appendSpaceAfterDictation)
             ?? d.appendSpaceAfterDictation
         middleMouseAction = try c.decodeIfPresent(MiddleMouseAction.self, forKey: .middleMouseAction)

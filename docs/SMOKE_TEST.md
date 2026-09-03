@@ -65,6 +65,10 @@ Reset permissions when you want to rehearse a fresh install — quit the app fir
       Macomprendo.
 - [ ] Menubar menu: switch "Dictate" off, press the hotkey — nothing happens; switching it back
       on restores it.
+- [ ] **Very short dictation.** In Settings ▸ General, enable **Insert “OK” for a very short
+      dictation**, then press and release the Dictate hotkey in under half a second — `OK` is
+      inserted without waiting for speech recognition. Disable it and verify the same short
+      recording follows the normal transcription path.
 - [ ] **Trailing space.** In Settings ▸ General, enable “Add a space after dictated text”,
       dictate `hello` into TextEdit, and verify the insertion is `hello ` (with one trailing
       space). In Dictate & Refine, insert the Original text and verify it also ends in one space;

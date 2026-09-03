@@ -34,6 +34,12 @@ struct GeneralTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Toggle("Insert “OK” for a very short dictation",
+                       isOn: $model.settings.shortDictationInsertsOK)
+                Text("Recordings shorter than half a second skip speech recognition and insert “OK”.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Toggle("Add a space after dictated text", isOn: $model.settings.appendSpaceAfterDictation)
                 Text("Dictate and original Dictate & Refine insertion get the space. History and refined text are unchanged.")
                     .font(.caption)
