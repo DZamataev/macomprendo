@@ -196,9 +196,43 @@ import Testing
 
 @Test func theEndpointKeychainAccountIsStable() {
     #expect(SpeechSettings.endpointKeychainAccount == "speech.endpoint")
-    #expect(SpeechSource.allCases.map(\.rawValue) == ["system", "endpoint"])
+    #expect(SpeechSource.allCases.map(\.rawValue) == ["system", "local", "endpoint"])
     #expect(SpeechSource.system.displayName == "System voices")
+    #expect(SpeechSource.local.displayName == "Local TTS")
     #expect(SpeechSource.endpoint.displayName == "Endpoint")
+}
+
+@Test func aDocumentWrittenBeforeLocalTTSDecodesWithDefaults() throws {
+    let json = Data("""
+    {"schemaVersion":2,"speech":{"source":"endpoint","endpointModel":"gpt-4o-mini-tts"}}
+    """.utf8)
+    let settings = try Settings.migrate(json)
+    #expect(settings.speech.source == .endpoint)
+    #expect(settings.speech.endpointModel == "gpt-4o-mini-tts")
+    #expect(settings.speech.localModelID == nil)
+    #expect(settings.speech.localSpeakerID == 0)
+    #expect(settings.speech.localSpeed == 1.0)
+}
+
+@Test func theLocalSourceRoundTripsThroughJSON() throws {
+    var settings = Settings.default
+    settings.speech.source = .local
+    settings.speech.localModelID = "vits-piper-ru_RU-ruslan-medium"
+    settings.speech.localSpeakerID = 3
+    settings.speech.localSpeed = 1.25
+
+    let encoded = try JSONEncoder().encode(settings)
+    let decoded = try Settings.migrate(encoded)
+
+    #expect(decoded.speech.source == .local)
+    #expect(decoded.speech.localModelID == "vits-piper-ru_RU-ruslan-medium")
+    #expect(decoded.speech.localSpeakerID == 3)
+    #expect(decoded.speech.localSpeed == 1.25)
+    #expect(decoded.schemaVersion == 2)
+}
+
+@Test func addingTheLocalSourceDoesNotMoveTheSchemaVersion() {
+    #expect(Settings.currentSchemaVersion == 2)
 }
 
 @Suite struct SettingsSchemaV2Tests {

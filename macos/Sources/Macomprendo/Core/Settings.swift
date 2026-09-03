@@ -25,6 +25,7 @@ struct LLMSelection: Codable, Sendable, Equatable {
 /// Which backend reads text aloud.
 enum SpeechSource: String, Codable, Sendable, CaseIterable, Identifiable {
     case system
+    case local
     case endpoint
 
     var id: String { rawValue }
@@ -32,6 +33,7 @@ enum SpeechSource: String, Codable, Sendable, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .system: "System voices"
+        case .local: "Local TTS"
         case .endpoint: "Endpoint"
         }
     }
@@ -67,6 +69,22 @@ struct SpeechSettings: Codable, Sendable, Equatable {
     var previewText: String
     var auditionOnSelect: Bool
 
+    // Which fields belong to which source. Getting this wrong is how a slider ends up doing
+    // nothing, so it is written down rather than inferred:
+    //   System only:   voiceID, rate, pitch, volume, voiceByLanguage, segmentationEnabled
+    //   Local only:    localModelID, localSpeakerID, localSpeed
+    //   Endpoint only: endpointBaseURL, endpointModel, endpointVoice, endpointInstructions,
+    //                  endpointAPIKeyRef
+    //   Shared:        source, previewText, auditionOnSelect
+
+    /// A `ModelCatalog` id of a TTS entry. `nil` means no local model has been chosen yet,
+    /// which is what makes the local source not ready.
+    var localModelID: String?
+    /// The speaker inside a multi-speaker model. 0 for the single-speaker Piper voices.
+    var localSpeakerID: Int
+    /// sherpa's `OfflineTts` speed. 1.0 reads at the pace the model was trained on.
+    var localSpeed: Float
+
     init(voiceID: String? = nil,
          rate: Float = 0.5,
          pitch: Float = 1.0,
@@ -80,7 +98,10 @@ struct SpeechSettings: Codable, Sendable, Equatable {
          voiceByLanguage: [String: String] = [:],
          segmentationEnabled: Bool = true,
          previewText: String = SpeechSettings.defaultPreviewText,
-         auditionOnSelect: Bool = true) {
+         auditionOnSelect: Bool = true,
+         localModelID: String? = nil,
+         localSpeakerID: Int = 0,
+         localSpeed: Float = 1.0) {
         self.voiceID = voiceID
         self.rate = rate
         self.pitch = pitch
@@ -95,6 +116,9 @@ struct SpeechSettings: Codable, Sendable, Equatable {
         self.segmentationEnabled = segmentationEnabled
         self.previewText = previewText
         self.auditionOnSelect = auditionOnSelect
+        self.localModelID = localModelID
+        self.localSpeakerID = localSpeakerID
+        self.localSpeed = localSpeed
     }
 }
 
@@ -123,6 +147,9 @@ extension SpeechSettings {
         previewText = try c.decodeIfPresent(String.self, forKey: .previewText) ?? d.previewText
         auditionOnSelect = try c.decodeIfPresent(Bool.self, forKey: .auditionOnSelect)
             ?? d.auditionOnSelect
+        localModelID = try c.decodeIfPresent(String.self, forKey: .localModelID)
+        localSpeakerID = try c.decodeIfPresent(Int.self, forKey: .localSpeakerID) ?? d.localSpeakerID
+        localSpeed = try c.decodeIfPresent(Float.self, forKey: .localSpeed) ?? d.localSpeed
     }
 }
 
