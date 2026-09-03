@@ -20,6 +20,8 @@ import Testing
     private func makeRig(deltas: [String] = ["Hello", " there"],
                          failure: MacomprendoError? = nil,
                          delayPerDelta: Duration = .zero,
+                         gate: AsyncGate? = nil,
+                         pauseAfterDeltaCount: Int = 0,
                          configured: Bool = true,
                          mode: DictationMode = .hold,
                          holder: ScriptedSettingsHolder = .seeded()) -> Rig {
@@ -30,7 +32,9 @@ import Testing
 
         let recorder = LLMCallRecorder()
         let provider = ScriptedLLMProvider(deltas: deltas, failure: failure,
-                                           delayPerDelta: delayPerDelta, recorder: recorder)
+                                           delayPerDelta: delayPerDelta, gate: gate,
+                                           pauseAfterDeltaCount: pauseAfterDeltaCount,
+                                           recorder: recorder)
         let pasteboard = ScriptedPasteboard()
         let inserter = ScriptedInserter()
         let toaster = ScriptedToaster()
@@ -129,16 +133,25 @@ import Testing
         #expect(!rig.controller.isStreaming)
     }
 
+    /// Uses an `AsyncGate` rather than a fixed sleep so cancellation lands deterministically
+    /// between the first and second delta — a `Task.sleep` race against `delayPerDelta` would
+    /// be flaky under load (e.g. `stop()` firing after all three deltas already streamed).
     @Test func stopCancelsTheStreamAndKeepsThePartialText() async {
-        let rig = makeRig(deltas: ["a", "b", "c"], delayPerDelta: .milliseconds(40))
+        let gate = AsyncGate()
+        let rig = makeRig(deltas: ["a", "b", "c"], gate: gate, pauseAfterDeltaCount: 1)
         rig.controller.start(source: .selection("raw"))
-        try? await Task.sleep(for: .milliseconds(60))
+        await waitFor("the stream to suspend after the first delta") {
+            gate.waiterCount == 1 && rig.controller.refined == "a"
+        }
+
+        #expect(rig.controller.refined == "a")           // exactly one delta landed
         rig.controller.stop()
+        gate.open()
         await rig.controller.drain()
 
         #expect(!rig.controller.isStreaming)
-        #expect(rig.controller.refined.count < 3)
-        #expect(rig.controller.error == nil)            // cancellation is not an error
+        #expect(rig.controller.refined == "a")           // no further delta after the cancel
+        #expect(rig.controller.error == nil)             // cancellation is not an error
     }
 
     @Test func copyPutsTheChosenSideOnThePasteboardAndKeepsThePanelOpen() async {
