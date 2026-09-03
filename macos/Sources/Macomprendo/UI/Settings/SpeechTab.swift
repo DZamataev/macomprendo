@@ -36,13 +36,19 @@ import SwiftUI
     private let speech: any SpeechSynthesizing
     private let holder: any SettingsHolding
     private let keychain: any KeychainStoring
+    private let toaster: any Toasting
+    private let modelStates: @MainActor () -> [String: ModelState]
 
     init(speech: any SpeechSynthesizing,
          holder: any SettingsHolding,
-         keychain: any KeychainStoring) {
+         keychain: any KeychainStoring,
+         toaster: any Toasting,
+         modelStates: @escaping @MainActor () -> [String: ModelState]) {
         self.speech = speech
         self.holder = holder
         self.keychain = keychain
+        self.toaster = toaster
+        self.modelStates = modelStates
         reload()
     }
 
@@ -62,8 +68,20 @@ import SwiftUI
 
     /// For the endpoint source this performs a real network call and therefore doubles as the
     /// connection test; failures arrive as a toast through `SpeakController`'s `onError` hook.
+    ///
+    /// Preview speaks through whatever source is *active*, and the header selector allows
+    /// activating a source that is not ready yet (e.g. Local with no model downloaded).
+    /// Mirrors `SpeakController.speak`'s gate: never fall back to another source, since that
+    /// would hide that the chosen one is broken.
     func preview() {
-        speech.speak(holder.settings.speech.previewText, settings: holder.settings.speech)
+        let current = holder.settings.speech
+        if case .notReady(let reason, _) = SpeechReadiness.of(source: current.source,
+                                                              settings: current,
+                                                              modelStates: modelStates()) {
+            toaster.toast(reason, duration: 2.5)
+            return
+        }
+        speech.speak(current.previewText, settings: current)
     }
 
     func hasAPIKey() -> Bool {

@@ -348,7 +348,10 @@ Selecting a not-ready source is therefore possible, and must not fail silently. 
 checks `SpeechReadiness` before it speaks: when the active source is not ready it raises the
 readiness reason as a `MacomprendoError` through the existing `onError` toast and speaks
 nothing. Falling back to System voices would be worse — the user would hear speech and never
-learn that the source they chose is broken.
+learn that the source they chose is broken. `SpeechTabModel.preview()` applies the identical
+gate before calling `speak`, so the footer's Preview button cannot bypass it — it toasts the
+same `SpeechReadiness.of` reason and speaks nothing when the active source is not ready,
+consistent with the claim below that Preview speaks through whatever is active.
 
 The footer (preview text, audition toggle, Preview / Reload, the ⌥S hint) sits below the form
 and stays shared: it is about the tab, not about one source. `Preview` speaks through whatever

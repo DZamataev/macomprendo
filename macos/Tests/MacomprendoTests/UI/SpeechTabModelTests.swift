@@ -17,9 +17,12 @@ import Testing
 
     private func model(speech: ScriptedSpeech = ScriptedSpeech(),
                        holder: ScriptedSettingsHolder = ScriptedSettingsHolder(),
-                       keychain: InMemoryKeychainStore = InMemoryKeychainStore())
+                       keychain: InMemoryKeychainStore = InMemoryKeychainStore(),
+                       toaster: ScriptedToaster = ScriptedToaster(),
+                       modelStates: @escaping @MainActor () -> [String: ModelState] = { [:] })
         -> SpeechTabModel {
-        SpeechTabModel(speech: speech, holder: holder, keychain: keychain)
+        SpeechTabModel(speech: speech, holder: holder, keychain: keychain,
+                       toaster: toaster, modelStates: modelStates)
     }
 
     private let catalog = [
@@ -35,7 +38,8 @@ import Testing
         speech.available = voices
         speech.availableBySource[.system] = voices
         let holder = ScriptedSettingsHolder()
-        return (SpeechTabModel(speech: speech, holder: holder, keychain: InMemoryKeychainStore()),
+        return (SpeechTabModel(speech: speech, holder: holder, keychain: InMemoryKeychainStore(),
+                               toaster: ScriptedToaster(), modelStates: { [:] }),
                 speech, holder)
     }
 
@@ -202,5 +206,69 @@ import Testing
     @Test func thePrivacyCaptionNamesTheConfiguredServer() {
         #expect(SpeechTabModel.endpointPrivacyCaption
                 == "Selected text is sent to the configured server when this source is active.")
+    }
+
+    // MARK: readiness gate
+
+    /// The header selector allows activating a Local source before a model is downloaded.
+    /// Preview must not silently fall back to System in that case (contradicting both the
+    /// no-fallback decision and the UI text saying Preview speaks through the active source).
+    @Test func previewThroughAnUnreadyLocalSourceToastsAndSpeaksNothing() {
+        let speech = ScriptedSpeech()
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech.source = .local
+        holder.settings.speech.localModelID = "piper-ru"
+        let toaster = ScriptedToaster()
+        let tab = model(speech: speech, holder: holder, toaster: toaster,
+                        modelStates: { ["piper-ru": .notDownloaded] })
+
+        tab.preview()
+
+        #expect(speech.spoken.isEmpty)
+        #expect(toaster.messages == ["This voice has not been downloaded yet."])
+    }
+
+    @Test func previewThroughAReadySystemSourceStillSpeaksCurrentSettings() {
+        let speech = ScriptedSpeech()
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech = SpeechSettings(voiceID: "v.en1", rate: 0.7, pitch: 1.2, volume: 0.8)
+        let toaster = ScriptedToaster()
+        let tab = model(speech: speech, holder: holder, toaster: toaster)
+
+        tab.preview()
+
+        #expect(speech.spoken.count == 1)
+        #expect(speech.spoken[0].text == SpeechSettings.defaultPreviewText)
+        #expect(speech.spoken[0].settings.voiceID == "v.en1")
+        #expect(speech.spoken[0].settings.rate == 0.7)
+        #expect(toaster.messages.isEmpty)
+    }
+
+    @Test func previewThroughAMisconfiguredEndpointToastsAndSpeaksNothing() {
+        let speech = ScriptedSpeech()
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech.source = .endpoint
+        holder.settings.speech.endpointModel = ""     // required field left blank
+        let toaster = ScriptedToaster()
+        let tab = model(speech: speech, holder: holder, toaster: toaster)
+
+        tab.preview()
+
+        #expect(speech.spoken.isEmpty)
+        #expect(toaster.messages == ["The server, model and voice must all be filled in."])
+    }
+
+    @Test func previewThroughAConfiguredEndpointStillSpeaks() {
+        let speech = ScriptedSpeech()
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech.source = .endpoint
+        holder.settings.speech.endpointAPIKeyRef = SpeechSettings.endpointKeychainAccount
+        let toaster = ScriptedToaster()
+        let tab = model(speech: speech, holder: holder, toaster: toaster)
+
+        tab.preview()
+
+        #expect(speech.spoken.map(\.text) == [SpeechSettings.defaultPreviewText])
+        #expect(toaster.messages.isEmpty)
     }
 }
