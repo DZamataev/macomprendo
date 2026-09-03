@@ -13,6 +13,13 @@ final class AsyncGate: @unchecked Sendable {
     /// instead of guessing with a fixed sleep.
     var waiterCount: Int { lock.withLock { waiters.count } }
 
+    func openOne() {
+        let waiter = lock.withLock {
+            waiters.isEmpty ? nil : waiters.removeFirst()
+        }
+        waiter?.resume()
+    }
+
     func open() {
         let toResume: [CheckedContinuation<Void, Never>] = lock.withLock {
             isOpen = true

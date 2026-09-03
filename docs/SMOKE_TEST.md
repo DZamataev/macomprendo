@@ -73,6 +73,16 @@ Reset permissions when you want to rehearse a fresh install — quit the app fir
 - [ ] Dictate into a full-screen app on a second display — the HUD appears on the screen with
       the mouse, above the full-screen app, and the text lands in the app.
 - [ ] Menubar menu while idle / recording — the status line reads "Ready" / "Recording…".
+- [x] **Local-model memory.** Settings ▸ General ▸ Local models shows “Unload local model”
+      with Immediately, 5, 10, 30 minutes, and Never; a fresh or upgraded install selects
+      10 minutes. Set it to Never and dictate twice with the same local model:
+      Console shows one “Loaded whisper model …” event and the second transcription starts without
+      the model-loading pause. Change Threads and dictate again: the model loads once with the new
+      configuration. Set the policy to 5 minutes, dictate again before five idle minutes have
+      elapsed and confirm there is no new load; then wait five full idle minutes and confirm the
+      next dictation loads the model again. Set the policy to Immediately and confirm each
+      dictation loads afresh. Quit from the menubar while a model is resident and confirm
+      Macomprendo exits without hanging.
 - [ ] Settings ▸ Dictation: delete the downloaded model, then dictate — the HUD shows a "model
       missing" error with recovery text; downloading it again fixes dictation.
 - [ ] Settings ▸ Providers: select "Ollama (local)", click "Test connection" — "Connected —

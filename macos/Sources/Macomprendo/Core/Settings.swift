@@ -3,6 +3,35 @@ import Foundation
 enum DictationMode: String, Codable, Sendable { case hold, toggle }
 enum InsertMethod: String, Codable, Sendable { case auto, paste, typing }
 
+enum LocalModelIdleTimeout: String, Codable, Sendable, CaseIterable {
+    case immediately
+    case fiveMinutes
+    case tenMinutes
+    case thirtyMinutes
+    case never
+
+    var displayName: String {
+        switch self {
+        case .immediately: "Immediately after transcription"
+        case .fiveMinutes: "After 5 minutes idle"
+        case .tenMinutes: "After 10 minutes idle"
+        case .thirtyMinutes: "After 30 minutes idle"
+        case .never: "Never"
+        }
+    }
+
+    /// `nil` keeps the model resident until its configuration changes or the app exits.
+    var duration: Duration? {
+        switch self {
+        case .immediately: .zero
+        case .fiveMinutes: .seconds(5 * 60)
+        case .tenMinutes: .seconds(10 * 60)
+        case .thirtyMinutes: .seconds(30 * 60)
+        case .never: nil
+        }
+    }
+}
+
 /// `Hashable` so the active-model selector can tag its `Picker` rows with the source itself
 /// rather than with a stringly-typed stand-in.
 enum TranscriptionSource: Codable, Sendable, Equatable, Hashable {
@@ -179,6 +208,8 @@ struct Settings: Codable, Sendable, Equatable {
     var whisperThreads: Int?
     /// whisper.cpp's `translate` flag: transcribe non-English speech into English.
     var whisperTranslate: Bool
+    /// How long an idle local ASR provider keeps its native model context resident.
+    var localModelIdleTimeout: LocalModelIdleTimeout
 
     static var `default`: Settings {
         Settings(
@@ -206,7 +237,8 @@ struct Settings: Codable, Sendable, Equatable {
             lastTranscriptionEndpointID: nil,
             lastTranscriptionEndpointModel: nil,
             whisperThreads: nil,
-            whisperTranslate: false
+            whisperTranslate: false,
+            localModelIdleTimeout: .tenMinutes
         )
     }
 
@@ -269,5 +301,8 @@ extension Settings {
         lastTranscriptionEndpointModel = try c.decodeIfPresent(String.self, forKey: .lastTranscriptionEndpointModel)
         whisperThreads = try c.decodeIfPresent(Int.self, forKey: .whisperThreads)
         whisperTranslate = try c.decodeIfPresent(Bool.self, forKey: .whisperTranslate) ?? d.whisperTranslate
+        localModelIdleTimeout = try c.decodeIfPresent(LocalModelIdleTimeout.self,
+                                                       forKey: .localModelIdleTimeout)
+            ?? d.localModelIdleTimeout
     }
 }

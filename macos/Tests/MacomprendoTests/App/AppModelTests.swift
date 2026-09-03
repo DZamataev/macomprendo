@@ -110,6 +110,39 @@ import Testing
         #expect(await historyStore.appendRequests.map(\.text) == ["spoken", "spoken"])
     }
 
+    @Test func directDictationAndDictateAndRefineUseTheSameRetainedLocalProvider() async throws {
+        let recorder = FakeAudioRecorder()
+        let models = StubModelManager()
+        models.resolvedFiles["base"] = [.ggml: URL(fileURLWithPath: "/models/ggml-base.bin")]
+        let cache = LocalTranscriptionProviderCache()
+        let retainedProvider = FakeTranscriptionProvider()
+        retainedProvider.result = .success("spoken")
+        let model = AppModel(
+            store: InMemorySettingsStore(),
+            keychain: InMemoryKeychainStore(),
+            env: .fake(recorder: recorder, models: models, localTranscriptionCache: cache))
+        model.settings.transcriptionSource = .local(modelID: "base")
+        model.settings.localModelIdleTimeout = .never
+        _ = cache.provider(
+            retainedProvider,
+            configuration: .init(source: .local(modelID: "base"), whisper: WhisperOptions()))
+        model.start()
+
+        model.route(.keyDown(.dictate))
+        await model.dictation.activeTask?.value
+        model.route(.keyUp(.dictate))
+        await model.dictation.activeTask?.value
+
+        model.route(.keyDown(.dictateAndRefine))
+        await waitFor("Dictate & Refine recording to start") {
+            model.textFeatures?.refine.isCapturing == true
+        }
+        model.route(.keyUp(.dictateAndRefine))
+        await model.textFeatures?.refine.drainCapture()
+
+        #expect(retainedProvider.received.count == 2)
+    }
+
     @Test func routesSelectionActionsToTheTextFeatures() async {
         let hotkeys = FakeHotkeyService()
         let model = AppModel(store: InMemorySettingsStore(),
@@ -182,6 +215,65 @@ import Testing
         // The fake factory records the source it was asked for.
         _ = try? await model.transcriberProvider()
         #expect(model.settings.transcriptionSource == .local(modelID: "base"))
+    }
+
+    @Test func activeLocalTranscriptionUsesTheEnvironmentCacheAndConfigurationChangesClearIt() async throws {
+        let models = StubModelManager()
+        models.resolvedFiles["base"] = [.ggml: URL(fileURLWithPath: "/models/ggml-base.bin")]
+        let cache = LocalTranscriptionProviderCache()
+        let model = AppModel(
+            store: InMemorySettingsStore(),
+            keychain: InMemoryKeychainStore(),
+            env: .fake(models: models, localTranscriptionCache: cache)
+        )
+        model.settings.transcriptionSource = .local(modelID: "base")
+        model.settings.localModelIdleTimeout = .never
+
+        _ = try await model.transcriberProvider()
+        #expect(cache.isEmpty == false)
+
+        model.settings.whisperThreads = 4
+        #expect(cache.isEmpty)
+    }
+
+    @Test func endpointProbeDoesNotEvictTheActiveLocalProvider() async throws {
+        let models = StubModelManager()
+        models.resolvedFiles["base"] = [.ggml: URL(fileURLWithPath: "/models/ggml-base.bin")]
+        let cache = LocalTranscriptionProviderCache()
+        let model = AppModel(
+            store: InMemorySettingsStore(),
+            keychain: InMemoryKeychainStore(),
+            env: .fake(models: models, localTranscriptionCache: cache))
+        model.settings.transcriptionSource = .local(modelID: "base")
+        model.settings.localModelIdleTimeout = .never
+        _ = try await model.transcriberProvider()
+        let retainedConfiguration = cache.cachedConfiguration
+        let endpoint = Endpoint(name: "Probe", kind: .openAICompatible,
+                                baseURL: URL(string: "https://example.test")!)
+        model.settings.endpoints = [endpoint]
+
+        _ = try await model.transcriber(for: .endpoint(id: endpoint.id, model: "whisper-1"))
+
+        #expect(cache.cachedConfiguration == retainedConfiguration)
+        #expect(cache.isEmpty == false)
+    }
+
+    @Test func shutdownClearsTheLocalTranscriptionCache() async throws {
+        let models = StubModelManager()
+        models.resolvedFiles["base"] = [.ggml: URL(fileURLWithPath: "/models/ggml-base.bin")]
+        let cache = LocalTranscriptionProviderCache()
+        let model = AppModel(
+            store: InMemorySettingsStore(),
+            keychain: InMemoryKeychainStore(),
+            env: .fake(models: models, localTranscriptionCache: cache)
+        )
+        model.settings.transcriptionSource = .local(modelID: "base")
+        model.settings.localModelIdleTimeout = .never
+        _ = try await model.transcriberProvider()
+
+        await model.shutdown()
+
+        #expect(cache.isEmpty)
     }
 
     // MARK: - Persistence at init

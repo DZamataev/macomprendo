@@ -28,6 +28,7 @@ struct AppEnvironment {
     var http: any HTTPClient
     var keychain: any KeychainStoring
     var factory: ProviderFactory
+    var localTranscriptionCache: LocalTranscriptionProviderCache
     var hudPresenter: (any HUDPresenting)?
     var ollamaDetector: any OllamaDetecting
     var pasteboard: any PasteboardProtocol
@@ -69,6 +70,7 @@ struct AppEnvironment {
             http: http,
             keychain: keychain,
             factory: ProviderFactory(http: http, keychain: keychain),
+            localTranscriptionCache: LocalTranscriptionProviderCache(),
             hudPresenter: HUDWindowPresenter(),
             ollamaDetector: HTTPOllamaDetector(http: http),
             pasteboard: pasteboard,

@@ -15,6 +15,9 @@ final class AppModel: ObservableObject {
             if settings.middleMouseAction != oldValue.middleMouseAction {
                 env.middleMouse.setEnabled(settings.middleMouseAction != nil)
             }
+            env.localTranscriptionCache.configure(
+                configuration: Self.localTranscriptionConfiguration(for: settings),
+                idleTimeout: settings.localModelIdleTimeout)
             persist()
         }
     }
@@ -83,6 +86,9 @@ final class AppModel: ObservableObject {
 
         let snapshot = SettingsSnapshot(loaded)
         self.snapshot = snapshot
+        env.localTranscriptionCache.configure(
+            configuration: Self.localTranscriptionConfiguration(for: loaded),
+            idleTimeout: loaded.localModelIdleTimeout)
 
         let hud = HUDController(presenter: env.hudPresenter)
         hud.modelCaption = HUDController.caption(for: loaded.transcriptionSource)
@@ -95,14 +101,30 @@ final class AppModel: ObservableObject {
 
         let factory = env.factory
         let models = env.models
+        let localTranscriptionCache = env.localTranscriptionCache
         let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider = {
             let settings = snapshot.current
-            return try await factory.transcriber(
-                for: settings.transcriptionSource,
-                endpoints: settings.endpoints,
-                models: models,
-                whisper: WhisperOptions(threads: settings.whisperThreads,
-                                        translate: settings.whisperTranslate))
+            let options = WhisperOptions(threads: settings.whisperThreads,
+                                         translate: settings.whisperTranslate)
+            let configuration = LocalTranscriptionProviderCache.Configuration(
+                source: settings.transcriptionSource,
+                whisper: options)
+            do {
+                let candidate = try await factory.transcriber(
+                    for: settings.transcriptionSource,
+                    endpoints: settings.endpoints,
+                    models: models,
+                    whisper: options)
+                guard case .local = settings.transcriptionSource else { return candidate }
+                return await localTranscriptionCache.provider(
+                    candidate,
+                    configuration: configuration)
+            } catch {
+                if case .local = settings.transcriptionSource {
+                    await localTranscriptionCache.removeAll(ifMatching: configuration)
+                }
+                throw error
+            }
         }
         self.transcriberProvider = transcriberProvider
 
@@ -204,6 +226,11 @@ final class AppModel: ObservableObject {
         objectWillChange.send()
     }
 
+    /// Releases native local-ASR contexts before application termination is allowed to finish.
+    func shutdown() async {
+        env.localTranscriptionCache.removeAll()
+    }
+
     var statusText: String {
         switch dictation.state {
         case .idle: "Ready"
@@ -212,6 +239,16 @@ final class AppModel: ObservableObject {
         case .inserting: "Inserting…"
         case .failed(let message): message
         }
+    }
+
+    private static func localTranscriptionConfiguration(
+        for settings: Settings
+    ) -> LocalTranscriptionProviderCache.Configuration? {
+        guard case .local = settings.transcriptionSource else { return nil }
+        return .init(
+            source: settings.transcriptionSource,
+            whisper: WhisperOptions(threads: settings.whisperThreads,
+                                    translate: settings.whisperTranslate))
     }
 
     private func persist() {

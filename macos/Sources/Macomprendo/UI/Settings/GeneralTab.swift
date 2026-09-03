@@ -39,6 +39,19 @@ struct GeneralTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Local models") {
+                Picker("Unload local model", selection: $model.settings.localModelIdleTimeout) {
+                    ForEach(LocalModelIdleTimeout.allCases, id: \.self) { timeout in
+                        Text(timeout.displayName).tag(timeout)
+                    }
+                }
+                Text("Keeping the model loaded makes consecutive dictations start faster. "
+                     + "Changing the active model or whisper.cpp parameters unloads it immediately.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
         .padding()

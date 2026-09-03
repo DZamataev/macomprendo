@@ -11,10 +11,31 @@ enum AppRoot {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let model: AppModel
+    private let replyToTermination: @MainActor (Bool) -> Void
+
+    override convenience init() {
+        self.init(model: AppRoot.model,
+                  replyToTermination: { NSApp.reply(toApplicationShouldTerminate: $0) })
+    }
+
+    init(model: AppModel, replyToTermination: @escaping @MainActor (Bool) -> Void) {
+        self.model = model
+        self.replyToTermination = replyToTermination
+        super.init()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let model = AppRoot.model
         model.start()
         OnboardingWindowController.showIfNeeded(model: model)
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task { [model, replyToTermination] in
+            await model.shutdown()
+            replyToTermination(true)
+        }
+        return .terminateLater
     }
 }
 

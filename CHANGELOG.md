@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Local dictation models can stay resident between nearby dictations, with configurable immediate,
+  5/10/30-minute, or never-unload policies; cached native contexts are cleared before app exit.
 - Settings ▸ General can append one space after text inserted by Dictate or original Dictate &
   Refine, while keeping saved transcripts and refined text unchanged.
 - Settings ▸ Hotkeys can bind the middle mouse button to any existing dictation or text action,

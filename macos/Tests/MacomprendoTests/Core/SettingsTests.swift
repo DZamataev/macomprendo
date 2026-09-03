@@ -295,4 +295,40 @@ import Testing
         #expect(decoded.whisperThreads == 6)
         #expect(decoded.whisperTranslate)
     }
+
+    @Test func localModelIdleTimeoutDefaultsToTenMinutesForNewAndLegacySettings() throws {
+        #expect(Settings.default.localModelIdleTimeout == .tenMinutes)
+
+        let legacy = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+        #expect(try Settings.migrate(legacy).localModelIdleTimeout == .tenMinutes)
+    }
+
+    @Test func everyLocalModelIdleTimeoutSurvivesARoundTrip() throws {
+        for timeout in LocalModelIdleTimeout.allCases {
+            var settings = Settings.default
+            settings.localModelIdleTimeout = timeout
+
+            let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings))
+
+            #expect(decoded.localModelIdleTimeout == timeout)
+        }
+    }
+
+    @Test func localModelIdleTimeoutChoicesHaveStableUserFacingLabels() {
+        #expect(LocalModelIdleTimeout.allCases.map(\.displayName) == [
+            "Immediately after transcription",
+            "After 5 minutes idle",
+            "After 10 minutes idle",
+            "After 30 minutes idle",
+            "Never",
+        ])
+    }
+
+    @Test func localModelIdleTimeoutOptionsHaveTheExpectedDurations() {
+        #expect(LocalModelIdleTimeout.immediately.duration == .zero)
+        #expect(LocalModelIdleTimeout.fiveMinutes.duration == .seconds(300))
+        #expect(LocalModelIdleTimeout.tenMinutes.duration == .seconds(600))
+        #expect(LocalModelIdleTimeout.thirtyMinutes.duration == .seconds(1_800))
+        #expect(LocalModelIdleTimeout.never.duration == nil)
+    }
 }
