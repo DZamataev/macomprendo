@@ -228,6 +228,12 @@ preference controls recording only; it never records audio.
 - [ ] Voices are grouped by language with the system language's group listed under its
       localized name; enhanced/premium voices carry a quality badge.
 - [ ] Selecting a voice persists across an app restart.
+- [ ] Settings ▸ Speech: switching sub-tabs leaves the selector and the status block unchanged.
+- [ ] Selecting Endpoint with no saved API key shows "Not ready" and an "Add a key" button that
+      opens the Endpoint tab with the key field focused.
+- [ ] With Local TTS selected and no voice chosen, ⌥S shows a toast naming the problem and
+      speaks nothing.
+- [ ] Preview speaks through the active source, not through the viewed tab.
 
 ## Settings ▸ Refine & Summarize
 

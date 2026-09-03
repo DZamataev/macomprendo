@@ -31,8 +31,17 @@ final class AppModel: ObservableObject {
     private(set) var textFeatures: TextFeatures?
     lazy var dockIcon = DockIconCoordinator(policy: env.activationPolicy)
     lazy var modelsViewModel = ModelsViewModel(models: env.models)
+    /// The TTS half of the catalog. A second view model rather than a shared one, because each
+    /// screen lists exactly one kind and `ModelsViewModel` filters at construction.
+    lazy var ttsModelsViewModel = ModelsViewModel(models: env.models,
+                                                  catalog: ModelCatalog.all(kind: .tts))
     lazy var dictationTabModel = DictationTabModel(holder: self)
-    lazy var speechTabModel = SpeechTabModel(speech: env.speech, holder: self, keychain: keychain)
+    lazy var speechTabModel = SpeechTabModel(
+        speech: env.speech, holder: self, keychain: keychain, toaster: hud,
+        modelStates: { [unowned self] in
+            self.ttsModelsViewModel.rows.reduce(into: [:]) { $0[$1.id] = $1.state }
+        })
+    lazy var speechSourceModel = SpeechSourceModel(holder: self)
     lazy var promptsTabModel = PromptsTabModel(
         holder: self,
         llm: { [unowned self] kind in try self.llmTarget(for: kind) })

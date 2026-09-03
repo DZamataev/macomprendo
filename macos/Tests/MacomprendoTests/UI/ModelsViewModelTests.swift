@@ -7,16 +7,16 @@ import Testing
     private static let testBrief = ModelBrief(summary: "", strengths: [], limitations: [], benchmarks: [],
                                                sourceURL: URL(string: "https://example.invalid")!)
 
-    private func makeCatalog() -> [LocalASRModel] {
+    private func makeCatalog() -> [LocalModel] {
         [
-            LocalASRModel(id: "base",
+            LocalModel(id: "base",
                           displayName: "Base",
                           engine: .whisperCpp,
                           languages: nil,
                           files: [ModelFile(role: .ggml, fileName: "ggml-base.bin", sizeBytes: 148_000_000,
                                             sha256: "aaa", downloadURL: URL(string: "https://example.invalid/ggml-base.bin")!)],
                           brief: Self.testBrief),
-            LocalASRModel(id: "large-v3-turbo",
+            LocalModel(id: "large-v3-turbo",
                           displayName: "Large v3 Turbo",
                           engine: .whisperCpp,
                           languages: nil,
@@ -28,8 +28,8 @@ import Testing
 
     /// A synthetic multi-file entry: the catalog itself still holds only one-file
     /// whisper models.
-    private func twoFileModel() -> LocalASRModel {
-        LocalASRModel(id: "two-file",
+    private func twoFileModel() -> LocalModel {
+        LocalModel(id: "two-file",
                       displayName: "Two File",
                       engine: .gigaAM,
                       languages: ["ru"],

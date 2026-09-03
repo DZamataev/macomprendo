@@ -11,8 +11,8 @@ import Testing
     private static let payload = Data("hello".utf8)
     private static let modelPath = "/ggerganov/whisper.cpp/resolve/main/ggml-test.bin"
 
-    private func makeModel(sha256: String) -> LocalASRModel {
-        LocalASRModel(
+    private func makeModel(sha256: String) -> LocalModel {
+        LocalModel(
             id: "test",
             displayName: "Test",
             engine: .whisperCpp,
@@ -440,8 +440,8 @@ import Testing
 
     /// A synthetic two-file entry: the catalog itself still holds only one-file whisper
     /// models, so this is what proves the manager treats a model as a file set.
-    private func twoFileModel() -> LocalASRModel {
-        LocalASRModel(
+    private func twoFileModel() -> LocalModel {
+        LocalModel(
             id: "two", displayName: "Two", engine: .gigaAM, languages: ["ru"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "two-model.onnx", sizeBytes: 8,
@@ -532,7 +532,7 @@ import Testing
         // The catalog records 4 bytes; the server actually serves 100, one byte at a time.
         // Once the fraction pins at 1.0 every further chunk would sail past a throttle that
         // only checks `fraction >= 1.0`, so the stream would emit an update per chunk.
-        let model = LocalASRModel(
+        let model = LocalModel(
             id: "understated", displayName: "Understated", engine: .whisperCpp, languages: nil,
             files: [ModelFile(role: .ggml, fileName: "understated.bin", sizeBytes: 4, sha256: "",
                               downloadURL: URL(string: "https://example.com/understated.bin")!)],

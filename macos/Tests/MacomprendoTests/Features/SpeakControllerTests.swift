@@ -221,4 +221,47 @@ import Testing
         #expect(controller.active == nil)
         #expect(!controller.isSpeaking)
     }
+
+    @Test func speakingThroughANotReadySourceToastsInsteadOfStayingSilent() {
+        let speech = ScriptedSpeech()
+        let toaster = ScriptedToaster()
+        var settings = Settings.default
+        settings.speech.source = .local
+        settings.speech.localModelID = "piper-ru"          // chosen but never downloaded
+        let controller = SpeakController(speech: speech,
+                                         toaster: toaster,
+                                         settings: { settings },
+                                         modelStates: { [:] })
+
+        controller.speak("Прочитай это", from: .hotkey)
+
+        #expect(speech.spoken.isEmpty)
+        #expect(toaster.messages.last?.contains("has not been downloaded") == true)
+    }
+
+    @Test func speakingThroughAReadySourceIsUnaffected() {
+        let speech = ScriptedSpeech()
+        let toaster = ScriptedToaster()
+        var settings = Settings.default
+        settings.speech.source = .local
+        settings.speech.localModelID = "piper-ru"
+        let controller = SpeakController(speech: speech,
+                                         toaster: toaster,
+                                         settings: { settings },
+                                         modelStates: { ["piper-ru": .downloaded] })
+
+        controller.speak("Прочитай это", from: .hotkey)
+
+        #expect(speech.spoken.map(\.text) == ["Прочитай это"])
+    }
+
+    @Test func theSystemSourceNeverBlocks() {
+        let speech = ScriptedSpeech()
+        let controller = SpeakController(speech: speech,
+                                         toaster: ScriptedToaster(),
+                                         settings: { Settings.default },
+                                         modelStates: { [:] })
+        controller.speak("Hello", from: .hotkey)
+        #expect(speech.spoken.count == 1)
+    }
 }

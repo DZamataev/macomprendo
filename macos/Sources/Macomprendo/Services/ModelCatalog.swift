@@ -1,9 +1,19 @@
 import Foundation
 
-/// Which local runtime opens a model.
-enum ASREngine: String, Codable, Sendable, CaseIterable {
+/// Whether a model transcribes speech or produces it.
+enum ModelKind: String, Sendable, CaseIterable { case asr, tts }
+
+/// Which local runtime opens a model. Named for the runtime, not for the task, because one
+/// runtime (sherpa-onnx) serves both kinds.
+enum LocalEngine: String, Codable, Sendable, CaseIterable {
     case whisperCpp
     case gigaAM
+
+    var kind: ModelKind {
+        switch self {
+        case .whisperCpp, .gigaAM: .asr
+        }
+    }
 }
 
 /// The part a file plays in a model. A whisper model is one `.ggml`; a sherpa CTC model is
@@ -54,20 +64,62 @@ struct ModelBrief: Sendable, Equatable {
     let sourceURL: URL
 }
 
-/// One downloadable local ASR model.
-struct LocalASRModel: Identifiable, Sendable, Equatable {
+/// One downloadable local model.
+struct LocalModel: Identifiable, Sendable, Equatable {
     let id: String
     let displayName: String
-    let engine: ASREngine
+    let engine: LocalEngine
     /// `nil` means multilingual with no published list (whisper). A non-nil list is the set of
     /// languages the publisher reports ASR quality for.
     let languages: [String]?
     let files: [ModelFile]
     let brief: ModelBrief
+    /// How many speakers the model exposes; 1 for the single-speaker Piper voices and for
+    /// every ASR entry, which has no such concept. The Local tab offers a speaker picker
+    /// only above 1.
+    let speakerCount: Int
+    /// For a model downloaded as an archive: the path inside the unpacked directory that
+    /// proves the unpack succeeded. `nil` for a model stored as loose files.
+    let archiveSentinel: String?
+
+    init(id: String,
+         displayName: String,
+         engine: LocalEngine,
+         languages: [String]?,
+         files: [ModelFile],
+         brief: ModelBrief,
+         speakerCount: Int = 1,
+         archiveSentinel: String? = nil) {
+        self.id = id
+        self.displayName = displayName
+        self.engine = engine
+        self.languages = languages
+        self.files = files
+        self.brief = brief
+        self.speakerCount = speakerCount
+        self.archiveSentinel = archiveSentinel
+    }
 
     var totalSizeBytes: Int64 { files.reduce(0) { $0 + $1.sizeBytes } }
+    var kind: ModelKind { engine.kind }
 
     func file(_ role: ModelFileRole) -> ModelFile? { files.first { $0.role == role } }
+
+    /// What `languages` says, in words. `nil` means multilingual with no published list, which
+    /// is whisper — not "no languages". Named in English, like the rest of the UI, rather than
+    /// in the system language.
+    var languagesText: String { Self.languagesText(languages) }
+
+    /// Same wording, usable without a full `LocalModel` — `ModelBriefView` names one language
+    /// per benchmark row rather than a model's whole list.
+    static func languagesText(_ languages: [String]?) -> String {
+        guard let languages, !languages.isEmpty else { return "90+ languages" }
+        let english = Locale(identifier: "en_US")
+        let names = languages.map { code in
+            english.localizedString(forLanguageCode: code) ?? code
+        }
+        return names.joined(separator: ", ")
+    }
 }
 
 /// The models Macomprendo offers.
@@ -80,21 +132,25 @@ enum ModelCatalog {
     static let defaultID = "large-v3-turbo"
     static let lightweightID = "base"
 
-    static let all: [LocalASRModel] = whisper + gigaAM
+    static let all: [LocalModel] = whisper + gigaAM
 
-    static func model(id: String) -> LocalASRModel? {
+    static func model(id: String) -> LocalModel? {
         all.first { $0.id == id }
     }
 
-    static func all(for engine: ASREngine) -> [LocalASRModel] {
+    static func all(for engine: LocalEngine) -> [LocalModel] {
         all.filter { $0.engine == engine }
+    }
+
+    static func all(kind: ModelKind) -> [LocalModel] {
+        all.filter { $0.kind == kind }
     }
 
     // MARK: - whisper.cpp
 
     private static let whisperSource = URL(string: "https://github.com/openai/whisper#available-models-and-languages")!
 
-    private static let whisper: [LocalASRModel] = [
+    private static let whisper: [LocalModel] = [
         whisperModel("tiny", "Tiny (multilingual)", 77691713, multilingual: true),
         whisperModel("tiny.en", "Tiny (English)", 77704715, multilingual: false),
         whisperModel("base", "Base (multilingual)", 147951465, multilingual: true),
@@ -111,8 +167,8 @@ enum ModelCatalog {
         _ displayName: String,
         _ sizeBytes: Int64,
         multilingual: Bool
-    ) -> LocalASRModel {
-        LocalASRModel(
+    ) -> LocalModel {
+        LocalModel(
             id: id,
             displayName: displayName,
             engine: .whisperCpp,
@@ -145,8 +201,8 @@ enum ModelCatalog {
     private static let v3RNNTBase = "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/resolve/main"
     private static let multilingualBase = "https://huggingface.co/iaa2005/GigaAM-Multilingual-sherpa-onnx-ctc/resolve/main"
 
-    private static let gigaAM: [LocalASRModel] = [
-        LocalASRModel(
+    private static let gigaAM: [LocalModel] = [
+        LocalModel(
             id: "gigaam-v3-e2e-ctc",
             displayName: "GigaAM v3 e2e CTC (Russian)",
             engine: .gigaAM,
@@ -163,7 +219,7 @@ enum ModelCatalog {
                 sourceURL: gigaAMSource
             )
         ),
-        LocalASRModel(
+        LocalModel(
             id: "gigaam-v3-e2e-rnnt",
             displayName: "GigaAM v3 e2e RNN-T (Russian)",
             engine: .gigaAM,
@@ -182,7 +238,7 @@ enum ModelCatalog {
                 sourceURL: gigaAMSource
             )
         ),
-        LocalASRModel(
+        LocalModel(
             id: "gigaam-multilingual-ctc",
             displayName: "GigaAM Multilingual CTC",
             engine: .gigaAM,
@@ -205,7 +261,7 @@ enum ModelCatalog {
                 sourceURL: gigaAMMultilingualSource
             )
         ),
-        LocalASRModel(
+        LocalModel(
             id: "gigaam-multilingual-large-ctc",
             displayName: "GigaAM Multilingual Large CTC",
             engine: .gigaAM,

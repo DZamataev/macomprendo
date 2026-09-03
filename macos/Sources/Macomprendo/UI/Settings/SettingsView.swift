@@ -9,7 +9,10 @@ struct SettingsView: View {
                 .tabItem { Label { Text("Hotkeys") } icon: { Icon(.hotkeys, size: 16) } }
             DictationTab(tab: AppRoot.model.dictationTabModel, models: AppRoot.model.modelsViewModel)
                 .tabItem { Label { Text("Dictation") } icon: { Icon(.microphone, size: 16) } }
-            SpeechTab(model: AppRoot.model.speechTabModel, app: AppRoot.model)
+            SpeechTab(model: AppRoot.model.speechTabModel,
+                      source: AppRoot.model.speechSourceModel,
+                      models: AppRoot.model.ttsModelsViewModel,
+                      app: AppRoot.model)
                 .tabItem { Label { Text("Speech") } icon: { Icon(.speak, size: 16) } }
             PromptsTab(model: AppRoot.model.promptsTabModel, app: AppRoot.model)
                 .tabItem { Label { Text("Refine & Summarize") } icon: { Icon(.presets, size: 16) } }

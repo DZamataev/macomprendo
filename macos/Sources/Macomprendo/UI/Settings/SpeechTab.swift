@@ -36,13 +36,19 @@ import SwiftUI
     private let speech: any SpeechSynthesizing
     private let holder: any SettingsHolding
     private let keychain: any KeychainStoring
+    private let toaster: any Toasting
+    private let modelStates: @MainActor () -> [String: ModelState]
 
     init(speech: any SpeechSynthesizing,
          holder: any SettingsHolding,
-         keychain: any KeychainStoring) {
+         keychain: any KeychainStoring,
+         toaster: any Toasting,
+         modelStates: @escaping @MainActor () -> [String: ModelState]) {
         self.speech = speech
         self.holder = holder
         self.keychain = keychain
+        self.toaster = toaster
+        self.modelStates = modelStates
         reload()
     }
 
@@ -62,8 +68,20 @@ import SwiftUI
 
     /// For the endpoint source this performs a real network call and therefore doubles as the
     /// connection test; failures arrive as a toast through `SpeakController`'s `onError` hook.
+    ///
+    /// Preview speaks through whatever source is *active*, and the header selector allows
+    /// activating a source that is not ready yet (e.g. Local with no model downloaded).
+    /// Mirrors `SpeakController.speak`'s gate: never fall back to another source, since that
+    /// would hide that the chosen one is broken.
     func preview() {
-        speech.speak(holder.settings.speech.previewText, settings: holder.settings.speech)
+        let current = holder.settings.speech
+        if case .notReady(let reason, _) = SpeechReadiness.of(source: current.source,
+                                                              settings: current,
+                                                              modelStates: modelStates()) {
+            toaster.toast(reason, duration: 2.5)
+            return
+        }
+        speech.speak(current.previewText, settings: current)
     }
 
     func hasAPIKey() -> Bool {
@@ -138,47 +156,118 @@ import SwiftUI
     }
 }
 
+/// The active-source selector and its status sit at the top; the three sub-tabs below are pure
+/// navigation. Moving between them changes what is on screen and nothing else — only the
+/// selector changes what speaks.
 struct SpeechTab: View {
     @ObservedObject var model: SpeechTabModel
+    @ObservedObject var source: SpeechSourceModel
+    @ObservedObject var models: ModelsViewModel
     @ObservedObject var app: AppModel
+    @FocusState private var apiKeyFocused: Bool
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Picker("Speech source", selection: sourceSelection) {
-                    ForEach(SpeechSource.allCases) { source in
-                        Text(source.displayName).tag(source)
-                    }
-                }
-                .pickerStyle(.segmented)
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal)
+                .padding(.vertical, 10)
 
-                if app.settings.speech.source == .system {
-                    systemSection
-                } else {
-                    endpointSection
-                }
+            Divider()
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Preview text").font(.headline)
-                    TextField("Preview text", text: $app.settings.speech.previewText, axis: .vertical)
-                        .lineLimit(2...4)
-                    Toggle("Play a sample when a voice is selected",
-                           isOn: $app.settings.speech.auditionOnSelect)
-                    HStack {
-                        Button("Preview") { model.preview() }
-                        Button("Reload voices") { model.reload() }
-                        Spacer()
-                        Text("Hotkey ⌥S reads the current selection; press it again to stop.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+            Picker("", selection: $source.viewedTab) {
+                ForEach(SpeechSource.allCases) { candidate in
+                    Text(candidate.displayName).tag(candidate)
                 }
             }
-            .padding(20)
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding([.horizontal, .top])
+
+            Form {
+                switch source.viewedTab {
+                case .system: systemSection
+                case .local: localSection
+                case .endpoint: endpointSection
+                }
+                footerSection
+            }
+            .formStyle(.grouped)
+        }
+        .task {
+            await models.refresh()
+            source.adopt(models.rows)
+        }
+        .onChange(of: models.rows) { _, rows in source.adopt(rows) }
+    }
+
+    // MARK: - Selector and status
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 20) {
+            Picker("Active speech source", selection: activeSource) {
+                ForEach(SpeechSource.allCases) { candidate in
+                    Text(source.name(of: candidate)).tag(candidate)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            statusBlock
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
+    private var isReady: Bool { source.readiness == .ready }
+
+    /// The only status on this screen, and it describes the selection rather than whichever
+    /// sub-tab happens to be open — for the reason the Dictation tab gives: two status blocks
+    /// answer "what happens on the hotkey" twice with no way to tell which answer is real.
+    private var statusBlock: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Icon(isReady ? .success : .warning, size: 14)
+                .foregroundStyle(isReady ? Color.green : Color.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(source.statusHeadline)
+                    .font(.callout.weight(.semibold))
+                Text(source.statusDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            fixButton
+        }
+    }
+
+    @ViewBuilder
+    private var fixButton: some View {
+        if case .notReady(_, let fix) = source.readiness, let fix {
+            switch fix {
+            case .downloadModel(let id):
+                Button("Download") {
+                    source.reveal(.local)
+                    models.download(id)
+                }
+            case .selectModel:
+                Button("Choose a voice") { source.reveal(.local) }
+            case .fillEndpoint:
+                Button("Configure") { source.reveal(.endpoint) }
+            case .saveKey:
+                Button("Add a key") {
+                    source.reveal(.endpoint)
+                    apiKeyFocused = true
+                }
+            }
+        }
+    }
+
+    private var activeSource: Binding<SpeechSource> {
+        Binding(get: { source.activeSource }, set: { source.activate($0) })
+    }
+
+    // MARK: - System voices
+
     private var systemSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        Section("System voices") {
             Text("Default voice").font(.headline)
             Text("Used for languages you have not mapped, and for everything when voice "
                  + "switching is off.")
@@ -253,52 +342,154 @@ struct SpeechTab: View {
         }
     }
 
-    private var endpointSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Form {
-                TextField("Base URL", text: baseURLSelection,
-                          prompt: Text("https://api.openai.com"))
-                TextField("Model", text: $app.settings.speech.endpointModel)
+    // MARK: - Local TTS
 
-                // Free-form: local servers (openedai-speech, Kokoro-FastAPI) define their own
-                // names, so the built-ins are offered as a menu rather than a closed picker.
-                HStack {
-                    TextField("Voice", text: $app.settings.speech.endpointVoice)
-                    Menu("Built-in") {
-                        ForEach(model.endpointVoices) { voice in
-                            Button(voice.name) { app.settings.speech.endpointVoice = voice.id }
+    /// Two sibling `Section`s — one for the catalog, one for a selected voice's parameters —
+    /// which only compiles as a view body with `@ViewBuilder`.
+    @ViewBuilder
+    private var localSection: some View {
+        Section("Voices") {
+            if source.ttsModels.isEmpty {
+                Text("No local voices are available in this build yet.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(source.ttsModels) { entry in
+                localVoiceRow(entry)
+            }
+
+            Text("A local voice reads everything in its own voice. Switching voices for "
+                 + "mixed-language text is a System voices feature.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        if let selected = source.selectedModel {
+            Section("Parameters") {
+                if selected.speakerCount > 1 {
+                    Picker("Speaker", selection: $app.settings.speech.localSpeakerID) {
+                        ForEach(0..<selected.speakerCount, id: \.self) { id in
+                            Text("Speaker \(id)").tag(id)
                         }
                     }
-                    .fixedSize()
                 }
-
-                SecureField("API key", text: $model.apiKeyField)
-                    .onSubmit { model.saveAPIKey() }
                 HStack {
-                    Button("Save key") { model.saveAPIKey() }
-                    if !model.keyStatus.isEmpty {
-                        Text(model.keyStatus).font(.caption).foregroundStyle(.secondary)
-                    } else if model.hasAPIKey() {
-                        Text("A key is saved.").font(.caption).foregroundStyle(.secondary)
+                    Text("Speed")
+                    Slider(value: $app.settings.speech.localSpeed, in: 0.5...2.0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func localVoiceRow(_ entry: LocalModel) -> some View {
+        let state = models.rows.first { $0.id == entry.id }?.state
+        let chosen = app.settings.speech.localModelID == entry.id
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(entry.displayName)
+                            .fontWeight(chosen ? .semibold : .regular)
+                        if chosen { chosenBadge }
+                    }
+                    Text("\(ModelsViewModel.sizeText(entry.totalSizeBytes)) · "
+                         + entry.languagesText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 6) {
+                    if !chosen, case .downloaded = state {
+                        Button("Use this voice") { source.select(modelID: entry.id) }
+                    }
+                    localStateView(entry.id, state)
+                }
+            }
+            ModelBriefView(brief: entry.brief)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var chosenBadge: some View {
+        Text("Chosen")
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color.accentColor.opacity(0.2)))
+    }
+
+    @ViewBuilder
+    private func localStateView(_ id: String, _ state: ModelState?) -> some View {
+        switch state {
+        case .none:
+            EmptyView()
+        case .notDownloaded:
+            Button("Download") { models.download(id) }
+        case .downloading(let fraction):
+            HStack(spacing: 8) {
+                ProgressView(value: fraction).frame(width: 90)
+                Button("Cancel") { models.cancelDownload(id) }
+            }
+        case .downloaded:
+            HStack(spacing: 8) {
+                Label { Text("Downloaded") } icon: { Icon(.success, size: 14) }
+                    .foregroundStyle(.green)
+                Button("Delete", role: .destructive) { Task { await models.delete(id) } }
+            }
+        case .failed(let message):
+            HStack(spacing: 8) {
+                Label { Text(message) } icon: { Icon(.warning, size: 14) }
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                Button("Retry") { models.download(id) }
+            }
+        }
+    }
+
+    // MARK: - Endpoint
+
+    private var endpointSection: some View {
+        Section("Endpoint") {
+            TextField("Base URL", text: baseURLSelection,
+                      prompt: Text("https://api.openai.com"))
+            TextField("Model", text: $app.settings.speech.endpointModel)
+
+            // Free-form: local servers (openedai-speech, Kokoro-FastAPI) define their own
+            // names, so the built-ins are offered as a menu rather than a closed picker.
+            HStack {
+                TextField("Voice", text: $app.settings.speech.endpointVoice)
+                Menu("Built-in") {
+                    ForEach(model.endpointVoices) { voice in
+                        Button(voice.name) { app.settings.speech.endpointVoice = voice.id }
                     }
                 }
-                Text("A local server without authentication still needs a non-empty key here.")
-                    .font(.caption).foregroundStyle(.secondary)
-
-                TextField("Style instructions", text: $app.settings.speech.endpointInstructions,
-                          prompt: Text("e.g. Read this cheerfully"))
+                .fixedSize()
             }
-            .formStyle(.grouped)
+
+            SecureField("API key", text: $model.apiKeyField)
+                .focused($apiKeyFocused)
+                .onSubmit { model.saveAPIKey() }
+            HStack {
+                Button("Save key") { model.saveAPIKey() }
+                if !model.keyStatus.isEmpty {
+                    Text(model.keyStatus).font(.caption).foregroundStyle(.secondary)
+                } else if model.hasAPIKey() {
+                    Text("A key is saved.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Text("A local server without authentication still needs a non-empty key here.")
+                .font(.caption).foregroundStyle(.secondary)
+
+            TextField("Style instructions", text: $app.settings.speech.endpointInstructions,
+                      prompt: Text("e.g. Read this cheerfully"))
 
             Text(SpeechTabModel.endpointPrivacyCaption)
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var sourceSelection: Binding<SpeechSource> {
-        Binding(get: { app.settings.speech.source },
-                set: { app.settings.speech.source = $0 })
     }
 
     /// Keeps the last valid URL when the user is mid-edit and the text does not parse.
@@ -308,5 +499,28 @@ struct SpeechTab: View {
                     guard let url = URL(string: newValue) else { return }
                     app.settings.speech.endpointBaseURL = url
                 })
+    }
+
+    // MARK: - Preview
+
+    private var footerSection: some View {
+        Section {
+            TextField("Preview text", text: $app.settings.speech.previewText, axis: .vertical)
+                .lineLimit(2...4)
+            Toggle("Play a sample when a voice is selected",
+                   isOn: $app.settings.speech.auditionOnSelect)
+            HStack {
+                Button("Preview") { model.preview() }
+                Button("Reload voices") { model.reload() }
+                Spacer()
+                Text("Hotkey ⌥S reads the current selection; press it again to stop.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Preview")
+        } footer: {
+            Text("Preview speaks through the active source, so it is what the hotkey will sound like.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 }

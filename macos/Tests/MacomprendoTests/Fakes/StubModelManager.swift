@@ -12,7 +12,7 @@ final class StubModelManager: ModelManaging, @unchecked Sendable {
     private var _downloadError: Error?
     private var _deleted: [String] = []
     private var _resolvedFiles: [String: [ModelFileRole: URL]] = [:]
-    private var _resolvedEngines: [String: ASREngine] = [:]
+    private var _resolvedEngines: [String: LocalEngine] = [:]
 
     let modelsDirectory = URL(fileURLWithPath: "/tmp/macomprendo-tests/models", isDirectory: true)
 
@@ -36,7 +36,7 @@ final class StubModelManager: ModelManaging, @unchecked Sendable {
         set { lock.withLock { _resolvedFiles = newValue } }
     }
 
-    var resolvedEngines: [String: ASREngine] {
+    var resolvedEngines: [String: LocalEngine] {
         get { lock.withLock { _resolvedEngines } }
         set { lock.withLock { _resolvedEngines = newValue } }
     }

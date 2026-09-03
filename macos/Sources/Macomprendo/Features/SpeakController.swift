@@ -23,13 +23,16 @@ enum SpeakSource: Hashable, Sendable {
     private let speech: any SpeechSynthesizing
     private let toaster: any Toasting
     private let settings: @MainActor () -> Settings
+    private let modelStates: @MainActor () -> [String: ModelState]
 
     init(speech: any SpeechSynthesizing,
          toaster: any Toasting,
-         settings: @escaping @MainActor () -> Settings) {
+         settings: @escaping @MainActor () -> Settings,
+         modelStates: @escaping @MainActor () -> [String: ModelState] = { [:] }) {
         self.speech = speech
         self.toaster = toaster
         self.settings = settings
+        self.modelStates = modelStates
         speech.onStateChange = { [weak self] in
             guard let self else { return }
             let speaking = self.speech.isSpeaking
@@ -70,6 +73,16 @@ enum SpeakSource: Hashable, Sendable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             toaster.toast(ErrorText.describe(MacomprendoError.noSelection), duration: 2.0)
+            return
+        }
+        // The selector lists sources that are not ready, so one can be active. Speaking
+        // nothing and saying nothing would leave the user pressing a hotkey that does not
+        // work; falling back to system voices would hide that their choice is broken.
+        let current = settings()
+        if case .notReady(let reason, _) = SpeechReadiness.of(source: current.speech.source,
+                                                              settings: current.speech,
+                                                              modelStates: modelStates()) {
+            toaster.toast(reason, duration: 2.5)
             return
         }
         // Set before speaking: the backend calls `onStateChange` synchronously from `speak`,

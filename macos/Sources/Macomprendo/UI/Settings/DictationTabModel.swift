@@ -18,7 +18,7 @@ enum DictationBackendTab: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// `nil` for the endpoint tab, which lists no local models.
-    var engine: ASREngine? {
+    var engine: LocalEngine? {
         switch self {
         case .whisperCpp: .whisperCpp
         case .gigaAM: .gigaAM
@@ -65,9 +65,9 @@ final class DictationTabModel: ObservableObject {
     /// Read/write access to the live document, the same seam `PromptsTab`, `SpeechTab` and
     /// `QuickPanelController` use. `AppModel` conforms; tests pass `ScriptedSettingsHolder`.
     let holder: any SettingsHolding
-    private let catalog: [LocalASRModel]
+    private let catalog: [LocalModel]
 
-    init(holder: any SettingsHolding, catalog: [LocalASRModel] = ModelCatalog.all) {
+    init(holder: any SettingsHolding, catalog: [LocalModel] = ModelCatalog.all(kind: .asr)) {
         self.holder = holder
         self.catalog = catalog
         // Open where the active model lives. A read, not a write.
@@ -76,7 +76,7 @@ final class DictationTabModel: ObservableObject {
 
     /// The sub-tab a source belongs to.
     static func tab(of source: TranscriptionSource,
-                    in catalog: [LocalASRModel]) -> DictationBackendTab {
+                    in catalog: [LocalModel]) -> DictationBackendTab {
         switch source {
         case .endpoint:
             return .endpoint
@@ -92,7 +92,7 @@ final class DictationTabModel: ObservableObject {
         viewedTab = Self.tab(of: source, in: catalog)
     }
 
-    func rows(for tab: DictationBackendTab) -> [LocalASRModel] {
+    func rows(for tab: DictationBackendTab) -> [LocalModel] {
         guard let engine = tab.engine else { return [] }
         return catalog.filter { $0.engine == engine }
     }
@@ -228,7 +228,7 @@ final class DictationTabModel: ObservableObject {
         }
     }
 
-    private func activeModelName(_ model: LocalASRModel) -> String {
+    private func activeModelName(_ model: LocalModel) -> String {
         switch model.engine {
         case .whisperCpp:
             "whisper.cpp — \(model.displayName)"
@@ -246,18 +246,6 @@ extension DictationTabModel {
     var selectedModelID: String? {
         if case .local(let modelID) = holder.settings.transcriptionSource { return modelID }
         return nil
-    }
-
-    /// What a model's `languages` says, in words. `nil` means multilingual with no published
-    /// list, which is whisper — not "no languages". Named in English, like the rest of the UI,
-    /// rather than in the system language.
-    static func languagesText(_ languages: [String]?) -> String {
-        guard let languages, !languages.isEmpty else { return "90+ languages" }
-        let english = Locale(identifier: "en_US")
-        let names = languages.map { code in
-            english.localizedString(forLanguageCode: code) ?? code
-        }
-        return names.joined(separator: ", ")
     }
 
     /// Thread counts offered for whisper.cpp. `nil` is "Automatic"; the rest are every count

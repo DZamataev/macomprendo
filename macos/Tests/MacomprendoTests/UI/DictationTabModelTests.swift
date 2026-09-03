@@ -53,6 +53,34 @@ import Testing
         #expect(tab.rows(for: .endpoint).isEmpty)
     }
 
+    /// Guards both consumers that take `ModelCatalog.all` and mean "the ASR models". Written
+    /// while the catalog is still all-ASR, so it starts green and turns red when a future TTS
+    /// entry reaches either transcription consumer. The full-catalog view model below exists
+    /// only to feed real downloaded rows through `adopt(_:)`; both consumers under test use
+    /// their production default initialisers.
+    @Test func everyTranscriptionConsumerSeesASREntriesOnly() async {
+        let manager = StubModelManager()
+        manager.states = Dictionary(uniqueKeysWithValues: ModelCatalog.all.map {
+            ($0.id, ModelState.downloaded)
+        })
+
+        let models = ModelsViewModel(models: manager)
+        await models.refresh()
+        #expect(!models.rows.isEmpty)
+        #expect(models.rows.allSatisfy { $0.model.kind == .asr })
+
+        let allModels = ModelsViewModel(models: manager, catalog: ModelCatalog.all)
+        await allModels.refresh()
+        let dictation = DictationTabModel(holder: ScriptedSettingsHolder())
+        dictation.adopt(allModels.rows)
+        let localModelIDs = dictation.selectableSources.compactMap { source -> String? in
+            guard case .local(let id) = source.source else { return nil }
+            return id
+        }
+        #expect(!localModelIDs.isEmpty)
+        #expect(localModelIDs.allSatisfy { ModelCatalog.model(id: $0)?.kind == .asr })
+    }
+
     // MARK: - The active-model selector
 
     @Test func activatingAModelMakesItTheConfiguredSource() {
@@ -485,18 +513,6 @@ import Testing
     }
 
     // MARK: - What the view renders
-
-    @Test func aModelWithNoPublishedLanguageListIsCalledMultilingualRatherThanBlank() {
-        #expect(DictationTabModel.languagesText(nil) == "90+ languages")
-        #expect(DictationTabModel.languagesText([]) == "90+ languages")
-    }
-
-    @Test func aPublishedLanguageListIsNamedInWords() {
-        #expect(DictationTabModel.languagesText(["ru"]) == "Russian")
-        #expect(DictationTabModel.languagesText(["ru", "en"]) == "Russian, English")
-        // An unknown code is shown as itself rather than dropped.
-        #expect(DictationTabModel.languagesText(["zzz"]).contains("zzz"))
-    }
 
     @Test func theSelectedModelIDIsNilOnAnEndpointSource() {
         #expect(tabModel(endpointSettings()).selectedModelID == nil)
