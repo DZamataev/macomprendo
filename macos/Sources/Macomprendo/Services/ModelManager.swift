@@ -13,7 +13,7 @@ enum ModelState: Sendable, Equatable {
 
 /// A model whose every file is on disk, with the runtime that opens it.
 struct ResolvedLocalModel: Sendable, Equatable {
-    let engine: ASREngine
+    let engine: LocalEngine
     let files: [ModelFileRole: URL]
 }
 
@@ -43,7 +43,7 @@ actor LocalModelManager: ModelManaging {
 
     nonisolated let modelsDirectory: URL
     private let http: any HTTPClient
-    private let catalog: [LocalASRModel]
+    private let catalog: [LocalModel]
     private var states: [String: ModelState] = [:]
     /// Model ids with a download currently running, so a second concurrent
     /// `download(_:)` for the same id is rejected instead of racing the first
@@ -55,7 +55,7 @@ actor LocalModelManager: ModelManaging {
     }
 
     /// Catalog-injecting initialiser, used by tests.
-    init(directory: URL, http: any HTTPClient, catalog: [LocalASRModel]) {
+    init(directory: URL, http: any HTTPClient, catalog: [LocalModel]) {
         self.modelsDirectory = directory
         self.http = http
         self.catalog = catalog
@@ -281,11 +281,11 @@ actor LocalModelManager: ModelManaging {
         states[id] = state
     }
 
-    private func model(_ id: String) -> LocalASRModel? {
+    private func model(_ id: String) -> LocalModel? {
         catalog.first { $0.id == id }
     }
 
-    private func isComplete(_ model: LocalASRModel) -> Bool {
+    private func isComplete(_ model: LocalModel) -> Bool {
         model.files.allSatisfy {
             FileManager.default.fileExists(atPath: destinationURL(for: $0).path)
         }

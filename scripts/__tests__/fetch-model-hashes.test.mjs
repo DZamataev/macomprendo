@@ -10,16 +10,16 @@ import {
 // — one model can own several files, and two GigaAM entries share the fileName prefix
 // "gigaam-v3-e2e-", the way "tiny" and "tiny.en" used to collide on model id.
 const SOURCE = `enum ModelCatalog {
-    static let all: [LocalASRModel] = whisper + gigaAM
-    private static let gigaAM: [LocalASRModel] = [
-        LocalASRModel(
+    static let all: [LocalModel] = whisper + gigaAM
+    private static let gigaAM: [LocalModel] = [
+        LocalModel(
             id: "gigaam-v3-e2e-ctc",
             files: [
                 ModelFile(role: .ctcModel, fileName: "gigaam-v3-e2e-ctc-model.onnx", sizeBytes: 224900000, sha256: "", downloadURL: URL(string: "https://example.com/ctc/model.int8.onnx")!),
                 ModelFile(role: .tokens, fileName: "gigaam-v3-e2e-ctc-tokens.txt", sizeBytes: 4000, sha256: "abc", downloadURL: URL(string: "https://example.com/ctc/tokens.txt")!)
             ]
         ),
-        LocalASRModel(
+        LocalModel(
             id: "gigaam-v3-e2e-rnnt",
             files: [
                 ModelFile(role: .tokens, fileName: "gigaam-v3-e2e-rnnt-tokens.txt", sizeBytes: 13000, sha256: "", downloadURL: URL(string: "https://example.com/rnnt/tokens.txt")!)

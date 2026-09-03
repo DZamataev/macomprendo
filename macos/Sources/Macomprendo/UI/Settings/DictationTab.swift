@@ -162,7 +162,7 @@ struct DictationTab: View {
     }
 
     @ViewBuilder
-    private func modelRow(_ entry: LocalASRModel) -> some View {
+    private func modelRow(_ entry: LocalModel) -> some View {
         let state = models.rows.first { $0.id == entry.id }?.state
         let active = tab.selectedModelID == entry.id
 

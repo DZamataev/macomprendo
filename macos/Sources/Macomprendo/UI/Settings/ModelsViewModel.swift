@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class ModelsViewModel: ObservableObject {
     struct Row: Identifiable, Equatable {
-        let model: LocalASRModel
+        let model: LocalModel
         var state: ModelState
         var id: String { model.id }
     }
@@ -14,9 +14,9 @@ final class ModelsViewModel: ObservableObject {
     private(set) var downloadTasks: [String: Task<Void, Never>] = [:]
 
     private let models: any ModelManaging
-    private let catalog: [LocalASRModel]
+    private let catalog: [LocalModel]
 
-    init(models: any ModelManaging, catalog: [LocalASRModel] = ModelCatalog.all) {
+    init(models: any ModelManaging, catalog: [LocalModel] = ModelCatalog.all) {
         self.models = models
         self.catalog = catalog
     }

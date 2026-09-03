@@ -39,15 +39,15 @@ const FIXTURE = `enum ModelCatalog {
     private static let v3CTCBase = "https://huggingface.co/example/v3-ctc/resolve/main"
     private static let whisperSource = URL(string: "https://github.com/openai/whisper")!
 
-    private static let gigaAM: [LocalASRModel] = [
-        LocalASRModel(
+    private static let gigaAM: [LocalModel] = [
+        LocalModel(
             id: "gigaam-v3-e2e-ctc",
             files: [
                 ModelFile(role: .ctcModel, fileName: "gigaam-v3-e2e-ctc-model.onnx", sizeBytes: 224900000, sha256: "", downloadURL: URL(string: "\\(v3CTCBase)/model.int8.onnx")!),
                 ModelFile(role: .tokens, fileName: "gigaam-v3-e2e-ctc-tokens.txt", sizeBytes: 4000, sha256: "", downloadURL: URL(string: "\\(v3CTCBase)/tokens.txt")!)
             ]
         ),
-        LocalASRModel(
+        LocalModel(
             id: "literal-example",
             files: [
                 ModelFile(role: .tokens, fileName: "literal-example-tokens.txt", sizeBytes: 500, sha256: "", downloadURL: URL(string: "https://example.com/fixed/tokens.txt")!)
@@ -55,8 +55,8 @@ const FIXTURE = `enum ModelCatalog {
         )
     ]
 
-    private static func whisperModel(_ id: String, _ sizeBytes: Int64) -> LocalASRModel {
-        LocalASRModel(
+    private static func whisperModel(_ id: String, _ sizeBytes: Int64) -> LocalModel {
+        LocalModel(
             id: id,
             files: [
                 ModelFile(role: .ggml, fileName: "ggml-\\(id).bin", sizeBytes: sizeBytes, sha256: "", downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-\\(id).bin")!)
@@ -81,7 +81,7 @@ test('resolveConstants ignores a constant that is not a plain string literal', (
 })
 
 test('resolveConstants returns an empty map when the source has no string constants', () => {
-  assert.deepEqual(resolveConstants('static let all: [LocalASRModel] = whisper + gigaAM\n'), {})
+  assert.deepEqual(resolveConstants('static let all: [LocalModel] = whisper + gigaAM\n'), {})
 })
 
 test('extractFileRecords resolves an interpolated base into a full downloadURL', () => {

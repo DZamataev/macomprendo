@@ -7,7 +7,7 @@ final class FakeModelManager: ModelManaging, @unchecked Sendable {
 
     private let lock = NSLock()
     private var localURLs: [String: URL]
-    private var engines: [String: ASREngine] = [:]
+    private var engines: [String: LocalEngine] = [:]
     private(set) var deletedIDs: [String] = []
 
     init(
@@ -22,7 +22,7 @@ final class FakeModelManager: ModelManaging, @unchecked Sendable {
         lock.withLock { localURLs[id] = url }
     }
 
-    func setEngine(_ engine: ASREngine, for id: String) {
+    func setEngine(_ engine: LocalEngine, for id: String) {
         lock.withLock { engines[id] = engine }
     }
 

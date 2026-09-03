@@ -4,6 +4,17 @@ import Testing
 
 @Suite struct ModelCatalogTests {
 
+    @Test func everyCatalogEntryReportsItsKindFromItsEngine() {
+        #expect(LocalEngine.whisperCpp.kind == .asr)
+        #expect(LocalEngine.gigaAM.kind == .asr)
+        #expect(ModelCatalog.all.allSatisfy { $0.kind == .asr })
+    }
+
+    @Test func allByKindPartitionsTheCatalog() {
+        #expect(ModelCatalog.all(kind: .asr).count == ModelCatalog.all.count)
+        #expect(ModelCatalog.all(kind: .tts).isEmpty)
+    }
+
     @Test func containsExactlyTheThirteenOfferedModelsInOrder() {
         #expect(ModelCatalog.all.map(\.id) == [
             "tiny", "tiny.en", "base", "base.en",
@@ -53,7 +64,7 @@ import Testing
     }
 
     @Test func totalSizeIsTheSumOfTheFileSet() {
-        let model = LocalASRModel(
+        let model = LocalModel(
             id: "x", displayName: "X", engine: .gigaAM, languages: ["ru"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "x-model.onnx", sizeBytes: 100,

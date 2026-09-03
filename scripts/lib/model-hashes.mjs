@@ -1,7 +1,7 @@
 // Catalog-source-aware helpers for scripts/fetch-model-hashes.mjs.
 //
 // A `ModelFile(...)` literal is now keyed by its `fileName`, not by model id: one
-// `LocalASRModel` can own up to four files (a sherpa-onnx transducer has an encoder,
+// `LocalModel` can own up to four files (a sherpa-onnx transducer has an encoder,
 // decoder, joiner and tokens file), and Task 1's
 // `localFileNamesAreUniqueAcrossTheWholeCatalog` test guarantees `fileName` is unique
 // catalog-wide, which is exactly what a rewrite key needs to be.
