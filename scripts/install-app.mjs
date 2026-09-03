@@ -16,13 +16,19 @@ export function parseInstallArgs(argv, env = process.env) {
     allowPositionals: false,
     options: {
       'install-dir': { type: 'string' },
+      sign: { type: 'string' },
       'no-open': { type: 'boolean', default: false },
       help: { type: 'boolean', default: false },
     },
   });
   const raw = values['install-dir'] ?? env.MACOS_INSTALL_DIR ?? '/Applications';
   const installDir = raw.length > 1 && raw.endsWith('/') ? raw.slice(0, -1) : raw;
-  return { installDir, open: !values['no-open'], help: values.help };
+  return {
+    installDir,
+    sign: values.sign ?? env.MACOS_SIGN_IDENTITY ?? '-',
+    open: !values['no-open'],
+    help: values.help,
+  };
 }
 
 export function executablePattern(destination) {
@@ -31,10 +37,12 @@ export function executablePattern(destination) {
   return `^${escaped}([[:space:]]|$)`;
 }
 
-export function planInstall({ installDir, workDir, source }) {
+export function planInstall({ installDir, workDir, source, sign = '-' }) {
   const staged = path.join(workDir, APP_NAME);
+  const buildArgs = ['scripts/build-app.mjs'];
+  if (sign !== '-') buildArgs.push('--timestamp', 'none', '--sign', sign);
   return [
-    { type: 'exec', cmd: 'node', args: ['scripts/build-app.mjs'] },
+    { type: 'exec', cmd: 'node', args: buildArgs },
     { type: 'exec', cmd: 'codesign', args: ['--verify', '--deep', '--strict', source] },
     { type: 'exec', cmd: 'ditto', args: [source, staged] },
     { type: 'exec', cmd: 'codesign', args: ['--verify', '--deep', '--strict', staged] },
@@ -77,10 +85,10 @@ export async function main(argv, deps = {}) {
 
   if (options.help) {
     log.info([
-      'Usage: npm run install-app -- [--no-open] [--install-dir <dir>]',
+      'Usage: npm run install-app -- [--no-open] [--install-dir <dir>] [--sign <identity>]',
       '',
       'Builds Macomprendo.app from this checkout and replaces the installed copy.',
-      'Environment: MACOS_INSTALL_DIR (default /Applications).',
+      'Environment: MACOS_INSTALL_DIR (default /Applications), MACOS_SIGN_IDENTITY (default ad-hoc).',
     ].join('\n'));
     return 0;
   }
@@ -111,7 +119,9 @@ export async function main(argv, deps = {}) {
     const staged = path.join(workDir, APP_NAME);
     backup = path.join(workDir, `previous-${APP_NAME}`);
 
-    for (const step of planInstall({ installDir: options.installDir, workDir, source })) {
+    for (const step of planInstall({
+      installDir: options.installDir, workDir, source, sign: options.sign,
+    })) {
       await run(step.cmd, step.args, { cwd: root, log });
     }
 

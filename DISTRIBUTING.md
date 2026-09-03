@@ -276,10 +276,20 @@ publish release notes now and attach a build later with a manual `npm run notari
 ## 5. Install locally
 
 ```sh
-npm run install-app                                   # build + install into /Applications
+npm run install-app                                   # build + install into /Applications (ad-hoc)
+npm run install-app:signed                            # Developer ID-signed build + install
 npm run install-app -- --no-open
 MACOS_INSTALL_DIR="$HOME/Applications" npm run install-app
+MACOS_SIGN_IDENTITY="Developer ID Application: Denis Zamataev (68QJJA7HK9)" npm run install-app
 ```
+
+`install-app:signed` is the normal local-testing command for a checkout with this project's
+Developer ID certificate. It uses a stable designated requirement (without requesting a
+notarization timestamp), which preserves Microphone and Accessibility grants across rebuilds.
+Switch from an ad-hoc build once, run `npm run reset-permissions`, then grant permissions again;
+subsequent signed installs retain them. Plain `install-app` remains ad-hoc for contributors
+without the certificate. Pass `--sign <identity>` or set `MACOS_SIGN_IDENTITY` to use another
+signing identity.
 
 The installer stages the new bundle inside the destination directory, quits any running copy,
 moves the old app to a backup, swaps in the new one, verifies the signature, and restores the

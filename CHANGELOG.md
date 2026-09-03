@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Settings ▸ General can append one space after text inserted by Dictate or original Dictate &
+  Refine, while keeping saved transcripts and refined text unchanged.
+- Settings ▸ Hotkeys can bind the middle mouse button to any existing dictation or text action,
+  with Hold/Toggle configured independently from keyboard hotkeys.
+- `npm run install-app:signed` installs a Developer ID-signed local build, preserving macOS
+  Microphone and Accessibility permissions between rebuilds after one permission reset.
+- Dictation History entries now have a Refine action that opens the Refine panel with the
+  saved transcript.
+- The menubar now groups dictation history controls and exposes selectors for the active
+  dictation model (with backend prefixes) and translation target.
 - Optional local dictation history saves text-only Dictate and Dictate & Refine transcripts,
   capped at 100,000 entries and browsed in a paged window with per-entry copying and a
   confirmed clear action; audio is never saved.

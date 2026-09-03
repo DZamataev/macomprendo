@@ -19,6 +19,18 @@ enum HotkeyAction: String, CaseIterable, Sendable {
     }
 }
 
+extension MiddleMouseAction {
+    var hotkeyAction: HotkeyAction {
+        switch self {
+        case .dictate: .dictate
+        case .dictateAndRefine: .dictateAndRefine
+        case .speak: .speak
+        case .summarize: .summarize
+        case .refineSelection: .refineSelection
+        }
+    }
+}
+
 extension HotkeyAction {
     static let unboundShortcutText = "not set"
 

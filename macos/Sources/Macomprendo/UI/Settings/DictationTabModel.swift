@@ -122,7 +122,7 @@ final class DictationTabModel: ObservableObject {
         var entries = catalog
             .filter { isReady(.local(modelID: $0.id)) }
             .map { SelectableSource(source: .local(modelID: $0.id),
-                                    name: $0.displayName,
+                                    name: activeModelName($0),
                                     isReady: true) }
 
         if let endpoint = configuredEndpoint, isReady(endpoint) {
@@ -215,14 +215,25 @@ final class DictationTabModel: ObservableObject {
 
     var activeSourceName: String { name(of: holder.settings.transcriptionSource) }
 
-    /// How a source is named everywhere on this screen: the catalog's display name, or the
-    /// endpoint's model. Falls back to the raw id for a model no longer in the catalog.
+    /// How a source is named in the active-model selector and its status. Model display names
+    /// describe a model family, so whisper entries carry their runtime prefix to distinguish them
+    /// from other local backends.
     func name(of source: TranscriptionSource) -> String {
         switch source {
         case .local(let modelID):
-            catalog.first { $0.id == modelID }?.displayName ?? modelID
+            guard let model = catalog.first(where: { $0.id == modelID }) else { return modelID }
+            return activeModelName(model)
         case .endpoint(_, let model):
-            "OpenAI endpoint · \(model)"
+            return "OpenAI endpoint · \(model)"
+        }
+    }
+
+    private func activeModelName(_ model: LocalASRModel) -> String {
+        switch model.engine {
+        case .whisperCpp:
+            "whisper.cpp — \(model.displayName)"
+        case .gigaAM:
+            model.displayName
         }
     }
 }

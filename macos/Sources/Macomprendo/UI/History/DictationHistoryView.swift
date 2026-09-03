@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DictationHistoryView: View {
     @ObservedObject var controller: DictationHistoryController
+    let onRefine: @MainActor (String) -> Void
     @State private var isClearConfirmationPresented = false
 
     var body: some View {
@@ -76,6 +77,13 @@ struct DictationHistoryView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button { onRefine(entry.text) } label: {
+                    Label { Text("Refine") } icon: {
+                        Icon(.refine, size: 14)
+                    }
+                }
+                .buttonStyle(.borderless)
+                .help("Refine this transcript")
                 Button { controller.copy(entry) } label: {
                     Label { Text("Copy") } icon: {
                         Icon(.copy, size: 14)

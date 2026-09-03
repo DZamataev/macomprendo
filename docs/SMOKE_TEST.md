@@ -50,14 +50,26 @@ Reset permissions when you want to rehearse a fresh install — quit the app fir
 - [ ] Dictate, and while the HUD says "Transcribing…" press Esc — the HUD shows "Cancelled";
       nothing is inserted.
 - [ ] Hold ⌥Space, say nothing, release — the HUD shows "Nothing heard"; nothing is inserted.
-- [ ] Settings ▸ General: switch to "Press to start, press to stop" — ⌥Space starts recording;
+- [ ] Settings ▸ Hotkeys ▸ Keyboard: switch to "Press to start, press to stop" — ⌥Space starts recording;
       a second press stops, transcribes and inserts.
 - [ ] Settings ▸ General: set Insert text by = "Typing character by character", dictate into
       TextEdit — text is typed rather than pasted; the clipboard is untouched.
 - [ ] Settings ▸ Hotkeys: record ⌃⌥D for Dictate, then use it — the new shortcut dictates;
       ⌥Space no longer does.
+- [ ] **Middle mouse action.** Settings ▸ Hotkeys: enable “Middle mouse button click” and choose
+      Dictate. Set Mouse ▸ Dictation behaviour to Hold, hold the middle button in TextEdit while
+      speaking and release it: recording stops, transcribes and inserts. Set the **mouse** behaviour
+      to Toggle: one click starts recording and the next stops it; the Keyboard behaviour remains
+      unchanged. Select “Summarize selection”, select text in TextEdit and click the middle button:
+      the Summary panel opens. Disable the toggle and confirm middle-button clicks no longer invoke
+      Macomprendo.
 - [ ] Menubar menu: switch "Dictate" off, press the hotkey — nothing happens; switching it back
       on restores it.
+- [ ] **Trailing space.** In Settings ▸ General, enable “Add a space after dictated text”,
+      dictate `hello` into TextEdit, and verify the insertion is `hello ` (with one trailing
+      space). In Dictate & Refine, insert the Original text and verify it also ends in one space;
+      refined text remains unchanged. Disable it and verify subsequent Dictate insertion has no
+      extra space.
 - [ ] Dictate into a full-screen app on a second display — the HUD appears on the screen with
       the mouse, above the full-screen app, and the text lands in the app.
 - [ ] Menubar menu while idle / recording — the status line reads "Ready" / "Recording…".
@@ -130,15 +142,16 @@ Assign a shortcut in Settings ▸ Hotkeys first.
 Use a recognizable short sentence for each successful recording in this section. The history
 preference controls recording only; it never records audio.
 
-- [ ] **Default off and persistence.** On a fresh settings document, Settings ▸ General shows
-      “Save dictation history” off and the menubar has no “Dictation History…” item. Enable it,
-      quit and relaunch, and confirm it remains enabled; turn it off again and confirm it also
-      remains off after relaunch.
-- [ ] **Conditional menu and single window.** With history enabled, “Dictation History…” appears
-      between the action controls and Settings. Open it twice from the menubar: the existing
-      Dictation History window is activated rather than a second window appearing. Disable the
-      setting while it is open; the item disappears but the open window remains usable, and after
-      closing it cannot be reopened until history is enabled again.
+- [ ] **Default off and persistence.** On a fresh settings document, the menubar’s Dictation
+      History section shows “Save dictation history” off while “Dictation History…” remains
+      available. Enable it, quit and relaunch, and confirm it remains enabled; turn it off again
+      and confirm it also remains off after relaunch.
+- [ ] **Menu control and single window.** “Dictation History…” sits between the action controls
+      and the model/translation selectors whether history recording is enabled or not. Open it
+      twice from the menubar: the existing Dictation History window is activated rather than a
+      second window appearing. Disable the setting while it is open; the existing entries remain
+      usable, the item stays available, and new Dictate or Dictate & Refine transcripts are not
+      added until history is enabled again.
 - [ ] **Both microphone actions record.** Enable history, use Dictate for one recognizable
       sentence and Dictate & Refine for another, then open History. Both complete original
       transcripts appear with the Dictation and Dictation & Refine labels; no audio is present.
@@ -303,6 +316,7 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
 | Step | Expected |
 |---|---|
 | Rebind "Refine selection" in Settings ▸ Hotkeys, then open the menubar menu | Each row reads "<action> — <shortcut>" with the new shortcut; an unbound action reads "not set". The shortcut is inline, not right-aligned like a native menu key equivalent — that is a platform constraint, not a defect. **Read the rows, do not just check the menu opens:** the shortcut once went missing here silently, and only opening the menu can catch it. |
+| Menubar: choose an active dictation model and a translation target | With two downloaded local models, both are offered by the Active dictation model submenu; whisper.cpp entries start with `whisper.cpp —`. Selecting one updates the source caption and the next dictation uses it. “Translate into” offers the system and prompt languages plus every fixed target; selecting one persists after relaunch and is used by a Translate preset. |
 | Settings ▸ Dictation | The speech-model list is here and the Models tab is gone |
 | Settings ▸ Speech, pick a voice under "Voice per language" | A short phrase is heard immediately in that voice and in that language |
 | Turn off "Play a sample when a voice is selected", pick another voice | Nothing is heard |

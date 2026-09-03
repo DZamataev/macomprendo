@@ -16,6 +16,7 @@
     "gen": "xcodegen generate --spec macos/project.yml",
     "icon": "node scripts/make-placeholder-icon.mjs",
     "install-app": "node scripts/install-app.mjs",
+    "install-app:signed": "MACOS_SIGN_IDENTITY=\"Developer ID Application: Denis Zamataev (68QJJA7HK9)\" node scripts/install-app.mjs",
     "notarize": "node scripts/notarize-app.mjs",
     "release": "node scripts/release.mjs",
     "reset-permissions": "node scripts/reset-permissions.mjs",

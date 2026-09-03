@@ -32,6 +32,50 @@ import Testing
         #expect(model.dictation.state == .recording)
     }
 
+    @Test func middleMouseRoutesTheSelectedActionAndStopsWhenDisabled() async {
+        let middleMouse = FakeMiddleMouseMonitor()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(middleMouse: middleMouse))
+        model.start()
+        #expect(middleMouse.isEnabled == false)
+
+        model.settings.middleMouseAction = .dictate
+        #expect(middleMouse.isEnabled)
+        middleMouse.send(.down)
+        await waitFor("middle-mouse dictation to start") { model.dictation.state == .recording }
+
+        middleMouse.send(.up)
+        await waitFor("middle-mouse dictation to stop") { model.dictation.state != .recording }
+
+        model.settings.middleMouseAction = nil
+        #expect(middleMouse.isEnabled == false)
+    }
+
+    @Test func middleMouseToggleModeIsIndependentFromHotkeyMode() async {
+        let middleMouse = FakeMiddleMouseMonitor()
+        let recorder = FakeAudioRecorder()
+        let model = AppModel(
+            store: InMemorySettingsStore(),
+            keychain: InMemoryKeychainStore(),
+            env: .fake(middleMouse: middleMouse, recorder: recorder))
+        model.settings.dictationMode = .hold
+        model.settings.middleMouseMode = .toggle
+        model.settings.middleMouseAction = .dictate
+        model.start()
+
+        middleMouse.send(.down)
+        await waitFor("toggle-mode middle mouse dictation to start") {
+            model.dictation.state == .recording
+        }
+        middleMouse.send(.up)
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(recorder.stopCount == 0)
+
+        middleMouse.send(.down)
+        await waitFor("toggle-mode middle mouse dictation to stop") { recorder.stopCount == 1 }
+    }
+
     /// The graph must hand both microphone features one controller, backed by the exact store
     /// supplied by the environment; separate instances would split the user's timeline.
     @Test func directDictationAndDictateAndRefineShareTheEnvironmentHistoryStore() async {

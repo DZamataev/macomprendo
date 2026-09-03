@@ -4,17 +4,24 @@ import assert from 'node:assert/strict';
 import { parseInstallArgs, executablePattern, planInstall, main } from '../install-app.mjs';
 import { makeFakeRun, makeFakeFsOps, makeFakeLog } from './helpers/fake-run.mjs';
 
-test('parseInstallArgs defaults to /Applications and opening the app', () => {
-  assert.deepEqual(parseInstallArgs([], {}), { installDir: '/Applications', open: true, help: false });
+test('parseInstallArgs defaults to /Applications, ad-hoc signing, and opening the app', () => {
+  assert.deepEqual(parseInstallArgs([], {}), {
+    installDir: '/Applications', sign: '-', open: true, help: false,
+  });
 });
 
-test('parseInstallArgs honours --no-open, --install-dir and MACOS_INSTALL_DIR', () => {
+test('parseInstallArgs honours --no-open, --install-dir, --sign and their environment defaults', () => {
   assert.equal(parseInstallArgs(['--no-open'], {}).open, false);
   assert.equal(parseInstallArgs(['--install-dir', '~/Apps/'], {}).installDir, '~/Apps');
   assert.equal(parseInstallArgs([], { MACOS_INSTALL_DIR: '/Volumes/Dev/Apps' }).installDir,
     '/Volumes/Dev/Apps');
   assert.equal(parseInstallArgs(['--install-dir', '/Custom'], { MACOS_INSTALL_DIR: '/Ignored' }).installDir,
     '/Custom');
+  assert.equal(parseInstallArgs([], { MACOS_SIGN_IDENTITY: 'Developer ID Application: Example' }).sign,
+    'Developer ID Application: Example');
+  assert.equal(parseInstallArgs(['--sign', 'Apple Development: Example'], {
+    MACOS_SIGN_IDENTITY: 'Developer ID Application: Example',
+  }).sign, 'Apple Development: Example');
 });
 
 test('executablePattern anchors on the installed executable and escapes regex characters', () => {
@@ -37,6 +44,23 @@ test('planInstall builds, stages, swaps and verifies', () => {
     'ditto /repo/dist/Macomprendo.app /Applications/.macomprendo-update.AB12/Macomprendo.app',
     'codesign --verify --deep --strict /Applications/.macomprendo-update.AB12/Macomprendo.app',
   ]);
+});
+
+test('planInstall forwards a real signing identity to the build', () => {
+  const [build] = planInstall({
+    installDir: '/Applications',
+    workDir: '/Applications/.macomprendo-update.AB12',
+    source: '/repo/dist/Macomprendo.app',
+    sign: 'Developer ID Application: Example',
+  });
+
+  assert.deepEqual(build, {
+    type: 'exec', cmd: 'node',
+    args: [
+      'scripts/build-app.mjs', '--timestamp', 'none',
+      '--sign', 'Developer ID Application: Example',
+    ],
+  });
 });
 
 function installDeps({ running = false, existing = true } = {}) {

@@ -3,11 +3,20 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
+    @ObservedObject var dictation: DictationTabModel
+    @ObservedObject var models: ModelsViewModel
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Text(model.statusText)
+            .task {
+                await models.refresh()
+                dictation.adopt(models.rows)
+            }
+            .onChange(of: models.rows) { _, rows in
+                dictation.adopt(rows)
+            }
         Text(sourceDescription).font(.caption)
 
         Divider()
@@ -25,10 +34,30 @@ struct MenuBarView: View {
                 }
         }
 
-        if model.settings.dictationHistoryEnabled {
-            Button("Dictation History…") {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: "dictation-history")
+        Divider()
+
+        Toggle("Save dictation history", isOn: $model.settings.dictationHistoryEnabled)
+        Button("Dictation History…") {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "dictation-history")
+        }
+
+        Divider()
+
+        Picker("Active dictation model", selection: activeSource) {
+            ForEach(dictation.selectableSources) { entry in
+                Text(entry.menuTitle).tag(entry.source)
+            }
+        }
+        .disabled(!dictation.hasReadySource)
+
+        Picker("Translate into", selection: $model.settings.translationTarget) {
+            ForEach(TranslationTarget.allOptions, id: \.self) { target in
+                Text(Self.translationTargetLabel(
+                    target,
+                    promptLanguage: model.settings.promptLanguage,
+                    systemLanguageCode: TranslationTarget.currentSystemLanguageCode
+                )).tag(target)
             }
         }
 
@@ -54,6 +83,16 @@ struct MenuBarView: View {
             NSApp.terminate(nil)
         }
         .keyboardShortcut("q", modifiers: .command)
+    }
+
+    private var activeSource: Binding<TranscriptionSource> {
+        Binding(get: { dictation.activeSource }, set: { dictation.activate($0) })
+    }
+
+    nonisolated static func translationTargetLabel(_ target: TranslationTarget,
+                                       promptLanguage: String,
+                                       systemLanguageCode: String?) -> String {
+        target.pickerLabel(promptLanguage: promptLanguage, systemLanguageCode: systemLanguageCode)
     }
 
     private var sourceDescription: String {

@@ -16,6 +16,7 @@ test('parseBuildArgs defaults to the host architecture and an ad-hoc signature',
   assert.equal(options.configuration, 'release');
   assert.equal(options.deploymentTarget, '14.0');
   assert.equal(options.dist, DIST_DIR);
+  assert.equal(options.timestamp, 'auto');
   assert.equal(options.dryRun, false);
 });
 
@@ -31,6 +32,14 @@ test('parseBuildArgs reads a comma separated arch list and a signing identity', 
   assert.equal(options.dryRun, true);
 });
 
+test('parseBuildArgs supports disabling timestamps for a local Developer ID build', () => {
+  const options = parseBuildArgs([
+    '--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)',
+    '--timestamp', 'none',
+  ]);
+
+  assert.equal(options.timestamp, 'none');
+});
 test('parseBuildArgs trims whitespace and rejects unknown architectures', () => {
   assert.deepEqual(parseBuildArgs(['--arch', ' arm64 , x86_64 ']).archs, ['arm64', 'x86_64']);
   assert.throws(() => parseBuildArgs(['--arch', 'ppc']), /Unsupported architecture "ppc"/);
@@ -217,6 +226,20 @@ test('planBuild signs nested frameworks then the app with hardened runtime for a
   assert.equal(signs.some((s) => s.args.some((a) => a.includes('Macomprendo_Macomprendo.bundle'))), false);
 });
 
+test('planBuild omits timestamping when requested for a local Developer ID build', () => {
+  const steps = planFixture({
+    argv: [
+      '--sign', 'Developer ID Application: Denis Zamataev (68QJJA7HK9)',
+      '--timestamp', 'none',
+    ],
+    context: { frameworks: ['whisper.framework'] },
+  });
+  const signs = steps.filter((s) => s.type === 'exec' && s.cmd === 'codesign');
+
+  assert.equal(signs.some((step) => step.args.includes('--timestamp')), false);
+  assert.ok(signs[0].args.includes('--options'));
+  assert.ok(signs[1].args.includes('--entitlements'));
+});
 test('planBuild ends by reporting the architectures actually produced', () => {
   const last = planFixture().at(-1);
   assert.deepEqual(last, {

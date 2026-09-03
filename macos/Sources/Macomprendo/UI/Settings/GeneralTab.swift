@@ -20,12 +20,6 @@ struct GeneralTab: View {
             }
 
             Section("Dictation") {
-                Picker("Hotkey behaviour", selection: $model.settings.dictationMode) {
-                    Text("Hold to talk").tag(DictationMode.hold)
-                    Text("Press to start, press to stop").tag(DictationMode.toggle)
-                }
-                .pickerStyle(.radioGroup)
-
                 Picker("Insert text by", selection: $model.settings.insertMethod) {
                     Text("Automatic").tag(InsertMethod.auto)
                     Text("Pasting (⌘V)").tag(InsertMethod.paste)
@@ -37,6 +31,11 @@ struct GeneralTab: View {
 
                 Toggle("Save dictation history", isOn: $model.settings.dictationHistoryEnabled)
                 Text("Transcripts are stored locally in plaintext. Audio is never saved.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Toggle("Add a space after dictated text", isOn: $model.settings.appendSpaceAfterDictation)
+                Text("Dictate and original Dictate & Refine insertion get the space. History and refined text are unchanged.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

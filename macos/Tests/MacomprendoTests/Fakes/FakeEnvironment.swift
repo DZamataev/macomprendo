@@ -5,6 +5,7 @@ extension AppEnvironment {
     /// An environment made entirely of fakes — no hardware, no network, no global hotkeys.
     @MainActor
     static func fake(hotkeys: any HotkeyServicing = FakeHotkeyService(),
+                     middleMouse: any MiddleMouseMonitoring = FakeMiddleMouseMonitor(),
                      recorder: any AudioRecording = FakeAudioRecorder(),
                      inserter: any TextInserting = FakeTextInserter(),
                      tracker: any FrontmostAppTracking = FakeFrontmostAppTracker(),
@@ -23,6 +24,7 @@ extension AppEnvironment {
                      quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)? = nil,
                      activationPolicy: any ActivationPolicyControlling = FakeActivationPolicy()) -> AppEnvironment {
         AppEnvironment(hotkeys: hotkeys,
+                       middleMouse: middleMouse,
                        recorder: recorder,
                        inserter: inserter,
                        tracker: tracker,

@@ -32,6 +32,8 @@ enum RefineSide: Equatable, Sendable {
     private let toaster: any Toasting
     private let holder: any SettingsHolding
 
+    /// Whether `original` is the transcript from Dictate & Refine rather than selected text.
+    private var originalIsDictation = false
     private var streamTask: Task<Void, Never>?
     /// Bumped on every re-run so a cancelled stream cannot clobber the new one's state.
     private var streamGeneration = 0
@@ -72,9 +74,9 @@ enum RefineSide: Equatable, Sendable {
             // dedicated prompt that tells the user to press the hotkey again.
             switch state {
             case .recording:
-                if self.holder.settings.dictationMode == .toggle {
+                if self.capture.activeMode == .toggle {
                     self.toaster.show(.recordingPrompt(
-                        hint: "Press the hotkey again to transcribe."
+                        hint: "Press again to transcribe."
                     ))
                 }
             case .transcribing: self.toaster.show(.transcribing)
@@ -86,18 +88,23 @@ enum RefineSide: Equatable, Sendable {
     // MARK: Starting
 
     /// Hold/toggle routing for hotkey #2.
-    func handle(_ event: HotkeyEvent) {
-        if case .keyDown = event { target = tracker.capture() }
-        capture.handle(event)
+    func handle(_ event: HotkeyEvent, mode: DictationMode? = nil) {
+        if case .keyDown = event {
+            target = tracker.capture()
+            originalIsDictation = event.action == .dictateAndRefine
+        }
+        capture.handle(event, mode: mode)
     }
 
     func start(source: RefineSource) {
         switch source {
         case .dictation:
             target = tracker.capture()
+            originalIsDictation = true
             capture.handle(.keyDown(.dictateAndRefine))
         case .selection(let text):
             target = tracker.capture()
+            originalIsDictation = false
             beginRefine(with: text)
         }
     }
@@ -196,8 +203,15 @@ enum RefineSide: Equatable, Sendable {
             toaster.toast("Nothing to insert yet.", duration: 1.5)
             return
         }
+        let insertionText = if side == .original,
+                               originalIsDictation,
+                               holder.settings.appendSpaceAfterDictation {
+            "\(value) "
+        } else {
+            value
+        }
         do {
-            try await inserter.insert(value, into: target, method: holder.settings.insertMethod)
+            try await inserter.insert(insertionText, into: target, method: holder.settings.insertMethod)
             panel.dismiss()
         } catch {
             toaster.toast(ErrorText.describe(error), duration: 2.5)

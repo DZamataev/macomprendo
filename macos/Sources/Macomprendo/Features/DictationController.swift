@@ -91,9 +91,9 @@ final class DictationController: ObservableObject {
         }
     }
 
-    func handle(_ event: HotkeyEvent) {
+    func handle(_ event: HotkeyEvent, mode: DictationMode? = nil) {
         guard event.action == .dictate else { return }
-        switch (settings().dictationMode, event) {
+        switch (mode ?? settings().dictationMode, event) {
         case (.hold, .keyDown):
             switch state {
             case .idle, .failed: begin()
@@ -203,9 +203,10 @@ final class DictationController: ObservableObject {
 
             state = .inserting
             isInserting = true
+            let insertionText = settings().appendSpaceAfterDictation ? "\(text) " : text
             let insertOutcome: Result<Void, Error>
             do {
-                try await inserter.insert(text, into: target, method: settings().insertMethod)
+                try await inserter.insert(insertionText, into: target, method: settings().insertMethod)
                 insertOutcome = .success(())
             } catch {
                 insertOutcome = .failure(error)

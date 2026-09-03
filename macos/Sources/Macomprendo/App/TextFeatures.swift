@@ -27,10 +27,16 @@ import Foundation
         self.toaster = toaster
     }
 
-    func handle(_ event: HotkeyEvent) {
+    /// Opens Refine for text that already belongs to the app, without reading the focused
+    /// application's selection or touching the pasteboard.
+    func refine(text: String) {
+        refine.start(source: .selection(text))
+    }
+
+    func handle(_ event: HotkeyEvent, mode: DictationMode? = nil) {
         switch event {
         case .keyDown(.dictateAndRefine), .keyUp(.dictateAndRefine):
-            refine.handle(event)
+            refine.handle(event, mode: mode)
 
         case .keyDown(.refineSelection):
             withSelection { [weak self] text in self?.refine.start(source: .selection(text)) }

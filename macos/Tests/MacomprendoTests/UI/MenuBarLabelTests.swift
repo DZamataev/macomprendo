@@ -41,4 +41,15 @@ import Testing
             #expect(unbound.hasSuffix(HotkeyAction.unboundShortcutText))
         }
     }
+
+    @Test func translationTargetPickerNamesItsComputedAndFixedChoices() {
+        #expect(MenuBarView.translationTargetLabel(.systemLanguage,
+                                                   promptLanguage: "ru",
+                                                   systemLanguageCode: "de")
+                == "System language (German)")
+        #expect(MenuBarView.translationTargetLabel(.fixed("ja"),
+                                                   promptLanguage: "ru",
+                                                   systemLanguageCode: "de")
+                == "Japanese")
+    }
 }

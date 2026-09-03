@@ -19,6 +19,7 @@ final class SettingsSnapshot: @unchecked Sendable {
 /// Composition root: every OS-touching service the app needs, in one place, so tests can swap them.
 struct AppEnvironment {
     var hotkeys: any HotkeyServicing
+    var middleMouse: any MiddleMouseMonitoring
     var recorder: any AudioRecording
     var inserter: any TextInserting
     var tracker: any FrontmostAppTracking
@@ -57,6 +58,7 @@ struct AppEnvironment {
 
         return AppEnvironment(
             hotkeys: KeyboardShortcutsHotkeyService(),
+            middleMouse: NSEventMiddleMouseMonitor(),
             recorder: AVAudioEngineRecorder(),
             inserter: PasteTextInserter(pasteboard: pasteboard,
                                         tracker: tracker,

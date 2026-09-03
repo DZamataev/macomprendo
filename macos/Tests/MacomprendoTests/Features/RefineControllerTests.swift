@@ -193,6 +193,19 @@ import Testing
         #expect(await rig.historyStore.appendRequests.map(\.kind) == [.dictationAndRefine])
     }
 
+    @Test func insertingDictationOriginalAppendsSpaceWhenEnabled() async {
+        let rig = makeRig()
+        rig.holder.settings.appendSpaceAfterDictation = true
+        rig.controller.handle(.keyDown(.dictateAndRefine))
+        rig.controller.handle(.keyUp(.dictateAndRefine))
+        await rig.controller.drainCapture()
+        await rig.controller.drain()
+
+        await rig.controller.insert(.original)
+
+        #expect(rig.inserter.calls.last?.text == "spoken words ")
+    }
+
     // In hold mode, show nothing while recording because
     // `HUDState.recording` renders "Release to transcribe · Esc cancels" and Esc is not
     // wired to `DictationCapture` — showing that hint here would be a false promise.
@@ -215,7 +228,7 @@ import Testing
     @Test func toggleDictationShowsARecordingHUDUntilTheSecondPress() async {
         let rig = makeRig(mode: .toggle)
         let recording = HUDState.recordingPrompt(
-            hint: "Press the hotkey again to transcribe."
+            hint: "Press again to transcribe."
         )
 
         rig.controller.handle(.keyDown(.dictateAndRefine))

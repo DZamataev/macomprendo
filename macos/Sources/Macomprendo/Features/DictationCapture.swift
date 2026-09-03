@@ -10,6 +10,7 @@ import Foundation
     }
 
     private(set) var state: State = .idle
+    private(set) var activeMode: DictationMode = .hold
 
     var onStateChange: (@MainActor (State) -> Void)?
     var onTranscript: (@MainActor (String) -> Void)?
@@ -40,8 +41,10 @@ import Foundation
         self.language = language
     }
 
-    func handle(_ event: HotkeyEvent) {
-        switch (event, mode()) {
+    func handle(_ event: HotkeyEvent, mode: DictationMode? = nil) {
+        let activeMode = mode ?? self.mode()
+        self.activeMode = activeMode
+        switch (event, activeMode) {
         case (.keyDown, .hold):
             switch state {
             case .idle: startRecording()

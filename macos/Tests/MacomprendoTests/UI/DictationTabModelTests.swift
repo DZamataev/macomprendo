@@ -100,9 +100,9 @@ import Testing
 
         #expect(active != nil)
         #expect(active?.isReady == false)
-        #expect(active?.menuTitle == "Large v3 Turbo — not ready")
+        #expect(active?.menuTitle == "whisper.cpp — Large v3 Turbo — not ready")
         #expect(tab.selectableSources.first { $0.source == .local(modelID: "base") }?.menuTitle
-                == "Base (multilingual)")
+                == "whisper.cpp — Base (multilingual)")
     }
 
     @Test func theSelectorIsDisabledAndSaysSoWhenNothingIsReady() {

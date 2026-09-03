@@ -253,6 +253,16 @@ import Testing
         #expect(h.history.errorMessage == ErrorText.describe(expectedHistoryError))
     }
 
+    @Test func enabledTrailingSpaceIsInsertedButNotRecorded() async {
+        let h = makeHarness(transcript: "  dictated text  ")
+        h.settings.value.appendSpaceAfterDictation = true
+
+        await recordAndFinish(h)
+
+        #expect(await h.historyStore.appendRequests.map(\.text) == ["dictated text"])
+        #expect(h.inserter.inserted.map(\.text) == ["dictated text "])
+    }
+
     // MARK: - Hold mode
 
     @Test func holdKeyDownStartsRecording() async {

@@ -139,6 +139,12 @@ struct Settings: Codable, Sendable, Equatable {
     var insertMethod: InsertMethod
     var launchAtLogin: Bool
     var dictationHistoryEnabled: Bool
+    /// Adds one separating space after direct Dictate insertion; history keeps the raw transcript.
+    var appendSpaceAfterDictation: Bool
+    /// nil disables middle-mouse triggering; a value selects one existing action.
+    var middleMouseAction: MiddleMouseAction?
+    /// Hold/toggle semantics for a middle-mouse dictation action, independent from hotkeys.
+    var middleMouseMode: DictationMode
     var transcriptionSource: TranscriptionSource
     /// nil = detect the language automatically.
     var transcriptionLanguage: String?
@@ -181,6 +187,9 @@ struct Settings: Codable, Sendable, Equatable {
             insertMethod: .auto,
             launchAtLogin: false,
             dictationHistoryEnabled: false,
+            appendSpaceAfterDictation: false,
+            middleMouseAction: nil,
+            middleMouseMode: .hold,
             transcriptionSource: .local(modelID: "large-v3-turbo"),
             transcriptionLanguage: nil,
             endpoints: [Endpoint.ollamaLocal()],
@@ -233,6 +242,12 @@ extension Settings {
         dictationHistoryEnabled = try c.decodeIfPresent(Bool.self,
                                                          forKey: .dictationHistoryEnabled)
             ?? d.dictationHistoryEnabled
+        appendSpaceAfterDictation = try c.decodeIfPresent(Bool.self, forKey: .appendSpaceAfterDictation)
+            ?? d.appendSpaceAfterDictation
+        middleMouseAction = try c.decodeIfPresent(MiddleMouseAction.self, forKey: .middleMouseAction)
+            ?? d.middleMouseAction
+        middleMouseMode = try c.decodeIfPresent(DictationMode.self, forKey: .middleMouseMode)
+            ?? d.middleMouseMode
         transcriptionSource = try c.decodeIfPresent(TranscriptionSource.self, forKey: .transcriptionSource) ?? d.transcriptionSource
         transcriptionLanguage = try c.decodeIfPresent(String.self, forKey: .transcriptionLanguage)
         endpoints = try c.decodeIfPresent([Endpoint].self, forKey: .endpoints) ?? d.endpoints

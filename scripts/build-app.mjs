@@ -38,6 +38,7 @@ export function parseBuildArgs(argv) {
       configuration: { type: 'string' },
       'deployment-target': { type: 'string' },
       entitlements: { type: 'string' },
+      timestamp: { type: 'string' },
       'build-number': { type: 'string' },
       version: { type: 'string' },
       dist: { type: 'string' },
@@ -60,12 +61,18 @@ export function parseBuildArgs(argv) {
     throw new Error('Configuration must be "release" or "debug".');
   }
 
+  const timestamp = values.timestamp ?? 'auto';
+  if (timestamp !== 'auto' && timestamp !== 'none') {
+    throw new Error('Timestamp must be "auto" or "none".');
+  }
+
   return {
     archs,
     sign: values.sign ?? '-',
     configuration,
     deploymentTarget: values['deployment-target'] ?? DEPLOYMENT_TARGET,
     entitlements: values.entitlements ?? ENTITLEMENTS_SRC,
+    timestamp,
     buildNumber: values['build-number'] ?? null,
     version: values.version ?? null,
     dist: values.dist ?? DIST_DIR,
@@ -190,12 +197,13 @@ export function planBuild(options, context) {
     }
     steps.push({ type: 'exec', cmd: 'codesign', args: ['--force', '--sign', '-', layout.app] });
   } else {
+    const timestampArgs = options.timestamp === 'none' ? [] : ['--timestamp'];
     for (const framework of frameworks) {
       steps.push({
         type: 'exec',
         cmd: 'codesign',
         args: [
-          '--force', '--options', 'runtime', '--timestamp',
+          '--force', '--options', 'runtime', ...timestampArgs,
           '--sign', options.sign,
           path.join(layout.frameworks, framework),
         ],
@@ -205,7 +213,7 @@ export function planBuild(options, context) {
       type: 'exec',
       cmd: 'codesign',
       args: [
-        '--force', '--options', 'runtime', '--timestamp',
+        '--force', '--options', 'runtime', ...timestampArgs,
         '--entitlements', options.entitlements,
         '--sign', options.sign,
         layout.app,
@@ -332,6 +340,7 @@ export async function main(argv, deps = {}) {
       '  --configuration <name>   release | debug (default: release)',
       '  --deployment-target <v>  macOS deployment target (default: 14.0)',
       '  --entitlements <path>    entitlements plist for hardened-runtime signing',
+      '  --timestamp <mode>       auto | none (default: auto; none for local Developer ID installs)',
       '  --version <X.Y.Z>        override MARKETING_VERSION from macos/project.yml',
       '  --build-number <n>       CFBundleVersion (default: the version)',
       '  --dist <dir>             output directory (default: dist/)',

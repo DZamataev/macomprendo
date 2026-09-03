@@ -27,7 +27,8 @@ struct MacomprendoApp: App {
         // The status item is deliberately an SF Symbol template image (spec §2, §3.5).
         // `AppIcon` raw values are SVG file names and must not be used here.
         MenuBarExtra("Macomprendo", systemImage: "waveform") {
-            MenuBarView().environmentObject(model)
+            MenuBarView(dictation: model.dictationTabModel, models: model.modelsViewModel)
+                .environmentObject(model)
         }
         .menuBarExtraStyle(.menu)
 
@@ -40,7 +41,9 @@ struct MacomprendoApp: App {
         }
 
         Window("Dictation History", id: "dictation-history") {
-            DictationHistoryView(controller: model.history)
+            DictationHistoryView(controller: model.history) { text in
+                model.textFeatures?.refine(text: text)
+            }
                 .onAppear {
                     model.dockIcon.open(.history)
                     Task { await model.history.loadInitial() }

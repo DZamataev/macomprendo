@@ -12,6 +12,9 @@ final class AppModel: ObservableObject {
             if settings.transcriptionSource != oldValue.transcriptionSource {
                 hud.modelCaption = HUDController.caption(for: settings.transcriptionSource)
             }
+            if settings.middleMouseAction != oldValue.middleMouseAction {
+                env.middleMouse.setEnabled(settings.middleMouseAction != nil)
+            }
             persist()
         }
     }
@@ -47,6 +50,7 @@ final class AppModel: ObservableObject {
     private let snapshot: SettingsSnapshot
     private let enablement: HotkeyEnablementStore
     private var hotkeyTask: Task<Void, Never>?
+    private var middleMouseTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
 
     init(store: any SettingsPersisting,
@@ -154,6 +158,16 @@ final class AppModel: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
+        env.middleMouse.setEnabled(settings.middleMouseAction != nil)
+        if middleMouseTask == nil {
+            let events = env.middleMouse.events
+            middleMouseTask = Task { [weak self] in
+                for await event in events {
+                    self?.route(event)
+                }
+            }
+        }
+
         guard hotkeyTask == nil else { return }
         let events = env.hotkeys.events
         hotkeyTask = Task { [weak self] in
@@ -163,12 +177,20 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func route(_ event: HotkeyEvent) {
+    func route(_ event: HotkeyEvent, mode: DictationMode? = nil) {
         switch event.action {
         case .dictate:
-            dictation.handle(event)
+            dictation.handle(event, mode: mode)
         default:
-            textFeatures?.handle(event)
+            textFeatures?.handle(event, mode: mode)
+        }
+    }
+
+    func route(_ event: MiddleMouseEvent) {
+        guard let action = settings.middleMouseAction?.hotkeyAction else { return }
+        switch event {
+        case .down: route(.keyDown(action), mode: settings.middleMouseMode)
+        case .up: route(.keyUp(action), mode: settings.middleMouseMode)
         }
     }
 

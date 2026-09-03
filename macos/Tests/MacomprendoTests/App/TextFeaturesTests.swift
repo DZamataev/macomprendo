@@ -83,6 +83,16 @@ import Testing
         #expect(await rig.historyStore.appendRequests.isEmpty)
     }
 
+    @Test func storedDictationTextOpensTheRefinePanel() async {
+        let rig = makeRig(selection: nil)
+        rig.features.refine(text: "  stored transcript  ")
+        await rig.features.refine.drain()
+
+        #expect(rig.features.refine.original == "stored transcript")
+        #expect(rig.features.quickPanel.layout == .refine)
+        #expect(rig.features.quickPanel.isVisible)
+    }
+
     @Test func speakHotkeySpeaksTheSelectionAndTheSecondPressStops() async {
         let rig = makeRig(selection: "read this")
         rig.features.handle(.keyDown(.speak))

@@ -36,6 +36,58 @@ import Testing
     #expect(try Settings.migrate(JSONEncoder().encode(settings)).dictationHistoryEnabled)
 }
 
+@Test func appendSpaceAfterDictationDefaultsOffAndRoundTrips() throws {
+    #expect(Settings.default.appendSpaceAfterDictation == false)
+
+    var settings = Settings.default
+    settings.appendSpaceAfterDictation = true
+    #expect(try Settings.migrate(JSONEncoder().encode(settings)).appendSpaceAfterDictation)
+}
+
+@Test func legacySettingsDecodeAppendSpaceAfterDictationAsOff() throws {
+    var object = try #require(JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(Settings.default)) as? [String: Any])
+    object.removeValue(forKey: "appendSpaceAfterDictation")
+
+    let decoded = try Settings.migrate(JSONSerialization.data(withJSONObject: object))
+    #expect(decoded.appendSpaceAfterDictation == false)
+}
+@Test func middleMouseActionDefaultsOffAndRoundTrips() throws {
+    #expect(Settings.default.middleMouseAction == nil)
+
+    var settings = Settings.default
+    settings.middleMouseAction = .summarize
+    #expect(try Settings.migrate(JSONEncoder().encode(settings)).middleMouseAction == .summarize)
+}
+@Test func legacySettingsDecodeMiddleMouseActionAsDisabled() throws {
+    var object = try #require(JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(Settings.default)) as? [String: Any])
+    object.removeValue(forKey: "middleMouseAction")
+
+    let decoded = try Settings.migrate(JSONSerialization.data(withJSONObject: object))
+    #expect(decoded.middleMouseAction == nil)
+}
+
+@Test func middleMouseActionChoicesNameTheFiveExistingActions() {
+    #expect(MiddleMouseAction.allCases.map(\.displayName) == [
+        "Dictate", "Dictate & Refine", "Speak selection", "Summarize selection", "Refine selection",
+    ])
+}
+@Test func legacySettingsDecodeMiddleMouseModeAsHold() throws {
+    var object = try #require(JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(Settings.default)) as? [String: Any])
+    object.removeValue(forKey: "middleMouseMode")
+
+    let decoded = try Settings.migrate(JSONSerialization.data(withJSONObject: object))
+    #expect(decoded.middleMouseMode == .hold)
+}
+@Test func middleMouseModeDefaultsToHoldAndRoundTrips() throws {
+    #expect(Settings.default.middleMouseMode == .hold)
+
+    var settings = Settings.default
+    settings.middleMouseMode = .toggle
+    #expect(try Settings.migrate(JSONEncoder().encode(settings)).middleMouseMode == .toggle)
+}
 @Test func speechSettingsUseTheDocumentedDefaults() {
     let speech = SpeechSettings()
     #expect(speech.voiceID == nil)
