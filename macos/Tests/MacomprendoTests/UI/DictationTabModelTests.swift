@@ -53,20 +53,32 @@ import Testing
         #expect(tab.rows(for: .endpoint).isEmpty)
     }
 
-    /// Guards the one way the TTS catalog added in Plan 2 could leak into transcription: a
-    /// consumer that took `ModelCatalog.all` and meant "the ASR models". Written while the
-    /// catalog is still all-ASR, so it starts green and turns red the moment a TTS entry lands
-    /// on a screen that cannot use it.
-    @Test func everyTranscriptionConsumerSeesASREntriesOnly() {
-        let dictation = DictationTabModel(holder: ScriptedSettingsHolder())
-        #expect(dictation.rows(for: .whisperCpp).allSatisfy { $0.kind == .asr })
-        #expect(dictation.rows(for: .gigaAM).allSatisfy { $0.kind == .asr })
-        #expect(dictation.selectableSources.allSatisfy { source in
-            if case .local(let id) = source.source {
-                return ModelCatalog.model(id: id)?.kind == .asr
-            }
-            return true
+    /// Guards both consumers that take `ModelCatalog.all` and mean "the ASR models". Written
+    /// while the catalog is still all-ASR, so it starts green and turns red when a future TTS
+    /// entry reaches either transcription consumer. The full-catalog view model below exists
+    /// only to feed real downloaded rows through `adopt(_:)`; both consumers under test use
+    /// their production default initialisers.
+    @Test func everyTranscriptionConsumerSeesASREntriesOnly() async {
+        let manager = StubModelManager()
+        manager.states = Dictionary(uniqueKeysWithValues: ModelCatalog.all.map {
+            ($0.id, ModelState.downloaded)
         })
+
+        let models = ModelsViewModel(models: manager)
+        await models.refresh()
+        #expect(!models.rows.isEmpty)
+        #expect(models.rows.allSatisfy { $0.model.kind == .asr })
+
+        let allModels = ModelsViewModel(models: manager, catalog: ModelCatalog.all)
+        await allModels.refresh()
+        let dictation = DictationTabModel(holder: ScriptedSettingsHolder())
+        dictation.adopt(allModels.rows)
+        let localModelIDs = dictation.selectableSources.compactMap { source -> String? in
+            guard case .local(let id) = source.source else { return nil }
+            return id
+        }
+        #expect(!localModelIDs.isEmpty)
+        #expect(localModelIDs.allSatisfy { ModelCatalog.model(id: $0)?.kind == .asr })
     }
 
     // MARK: - The active-model selector
