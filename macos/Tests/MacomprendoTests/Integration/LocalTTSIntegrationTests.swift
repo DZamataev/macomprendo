@@ -9,7 +9,10 @@ import Testing
     )
     func realPiperRoundTrip() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("macomprendo-local-tts-integration", isDirectory: true)
+            .appendingPathComponent("macomprendo-local-tts-integration-\(UUID().uuidString)",
+                                    isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(FileManager.default.fileExists(atPath: root.path) == false)
         let manager = LocalModelManager(directory: root, http: URLSessionHTTPClient())
         let modelID = "vits-piper-ru_RU-ruslan-medium"
 
@@ -29,6 +32,8 @@ import Testing
         #expect(audio.sampleRate > 0)
         let wav = WAVEncoder.encode(pcm: audio.samples, sampleRate: audio.sampleRate)
         #expect(wav.starts(with: Data("RIFF".utf8)))
-        try wav.write(to: root.appendingPathComponent("ruslan-smoke.wav"), options: .atomic)
+        let output = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("macomprendo-local-tts-integration-ruslan-smoke.wav")
+        try wav.write(to: output, options: .atomic)
     }
 }

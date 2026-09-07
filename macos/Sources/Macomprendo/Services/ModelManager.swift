@@ -207,16 +207,18 @@ actor LocalModelManager: ModelManaging {
         if let archive = model.file(.archive) {
             let archiveURL = destinationURL(for: archive)
             let directory = extractedDirectory(for: model)
-            try await archiveExtractor.extract(archive: archiveURL, to: directory, modelID: model.id)
+            let candidate = extractionCandidateDirectory(for: model)
+            defer { try? FileManager.default.removeItem(at: candidate) }
+            try await archiveExtractor.extract(archive: archiveURL, to: candidate, modelID: model.id)
             guard !Task.isCancelled, operationEpochs[id, default: 0] == operationEpoch else {
                 // `Process`-backed extraction cannot be interrupted safely mid-write. Once it
-                // returns, discard its result instead of publishing a cancelled download.
-                try? FileManager.default.removeItem(at: directory)
+                // returns, the candidate can be discarded without ever making the model ready.
                 throw MacomprendoError.cancelled
             }
-            guard isComplete(model) else {
+            guard hasRegularSentinel(for: model, in: candidate) else {
                 throw MacomprendoError.modelDownloadFailed(model.id)
             }
+            try publishExtractedDirectory(candidate, to: directory, modelID: model.id)
             // Cleanup cannot make a successfully extracted, engine-ready model unusable.
             do {
                 try FileManager.default.removeItem(at: archiveURL)
@@ -339,10 +341,7 @@ actor LocalModelManager: ModelManaging {
 
     private func isComplete(_ model: LocalModel) -> Bool {
         if model.file(.archive) != nil {
-            guard let sentinel = model.archiveSentinel, !sentinel.isEmpty else { return false }
-            let url = extractedDirectory(for: model).appendingPathComponent(sentinel)
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-            return values?.isRegularFile == true && values?.isSymbolicLink != true
+            return hasRegularSentinel(for: model, in: extractedDirectory(for: model))
         }
         return model.files.allSatisfy {
             FileManager.default.fileExists(atPath: destinationURL(for: $0).path)
@@ -351,6 +350,39 @@ actor LocalModelManager: ModelManaging {
 
     private func extractedDirectory(for model: LocalModel) -> URL {
         modelsDirectory.appendingPathComponent(model.id, isDirectory: true)
+    }
+
+    private func extractionCandidateDirectory(for model: LocalModel) -> URL {
+        modelsDirectory.appendingPathComponent(
+            ".extracting-\(model.id)-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private func hasRegularSentinel(for model: LocalModel, in directory: URL) -> Bool {
+        guard let sentinel = model.archiveSentinel, !sentinel.isEmpty else { return false }
+        let url = directory.appendingPathComponent(sentinel)
+        let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        return values?.isRegularFile == true && values?.isSymbolicLink != true
+    }
+
+    private func publishExtractedDirectory(_ candidate: URL, to destination: URL,
+                                           modelID: String) throws {
+        let fileManager = FileManager.default
+        let backup = modelsDirectory.appendingPathComponent(
+            ".backup-\(modelID)-\(UUID().uuidString)", isDirectory: true)
+        let hadDestination = fileManager.fileExists(atPath: destination.path)
+
+        do {
+            if hadDestination { try fileManager.moveItem(at: destination, to: backup) }
+            try fileManager.moveItem(at: candidate, to: destination)
+            if hadDestination { try? fileManager.removeItem(at: backup) }
+        } catch {
+            if !fileManager.fileExists(atPath: destination.path),
+               fileManager.fileExists(atPath: backup.path) {
+                try? fileManager.moveItem(at: backup, to: destination)
+            }
+            try? fileManager.removeItem(at: backup)
+            throw MacomprendoError.modelDownloadFailed(modelID)
+        }
     }
 
     private func destinationURL(for file: ModelFile) -> URL {
@@ -371,7 +403,15 @@ actor LocalModelManager: ModelManaging {
     private func removeArtifacts(for model: LocalModel) throws {
         let fileManager = FileManager.default
         var urls = model.files.flatMap { [destinationURL(for: $0), partialURL(for: $0)] }
-        if model.file(.archive) != nil { urls.append(extractedDirectory(for: model)) }
+        if model.file(.archive) != nil {
+            urls.append(extractedDirectory(for: model))
+            if fileManager.fileExists(atPath: modelsDirectory.path) {
+                let candidates = try fileManager.contentsOfDirectory(
+                    at: modelsDirectory, includingPropertiesForKeys: nil)
+                    .filter { $0.lastPathComponent.hasPrefix(".extracting-\(model.id)-") }
+                urls.append(contentsOf: candidates)
+            }
+        }
         for url in urls where fileManager.fileExists(atPath: url.path) {
             try fileManager.removeItem(at: url)
         }

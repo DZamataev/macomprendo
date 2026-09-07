@@ -95,12 +95,24 @@ import Testing
             "kokoro-multi-lang-v1_1": 426_654_376
         ]
         let models = ModelCatalog.all(kind: .tts)
+        let expectedSummaryFragments = [
+            "vits-piper-ru_RU-ruslan-medium": "male Russian",
+            "vits-piper-ru_RU-irina-medium": "female Russian",
+            "vits-piper-ru_RU-dmitri-medium": "male Russian",
+            "vits-piper-ru_RU-denis-medium": "male Russian",
+            "vits-piper-en_US-lessac-medium": "male US English",
+            "vits-piper-en_US-libritts_r-medium": "904 US English speakers",
+            "vits-piper-en_GB-alba-medium": "female British English",
+            "kokoro-multi-lang-v1_1": "103 speakers for English and Chinese"
+        ]
 
         for model in models {
             #expect(model.installedSizeBytes == expectedSizes[model.id])
             #expect(model.brief.limitations.isEmpty == false)
+            #expect(model.brief.summary.contains(expectedSummaryFragments[model.id] ?? "missing"))
         }
         #expect(Set(models.map(\.brief.summary)).count == models.count)
+        #expect(ModelCatalog.model(id: "kokoro-multi-lang-v1_1")?.brief.summary.hasPrefix("A 427 MB") == true)
     }
 
     @Test func containsExactlyTheThirteenOfferedASRModelsInOrder() {

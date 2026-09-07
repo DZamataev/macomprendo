@@ -536,10 +536,12 @@ import Testing
         #expect(await manager.state(of: "voice") == .downloaded)
         #expect(await manager.resolved("voice")?.directory == installed)
         #expect(await manager.resolved("voice")?.files.isEmpty == true)
-        #expect(await extractor.calls == [
-            .init(archive: directory.appendingPathComponent("voice.tar.bz2"),
-                  destination: installed, modelID: "voice")
-        ])
+        let calls = await extractor.calls
+        #expect(calls.count == 1)
+        #expect(calls.first?.archive == directory.appendingPathComponent("voice.tar.bz2"))
+        #expect(calls.first?.destination != installed)
+        #expect(calls.first?.destination.lastPathComponent.hasPrefix(".extracting-voice-") == true)
+        #expect(calls.first?.modelID == "voice")
         #expect(!FileManager.default.fileExists(
             atPath: directory.appendingPathComponent("voice.tar.bz2").path
         ))

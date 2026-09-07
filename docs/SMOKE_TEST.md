@@ -255,7 +255,7 @@ MACOMPRENDO_RUN_LOCAL_TTS_SMOKE=1 swift test --package-path macos \
   --filter LocalTTSIntegrationTests.realPiperRoundTrip
 ```
 
-It writes `/tmp/macomprendo-local-tts-integration/ruslan-smoke.wav` and is disabled in the default
+It writes `/tmp/macomprendo-local-tts-integration-ruslan-smoke.wav` and is disabled in the default
 suite.
 
 ## Settings ▸ Refine & Summarize
