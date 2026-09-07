@@ -8,9 +8,13 @@ phones home.
 - If transcription is set to a local whisper model, audio never leaves the Mac.
 - If transcription is set to an endpoint, the recorded audio is uploaded to that
   endpoint's `/v1/audio/transcriptions`.
+- System voices and Local TTS keep selected text and generated speech on the Mac.
+- If speech is set to an endpoint, the selected text is sent to that endpoint's
+  `/v1/audio/speech` route.
 - Refine and summarize send the selected or dictated text to the endpoint you
   chose (Ollama on `http://localhost:11434` by default, which is also local).
-- Whisper model downloads are fetched from Hugging Face when you ask for them.
+- Local model archives and weights are fetched from their pinned Hugging Face or GitHub release
+  URLs only when you ask to download them.
 
 **What is stored.** Settings live in `UserDefaults` under the key `settings.v1`.
 API keys live in the login Keychain under the service

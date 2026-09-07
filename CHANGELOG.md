@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Local TTS can download checksum-pinned Piper and Kokoro archives, extract them atomically, and
+  read selections entirely offline through sherpa-onnx; Russian and English Piper voices plus a
+  103-speaker multilingual Kokoro model are available in Settings ▸ Speech.
 - Settings ▸ General can replace direct Dictate recordings shorter than half a second with `OK`
   without loading or calling a speech-recognition provider.
 - Local dictation models can stay resident between nearby dictations, with configurable immediate,
