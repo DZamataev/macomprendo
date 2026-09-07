@@ -128,9 +128,10 @@
 ### Task 5: Add the local SpeechSynthesizing service
 
 **Files:**
-- Create: `macos/Sources/Macomprendo/Services/SherpaTTSService.swift`
-- Create: `macos/Tests/MacomprendoTests/Services/SherpaTTSServiceTests.swift`
-- Add fake generator under: `macos/Tests/MacomprendoTests/Fakes/`
+- Create: `macos/Sources/Macomprendo/Services/LocalSpeechService.swift`
+- Modify: `macos/Sources/Macomprendo/Services/SherpaTTSService.swift`
+- Create: `macos/Tests/MacomprendoTests/Services/SherpaTTSSpeechServiceTests.swift`
+- Modify: `macos/Tests/MacomprendoTests/Fakes/StubModelManager.swift`
 
 **Produces:** `@MainActor final class SherpaTTSService: SpeechSynthesizing`.
 
