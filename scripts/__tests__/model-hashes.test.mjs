@@ -18,6 +18,13 @@ test('reads the download URL out of a literal', () => {
   assert.equal(downloadURLOf(line), 'https://example.com/tokens.txt')
 })
 
+test('archive roles use the same source-aware parsing and rewriting path', () => {
+  const archive = 'ModelFile(role: .archive, fileName: "voice.tar.bz2", sizeBytes: 12, sha256: "old", downloadURL: URL(string: "https://example.com/voice.tar.bz2")!)'
+  assert.equal(downloadURLOf(archive), 'https://example.com/voice.tar.bz2')
+  assert.match(rewriteModelFileLiteral(archive, { sizeBytes: 34, sha256: 'new' }),
+    /role: \.archive.*sizeBytes: 34, sha256: "new"/)
+})
+
 test('leaves a line that is not a ModelFile literal untouched', () => {
   const other = '    static let defaultID = "large-v3-turbo"'
   assert.equal(rewriteModelFileLiteral(other, { sizeBytes: 1, sha256: 'z' }), other)

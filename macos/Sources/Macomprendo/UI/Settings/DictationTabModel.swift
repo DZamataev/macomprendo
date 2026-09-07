@@ -233,6 +233,8 @@ final class DictationTabModel: ObservableObject {
         case .whisperCpp:
             "whisper.cpp — \(model.displayName)"
         case .gigaAM:
+            "sherpa-onnx — \(model.displayName)"
+        case .sherpaVits, .sherpaKokoro:
             model.displayName
         }
     }

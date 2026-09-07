@@ -48,6 +48,10 @@ struct ProviderFactory: Sendable {
                 return WhisperCppTranscriber(modelURL: modelURL, options: whisper)
             case .gigaAM:
                 return try GigaAMTranscriber(files: resolved.files)
+            case .sherpaVits, .sherpaKokoro:
+                // Transcription settings only offer `.asr` entries. Treat a stale or hand-edited
+                // TTS id as unavailable rather than opening it with the wrong runtime.
+                throw MacomprendoError.modelMissing(modelID)
             }
 
         case .endpoint(let id, let model):

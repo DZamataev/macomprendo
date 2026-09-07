@@ -36,7 +36,7 @@
 
 **Files:**
 - Modify: `macos/Sources/Macomprendo/Services/ModelCatalog.swift`
-- Modify: `macos/Sources/Macomprendo/App/ProviderFactory.swift` (only to keep ASR construction exhaustive and reject TTS engines)
+- Modify: `macos/Sources/Macomprendo/Providers/ProviderFactory.swift` (only to keep ASR construction exhaustive and reject TTS engines)
 - Modify: `scripts/lib/model-hashes.mjs`
 - Modify: matching fixtures/tests under `scripts/__tests__/`
 - Modify: `macos/Tests/MacomprendoTests/Services/ModelCatalogTests.swift`

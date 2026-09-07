@@ -8,16 +8,19 @@ enum ModelKind: String, Sendable, CaseIterable { case asr, tts }
 enum LocalEngine: String, Codable, Sendable, CaseIterable {
     case whisperCpp
     case gigaAM
+    case sherpaVits
+    case sherpaKokoro
 
     var kind: ModelKind {
         switch self {
         case .whisperCpp, .gigaAM: .asr
+        case .sherpaVits, .sherpaKokoro: .tts
         }
     }
 }
 
-/// The part a file plays in a model. A whisper model is one `.ggml`; a sherpa CTC model is
-/// `.ctcModel` + `.tokens`; a sherpa transducer is `.encoder` + `.decoder` + `.joiner` + `.tokens`.
+/// The part a file plays in a model. ASR models are stored as loose engine files; local TTS
+/// models arrive as one verified archive whose contents are opened by sherpa-onnx.
 enum ModelFileRole: String, Sendable, CaseIterable {
     case ggml
     case ctcModel
@@ -25,6 +28,7 @@ enum ModelFileRole: String, Sendable, CaseIterable {
     case decoder
     case joiner
     case tokens
+    case archive
 }
 
 /// One file belonging to a model.
@@ -132,7 +136,7 @@ enum ModelCatalog {
     static let defaultID = "large-v3-turbo"
     static let lightweightID = "base"
 
-    static let all: [LocalModel] = whisper + gigaAM
+    static let all: [LocalModel] = whisper + gigaAM + localTTS
 
     static func model(id: String) -> LocalModel? {
         all.first { $0.id == id }
@@ -284,4 +288,105 @@ enum ModelCatalog {
             )
         )
     ]
+
+    // MARK: - Local TTS
+
+    private static let localTTSSource = URL(string: "https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/index.html")!
+    private static let localTTSBase = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models"
+
+    private static let localTTS: [LocalModel] = [
+        ttsArchiveModel(
+            id: "vits-piper-ru_RU-ruslan-medium",
+            displayName: "Piper Ruslan (Russian)",
+            engine: .sherpaVits,
+            languages: ["ru"],
+            file: ModelFile(role: .archive, fileName: "vits-piper-ru_RU-ruslan-medium.tar.bz2", sizeBytes: 67210684, sha256: "0690b1cad01f86e8db9ba988af24898bdc1af774e23cb2e46b9c730269b6fd83", downloadURL: URL(string: "\(localTTSBase)/vits-piper-ru_RU-ruslan-medium.tar.bz2")!),
+            sentinel: "ru_RU-ruslan-medium.onnx"
+        ),
+        ttsArchiveModel(
+            id: "vits-piper-ru_RU-irina-medium",
+            displayName: "Piper Irina (Russian)",
+            engine: .sherpaVits,
+            languages: ["ru"],
+            file: ModelFile(role: .archive, fileName: "vits-piper-ru_RU-irina-medium.tar.bz2", sizeBytes: 67153308, sha256: "1fc0f54e5e084fe287c07909f2f6e0ba6d857864cf800e3ab80286a4e8233008", downloadURL: URL(string: "\(localTTSBase)/vits-piper-ru_RU-irina-medium.tar.bz2")!),
+            sentinel: "ru_RU-irina-medium.onnx"
+        ),
+        ttsArchiveModel(
+            id: "vits-piper-ru_RU-dmitri-medium",
+            displayName: "Piper Dmitri (Russian)",
+            engine: .sherpaVits,
+            languages: ["ru"],
+            file: ModelFile(role: .archive, fileName: "vits-piper-ru_RU-dmitri-medium.tar.bz2", sizeBytes: 67188551, sha256: "c86d0803737de13d441923ff3b3f309482fab8d7af3ec85949942809eb9a3660", downloadURL: URL(string: "\(localTTSBase)/vits-piper-ru_RU-dmitri-medium.tar.bz2")!),
+            sentinel: "ru_RU-dmitri-medium.onnx"
+        ),
+        ttsArchiveModel(
+            id: "vits-piper-ru_RU-denis-medium",
+            displayName: "Piper Denis (Russian)",
+            engine: .sherpaVits,
+            languages: ["ru"],
+            file: ModelFile(role: .archive, fileName: "vits-piper-ru_RU-denis-medium.tar.bz2", sizeBytes: 67190991, sha256: "efa4c18e0b5e32b81d1b6df36b9d312831e5d545200e27848ef926a4cd930300", downloadURL: URL(string: "\(localTTSBase)/vits-piper-ru_RU-denis-medium.tar.bz2")!),
+            sentinel: "ru_RU-denis-medium.onnx"
+        ),
+        ttsArchiveModel(
+            id: "vits-piper-en_US-lessac-medium",
+            displayName: "Piper Lessac (English US)",
+            engine: .sherpaVits,
+            languages: ["en"],
+            file: ModelFile(role: .archive, fileName: "vits-piper-en_US-lessac-medium.tar.bz2", sizeBytes: 67230653, sha256: "9e3febfacf0abf4270172d2958bcec246032b7e88efc2720840cc80c93de334e", downloadURL: URL(string: "\(localTTSBase)/vits-piper-en_US-lessac-medium.tar.bz2")!),
+            sentinel: "en_US-lessac-medium.onnx"
+        ),
+        ttsArchiveModel(
+            id: "vits-piper-en_US-libritts_r-medium",
+            displayName: "Piper LibriTTS-R (English US)",
+            engine: .sherpaVits,
+            languages: ["en"],
+            file: ModelFile(role: .archive, fileName: "vits-piper-en_US-libritts_r-medium.tar.bz2", sizeBytes: 82038311, sha256: "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", downloadURL: URL(string: "\(localTTSBase)/vits-piper-en_US-libritts_r-medium.tar.bz2")!),
+            speakerCount: 904,
+            sentinel: "en_US-libritts_r-medium.onnx"
+        ),
+        ttsArchiveModel(
+            id: "vits-piper-en_GB-alba-medium",
+            displayName: "Piper Alba (English UK)",
+            engine: .sherpaVits,
+            languages: ["en"],
+            file: ModelFile(role: .archive, fileName: "vits-piper-en_GB-alba-medium.tar.bz2", sizeBytes: 67212349, sha256: "fcd45962906933eec4431d3688f7d74aaac8713c87c6717f91fd3b23463aa1a1", downloadURL: URL(string: "\(localTTSBase)/vits-piper-en_GB-alba-medium.tar.bz2")!),
+            sentinel: "en_GB-alba-medium.onnx"
+        ),
+        ttsArchiveModel(
+            id: "kokoro-multi-lang-v1_1",
+            displayName: "Kokoro Multi-language v1.1",
+            engine: .sherpaKokoro,
+            languages: ["en", "zh"],
+            file: ModelFile(role: .archive, fileName: "kokoro-multi-lang-v1_1.tar.bz2", sizeBytes: 364816464, sha256: "a3f4c73d043860e3fd2e5b06f36795eb81de0fc8e8de6df703245edddd87dbad", downloadURL: URL(string: "\(localTTSBase)/kokoro-multi-lang-v1_1.tar.bz2")!),
+            speakerCount: 103,
+            sentinel: "model.onnx"
+        )
+    ]
+
+    private static func ttsArchiveModel(
+        id: String,
+        displayName: String,
+        engine: LocalEngine,
+        languages: [String],
+        file: ModelFile,
+        speakerCount: Int = 1,
+        sentinel: String
+    ) -> LocalModel {
+        LocalModel(
+            id: id,
+            displayName: displayName,
+            engine: engine,
+            languages: languages,
+            files: [file],
+            brief: ModelBrief(
+                summary: "A sherpa-onnx voice that runs completely on this Mac after download.",
+                strengths: ["Offline synthesis", "No speech text leaves this Mac"],
+                limitations: ["Model download required", "Optimised for the listed language"],
+                benchmarks: [],
+                sourceURL: localTTSSource
+            ),
+            speakerCount: speakerCount,
+            archiveSentinel: sentinel
+        )
+    }
 }
