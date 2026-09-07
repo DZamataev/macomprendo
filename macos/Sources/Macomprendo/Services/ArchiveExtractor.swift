@@ -2,15 +2,17 @@ import Foundation
 
 /// Extracts one verified model archive into its final model directory.
 protocol ArchiveExtracting: Sendable {
-    func extract(archive: URL, to destination: URL, modelID: String) throws
+    func extract(archive: URL, to destination: URL, modelID: String) async throws
 }
 
 /// The TTS assets are bzip2 tar archives with one top-level directory. Extraction happens in
 /// a sibling staging directory so a partial or malformed archive is never visible as a model.
 struct TarArchiveExtractor: ArchiveExtracting {
-    func extract(archive: URL, to destination: URL, modelID: String) throws {
+    func extract(archive: URL, to destination: URL, modelID: String) async throws {
         do {
-            try extractVerifiedLayout(archive: archive, to: destination)
+            try await Task.detached(priority: .utility) {
+                try extractVerifiedLayout(archive: archive, to: destination)
+            }.value
         } catch {
             throw MacomprendoError.modelDownloadFailed(modelID)
         }

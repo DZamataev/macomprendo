@@ -31,6 +31,27 @@ import Testing
         )
     }
 
+    private func makeArchiveModel() -> LocalModel {
+        LocalModel(
+            id: "voice",
+            displayName: "Voice",
+            engine: .sherpaVits,
+            languages: ["en"],
+            files: [
+                ModelFile(
+                    role: .archive,
+                    fileName: "voice.tar.bz2",
+                    sizeBytes: 5,
+                    sha256: Self.helloDigest,
+                    downloadURL: URL(string: "https://huggingface.co\(Self.modelPath)")!
+                )
+            ],
+            brief: ModelBrief(summary: "", strengths: [], limitations: [], benchmarks: [],
+                              sourceURL: URL(string: "https://example.invalid")!),
+            archiveSentinel: "model.onnx"
+        )
+    }
+
     private func makeDirectory() -> URL {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("macomprendo-models-\(UUID().uuidString)")
@@ -436,6 +457,105 @@ import Testing
         }
     }
 
+    // MARK: - Archive models
+
+    @Test func aBareArchiveOrPartialExtractionNeverCountsAsDownloaded() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Self.payload.write(to: directory.appendingPathComponent("voice.tar.bz2"))
+        let extracted = directory.appendingPathComponent("voice", isDirectory: true)
+        try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: true)
+        let manager = LocalModelManager(directory: directory, http: StubHTTPClient(),
+                                        catalog: [makeArchiveModel()],
+                                        archiveExtractor: FakeArchiveExtractor())
+
+        #expect(await manager.state(of: "voice") == .notDownloaded)
+        #expect(await manager.resolved("voice") == nil)
+    }
+
+    @Test func archiveDownloadExtractsThenResolvesTheModelDirectory() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let extractor = FakeArchiveExtractor(createsSentinel: true)
+        let manager = LocalModelManager(directory: directory, http: makeHTTP(),
+                                        catalog: [makeArchiveModel()],
+                                        archiveExtractor: extractor)
+
+        let fractions = try await collect(manager.download("voice"))
+
+        let installed = directory.appendingPathComponent("voice", isDirectory: true)
+        #expect(fractions.last == 1.0)
+        #expect(await manager.state(of: "voice") == .downloaded)
+        #expect(await manager.resolved("voice")?.directory == installed)
+        #expect(await manager.resolved("voice")?.files.isEmpty == true)
+        #expect(await extractor.calls == [
+            .init(archive: directory.appendingPathComponent("voice.tar.bz2"),
+                  destination: installed, modelID: "voice")
+        ])
+        #expect(!FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("voice.tar.bz2").path
+        ))
+    }
+
+    @Test func aMissingSentinelFailsAndKeepsTheVerifiedArchive() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manager = LocalModelManager(directory: directory, http: makeHTTP(),
+                                        catalog: [makeArchiveModel()],
+                                        archiveExtractor: FakeArchiveExtractor())
+
+        await #expect(throws: MacomprendoError.modelDownloadFailed("voice")) {
+            for try await _ in manager.download("voice") {}
+        }
+        #expect(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("voice.tar.bz2").path
+        ))
+        #expect(await manager.state(of: "voice") != .downloaded)
+    }
+
+    @Test func retryAfterExtractionFailureReusesTheVerifiedArchive() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let extractor = FakeArchiveExtractor(failuresBeforeSuccess: 1, createsSentinel: true)
+        let http = makeHTTP()
+        let manager = LocalModelManager(directory: directory, http: http,
+                                        catalog: [makeArchiveModel()],
+                                        archiveExtractor: extractor)
+
+        await #expect(throws: MacomprendoError.modelDownloadFailed("voice")) {
+            for try await _ in manager.download("voice") {}
+        }
+        _ = try await collect(manager.download("voice"))
+
+        #expect(http.requests(forPath: Self.modelPath).map(\.method) == ["HEAD", "GET"])
+        #expect(await extractor.calls.count == 2)
+        #expect(await manager.state(of: "voice") == .downloaded)
+    }
+
+    @Test func deleteRemovesArchiveDirectoryFinalArchiveAndPartial() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let installed = directory.appendingPathComponent("voice", isDirectory: true)
+        try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
+        try Data().write(to: installed.appendingPathComponent("model.onnx"))
+        try Self.payload.write(to: directory.appendingPathComponent("voice.tar.bz2"))
+        try Data("he".utf8).write(to: directory.appendingPathComponent("voice.tar.bz2.partial"))
+        let manager = LocalModelManager(directory: directory, http: StubHTTPClient(),
+                                        catalog: [makeArchiveModel()],
+                                        archiveExtractor: FakeArchiveExtractor())
+
+        try await manager.delete("voice")
+
+        #expect(!FileManager.default.fileExists(atPath: installed.path))
+        #expect(!FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("voice.tar.bz2").path
+        ))
+        #expect(!FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("voice.tar.bz2.partial").path
+        ))
+        #expect(await manager.state(of: "voice") == .notDownloaded)
+    }
+
     // MARK: - Multi-file models
 
     /// A synthetic two-file entry: the catalog itself still holds only one-file whisper
@@ -621,5 +741,33 @@ private final class GatedHTTPClient: HTTPClient, Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+}
+
+private actor FakeArchiveExtractor: ArchiveExtracting {
+    struct Call: Equatable, Sendable {
+        let archive: URL
+        let destination: URL
+        let modelID: String
+    }
+
+    private(set) var calls: [Call] = []
+    private var failuresRemaining: Int
+    private let createsSentinel: Bool
+
+    init(failuresBeforeSuccess: Int = 0, createsSentinel: Bool = false) {
+        self.failuresRemaining = failuresBeforeSuccess
+        self.createsSentinel = createsSentinel
+    }
+
+    func extract(archive: URL, to destination: URL, modelID: String) async throws {
+        calls.append(Call(archive: archive, destination: destination, modelID: modelID))
+        if failuresRemaining > 0 {
+            failuresRemaining -= 1
+            throw MacomprendoError.modelDownloadFailed(modelID)
+        }
+        guard createsSentinel else { return }
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try Data().write(to: destination.appendingPathComponent("model.onnx"))
     }
 }

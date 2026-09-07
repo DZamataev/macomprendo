@@ -15,6 +15,14 @@ enum ModelState: Sendable, Equatable {
 struct ResolvedLocalModel: Sendable, Equatable {
     let engine: LocalEngine
     let files: [ModelFileRole: URL]
+    /// The extracted `models/<model-id>/` directory for archive models; `nil` for loose files.
+    let directory: URL?
+
+    init(engine: LocalEngine, files: [ModelFileRole: URL], directory: URL? = nil) {
+        self.engine = engine
+        self.files = files
+        self.directory = directory
+    }
 }
 
 /// Manages the on-disk local-model store.
@@ -44,6 +52,7 @@ actor LocalModelManager: ModelManaging {
     nonisolated let modelsDirectory: URL
     private let http: any HTTPClient
     private let catalog: [LocalModel]
+    private let archiveExtractor: any ArchiveExtracting
     private var states: [String: ModelState] = [:]
     /// Model ids with a download currently running, so a second concurrent
     /// `download(_:)` for the same id is rejected instead of racing the first
@@ -52,14 +61,19 @@ actor LocalModelManager: ModelManaging {
 
     // Both kinds: this manager downloads TTS models too.
     init(directory: URL, http: any HTTPClient) {
-        self.init(directory: directory, http: http, catalog: ModelCatalog.all)
+        self.init(directory: directory, http: http, catalog: ModelCatalog.all,
+                  archiveExtractor: TarArchiveExtractor())
     }
 
-    /// Catalog-injecting initialiser, used by tests.
-    init(directory: URL, http: any HTTPClient, catalog: [LocalModel]) {
+    /// Catalog and extractor injecting initialiser, used by tests.
+    init(directory: URL,
+         http: any HTTPClient,
+         catalog: [LocalModel],
+         archiveExtractor: any ArchiveExtracting = TarArchiveExtractor()) {
         self.modelsDirectory = directory
         self.http = http
         self.catalog = catalog
+        self.archiveExtractor = archiveExtractor
     }
 
     // MARK: - Queries
@@ -77,6 +91,10 @@ actor LocalModelManager: ModelManaging {
 
     func resolved(_ id: String) async -> ResolvedLocalModel? {
         guard let model = model(id), isComplete(model) else { return nil }
+        if model.file(.archive) != nil {
+            return ResolvedLocalModel(engine: model.engine, files: [:],
+                                      directory: extractedDirectory(for: model))
+        }
         var urls: [ModelFileRole: URL] = [:]
         for file in model.files { urls[file.role] = destinationURL(for: file) }
         return ResolvedLocalModel(engine: model.engine, files: urls)
@@ -86,6 +104,9 @@ actor LocalModelManager: ModelManaging {
 
     func delete(_ id: String) async throws {
         guard let model = model(id) else { throw MacomprendoError.modelMissing(id) }
+        if model.file(.archive) != nil {
+            try? FileManager.default.removeItem(at: extractedDirectory(for: model))
+        }
         for file in model.files {
             try? FileManager.default.removeItem(at: destinationURL(for: file))
             try? FileManager.default.removeItem(at: partialURL(for: file))
@@ -180,6 +201,17 @@ actor LocalModelManager: ModelManaging {
                 }
             }
             completedBytes += file.sizeBytes
+        }
+
+        if let archive = model.file(.archive) {
+            let archiveURL = destinationURL(for: archive)
+            let directory = extractedDirectory(for: model)
+            try await archiveExtractor.extract(archive: archiveURL, to: directory, modelID: model.id)
+            guard isComplete(model) else {
+                throw MacomprendoError.modelDownloadFailed(model.id)
+            }
+            // Cleanup cannot make a successfully extracted, engine-ready model unusable.
+            try? FileManager.default.removeItem(at: archiveURL)
         }
 
         states[id] = .downloaded
@@ -287,9 +319,19 @@ actor LocalModelManager: ModelManaging {
     }
 
     private func isComplete(_ model: LocalModel) -> Bool {
-        model.files.allSatisfy {
+        if model.file(.archive) != nil {
+            guard let sentinel = model.archiveSentinel, !sentinel.isEmpty else { return false }
+            return FileManager.default.fileExists(
+                atPath: extractedDirectory(for: model).appendingPathComponent(sentinel).path
+            )
+        }
+        return model.files.allSatisfy {
             FileManager.default.fileExists(atPath: destinationURL(for: $0).path)
         }
+    }
+
+    private func extractedDirectory(for model: LocalModel) -> URL {
+        modelsDirectory.appendingPathComponent(model.id, isDirectory: true)
     }
 
     private func destinationURL(for file: ModelFile) -> URL {

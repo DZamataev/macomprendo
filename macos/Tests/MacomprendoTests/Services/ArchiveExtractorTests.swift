@@ -5,7 +5,7 @@ import Testing
 @Suite struct ArchiveExtractorTests {
     private let fileManager = FileManager.default
 
-    @Test func extractsTheSingleArchiveRootDirectlyIntoTheDestination() throws {
+    @Test func extractsTheSingleArchiveRootDirectlyIntoTheDestination() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let archive = try fixture.archive(roots: [
@@ -17,7 +17,7 @@ import Testing
         ])
         let destination = fixture.root.appendingPathComponent("installed", isDirectory: true)
 
-        try TarArchiveExtractor().extract(archive: archive, to: destination, modelID: "voice")
+        try await TarArchiveExtractor().extract(archive: archive, to: destination, modelID: "voice")
 
         #expect(fileManager.fileExists(atPath: destination.appendingPathComponent("model.onnx").path))
         #expect(fileManager.fileExists(atPath: destination.appendingPathComponent("tokens.txt").path))
@@ -25,7 +25,7 @@ import Testing
         #expect(!fileManager.fileExists(atPath: destination.appendingPathComponent("voice").path))
     }
 
-    @Test func rejectsAnArchiveWithMoreThanOneTopLevelRoot() throws {
+    @Test func rejectsAnArchiveWithMoreThanOneTopLevelRoot() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let archive = try fixture.archive(roots: [
@@ -34,13 +34,13 @@ import Testing
         ])
         let destination = fixture.root.appendingPathComponent("installed", isDirectory: true)
 
-        #expect(throws: MacomprendoError.modelDownloadFailed("voice")) {
-            try TarArchiveExtractor().extract(archive: archive, to: destination, modelID: "voice")
+        await #expect(throws: MacomprendoError.modelDownloadFailed("voice")) {
+            try await TarArchiveExtractor().extract(archive: archive, to: destination, modelID: "voice")
         }
         #expect(!fileManager.fileExists(atPath: destination.path))
     }
 
-    @Test func successfulExtractionReplacesAnExistingDestination() throws {
+    @Test func successfulExtractionReplacesAnExistingDestination() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let archive = try fixture.archive(roots: ["voice": ["model.onnx": Data("new".utf8)]])
@@ -49,14 +49,14 @@ import Testing
         let oldFile = destination.appendingPathComponent("old-model.onnx")
         try Data("old".utf8).write(to: oldFile)
 
-        try TarArchiveExtractor().extract(archive: archive, to: destination, modelID: "voice")
+        try await TarArchiveExtractor().extract(archive: archive, to: destination, modelID: "voice")
 
         #expect(!fileManager.fileExists(atPath: oldFile.path))
         #expect(try Data(contentsOf: destination.appendingPathComponent("model.onnx")) ==
                 Data("new".utf8))
     }
 
-    @Test func failedExtractionLeavesAnExistingDestinationUntouched() throws {
+    @Test func failedExtractionLeavesAnExistingDestinationUntouched() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let malformed = fixture.root.appendingPathComponent("broken.tar.bz2")
@@ -66,8 +66,8 @@ import Testing
         let marker = destination.appendingPathComponent("keep-me")
         try Data("old".utf8).write(to: marker)
 
-        #expect(throws: MacomprendoError.modelDownloadFailed("voice")) {
-            try TarArchiveExtractor().extract(archive: malformed, to: destination, modelID: "voice")
+        await #expect(throws: MacomprendoError.modelDownloadFailed("voice")) {
+            try await TarArchiveExtractor().extract(archive: malformed, to: destination, modelID: "voice")
         }
         #expect(try Data(contentsOf: marker) == Data("old".utf8))
     }
