@@ -90,7 +90,7 @@ import Testing
         var errors: [Error] = []
         r.router.onError = { errors.append($0) }
         r.system.failWith(MacomprendoError.audioPlayback("x"))
-        r.local.failWith(MacomprendoError.localSpeech("y"))
+        r.local.failWith(MacomprendoError.modelMissing("y"))
         r.endpoint.failWith(MacomprendoError.speechKeyMissing)
         #expect(errors.count == 3)
         #expect(errors.last as? MacomprendoError == .speechKeyMissing)

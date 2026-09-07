@@ -58,6 +58,8 @@ actor LocalModelManager: ModelManaging {
     /// `download(_:)` for the same id is rejected instead of racing the first
     /// one over the same `.partial` file.
     private var inFlight: Set<String> = []
+    /// Deletion invalidates any suspended operation that captured an older value.
+    private var operationEpochs: [String: Int] = [:]
 
     // Both kinds: this manager downloads TTS models too.
     init(directory: URL, http: any HTTPClient) {
@@ -104,12 +106,12 @@ actor LocalModelManager: ModelManaging {
 
     func delete(_ id: String) async throws {
         guard let model = model(id) else { throw MacomprendoError.modelMissing(id) }
-        if model.file(.archive) != nil {
-            try? FileManager.default.removeItem(at: extractedDirectory(for: model))
-        }
-        for file in model.files {
-            try? FileManager.default.removeItem(at: destinationURL(for: file))
-            try? FileManager.default.removeItem(at: partialURL(for: file))
+        operationEpochs[id, default: 0] += 1
+        do {
+            try removeArtifacts(for: model)
+        } catch {
+            states[id] = isComplete(model) ? .downloaded : .notDownloaded
+            throw MacomprendoError.modelDownloadFailed("Could not delete \(id).")
         }
         states[id] = .notDownloaded
     }
@@ -129,15 +131,7 @@ actor LocalModelManager: ModelManaging {
                     // this stream; normalise both to `.cancelled` so callers only ever
                     // see `MacomprendoError`.
                     let mapped: Error = (error is CancellationError) ? MacomprendoError.cancelled : error
-                    if case MacomprendoError.cancelled = mapped {
-                        // Cancellation is not a failure: the partial file is kept for
-                        // a later resume (see `downloadOne`), so the model must
-                        // not be stuck reporting `.failed` — `state(of:)` falls back
-                        // to checking disk for `.notDownloaded`/`.downloaded`.
-                        await setState(id, .notDownloaded)
-                    } else {
-                        await setState(id, .failed(mapped.localizedDescription))
-                    }
+                    await recordTerminalState(id, error: mapped)
                     continuation.finish(throwing: mapped)
                 }
             }
@@ -161,6 +155,7 @@ actor LocalModelManager: ModelManaging {
         defer { inFlight.remove(id) }
 
         guard let model = model(id) else { throw MacomprendoError.modelMissing(id) }
+        let operationEpoch = operationEpochs[id, default: 0]
 
         if isComplete(model) {
             states[id] = .downloaded
@@ -184,9 +179,14 @@ actor LocalModelManager: ModelManaging {
             // go out. A one-file model had no such window; a file set does.
             try Task.checkCancellation()
 
-            if FileManager.default.fileExists(atPath: destinationURL(for: file).path) {
-                completedBytes += file.sizeBytes
-                continue
+            let destination = destinationURL(for: file)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                if file.role != .archive || file.sha256.isEmpty
+                    || (try? Self.sha256(of: destination)) == file.sha256 {
+                    completedBytes += file.sizeBytes
+                    continue
+                }
+                try FileManager.default.removeItem(at: destination)
             }
             try await downloadOne(file) { bytesInThisFile in
                 let fraction = min(1.0, Double(completedBytes + bytesInThisFile) / Double(setTotal))
@@ -200,6 +200,7 @@ actor LocalModelManager: ModelManaging {
                     continuation.yield(fraction)
                 }
             }
+            try requireCurrentOperation(id: id, epoch: operationEpoch, model: model)
             completedBytes += file.sizeBytes
         }
 
@@ -207,11 +208,23 @@ actor LocalModelManager: ModelManaging {
             let archiveURL = destinationURL(for: archive)
             let directory = extractedDirectory(for: model)
             try await archiveExtractor.extract(archive: archiveURL, to: directory, modelID: model.id)
+            guard !Task.isCancelled, operationEpochs[id, default: 0] == operationEpoch else {
+                // `Process`-backed extraction cannot be interrupted safely mid-write. Once it
+                // returns, discard its result instead of publishing a cancelled download.
+                try? FileManager.default.removeItem(at: directory)
+                throw MacomprendoError.cancelled
+            }
             guard isComplete(model) else {
                 throw MacomprendoError.modelDownloadFailed(model.id)
             }
             // Cleanup cannot make a successfully extracted, engine-ready model unusable.
-            try? FileManager.default.removeItem(at: archiveURL)
+            do {
+                try FileManager.default.removeItem(at: archiveURL)
+            } catch {
+                Log.providers.warning(
+                    "Could not clean downloaded archive for \(id, privacy: .public); extracted model remains usable"
+                )
+            }
         }
 
         states[id] = .downloaded
@@ -310,8 +323,14 @@ actor LocalModelManager: ModelManaging {
 
     // MARK: - Helpers
 
-    private func setState(_ id: String, _ state: ModelState) {
-        states[id] = state
+    private func recordTerminalState(_ id: String, error: Error) {
+        // A rejected duplicate never owned the active operation and must not overwrite its state.
+        guard !inFlight.contains(id) else { return }
+        if error is CancellationError || (error as? MacomprendoError) == .cancelled {
+            states[id] = .notDownloaded
+        } else {
+            states[id] = .failed(error.localizedDescription)
+        }
     }
 
     private func model(_ id: String) -> LocalModel? {
@@ -321,9 +340,9 @@ actor LocalModelManager: ModelManaging {
     private func isComplete(_ model: LocalModel) -> Bool {
         if model.file(.archive) != nil {
             guard let sentinel = model.archiveSentinel, !sentinel.isEmpty else { return false }
-            return FileManager.default.fileExists(
-                atPath: extractedDirectory(for: model).appendingPathComponent(sentinel).path
-            )
+            let url = extractedDirectory(for: model).appendingPathComponent(sentinel)
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            return values?.isRegularFile == true && values?.isSymbolicLink != true
         }
         return model.files.allSatisfy {
             FileManager.default.fileExists(atPath: destinationURL(for: $0).path)
@@ -340,6 +359,22 @@ actor LocalModelManager: ModelManaging {
 
     private func partialURL(for file: ModelFile) -> URL {
         modelsDirectory.appendingPathComponent(file.fileName + ".partial")
+    }
+
+    private func requireCurrentOperation(id: String, epoch: Int, model: LocalModel) throws {
+        guard !Task.isCancelled, operationEpochs[id, default: 0] == epoch else {
+            try? removeArtifacts(for: model)
+            throw MacomprendoError.cancelled
+        }
+    }
+
+    private func removeArtifacts(for model: LocalModel) throws {
+        let fileManager = FileManager.default
+        var urls = model.files.flatMap { [destinationURL(for: $0), partialURL(for: $0)] }
+        if model.file(.archive) != nil { urls.append(extractedDirectory(for: model)) }
+        for url in urls where fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
     }
 
     /// Bytes we can keep from a previous attempt: only when the server supports

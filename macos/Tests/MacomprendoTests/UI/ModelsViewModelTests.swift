@@ -75,6 +75,24 @@ import Testing
         #expect(viewModel.diskUsage == 305)
     }
 
+    @Test func archiveDiskUsageUsesTheExtractedFootprintNotTheDownloadSize() async {
+        let archive = LocalModel(
+            id: "voice", displayName: "Voice", engine: .sherpaVits, languages: ["en"],
+            files: [ModelFile(role: .archive, fileName: "voice.tar.bz2", sizeBytes: 5,
+                              sha256: "eee", downloadURL: URL(string: "https://example.invalid/voice.tar.bz2")!)],
+            brief: Self.testBrief,
+            installedSizeBytes: 99,
+            archiveSentinel: "model.onnx"
+        )
+        let manager = StubModelManager()
+        manager.states = ["voice": .downloaded]
+        let viewModel = ModelsViewModel(models: manager, catalog: [archive])
+
+        await viewModel.refresh()
+
+        #expect(viewModel.diskUsage == 99)
+    }
+
     @Test func downloadReportsProgressAndEndsDownloaded() async {
         let manager = StubModelManager()
         manager.downloadFractions = [0.5, 1.0]

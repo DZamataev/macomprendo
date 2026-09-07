@@ -73,8 +73,8 @@ struct LocalModel: Identifiable, Sendable, Equatable {
     let id: String
     let displayName: String
     let engine: LocalEngine
-    /// `nil` means multilingual with no published list (whisper). A non-nil list is the set of
-    /// languages the publisher reports ASR quality for.
+    /// `nil` means multilingual with no published list (Whisper). A non-nil list is the set of
+    /// languages the publisher declares the ASR or TTS model supports.
     let languages: [String]?
     let files: [ModelFile]
     let brief: ModelBrief
@@ -82,6 +82,9 @@ struct LocalModel: Identifiable, Sendable, Equatable {
     /// every ASR entry, which has no such concept. The Local tab offers a speaker picker
     /// only above 1.
     let speakerCount: Int
+    /// Sum of extracted regular-file sizes for archive models. Download progress still uses
+    /// the compressed `totalSizeBytes`.
+    let installedSizeBytes: Int64?
     /// For a model downloaded as an archive: the path inside the unpacked directory that
     /// proves the unpack succeeded. `nil` for a model stored as loose files.
     let archiveSentinel: String?
@@ -93,6 +96,7 @@ struct LocalModel: Identifiable, Sendable, Equatable {
          files: [ModelFile],
          brief: ModelBrief,
          speakerCount: Int = 1,
+         installedSizeBytes: Int64? = nil,
          archiveSentinel: String? = nil) {
         self.id = id
         self.displayName = displayName
@@ -101,6 +105,7 @@ struct LocalModel: Identifiable, Sendable, Equatable {
         self.files = files
         self.brief = brief
         self.speakerCount = speakerCount
+        self.installedSizeBytes = installedSizeBytes
         self.archiveSentinel = archiveSentinel
     }
 
@@ -301,6 +306,7 @@ enum ModelCatalog {
             engine: .sherpaVits,
             languages: ["ru"],
             file: ModelFile(role: .archive, fileName: "vits-piper-ru_RU-ruslan-medium.tar.bz2", sizeBytes: 67210684, sha256: "0690b1cad01f86e8db9ba988af24898bdc1af774e23cb2e46b9c730269b6fd83", downloadURL: URL(string: "\(localTTSBase)/vits-piper-ru_RU-ruslan-medium.tar.bz2")!),
+            installedSizeBytes: 81146959,
             sentinel: "ru_RU-ruslan-medium.onnx"
         ),
         ttsArchiveModel(
@@ -309,6 +315,7 @@ enum ModelCatalog {
             engine: .sherpaVits,
             languages: ["ru"],
             file: ModelFile(role: .archive, fileName: "vits-piper-ru_RU-irina-medium.tar.bz2", sizeBytes: 67153308, sha256: "1fc0f54e5e084fe287c07909f2f6e0ba6d857864cf800e3ab80286a4e8233008", downloadURL: URL(string: "\(localTTSBase)/vits-piper-ru_RU-irina-medium.tar.bz2")!),
+            installedSizeBytes: 81146778,
             sentinel: "ru_RU-irina-medium.onnx"
         ),
         ttsArchiveModel(
@@ -317,6 +324,7 @@ enum ModelCatalog {
             engine: .sherpaVits,
             languages: ["ru"],
             file: ModelFile(role: .archive, fileName: "vits-piper-ru_RU-dmitri-medium.tar.bz2", sizeBytes: 67188551, sha256: "c86d0803737de13d441923ff3b3f309482fab8d7af3ec85949942809eb9a3660", downloadURL: URL(string: "\(localTTSBase)/vits-piper-ru_RU-dmitri-medium.tar.bz2")!),
+            installedSizeBytes: 81146850,
             sentinel: "ru_RU-dmitri-medium.onnx"
         ),
         ttsArchiveModel(
@@ -325,6 +333,7 @@ enum ModelCatalog {
             engine: .sherpaVits,
             languages: ["ru"],
             file: ModelFile(role: .archive, fileName: "vits-piper-ru_RU-denis-medium.tar.bz2", sizeBytes: 67190991, sha256: "efa4c18e0b5e32b81d1b6df36b9d312831e5d545200e27848ef926a4cd930300", downloadURL: URL(string: "\(localTTSBase)/vits-piper-ru_RU-denis-medium.tar.bz2")!),
+            installedSizeBytes: 81146848,
             sentinel: "ru_RU-denis-medium.onnx"
         ),
         ttsArchiveModel(
@@ -333,6 +342,7 @@ enum ModelCatalog {
             engine: .sherpaVits,
             languages: ["en"],
             file: ModelFile(role: .archive, fileName: "vits-piper-en_US-lessac-medium.tar.bz2", sizeBytes: 67230653, sha256: "9e3febfacf0abf4270172d2958bcec246032b7e88efc2720840cc80c93de334e", downloadURL: URL(string: "\(localTTSBase)/vits-piper-en_US-lessac-medium.tar.bz2")!),
+            installedSizeBytes: 81147006,
             sentinel: "en_US-lessac-medium.onnx"
         ),
         ttsArchiveModel(
@@ -342,6 +352,7 @@ enum ModelCatalog {
             languages: ["en"],
             file: ModelFile(role: .archive, fileName: "vits-piper-en_US-libritts_r-medium.tar.bz2", sizeBytes: 82038311, sha256: "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", downloadURL: URL(string: "\(localTTSBase)/vits-piper-en_US-libritts_r-medium.tar.bz2")!),
             speakerCount: 904,
+            installedSizeBytes: 96542847,
             sentinel: "en_US-libritts_r-medium.onnx"
         ),
         ttsArchiveModel(
@@ -350,6 +361,7 @@ enum ModelCatalog {
             engine: .sherpaVits,
             languages: ["en"],
             file: ModelFile(role: .archive, fileName: "vits-piper-en_GB-alba-medium.tar.bz2", sizeBytes: 67212349, sha256: "fcd45962906933eec4431d3688f7d74aaac8713c87c6717f91fd3b23463aa1a1", downloadURL: URL(string: "\(localTTSBase)/vits-piper-en_GB-alba-medium.tar.bz2")!),
+            installedSizeBytes: 81199214,
             sentinel: "en_GB-alba-medium.onnx"
         ),
         ttsArchiveModel(
@@ -359,6 +371,7 @@ enum ModelCatalog {
             languages: ["en", "zh"],
             file: ModelFile(role: .archive, fileName: "kokoro-multi-lang-v1_1.tar.bz2", sizeBytes: 364816464, sha256: "a3f4c73d043860e3fd2e5b06f36795eb81de0fc8e8de6df703245edddd87dbad", downloadURL: URL(string: "\(localTTSBase)/kokoro-multi-lang-v1_1.tar.bz2")!),
             speakerCount: 103,
+            installedSizeBytes: 426654376,
             sentinel: "model.onnx"
         )
     ]
@@ -370,22 +383,35 @@ enum ModelCatalog {
         languages: [String],
         file: ModelFile,
         speakerCount: Int = 1,
+        installedSizeBytes: Int64,
         sentinel: String
     ) -> LocalModel {
-        LocalModel(
+        let isKokoro = engine == .sherpaKokoro
+        let limitations = if isKokoro {
+            ["English and Chinese only; Russian is not supported",
+             "Large 427 MB installed footprint", "Speaker picker uses numeric IDs"]
+        } else if speakerCount > 1 {
+            ["English only", "Speaker picker uses numeric IDs", "Medium-quality Piper synthesis"]
+        } else {
+            ["Single speaker", "Only the listed language", "Medium-quality Piper synthesis"]
+        }
+        return LocalModel(
             id: id,
             displayName: displayName,
             engine: engine,
             languages: languages,
             files: [file],
             brief: ModelBrief(
-                summary: "A sherpa-onnx voice that runs completely on this Mac after download.",
-                strengths: ["Offline synthesis", "No speech text leaves this Mac"],
-                limitations: ["Model download required", "Optimised for the listed language"],
+                summary: "\(displayName) runs through sherpa-onnx completely on this Mac after download.",
+                strengths: isKokoro
+                    ? ["103 speakers", "English and Chinese synthesis", "No speech text leaves this Mac"]
+                    : ["Fast CPU synthesis", "Small local footprint", "No speech text leaves this Mac"],
+                limitations: limitations,
                 benchmarks: [],
                 sourceURL: localTTSSource
             ),
             speakerCount: speakerCount,
+            installedSizeBytes: installedSizeBytes,
             archiveSentinel: sentinel
         )
     }

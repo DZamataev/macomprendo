@@ -49,6 +49,9 @@ struct TarArchiveExtractor: ArchiveExtracting {
         guard values.isDirectory == true, values.isSymbolicLink != true else {
             throw ExtractionFailure.invalidLayout
         }
+        guard try !containsSymbolicLink(in: extractedRoot, fileManager: fileManager) else {
+            throw ExtractionFailure.invalidLayout
+        }
 
         let hadDestination = fileManager.fileExists(atPath: destination.path)
         if hadDestination {
@@ -67,6 +70,21 @@ struct TarArchiveExtractor: ArchiveExtracting {
             }
             throw error
         }
+    }
+
+    private func containsSymbolicLink(in root: URL, fileManager: FileManager) throws -> Bool {
+        var pending = [root]
+        while let directory = pending.popLast() {
+            let children = try fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            for child in children {
+                let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                if values.isSymbolicLink == true { return true }
+                if values.isDirectory == true { pending.append(child) }
+            }
+        }
+        return false
     }
 
     private func topLevelRoots(in listing: String) throws -> Set<String> {

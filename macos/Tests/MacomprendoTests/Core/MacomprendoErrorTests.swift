@@ -11,7 +11,6 @@ import Testing
     .providerStreamMalformed,
     .audio("no input device"),
     .audioPlayback("format not supported"),
-    .localSpeech("model could not be loaded"),
     .speechKeyMissing,
     .noSelection,
     .insertFailed,

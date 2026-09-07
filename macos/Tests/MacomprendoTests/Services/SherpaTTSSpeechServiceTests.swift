@@ -66,6 +66,25 @@ import Testing
         #expect(!r.service.isSpeaking)
     }
 
+    @Test func nextChunkGeneratesWhileTheCurrentChunkPlays() async {
+        let r = rig(chunkCharacterLimit: 6)
+        r.player.finishesImmediately = false
+        r.service.speak("One. Two.", settings: settings(r.model))
+
+        for _ in 0..<50 {
+            if r.player.played.count == 1, await r.generator.requests.count == 2 { break }
+            await Task.yield()
+        }
+
+        #expect(r.player.played.count == 1)
+        #expect(await r.generator.requests.map(\.text) == ["One.", "Two."])
+        r.player.finishCurrent()
+        await settle()
+        #expect(r.player.played.count == 2)
+        r.player.finishCurrent()
+        await r.service.drain()
+    }
+
     @Test func speakingStateLastsUntilPlaybackFinishesByItself() async {
         let r = rig(chunkCharacterLimit: 100)
         r.player.finishesImmediately = false
@@ -186,14 +205,14 @@ import Testing
 
     @Test func generatorFailureIsPublishedOnceAndStopsSpeaking() async {
         let r = rig(chunkCharacterLimit: 100)
-        await r.generator.setError(MacomprendoError.localSpeech("generation failed"))
+        await r.generator.setError(MacomprendoError.modelMissing(r.model.id))
         var errors: [Error] = []
         r.service.onError = { errors.append($0) }
 
         r.service.speak("Hello.", settings: settings(r.model))
         await r.service.drain()
 
-        #expect(errors.map { $0 as? MacomprendoError } == [.localSpeech("generation failed")])
+        #expect(errors.map { $0 as? MacomprendoError } == [.modelMissing(r.model.id)])
         #expect(r.player.played.isEmpty)
         #expect(!r.service.isSpeaking)
     }
@@ -211,7 +230,7 @@ import Testing
         #expect(await r.generator.requests.isEmpty)
     }
 
-    @Test func invalidSpeakerFailsBeforeGeneration() async {
+    @Test func stalePersistedSpeakerClampsAtTheGenerationBoundary() async {
         let r = rig(chunkCharacterLimit: 100)
         var errors: [Error] = []
         r.service.onError = { errors.append($0) }
@@ -219,8 +238,27 @@ import Testing
         r.service.speak("Hello.", settings: settings(r.model, speakerID: 1))
         await r.service.drain()
 
-        #expect(errors.first as? MacomprendoError == .localSpeech("the speaker ID is out of range"))
-        #expect(await r.generator.requests.isEmpty)
+        #expect(errors.isEmpty)
+        #expect(await r.generator.requests.first?.configuration.speakerID == 0)
+        #expect(r.player.played.count == 1)
+    }
+
+    @Test func aGenerationErrorWhilePausedClearsThePausedState() async {
+        let r = rig(chunkCharacterLimit: 100)
+        await r.generator.setGated(true)
+        r.service.speak("Hello.", settings: settings(r.model))
+        for _ in 0..<50 {
+            if await !r.generator.requests.isEmpty { break }
+            await Task.yield()
+        }
+        r.service.pause()
+        await r.generator.setError(MacomprendoError.modelMissing(r.model.id))
+        await r.generator.releaseGate()
+
+        await r.service.drain()
+
+        #expect(!r.service.isSpeaking)
+        #expect(!r.service.isPaused)
     }
 }
 

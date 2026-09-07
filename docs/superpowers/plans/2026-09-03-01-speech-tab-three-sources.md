@@ -115,7 +115,7 @@ Change `ModelCatalog`'s stored arrays and helpers to the new type, and replace `
 
 - [ ] **Step 4: Propagate the rename**
 
-Run: `cd /Users/frenzy/dev/macomprendo && grep -rln 'ASREngine\|LocalASRModel' macos/Sources macos/Tests`
+Run: `cd <repo> && grep -rln 'ASREngine\|LocalASRModel' macos/Sources macos/Tests`
 
 For every file listed, replace `ASREngine` with `LocalEngine` and `LocalASRModel` with `LocalModel`. These are type-name-only substitutions — no logic changes. `ResolvedLocalModel.engine` in `ModelManager.swift` becomes `LocalEngine`; `StubModelManager._resolvedEngines` becomes `[String: LocalEngine]`.
 

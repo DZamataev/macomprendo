@@ -83,6 +83,26 @@ import Testing
         #expect(kokoro?.archiveSentinel == "model.onnx")
     }
 
+    @Test func localTTSInstalledSizesAndBriefsDescribeTheActualArchives() throws {
+        let expectedSizes: [String: Int64] = [
+            "vits-piper-ru_RU-ruslan-medium": 81_146_959,
+            "vits-piper-ru_RU-irina-medium": 81_146_778,
+            "vits-piper-ru_RU-dmitri-medium": 81_146_850,
+            "vits-piper-ru_RU-denis-medium": 81_146_848,
+            "vits-piper-en_US-lessac-medium": 81_147_006,
+            "vits-piper-en_US-libritts_r-medium": 96_542_847,
+            "vits-piper-en_GB-alba-medium": 81_199_214,
+            "kokoro-multi-lang-v1_1": 426_654_376
+        ]
+        let models = ModelCatalog.all(kind: .tts)
+
+        for model in models {
+            #expect(model.installedSizeBytes == expectedSizes[model.id])
+            #expect(model.brief.limitations.isEmpty == false)
+        }
+        #expect(Set(models.map(\.brief.summary)).count == models.count)
+    }
+
     @Test func containsExactlyTheThirteenOfferedASRModelsInOrder() {
         #expect(ModelCatalog.all(kind: .asr).map(\.id) == [
             "tiny", "tiny.en", "base", "base.en",

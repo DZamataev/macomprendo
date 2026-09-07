@@ -247,6 +247,17 @@ preference controls recording only; it never records audio.
       English and Chinese text, then switch to a single-speaker Piper voice — Speaker clamps to 0
       and the Piper preview still succeeds.
 
+The production download → checksum → extraction → native generation → WAV path also has an opt-in
+network smoke test (about 67 MB):
+
+```bash
+MACOMPRENDO_RUN_LOCAL_TTS_SMOKE=1 swift test --package-path macos \
+  --filter LocalTTSIntegrationTests.realPiperRoundTrip
+```
+
+It writes `/tmp/macomprendo-local-tts-integration/ruslan-smoke.wav` and is disabled in the default
+suite.
+
 ## Settings ▸ Refine & Summarize
 
 - [ ] Each feature segment shows its own endpoint + model picker; "Reload" repopulates the

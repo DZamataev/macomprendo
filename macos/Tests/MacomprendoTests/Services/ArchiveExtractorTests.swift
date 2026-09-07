@@ -40,6 +40,18 @@ import Testing
         #expect(!fileManager.fileExists(atPath: destination.path))
     }
 
+    @Test func rejectsAnArchiveContainingASymbolicLink() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let archive = try fixture.archiveWithSymbolicLink()
+        let destination = fixture.root.appendingPathComponent("installed", isDirectory: true)
+
+        await #expect(throws: MacomprendoError.modelDownloadFailed("voice")) {
+            try await TarArchiveExtractor().extract(archive: archive, to: destination, modelID: "voice")
+        }
+        #expect(!fileManager.fileExists(atPath: destination.path))
+    }
+
     @Test func successfulExtractionReplacesAnExistingDestination() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -101,6 +113,27 @@ private struct Fixture {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
         process.arguments = ["-cjf", archive.path, "-C", source.path] + roots.keys.sorted()
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw MacomprendoError.modelDownloadFailed("fixture")
+        }
+        return archive
+    }
+
+    func archiveWithSymbolicLink() throws -> URL {
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let modelRoot = source.appendingPathComponent("voice", isDirectory: true)
+        try fileManager.createDirectory(at: modelRoot, withIntermediateDirectories: true)
+        try Data("model".utf8).write(to: modelRoot.appendingPathComponent("model.onnx"))
+        try fileManager.createSymbolicLink(
+            at: modelRoot.appendingPathComponent("escape"),
+            withDestinationURL: URL(fileURLWithPath: "../../outside"))
+
+        let archive = root.appendingPathComponent("fixture.tar.bz2")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        process.arguments = ["-cjf", archive.path, "-C", source.path, "voice"]
         try process.run()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {

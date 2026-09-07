@@ -89,25 +89,34 @@ import Foundation
 
     private func play(chunks: [String], settings: SpeechSettings) async throws {
         let configuration = try await configuration(settings)
-        for chunk in chunks {
+        guard let first = chunks.first else { return }
+        var generated = try await generator.generate(first, configuration: configuration)
+
+        for index in chunks.indices {
             try Task.checkCancellation()
-            let generated = try await generator.generate(chunk, configuration: configuration)
-            try Task.checkCancellation()
-            let wav = WAVEncoder.encode(pcm: generated.samples, sampleRate: generated.sampleRate)
-            try await playAndWait(wav)
+            if index + 1 < chunks.count {
+                async let next = generator.generate(chunks[index + 1], configuration: configuration)
+                try await playGenerated(generated)
+                generated = try await next
+            } else {
+                try await playGenerated(generated)
+            }
         }
+    }
+
+    private func playGenerated(_ generated: LocalSpeechAudio) async throws {
+        try Task.checkCancellation()
+        let wav = WAVEncoder.encode(pcm: generated.samples, sampleRate: generated.sampleRate)
+        try await playAndWait(wav)
     }
 
     private func configuration(_ settings: SpeechSettings) async throws -> LocalTTSConfiguration {
         guard let modelID = settings.localModelID,
               let model = catalog.first(where: { $0.id == modelID && $0.kind == .tts })
         else { throw MacomprendoError.modelMissing(settings.localModelID ?? "Local TTS") }
-        guard settings.localSpeakerID >= 0, settings.localSpeakerID < model.speakerCount else {
-            throw MacomprendoError.localSpeech("the speaker ID is out of range")
-        }
-        guard settings.localSpeed.isFinite, (0.5...2).contains(settings.localSpeed) else {
-            throw MacomprendoError.localSpeech("the speech speed is invalid")
-        }
+        let speakerID = min(max(settings.localSpeakerID, 0), max(0, model.speakerCount - 1))
+        let finiteSpeed = settings.localSpeed.isFinite ? settings.localSpeed : 1
+        let speed = min(max(finiteSpeed, 0.5), 2)
         guard let resolved = await modelManager.resolved(modelID),
               resolved.engine == model.engine,
               let directory = resolved.directory
@@ -117,8 +126,8 @@ import Foundation
             modelID: modelID,
             engine: resolved.engine,
             directory: directory,
-            speakerID: settings.localSpeakerID,
-            speed: settings.localSpeed
+            speakerID: speakerID,
+            speed: speed
         )
     }
 
@@ -132,6 +141,7 @@ import Foundation
 
     private func finish(generation: Int, error: Error?) {
         guard generation == self.generation else { return }
+        isPaused = false
         setSpeaking(false)
         guard let error, !Self.isCancellation(error) else { return }
         player.stop()

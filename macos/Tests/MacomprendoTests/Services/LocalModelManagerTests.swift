@@ -79,6 +79,17 @@ import Testing
         return fractions
     }
 
+    private func waitForState(_ expected: ModelState,
+                              manager: LocalModelManager,
+                              modelID: String) async -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if await manager.state(of: modelID) == expected { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return false
+    }
+
     // MARK: - sha256
 
     @Test func sha256MatchesTheKnownDigestOfHello() throws {
@@ -225,6 +236,10 @@ import Testing
             "A download for this model is already in progress."
         )) {
             for try await _ in manager.download("test") {}
+        }
+        guard case .downloading = await manager.state(of: "test") else {
+            Issue.record("rejecting the duplicate must not clobber the active download state")
+            return
         }
 
         // Let the first download proceed to completion, unaffected by the rejection.
@@ -473,6 +488,39 @@ import Testing
         #expect(await manager.resolved("voice") == nil)
     }
 
+    @Test func aSymbolicLinkSentinelNeverCountsAsDownloaded() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let extracted = directory.appendingPathComponent("voice", isDirectory: true)
+        try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: extracted.appendingPathComponent("model.onnx"),
+            withDestinationURL: URL(fileURLWithPath: "/etc/passwd")
+        )
+        let manager = LocalModelManager(
+            directory: directory, http: StubHTTPClient(), catalog: [makeArchiveModel()]
+        )
+
+        #expect(await manager.state(of: "voice") == .notDownloaded)
+        #expect(await manager.resolved("voice") == nil)
+    }
+
+    @Test func aTamperedCachedArchiveIsRedownloadedBeforeExtraction() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("tampered".utf8).write(to: directory.appendingPathComponent("voice.tar.bz2"))
+        let http = makeHTTP()
+        let extractor = FakeArchiveExtractor(createsSentinel: true)
+        let manager = LocalModelManager(
+            directory: directory, http: http, catalog: [makeArchiveModel()], archiveExtractor: extractor
+        )
+
+        _ = try await collect(manager.download("voice"))
+
+        #expect(http.requests(forPath: Self.modelPath).map(\.method) == ["HEAD", "GET"])
+        #expect(await manager.state(of: "voice") == .downloaded)
+    }
+
     @Test func archiveDownloadExtractsThenResolvesTheModelDirectory() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -532,6 +580,54 @@ import Testing
         #expect(await manager.state(of: "voice") == .downloaded)
     }
 
+    @Test func cancellationDuringArchiveExtractionCannotPublishADownloadedModel() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = Gate()
+        let extractor = FakeArchiveExtractor(createsSentinel: true, gate: gate)
+        let manager = LocalModelManager(directory: directory, http: makeHTTP(),
+                                        catalog: [makeArchiveModel()],
+                                        archiveExtractor: extractor)
+
+        let consumer = Task {
+            for try await _ in manager.download("voice") {}
+        }
+        await extractor.waitUntilCalled()
+        #expect(await extractor.calls.count == 1)
+
+        consumer.cancel()
+        await gate.open()
+        _ = await consumer.result
+
+        #expect(await waitForState(.notDownloaded, manager: manager, modelID: "voice"))
+        #expect(await manager.resolved("voice") == nil)
+        #expect(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("voice.tar.bz2").path))
+    }
+
+    @Test func deleteDuringArchiveExtractionCannotResurrectTheModel() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = Gate()
+        let extractor = FakeArchiveExtractor(createsSentinel: true, gate: gate)
+        let manager = LocalModelManager(directory: directory, http: makeHTTP(),
+                                        catalog: [makeArchiveModel()],
+                                        archiveExtractor: extractor)
+        let consumer = Task {
+            do {
+                for try await _ in manager.download("voice") {}
+            } catch {}
+        }
+        await extractor.waitUntilCalled()
+
+        try await manager.delete("voice")
+        await gate.open()
+        _ = await consumer.result
+
+        #expect(await manager.state(of: "voice") == .notDownloaded)
+        #expect(await manager.resolved("voice") == nil)
+    }
+
     @Test func deleteRemovesArchiveDirectoryFinalArchiveAndPartial() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -554,6 +650,25 @@ import Testing
             atPath: directory.appendingPathComponent("voice.tar.bz2.partial").path
         ))
         #expect(await manager.state(of: "voice") == .notDownloaded)
+    }
+
+    @Test func deleteReportsFilesystemFailureInsteadOfClaimingSuccess() async throws {
+        let directory = makeDirectory()
+        let installed = directory.appendingPathComponent("voice", isDirectory: true)
+        try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
+        try Data().write(to: installed.appendingPathComponent("model.onnx"))
+        let manager = LocalModelManager(directory: directory, http: StubHTTPClient(),
+                                        catalog: [makeArchiveModel()],
+                                        archiveExtractor: FakeArchiveExtractor())
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        await #expect(throws: MacomprendoError.modelDownloadFailed("Could not delete voice.")) {
+            try await manager.delete("voice")
+        }
     }
 
     // MARK: - Multi-file models
@@ -754,14 +869,23 @@ private actor FakeArchiveExtractor: ArchiveExtracting {
     private(set) var calls: [Call] = []
     private var failuresRemaining: Int
     private let createsSentinel: Bool
+    private let gate: Gate?
+    private var callWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(failuresBeforeSuccess: Int = 0, createsSentinel: Bool = false) {
+    init(failuresBeforeSuccess: Int = 0,
+         createsSentinel: Bool = false,
+         gate: Gate? = nil) {
         self.failuresRemaining = failuresBeforeSuccess
         self.createsSentinel = createsSentinel
+        self.gate = gate
     }
 
     func extract(archive: URL, to destination: URL, modelID: String) async throws {
         calls.append(Call(archive: archive, destination: destination, modelID: modelID))
+        let pending = callWaiters
+        callWaiters.removeAll()
+        for continuation in pending { continuation.resume() }
+        if let gate { await gate.wait() }
         if failuresRemaining > 0 {
             failuresRemaining -= 1
             throw MacomprendoError.modelDownloadFailed(modelID)
@@ -769,5 +893,10 @@ private actor FakeArchiveExtractor: ArchiveExtracting {
         guard createsSentinel else { return }
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         try Data().write(to: destination.appendingPathComponent("model.onnx"))
+    }
+
+    func waitUntilCalled() async {
+        if !calls.isEmpty { return }
+        await withCheckedContinuation { callWaiters.append($0) }
     }
 }

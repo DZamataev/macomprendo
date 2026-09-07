@@ -28,7 +28,7 @@ enum SherpaTTSModelPlan: Sendable, Equatable {
         case .sherpaVits:
             let prefix = "vits-piper-"
             guard modelID.hasPrefix(prefix), modelID.count > prefix.count else {
-                throw MacomprendoError.localSpeech("the VITS model ID is invalid")
+                throw MacomprendoError.modelMissing(modelID)
             }
             return .vits(
                 model: directory.appendingPathComponent("\(modelID.dropFirst(prefix.count)).onnx"),
@@ -52,7 +52,7 @@ enum SherpaTTSModelPlan: Sendable, Equatable {
                 ]
             )
         case .whisperCpp, .gigaAM:
-            throw MacomprendoError.localSpeech("the selected model is not a TTS model")
+            throw MacomprendoError.modelMissing(modelID)
         }
     }
 
@@ -125,12 +125,12 @@ actor SherpaSpeechGenerator: LocalSpeechGenerating {
 struct LiveSherpaTTSBackend: SherpaTTSBackend {
     func load(_ identity: SherpaTTSModelIdentity) throws -> any LoadedSherpaTTSModel {
         for url in identity.plan.requiredFiles where !FileManager.default.fileExists(atPath: url.path) {
-            throw MacomprendoError.localSpeech("\(url.lastPathComponent) is missing")
+            throw MacomprendoError.modelMissing(identity.modelID)
         }
 
         let pointer = try makeTTS(for: identity)
         Log.providers.info("Loaded local TTS model \(identity.modelID, privacy: .public)")
-        return LiveLoadedSherpaTTS(handle: SherpaTTSHandleBox(pointer: pointer))
+        return LiveLoadedSherpaTTS(handle: SherpaTTSHandleBox(pointer: pointer), modelID: identity.modelID)
     }
 
     private func makeTTS(for identity: SherpaTTSModelIdentity) throws -> OpaquePointer {
@@ -176,7 +176,7 @@ struct LiveSherpaTTSBackend: SherpaTTSBackend {
         }
 
         guard let created else {
-            throw MacomprendoError.localSpeech("\(identity.modelID) could not be loaded")
+            throw MacomprendoError.modelMissing(identity.modelID)
         }
         return created
     }
@@ -209,17 +209,19 @@ private final class SherpaTTSHandleBox: @unchecked Sendable {
 
 private final class LiveLoadedSherpaTTS: LoadedSherpaTTSModel, @unchecked Sendable {
     private let handle: SherpaTTSHandleBox
+    private let modelID: String
 
-    init(handle: SherpaTTSHandleBox) {
+    init(handle: SherpaTTSHandleBox, modelID: String) {
         self.handle = handle
+        self.modelID = modelID
     }
 
     func generate(text: String, speakerID: Int, speed: Float) throws -> LocalSpeechAudio {
         guard speakerID >= 0, speakerID <= Int(Int32.max) else {
-            throw MacomprendoError.localSpeech("the speaker ID is out of range")
+            throw MacomprendoError.modelMissing(modelID)
         }
         guard speed.isFinite, speed > 0 else {
-            throw MacomprendoError.localSpeech("the speech speed is invalid")
+            throw MacomprendoError.modelMissing(modelID)
         }
 
         var config = SherpaOnnxGenerationConfig()
@@ -230,14 +232,14 @@ private final class LiveLoadedSherpaTTS: LoadedSherpaTTSModel, @unchecked Sendab
             SherpaOnnxOfflineTtsGenerateWithConfig(handle.pointer, $0, &config, nil, nil)
         }
         guard let generated else {
-            throw MacomprendoError.localSpeech("sherpa-onnx generated no audio")
+            throw MacomprendoError.modelMissing(modelID)
         }
         defer { SherpaOnnxDestroyOfflineTtsGeneratedAudio(generated) }
 
         let count = Int(generated.pointee.n)
         let sampleRate = Int(generated.pointee.sample_rate)
         guard count > 0, sampleRate > 0, let samples = generated.pointee.samples else {
-            throw MacomprendoError.localSpeech("sherpa-onnx returned empty audio")
+            throw MacomprendoError.modelMissing(modelID)
         }
         return LocalSpeechAudio(
             samples: Array(UnsafeBufferPointer(start: samples, count: count)),

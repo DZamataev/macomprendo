@@ -80,11 +80,13 @@ import Testing
         #expect(backend.loadedModelIDs == ["vits-piper-en_US-lessac-medium", "kokoro-multi-lang-v1_1"])
     }
 
-    @Test func localSpeechErrorHasDescriptionAndRecovery() {
-        let error = MacomprendoError.localSpeech("model could not be loaded")
-
-        #expect(error.errorDescription?.contains("model could not be loaded") == true)
-        #expect(error.recoverySuggestion?.contains("Models") == true)
+    @Test func anIncompatibleEngineReportsTheExactModelAsMissing() {
+        #expect(throws: MacomprendoError.modelMissing("asr-model")) {
+            try SherpaTTSModelPlan.make(
+                modelID: "asr-model", engine: .whisperCpp,
+                directory: URL(fileURLWithPath: "/tmp/asr-model")
+            )
+        }
     }
 }
 

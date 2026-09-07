@@ -89,7 +89,9 @@ final class ModelsViewModel: ObservableObject {
 
     private func recomputeDiskUsage() {
         diskUsage = rows.reduce(into: Int64(0)) { total, row in
-            if case .downloaded = row.state { total += row.model.totalSizeBytes }
+            if case .downloaded = row.state {
+                total += row.model.installedSizeBytes ?? row.model.totalSizeBytes
+            }
         }
     }
 }
