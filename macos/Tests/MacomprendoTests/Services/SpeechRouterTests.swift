@@ -7,16 +7,22 @@ import Testing
     private struct Rig {
         let router: SpeechRouter
         let system: ScriptedSpeech
+        let local: ScriptedSpeech
         let endpoint: ScriptedSpeech
     }
 
     private func rig() -> Rig {
         let system = ScriptedSpeech()
         system.available = [Voice(id: "en.alex", name: "Alex", language: "en-US", quality: "default")]
+        let local = ScriptedSpeech()
         let endpoint = ScriptedSpeech()
         endpoint.available = [Voice(id: "alloy", name: "alloy", language: "endpoint", quality: "premium")]
-        return Rig(router: SpeechRouter(system: system, endpoint: endpoint),
-                   system: system, endpoint: endpoint)
+        return Rig(
+            router: SpeechRouter(system: system, local: local, endpoint: endpoint),
+            system: system,
+            local: local,
+            endpoint: endpoint
+        )
     }
 
     private func settings(_ source: SpeechSource) -> SpeechSettings {
@@ -27,7 +33,18 @@ import Testing
         let r = rig()
         r.router.speak("hello", settings: settings(.system))
         #expect(r.system.spoken.map(\.text) == ["hello"])
+        #expect(r.local.spoken.isEmpty)
         #expect(r.endpoint.spoken.isEmpty)
+    }
+
+    @Test func speakGoesOnlyToTheLocalBackendWhenSelected() {
+        let r = rig()
+        r.router.speak("hello", settings: settings(.local))
+        #expect(r.local.spoken.map(\.text) == ["hello"])
+        #expect(r.system.spoken.isEmpty)
+        #expect(r.endpoint.spoken.isEmpty)
+        #expect(r.system.stopCount == 1)
+        #expect(r.endpoint.stopCount == 1)
     }
 
     @Test func speakGoesToTheEndpointBackendWhenSelected() {
@@ -35,80 +52,79 @@ import Testing
         r.router.speak("hello", settings: settings(.endpoint))
         #expect(r.endpoint.spoken.map(\.text) == ["hello"])
         #expect(r.system.spoken.isEmpty)
-        // Switching source mid-utterance must not orphan the other backend's audio.
+        #expect(r.local.spoken.isEmpty)
         #expect(r.system.stopCount == 1)
+        #expect(r.local.stopCount == 1)
     }
 
-    @Test func stopStopsBothBackends() {
+    @Test func stopStopsAllBackends() {
         let r = rig()
         r.router.speak("hello", settings: settings(.endpoint))
         r.router.stop()
-        #expect(r.system.stopCount == 2)   // once on speak, once on stop
+        #expect(r.system.stopCount == 2)
+        #expect(r.local.stopCount == 2)
         #expect(r.endpoint.stopCount == 1)
     }
 
-    @Test func isSpeakingIsTrueWhenEitherBackendSpeaks() {
+    @Test func isSpeakingIsTrueWhenAnyBackendSpeaks() {
         let r = rig()
         #expect(!r.router.isSpeaking)
-        r.router.speak("hello", settings: settings(.endpoint))
+        r.router.speak("hello", settings: settings(.local))
         #expect(r.router.isSpeaking)
-        r.endpoint.finish()
+        r.local.finish()
         #expect(!r.router.isSpeaking)
     }
 
-    @Test func stateChangesFromBothBackendsAreRepublished() {
+    @Test func stateChangesFromAllBackendsAreRepublished() {
         let r = rig()
         var changes = 0
         r.router.onStateChange = { changes += 1 }
         r.system.finish()
+        r.local.finish()
         r.endpoint.finish()
-        #expect(changes == 2)
+        #expect(changes == 3)
     }
 
-    @Test func errorsFromBothBackendsAreRepublished() {
+    @Test func errorsFromAllBackendsAreRepublished() {
         let r = rig()
         var errors: [Error] = []
         r.router.onError = { errors.append($0) }
         r.system.failWith(MacomprendoError.audioPlayback("x"))
+        r.local.failWith(MacomprendoError.localSpeech("y"))
         r.endpoint.failWith(MacomprendoError.speechKeyMissing)
-        #expect(errors.count == 2)
+        #expect(errors.count == 3)
         #expect(errors.last as? MacomprendoError == .speechKeyMissing)
     }
 
     @Test func voicesForASourceIgnoreTheCurrentSelection() {
         let r = rig()
         #expect(r.router.voices(for: .system).map(\.id) == ["en.alex"])
+        #expect(r.router.voices(for: .local).isEmpty)
         #expect(r.router.voices(for: .endpoint).map(\.id) == ["alloy"])
-        // A plain backend only knows its own catalog, whatever source is asked for.
         #expect(r.endpoint.voices(for: .system).map(\.id) == ["alloy"])
     }
 
-    @Test func pauseAndResumeGoToTheBackendThatIsSpeaking() {
-        let system = ScriptedSpeech()
-        let endpoint = ScriptedSpeech()
-        let router = SpeechRouter(system: system, endpoint: endpoint)
-        var settings = SpeechSettings()
-        settings.source = .endpoint
+    @Test func pauseAndResumeGoToTheActiveBackend() {
+        let r = rig()
+        r.router.speak("hello", settings: settings(.local))
 
-        router.speak("hello", settings: settings)
-        router.pause()
-        #expect(endpoint.pauseCount == 1)
-        #expect(system.pauseCount == 0)
+        r.router.pause()
+        #expect(r.local.pauseCount == 1)
+        #expect(r.system.pauseCount == 0)
+        #expect(r.endpoint.pauseCount == 0)
+        #expect(r.router.isPaused)
 
-        endpoint.isPaused = true
-        #expect(router.isPaused)
-
-        router.resume()
-        #expect(endpoint.resumeCount == 1)
-        #expect(system.resumeCount == 0)
+        r.router.resume()
+        #expect(r.local.resumeCount == 1)
+        #expect(r.system.resumeCount == 0)
+        #expect(r.endpoint.resumeCount == 0)
     }
 
     @Test func pausingBeforeAnythingIsSpokenTargetsTheSystemBackend() {
-        let system = ScriptedSpeech()
-        let endpoint = ScriptedSpeech()
-        let router = SpeechRouter(system: system, endpoint: endpoint)
-        router.pause()
-        #expect(system.pauseCount == 1)
-        #expect(endpoint.pauseCount == 0)
+        let r = rig()
+        r.router.pause()
+        #expect(r.system.pauseCount == 1)
+        #expect(r.local.pauseCount == 0)
+        #expect(r.endpoint.pauseCount == 0)
     }
 }
