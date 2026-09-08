@@ -49,10 +49,9 @@ Concretely:
 
 - **A probe gate for the speech endpoint.** See § Readiness: an endpoint is ready when it is
   configured. The Test button stays as diagnostics, not as a gate.
-- **Mixed-language voice switching for Local TTS.** Segmentation and the language → voice map
-  remain a System-only feature, stated as such on the Local tab. A Local model reads
-  everything in its own voice; where a model is multi-speaker, the speaker is chosen on its
-  tab.
+- **Mixed-language voice switching for Local TTS was deferred from this delivery.** The
+  follow-up `2026-09-08-local-tts-mixed-language-voices-design.md` supersedes this non-goal
+  with an independent Local language → model-and-speaker map.
 - **Voice cloning, streaming synthesis, per-word highlighting.** Not needed by any flow.
 - **Matcha / Zipvoice / Kitten model families.** Matcha needs a separate vocoder file, which
   is a second concept for one extra English voice. The catalog can grow later.
@@ -374,9 +373,9 @@ field).
 2. **Local TTS** — one row per catalog entry: name, size, languages, the brief, and the
    download / cancel / delete control, with a "Use this voice" shortcut on a downloaded row
    that sets the selector. Below the list, the selected model's own parameters: a speaker
-   picker shown only when `speakerCount > 1`, and a speed slider. A short line states that
-   mixed-language voice switching is a System-voices feature and that a local model reads
-   everything in its own voice.
+   picker shown only when `speakerCount > 1`, and a speed slider. This first delivery stated
+   that one local model read the whole text; the follow-up Local mixed-language specification
+   supersedes that limitation.
 3. **Endpoint** — today's form (base URL, model, voice with the built-in menu, API key, style
    instructions), plus the Test button with its caption and the existing privacy line.
 
