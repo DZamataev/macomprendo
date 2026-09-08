@@ -12,6 +12,13 @@ import SwiftUI
         var id: String { language }
     }
 
+    struct LocalVoiceGroup: Identifiable, Equatable {
+        let language: String
+        let displayName: String
+        let models: [LocalModel]
+        var id: String { language }
+    }
+
     /// A short line per language so a voice can be judged on its own language, not on English.
     /// Anything else is auditioned with the voice's own name, the way System Settings does.
     static let auditionPhrases: [String: String] = [
@@ -117,6 +124,145 @@ import SwiftUI
                            voices: voices.sorted { ($0.name, $0.id) < ($1.name, $1.id) })
             }
             .sorted { ($0.displayName, $0.language) < ($1.displayName, $1.language) }
+    }
+
+    static func localCatalogGroups(_ models: [LocalModel]) -> [LocalVoiceGroup] {
+        var grouped: [String: [LocalModel]] = [:]
+        for model in models where model.kind == .tts {
+            for language in Set((model.languages ?? []).map(baseCode)).sorted() where !language.isEmpty {
+                grouped[language, default: []].append(model)
+            }
+        }
+        return grouped.map { language, models in
+            LocalVoiceGroup(
+                language: language,
+                displayName: Locale.current.localizedString(forLanguageCode: language) ?? language,
+                models: models)
+        }
+        .sorted { ($0.displayName, $0.language) < ($1.displayName, $1.language) }
+    }
+
+    func downloadedLocalGroups(catalog: [LocalModel]) -> [LocalVoiceGroup] {
+        let states = modelStates()
+        let downloaded = catalog.filter {
+            if case .downloaded = states[$0.id] { return true }
+            return false
+        }
+        return Self.localCatalogGroups(downloaded)
+    }
+
+    func localVoice(
+        forLanguage language: String,
+        catalog: [LocalModel]
+    ) -> LocalVoiceSelection? {
+        let language = Self.baseCode(language)
+        guard let selection = holder.settings.speech.localVoiceByLanguage[language],
+              let model = catalog.first(where: { $0.id == selection.modelID }),
+              isDownloaded(model.id),
+              model.languages?.contains(where: { Self.baseCode($0) == language }) == true
+        else { return nil }
+        return LocalVoiceSelection(
+            modelID: selection.modelID,
+            speakerID: Self.clampedSpeaker(selection.speakerID, model: model))
+    }
+
+    func setLocalVoice(
+        _ modelID: String?,
+        forLanguage language: String,
+        catalog: [LocalModel]
+    ) {
+        let language = Self.baseCode(language)
+        objectWillChange.send()
+        guard let modelID else {
+            holder.settings.speech.localVoiceByLanguage.removeValue(forKey: language)
+            return
+        }
+        guard let model = catalog.first(where: { $0.id == modelID }),
+              isDownloaded(modelID),
+              model.languages?.contains(where: { Self.baseCode($0) == language }) == true
+        else { return }
+        let old = holder.settings.speech.localVoiceByLanguage[language]
+        let speaker = old?.modelID == modelID ? old?.speakerID ?? 0 : 0
+        let selection = LocalVoiceSelection(
+            modelID: modelID,
+            speakerID: Self.clampedSpeaker(speaker, model: model))
+        holder.settings.speech.localVoiceByLanguage[language] = selection
+        auditionLocal(selection, language: language, catalog: catalog)
+    }
+
+    func setLocalSpeaker(
+        _ speakerID: Int,
+        forLanguage language: String,
+        catalog: [LocalModel]
+    ) {
+        let language = Self.baseCode(language)
+        guard let selection = localVoice(forLanguage: language, catalog: catalog),
+              let model = catalog.first(where: { $0.id == selection.modelID })
+        else { return }
+        objectWillChange.send()
+        let updated = LocalVoiceSelection(
+            modelID: selection.modelID,
+            speakerID: Self.clampedSpeaker(speakerID, model: model))
+        holder.settings.speech.localVoiceByLanguage[language] = updated
+        auditionLocal(updated, language: language, catalog: catalog)
+    }
+
+    func setDefaultLocalVoice(_ modelID: String, catalog: [LocalModel]) {
+        guard let model = catalog.first(where: { $0.id == modelID }), isDownloaded(modelID) else { return }
+        objectWillChange.send()
+        holder.settings.speech.localModelID = modelID
+        holder.settings.speech.localSpeakerID = Self.clampedSpeaker(
+            holder.settings.speech.localSpeakerID,
+            model: model)
+        auditionLocal(
+            LocalVoiceSelection(
+                modelID: modelID,
+                speakerID: holder.settings.speech.localSpeakerID),
+            language: model.languages?.first ?? "en",
+            catalog: catalog)
+    }
+
+    func setDefaultLocalSpeaker(_ speakerID: Int, catalog: [LocalModel]) {
+        guard let modelID = holder.settings.speech.localModelID,
+              let model = catalog.first(where: { $0.id == modelID }),
+              isDownloaded(modelID)
+        else { return }
+        objectWillChange.send()
+        holder.settings.speech.localSpeakerID = Self.clampedSpeaker(speakerID, model: model)
+        auditionLocal(
+            LocalVoiceSelection(
+                modelID: modelID,
+                speakerID: holder.settings.speech.localSpeakerID),
+            language: model.languages?.first ?? "en",
+            catalog: catalog)
+    }
+
+    private func auditionLocal(
+        _ selection: LocalVoiceSelection,
+        language: String,
+        catalog: [LocalModel]
+    ) {
+        guard holder.settings.speech.auditionOnSelect,
+              catalog.contains(where: { $0.id == selection.modelID })
+        else { return }
+        var settings = holder.settings.speech
+        settings.source = .local
+        settings.localModelID = selection.modelID
+        settings.localSpeakerID = selection.speakerID
+        settings.localSegmentationEnabled = false
+        let language = Self.baseCode(language)
+        speech.speak(
+            Self.auditionPhrases[language] ?? "This is how I sound.",
+            settings: settings)
+    }
+
+    private func isDownloaded(_ modelID: String) -> Bool {
+        if case .downloaded = modelStates()[modelID] { return true }
+        return false
+    }
+
+    private static func clampedSpeaker(_ speakerID: Int, model: LocalModel) -> Int {
+        min(max(speakerID, 0), max(0, model.speakerCount - 1))
     }
 
     func voice(forLanguage language: String) -> String? {

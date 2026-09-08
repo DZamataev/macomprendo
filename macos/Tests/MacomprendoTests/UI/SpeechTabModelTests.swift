@@ -119,6 +119,124 @@ import Testing
         #expect(SpeechTabModel.group([]).isEmpty)
     }
 
+    @Test func localCatalogGroupsModelsByEveryDeclaredLanguageInCatalogOrder() {
+        let local = ModelCatalog.all(kind: .tts)
+        let groups = SpeechTabModel.localCatalogGroups(local)
+        let english = groups.first { $0.language == "en" }!
+        let chinese = groups.first { $0.language == "zh" }!
+
+        #expect(Set(groups.map(\.language)) == ["en", "ru", "zh"])
+        #expect(english.models.map(\.id) == local.filter { $0.languages?.contains("en") == true }.map(\.id))
+        #expect(english.models.contains { $0.id == "kokoro-multi-lang-v1_1" })
+        #expect(chinese.models.map(\.id) == ["kokoro-multi-lang-v1_1"])
+    }
+
+    @Test func localMappingGroupsContainDownloadedModelsOnly() {
+        let local = ModelCatalog.all(kind: .tts)
+        let russian = local.first { $0.id == "vits-piper-ru_RU-ruslan-medium" }!
+        let kokoro = local.first { $0.id == "kokoro-multi-lang-v1_1" }!
+        let tab = model(modelStates: {
+            [russian.id: .downloaded, kokoro.id: .downloaded]
+        })
+
+        let groups = tab.downloadedLocalGroups(catalog: local)
+
+        #expect(groups.flatMap(\.models).allSatisfy { $0.id == russian.id || $0.id == kokoro.id })
+        #expect(groups.first { $0.language == "en" }?.models.map(\.id) == [kokoro.id])
+        #expect(groups.first { $0.language == "zh" }?.models.map(\.id) == [kokoro.id])
+    }
+
+    @Test func staleLocalMappingIsPresentedAsAuto() {
+        let local = ModelCatalog.all(kind: .tts)
+        let kokoro = local.first { $0.id == "kokoro-multi-lang-v1_1" }!
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech.localVoiceByLanguage["en"] = LocalVoiceSelection(
+            modelID: kokoro.id, speakerID: 7)
+        let tab = model(holder: holder, modelStates: { [kokoro.id: .notDownloaded] })
+
+        #expect(tab.localVoice(forLanguage: "en", catalog: local) == nil)
+    }
+
+    @Test func localVoiceMutationsPersistAndClampModelPlusSpeaker() {
+        let local = ModelCatalog.all(kind: .tts)
+        let kokoro = local.first { $0.id == "kokoro-multi-lang-v1_1" }!
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech.auditionOnSelect = false
+        let tab = model(holder: holder, modelStates: { [kokoro.id: .downloaded] })
+
+        tab.setLocalVoice(kokoro.id, forLanguage: "en", catalog: local)
+        tab.setLocalSpeaker(Int.max, forLanguage: "en", catalog: local)
+
+        #expect(holder.settings.speech.localVoiceByLanguage["en"]
+                == LocalVoiceSelection(modelID: kokoro.id, speakerID: kokoro.speakerCount - 1))
+        tab.setLocalVoice(nil, forLanguage: "en", catalog: local)
+        #expect(holder.settings.speech.localVoiceByLanguage["en"] == nil)
+    }
+
+    @Test func oneMultilingualModelKeepsIndependentSpeakersPerLanguage() {
+        let local = ModelCatalog.all(kind: .tts)
+        let kokoro = local.first { $0.id == "kokoro-multi-lang-v1_1" }!
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech.auditionOnSelect = false
+        let tab = model(holder: holder, modelStates: { [kokoro.id: .downloaded] })
+
+        tab.setLocalVoice(kokoro.id, forLanguage: "en", catalog: local)
+        tab.setLocalSpeaker(7, forLanguage: "en", catalog: local)
+        tab.setLocalVoice(kokoro.id, forLanguage: "zh", catalog: local)
+        tab.setLocalSpeaker(42, forLanguage: "zh", catalog: local)
+
+        #expect(tab.localVoice(forLanguage: "en", catalog: local)?.speakerID == 7)
+        #expect(tab.localVoice(forLanguage: "zh", catalog: local)?.speakerID == 42)
+    }
+
+    @Test func selectingALocalMappingAuditionsTemporaryLocalSettings() {
+        let local = ModelCatalog.all(kind: .tts)
+        let russian = local.first { $0.id == "vits-piper-ru_RU-ruslan-medium" }!
+        let kokoro = local.first { $0.id == "kokoro-multi-lang-v1_1" }!
+        let speech = ScriptedSpeech()
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech.source = .endpoint
+        holder.settings.speech.localModelID = russian.id
+        holder.settings.speech.localSpeakerID = 0
+        let tab = model(
+            speech: speech,
+            holder: holder,
+            modelStates: { [russian.id: .downloaded, kokoro.id: .downloaded] })
+
+        tab.setLocalVoice(kokoro.id, forLanguage: "zh", catalog: local)
+        tab.setLocalSpeaker(42, forLanguage: "zh", catalog: local)
+
+        let spoken = speech.spoken.last
+        #expect(spoken?.text == SpeechTabModel.auditionPhrases["zh"])
+        #expect(spoken?.settings.source == .local)
+        #expect(spoken?.settings.localModelID == kokoro.id)
+        #expect(spoken?.settings.localSpeakerID == 42)
+        #expect(spoken?.settings.localSegmentationEnabled == false)
+        #expect(holder.settings.speech.source == .endpoint)
+        #expect(holder.settings.speech.localModelID == russian.id)
+        #expect(holder.settings.speech.localSpeakerID == 0)
+    }
+
+    @Test func selectingTheDefaultLocalVoiceAuditionsWithoutActivatingLocal() {
+        let local = ModelCatalog.all(kind: .tts)
+        let kokoro = local.first { $0.id == "kokoro-multi-lang-v1_1" }!
+        let speech = ScriptedSpeech()
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech.source = .system
+        let tab = model(
+            speech: speech,
+            holder: holder,
+            modelStates: { [kokoro.id: .downloaded] })
+
+        tab.setDefaultLocalVoice(kokoro.id, catalog: local)
+
+        #expect(holder.settings.speech.localModelID == kokoro.id)
+        #expect(holder.settings.speech.source == .system)
+        #expect(speech.spoken.last?.settings.source == .local)
+        #expect(speech.spoken.last?.settings.localModelID == kokoro.id)
+        #expect(speech.spoken.last?.settings.localSegmentationEnabled == false)
+    }
+
     @Test func reloadPublishesTheServiceVoices() {
         let speech = ScriptedSpeech()
         speech.availableBySource = [.system: voices, .endpoint: endpointCatalog]
