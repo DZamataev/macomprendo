@@ -117,7 +117,7 @@ extension SpeechSynthesizing {
     /// A run shorter than this many letters is not sent to the detector: `NLLanguageRecognizer`
     /// guesses on short input, and a wrong guess picks a worse voice than the script-based
     /// fallback would.
-    nonisolated static let minDetectionLetters = 12
+    nonisolated static let minDetectionLetters = MixedLanguageSpeechPlanner.minDetectionLetters
 
     /// What to enqueue for `text`.
     ///
@@ -131,42 +131,31 @@ extension SpeechSynthesizing {
         detector: any LanguageDetecting,
         minRunLength: Int = LanguageSegmenter.defaultMinRunLength
     ) -> [UtterancePlan] {
-        guard !text.isEmpty else { return [] }
-        guard settings.segmentationEnabled else {
-            return [UtterancePlan(text: text, voiceID: settings.voiceID)]
-        }
         let configured = voices.first { $0.id == settings.voiceID }
         let configuredScript = configured.map { LanguageSegmenter.script(ofLanguage: $0.language) } ?? .latin
-        let plan = LanguageSegmenter.runs(in: text, minRunLength: minRunLength).map { run in
-            UtterancePlan(text: run.text,
-                          voiceID: voiceID(for: run, settings: settings, voices: voices,
-                                           configuredScript: configuredScript, detector: detector))
+        return MixedLanguageSpeechPlanner.plan(
+            text: text,
+            enabled: settings.segmentationEnabled,
+            defaultSelection: settings.voiceID,
+            detectLanguages: !settings.voiceByLanguage.isEmpty,
+            detector: detector,
+            minRunLength: minRunLength
+        ) { run, detectedLanguage in
+            voiceID(for: run, detectedLanguage: detectedLanguage, settings: settings,
+                    voices: voices, configuredScript: configuredScript)
         }
-        // Collapse whenever the whole text resolved to *one* voice, not only when that voice is
-        // the configured one: two languages mapped to the same voice would otherwise still be
-        // enqueued as N utterances, and `AVSpeechSynthesizer` puts an audible boundary between
-        // queued utterances.
-        let resolved = Set(plan.map(\.voiceID))
-        guard resolved.count > 1 else {
-            return [UtterancePlan(text: text, voiceID: resolved.first ?? settings.voiceID)]
-        }
-        return plan
+        .map { UtterancePlan(text: $0.text, voiceID: $0.selection) }
     }
 
     /// The user's mapping wins wherever they made one; everything else keeps the automatic
     /// per-script pick that shipped with segmentation.
     nonisolated static func voiceID(for run: TextRun,
+                                    detectedLanguage: String?,
                                     settings: SpeechSettings,
                                     voices: [Voice],
-                                    configuredScript: ScriptClass,
-                                    detector: any LanguageDetecting) -> String? {
+                                    configuredScript: ScriptClass) -> String? {
         guard run.script != .neutral else { return settings.voiceID }
-        // Detection exists only to key `voiceByLanguage`. With no mapping there is nothing to
-        // look up, so the default configuration must not instantiate `NLLanguageRecognizer`
-        // once per run on the main actor and throw the answer away.
-        if !settings.voiceByLanguage.isEmpty,
-           LanguageSegmenter.letterCount(run.text) >= minDetectionLetters,
-           let language = detector.dominantLanguage(of: run.text),
+        if let language = detectedLanguage,
            let mapped = settings.voiceByLanguage[language],
            voices.contains(where: { $0.id == mapped }) {
             return mapped
