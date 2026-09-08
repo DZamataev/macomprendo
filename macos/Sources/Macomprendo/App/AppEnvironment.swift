@@ -57,6 +57,7 @@ struct AppEnvironment {
         let tracker = NSWorkspaceTracker()
         let keySimulator = CGEventKeySimulator()
         let models = LocalModelManager(directory: modelsDirectory, http: http)
+        let languageDetector = NLLanguageDetector()
 
         return AppEnvironment(
             hotkeys: KeyboardShortcutsHotkeyService(),
@@ -81,10 +82,11 @@ struct AppEnvironment {
             keySimulator: keySimulator,
             ax: SystemAXReader(),
             speech: SpeechRouter(
-                system: AVSpeechService(),
+                system: AVSpeechService(detector: languageDetector),
                 local: SherpaTTSService(modelManager: models,
                                         generator: SherpaSpeechGenerator(),
-                                        player: AVAudioPlayerPlayer()),
+                                        player: AVAudioPlayerPlayer(),
+                                        detector: languageDetector),
                 endpoint: EndpointSpeechService(http: http,
                                                 keychain: keychain,
                                                 player: AVAudioPlayerPlayer())),

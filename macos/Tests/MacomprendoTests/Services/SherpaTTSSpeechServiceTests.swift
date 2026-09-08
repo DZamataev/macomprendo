@@ -57,6 +57,32 @@ import Testing
                 directory: URL(fileURLWithPath: "/tmp/\(model.id)", isDirectory: true)))
     }
 
+    private func mixedService(
+        models: [LocalModel],
+        detector: any LanguageDetecting,
+        chunkCharacterLimit: Int = 1_000
+    ) -> (SherpaTTSService, FakeLocalSpeechGenerator, FakeAudioPlayer) {
+        let manager = StubModelManager()
+        for model in models {
+            manager.states[model.id] = .downloaded
+            manager.resolvedEngines[model.id] = model.engine
+            manager.resolvedDirectories[model.id] = URL(
+                fileURLWithPath: "/tmp/\(model.id)", isDirectory: true)
+        }
+        let generator = FakeLocalSpeechGenerator()
+        let player = FakeAudioPlayer()
+        return (
+            SherpaTTSService(
+                modelManager: manager,
+                generator: generator,
+                player: player,
+                detector: detector,
+                catalog: models,
+                chunkCharacterLimit: chunkCharacterLimit),
+            generator,
+            player)
+    }
+
     @Test func anExplicitDownloadedLanguageMappingWinsAndClampsItsSpeaker() throws {
         let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
         let kokoro = ModelCatalog.model(id: "kokoro-multi-lang-v1_1")!
@@ -166,6 +192,96 @@ import Testing
                 text: "Hello.", settings: speech, available: [],
                 detector: ScriptedLanguageDetector())
         }
+    }
+
+    @Test func mixedRussianEnglishRussianTextUsesTheResolvedVoiceForEveryRun() async {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let english = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let first = "Это первое достаточно длинное русское предложение. "
+        let middle = "This is a sufficiently long English sentence. "
+        let last = "Это второе достаточно длинное русское предложение."
+        let detector = ScriptedLanguageDetector([first: "ru", middle: "en", last: "ru"])
+        let (service, generator, _) = mixedService(
+            models: [russian, english], detector: detector)
+        var speech = settings(russian)
+        speech.localSegmentationEnabled = true
+
+        service.speak(first + middle + last, settings: speech)
+        await service.drain()
+
+        let requests = await generator.requests
+        #expect(requests.map(\.text) == [
+            first.trimmingCharacters(in: .whitespaces),
+            middle.trimmingCharacters(in: .whitespaces),
+            last,
+        ])
+        #expect(requests.map(\.configuration.modelID) == [russian.id, english.id, russian.id])
+    }
+
+    @Test func englishChineseEnglishCanReuseKokoroWithDifferentSpeakers() async {
+        let kokoro = ModelCatalog.model(id: "kokoro-multi-lang-v1_1")!
+        let first = "This is the first sufficiently long English sentence. "
+        let chinese = "这是一个足够长的中文句子用于语音测试。 "
+        let last = "This is the second sufficiently long English sentence."
+        let detector = ScriptedLanguageDetector([first: "en", chinese: "zh", last: "en"])
+        let (service, generator, _) = mixedService(models: [kokoro], detector: detector)
+        var speech = settings(kokoro, speakerID: 7)
+        speech.localSegmentationEnabled = true
+        speech.localVoiceByLanguage["zh"] = LocalVoiceSelection(
+            modelID: kokoro.id, speakerID: 42)
+
+        service.speak(first + chinese + last, settings: speech)
+        await service.drain()
+
+        let requests = await generator.requests
+        #expect(requests.map(\.configuration.modelID) == [kokoro.id, kokoro.id, kokoro.id])
+        #expect(requests.map(\.configuration.speakerID) == [7, 42, 7])
+    }
+
+    @Test func nextLanguageRunGeneratesWhileTheCurrentRunPlays() async {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let english = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let first = "Это достаточно длинное русское предложение. "
+        let second = "This is a sufficiently long English sentence."
+        let (service, generator, player) = mixedService(
+            models: [russian, english],
+            detector: ScriptedLanguageDetector([first: "ru", second: "en"]))
+        player.finishesImmediately = false
+        var speech = settings(russian)
+        speech.localSegmentationEnabled = true
+
+        service.speak(first + second, settings: speech)
+        for _ in 0..<100 {
+            if player.played.count == 1, await generator.requests.count == 2 { break }
+            await Task.yield()
+        }
+
+        #expect(player.played.count == 1)
+        #expect(await generator.requests.map(\.configuration.modelID) == [russian.id, english.id])
+        player.finishCurrent()
+        await settle()
+        player.finishCurrent()
+        await service.drain()
+    }
+
+    @Test func aDeletedMappedModelFallsBackWithoutFailingLocalSpeech() async {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let deletedEnglish = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let text = "This is a sufficiently long English sentence."
+        let (service, generator, _) = mixedService(
+            models: [russian], detector: ScriptedLanguageDetector([text: "en"]))
+        var speech = settings(russian)
+        speech.localSegmentationEnabled = true
+        speech.localVoiceByLanguage["en"] = LocalVoiceSelection(
+            modelID: deletedEnglish.id, speakerID: 0)
+        var errors: [Error] = []
+        service.onError = { errors.append($0) }
+
+        service.speak(text, settings: speech)
+        await service.drain()
+
+        #expect(await generator.requests.map(\.configuration.modelID) == [russian.id])
+        #expect(errors.isEmpty)
     }
 
     @Test func chunksGenerateAndPlayCanonicalWAVInOrder() async {

@@ -32,11 +32,13 @@ import Testing
         #expect(runs == [TextRun(text: "123 456 …", script: .neutral)])
     }
 
-    @Test func unknownScriptsAreNeutralAndNeverFlipTheVoice() {
-        #expect(LanguageSegmenter.script(of: "世" as Character) == .neutral)
-        #expect(LanguageSegmenter.script(of: "ع" as Character) == .neutral)
+    @Test func otherAlphabeticScriptsFormTheirOwnDetectableRuns() {
+        #expect(LanguageSegmenter.script(of: "世" as Character) == .other)
+        #expect(LanguageSegmenter.script(of: "ع" as Character) == .other)
         let runs = LanguageSegmenter.runs(in: "Hello 世界 there", minRunLength: 1)
-        #expect(runs == [TextRun(text: "Hello 世界 there", script: .latin)])
+        #expect(runs == [TextRun(text: "Hello ", script: .latin),
+                         TextRun(text: "世界 ", script: .other),
+                         TextRun(text: "there", script: .latin)])
     }
 
     @Test func aShortForeignWordMergesIntoItsNeighbour() {
@@ -138,7 +140,7 @@ import Testing
         #expect(LanguageSegmenter.script(ofLanguage: "uk-UA") == .cyrillic)
         #expect(LanguageSegmenter.script(ofLanguage: "en-US") == .latin)
         #expect(LanguageSegmenter.script(ofLanguage: "fr-CA") == .latin)
-        #expect(LanguageSegmenter.script(ofLanguage: "zh-CN") == .neutral)
+        #expect(LanguageSegmenter.script(ofLanguage: "zh-CN") == .other)
         #expect(LanguageSegmenter.script(ofLanguage: "") == .latin)
     }
 

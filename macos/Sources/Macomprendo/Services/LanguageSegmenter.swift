@@ -1,6 +1,6 @@
 import Foundation
 
-enum ScriptClass: Equatable, Sendable { case cyrillic, latin, neutral }
+enum ScriptClass: Equatable, Sendable { case cyrillic, latin, other, neutral }
 
 struct TextRun: Equatable, Sendable {
     var text: String
@@ -23,10 +23,9 @@ struct TextRun: Equatable, Sendable {
 ///   "(swift 538/538, node 38/38)" is a 17-letter Latin run, not a 39-character one.
 ///
 /// - Note: The Swift standard library exposes no `Unicode.Scalar.Properties.script`, so
-///   classification is `isAlphabetic` plus explicit Unicode block ranges. Anything that is
-///   not a Cyrillic or Latin letter — digits, punctuation, whitespace, Han, Arabic, emoji —
-///   is `.neutral`, attaches to a neighbouring run and is therefore read by that run's voice.
-///   Scripts outside Cyrillic/Latin never crash and never flip the voice on their own.
+///   classification is `isAlphabetic` plus explicit Cyrillic/Latin block ranges. Other
+///   alphabetic scripts form `.other` runs for language detection; digits, punctuation,
+///   whitespace and emoji remain `.neutral` and attach to a neighbouring run.
 enum LanguageSegmenter {
     /// A Latin run with fewer than this many LETTERS merges into a neighboring Cyrillic run,
     /// so a single short foreign word ("Merge" inside a Russian sentence) does not flip the
@@ -67,7 +66,7 @@ enum LanguageSegmenter {
         let value = scalar.value
         if cyrillicRanges.contains(where: { $0.contains(value) }) { return .cyrillic }
         if latinRanges.contains(where: { $0.contains(value) }) { return .latin }
-        return .neutral
+        return .other
     }
 
     /// A grapheme counts as Cyrillic/Latin when any of its scalars does, so a base letter
@@ -84,7 +83,7 @@ enum LanguageSegmenter {
     static func script(ofLanguage language: String) -> ScriptClass {
         let base = language.split(separator: "-").first.map { $0.lowercased() } ?? ""
         if cyrillicLanguageCodes.contains(base) { return .cyrillic }
-        if otherScriptLanguageCodes.contains(base) { return .neutral }
+        if otherScriptLanguageCodes.contains(base) { return .other }
         return .latin
     }
 

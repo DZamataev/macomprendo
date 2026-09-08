@@ -158,8 +158,7 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
         generation += 1
         let generation = self.generation
 
-        let chunks = SpeechTextChunker.chunks(of: text, limit: chunkCharacterLimit)
-        guard !chunks.isEmpty else {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             setSpeaking(false)
             return
         }
@@ -168,7 +167,8 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.play(chunks: chunks, settings: settings)
+                let queue = try await self.queue(text: text, settings: settings)
+                try await self.play(queue)
                 self.finish(generation: generation, error: nil)
             } catch {
                 self.finish(generation: generation, error: error)
@@ -205,15 +205,17 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
     /// Awaits the current speech job. Used by tests and the real-model smoke harness.
     func drain() async { _ = await task?.value }
 
-    private func play(chunks: [String], settings: SpeechSettings) async throws {
-        let configuration = try await configuration(settings)
-        guard let first = chunks.first else { return }
-        var generated = try await generator.generate(first, configuration: configuration)
+    private func play(_ queue: [LocalSpeechQueueItem]) async throws {
+        guard let first = queue.first else { return }
+        var generated = try await generator.generate(
+            first.text, configuration: first.configuration)
 
-        for index in chunks.indices {
+        for index in queue.indices {
             try Task.checkCancellation()
-            if index + 1 < chunks.count {
-                async let next = generator.generate(chunks[index + 1], configuration: configuration)
+            if index + 1 < queue.count {
+                let item = queue[index + 1]
+                async let next = generator.generate(
+                    item.text, configuration: item.configuration)
                 try await playGenerated(generated)
                 generated = try await next
             } else {
@@ -228,25 +230,28 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
         try await playAndWait(wav)
     }
 
-    private func configuration(_ settings: SpeechSettings) async throws -> LocalTTSConfiguration {
-        guard let modelID = settings.localModelID,
-              let model = catalog.first(where: { $0.id == modelID && $0.kind == .tts })
-        else { throw MacomprendoError.modelMissing(settings.localModelID ?? "Local TTS") }
-        let speakerID = min(max(settings.localSpeakerID, 0), max(0, model.speakerCount - 1))
+    private func queue(text: String, settings: SpeechSettings) async throws -> [LocalSpeechQueueItem] {
+        let available = await availableVoices()
+        let plan = try Self.localVoicePlan(
+            text: text, settings: settings, available: available, detector: detector)
         let finiteSpeed = settings.localSpeed.isFinite ? settings.localSpeed : 1
         let speed = min(max(finiteSpeed, 0.5), 2)
-        guard let resolved = await modelManager.resolved(modelID),
-              resolved.engine == model.engine,
-              let directory = resolved.directory
-        else { throw MacomprendoError.modelMissing(modelID) }
+        let byID = Dictionary(uniqueKeysWithValues: available.map { ($0.model.id, $0) })
 
-        return LocalTTSConfiguration(
-            modelID: modelID,
-            engine: resolved.engine,
-            directory: directory,
-            speakerID: speakerID,
-            speed: speed
-        )
+        return try plan.flatMap { run -> [LocalSpeechQueueItem] in
+            guard let voice = byID[run.selection.modelID],
+                  let directory = voice.resolved.directory
+            else { throw MacomprendoError.modelMissing(run.selection.modelID) }
+            let configuration = LocalTTSConfiguration(
+                modelID: voice.model.id,
+                engine: voice.resolved.engine,
+                directory: directory,
+                speakerID: run.selection.speakerID,
+                speed: speed)
+            return SpeechTextChunker.chunks(of: run.text, limit: chunkCharacterLimit).map {
+                LocalSpeechQueueItem(text: $0, configuration: configuration)
+            }
+        }
     }
 
     private func cancelCurrent() {
