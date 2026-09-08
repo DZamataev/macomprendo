@@ -246,6 +246,22 @@ preference controls recording only; it never records audio.
 - [ ] Optional large-model check: download **Kokoro — Multilingual**, choose Speaker 102, preview
       English and Chinese text, then switch to a single-speaker Piper voice — Speaker clamps to 0
       and the Piper preview still succeeds.
+- [ ] Local voices are grouped under localized language headings. Kokoro appears under both
+      English and Chinese; downloading or deleting it updates both rows consistently.
+- [ ] Turn on **Switch voices for mixed-language text** for Local TTS. "Voice per language" shows
+      downloaded voices only; an undownloaded voice never appears in a mapping picker.
+- [ ] Download one Russian Piper voice and one English Piper voice. Keep Russian as the default,
+      map English to the downloaded English voice, and Preview a long Russian → English → Russian
+      passage. All three runs play in order and the first voice returns for the final run.
+- [ ] With Kokoro downloaded, map English and Chinese to Kokoro with two different speakers.
+      Preview a long English → Chinese → English passage: the speaker changes for Chinese and
+      returns for English without loading a different model.
+- [ ] During a mixed Local Preview, Pause and Resume continue the same passage; Stop prevents all
+      remaining runs from playing. A second Speak hotkey press has the same stop behaviour.
+- [ ] Delete a voice used only by a language mapping. The picker reads Auto and Preview selects a
+      compatible downloaded Local voice (or the selected Local default); it never plays System
+      speech. Delete the selected default too: Local becomes Not ready and Preview/⌥S reports the
+      Local error without playing anything.
 
 The production download → checksum → extraction → native generation → WAV path also has an opt-in
 network smoke test (about 67 MB):
@@ -292,8 +308,9 @@ Content ▸ System Voice ▸ Manage Voices…).
 - [ ] Select a Russian sentence containing one English word ("Я купил новый iPhone вчера…")
       and press ⌥S: the whole sentence is read by the Russian voice — the voice does **not**
       flip for the single word.
-- [ ] Select text containing Chinese or Arabic characters mixed into English and press ⌥S:
-      nothing crashes; the foreign characters are read (or skipped) by the surrounding voice.
+- [ ] Select text containing a substantial Chinese or Arabic run mixed into English and press ⌥S:
+      nothing crashes; when a matching installed System voice exists it may switch at that script
+      boundary, otherwise the configured voice remains the safe fallback.
 - [ ] Remove every Russian voice from the system, then repeat the mixed selection: it still
       reads without crashing, using the configured voice throughout.
 

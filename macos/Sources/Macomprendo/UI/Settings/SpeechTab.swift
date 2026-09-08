@@ -500,21 +500,20 @@ struct SpeechTab: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            ForEach(source.ttsModels) { entry in
-                localVoiceRow(entry)
+            ForEach(SpeechTabModel.localCatalogGroups(source.ttsModels)) { group in
+                Text(group.displayName).font(.headline)
+                ForEach(group.models) { entry in
+                    localVoiceRow(entry)
+                }
             }
-
-            Text("A local voice reads everything in its own voice. Switching voices for "
-                 + "mixed-language text is a System voices feature.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
 
         if let selected = source.selectedModel {
             Section("Parameters") {
                 if selected.speakerCount > 1 {
-                    Picker("Speaker", selection: $app.settings.speech.localSpeakerID) {
+                    Picker("Speaker", selection: Binding(
+                        get: { app.settings.speech.localSpeakerID },
+                        set: { model.setDefaultLocalSpeaker($0, catalog: source.ttsModels) })) {
                         ForEach(0..<selected.speakerCount, id: \.self) { id in
                             Text("Speaker \(id)").tag(id)
                         }
@@ -525,6 +524,63 @@ struct SpeechTab: View {
                     Slider(value: $app.settings.speech.localSpeed, in: 0.5...2.0)
                 }
             }
+        }
+
+        Section("Mixed-language text") {
+            Toggle("Switch voices for mixed-language text",
+                   isOn: $app.settings.speech.localSegmentationEnabled)
+            Text("Each language run uses its downloaded local voice. Auto prefers the "
+                 + "selected default when it supports that language, then another "
+                 + "downloaded compatible voice.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if app.settings.speech.localSegmentationEnabled {
+                let groups = model.downloadedLocalGroups(catalog: source.ttsModels)
+                if groups.isEmpty {
+                    Text("Download a local voice to map it to a language.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Voice per language").font(.headline)
+                    ForEach(groups) { group in
+                        localVoiceMappingRow(group)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func localVoiceMappingRow(_ group: SpeechTabModel.LocalVoiceGroup) -> some View {
+        Picker(group.displayName, selection: Binding(
+            get: { model.localVoice(forLanguage: group.language, catalog: source.ttsModels)?.modelID },
+            set: { model.setLocalVoice(
+                $0,
+                forLanguage: group.language,
+                catalog: source.ttsModels)
+            })) {
+                Text("Auto").tag(String?.none)
+                ForEach(group.models) { entry in
+                    Text(entry.displayName).tag(Optional(entry.id))
+                }
+            }
+
+        if let selection = model.localVoice(forLanguage: group.language, catalog: source.ttsModels),
+           let selected = group.models.first(where: { $0.id == selection.modelID }),
+           selected.speakerCount > 1 {
+            Picker("Speaker for \(group.displayName)", selection: Binding(
+                get: { selection.speakerID },
+                set: { model.setLocalSpeaker(
+                    $0,
+                    forLanguage: group.language,
+                    catalog: source.ttsModels)
+                })) {
+                    ForEach(0..<selected.speakerCount, id: \.self) { id in
+                        Text("Speaker \(id)").tag(id)
+                    }
+                }
         }
     }
 
@@ -549,7 +605,9 @@ struct SpeechTab: View {
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 6) {
                     if !chosen, case .downloaded = state {
-                        Button("Use this voice") { source.select(modelID: entry.id) }
+                        Button("Use this voice") {
+                            model.setDefaultLocalVoice(entry.id, catalog: source.ttsModels)
+                        }
                     }
                     localStateView(entry.id, state)
                 }

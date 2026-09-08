@@ -13,7 +13,7 @@ Requires macOS 14 or newer. Universal (Apple silicon and Intel). MIT licensed.
 |---|---|---|
 | **Dictate** | ⌥Space | Records while held (or toggles), transcribes locally, pastes into the frontmost app |
 | **Dictate & Refine** | ⌥⇧Space | Same capture, then a Quick Panel with the original and an LLM-refined version side by side |
-| **Speak selection** | ⌥S | Reads the selected text aloud with a voice you choose; press again to stop |
+| **Speak selection** | ⌥S | Reads selected text with System, offline Local, or endpoint speech; System and Local can switch configured voices by language |
 | **Summarize selection** | ⌥M | Quick Panel with a streamed summary; Copy or Replace the selection |
 | **Refine selection** | unassigned | The refine Quick Panel, applied to the current selection |
 
