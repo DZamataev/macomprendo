@@ -56,6 +56,7 @@ struct AppEnvironment {
         let pasteboard = SystemPasteboard()
         let tracker = NSWorkspaceTracker()
         let keySimulator = CGEventKeySimulator()
+        let models = LocalModelManager(directory: modelsDirectory, http: http)
 
         return AppEnvironment(
             hotkeys: KeyboardShortcutsHotkeyService(),
@@ -66,7 +67,7 @@ struct AppEnvironment {
                                         keySimulator: keySimulator),
             tracker: tracker,
             permissions: SystemPermissions(),
-            models: LocalModelManager(directory: modelsDirectory, http: http),
+            models: models,
             http: http,
             keychain: keychain,
             factory: ProviderFactory(http: http, keychain: keychain),
@@ -81,6 +82,9 @@ struct AppEnvironment {
             ax: SystemAXReader(),
             speech: SpeechRouter(
                 system: AVSpeechService(),
+                local: SherpaTTSService(modelManager: models,
+                                        generator: SherpaSpeechGenerator(),
+                                        player: AVAudioPlayerPlayer()),
                 endpoint: EndpointSpeechService(http: http,
                                                 keychain: keychain,
                                                 player: AVAudioPlayerPlayer())),

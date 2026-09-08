@@ -234,6 +234,29 @@ preference controls recording only; it never records audio.
 - [ ] With Local TTS selected and no voice chosen, ⌥S shows a toast naming the problem and
       speaks nothing.
 - [ ] Preview speaks through the active source, not through the viewed tab.
+- [ ] In Local TTS, download **Piper — Ruslan (Russian)**. Progress advances to 100%, the row
+      stays unavailable while the archive is being verified/extracted, then reads “Downloaded”.
+- [ ] Choose Ruslan, activate Local TTS, enter a Russian preview sentence and click Preview — the
+      sentence is audible. Select different Russian text in TextEdit and press ⌥S — that exact
+      selection is read by the same local voice; press ⌥S again and playback stops immediately.
+- [ ] Disconnect the Mac from the network after Ruslan is downloaded and repeat Preview and ⌥S —
+      both still work. Reconnect when finished.
+- [ ] While Local TTS is active, delete Ruslan and press Preview or ⌥S — a not-downloaded error is
+      shown and System speech does not play. Downloading the same voice again restores Local TTS.
+- [ ] Optional large-model check: download **Kokoro — Multilingual**, choose Speaker 102, preview
+      English and Chinese text, then switch to a single-speaker Piper voice — Speaker clamps to 0
+      and the Piper preview still succeeds.
+
+The production download → checksum → extraction → native generation → WAV path also has an opt-in
+network smoke test (about 67 MB):
+
+```bash
+MACOMPRENDO_RUN_LOCAL_TTS_SMOKE=1 swift test --package-path macos \
+  --filter LocalTTSIntegrationTests.realPiperRoundTrip
+```
+
+It writes `/tmp/macomprendo-local-tts-integration-ruslan-smoke.wav` and is disabled in the default
+suite.
 
 ## Settings ▸ Refine & Summarize
 

@@ -13,6 +13,7 @@ final class StubModelManager: ModelManaging, @unchecked Sendable {
     private var _deleted: [String] = []
     private var _resolvedFiles: [String: [ModelFileRole: URL]] = [:]
     private var _resolvedEngines: [String: LocalEngine] = [:]
+    private var _resolvedDirectories: [String: URL] = [:]
 
     let modelsDirectory = URL(fileURLWithPath: "/tmp/macomprendo-tests/models", isDirectory: true)
 
@@ -41,6 +42,11 @@ final class StubModelManager: ModelManaging, @unchecked Sendable {
         set { lock.withLock { _resolvedEngines = newValue } }
     }
 
+    var resolvedDirectories: [String: URL] {
+        get { lock.withLock { _resolvedDirectories } }
+        set { lock.withLock { _resolvedDirectories = newValue } }
+    }
+
     var deleted: [String] { lock.withLock { _deleted } }
 
     func state(of id: String) async -> ModelState {
@@ -49,8 +55,14 @@ final class StubModelManager: ModelManaging, @unchecked Sendable {
 
     func resolved(_ id: String) async -> ResolvedLocalModel? {
         lock.withLock {
-            guard let files = _resolvedFiles[id] else { return nil }
-            return ResolvedLocalModel(engine: _resolvedEngines[id] ?? .whisperCpp, files: files)
+            let files = _resolvedFiles[id] ?? [:]
+            let directory = _resolvedDirectories[id]
+            guard !files.isEmpty || directory != nil else { return nil }
+            return ResolvedLocalModel(
+                engine: _resolvedEngines[id] ?? .whisperCpp,
+                files: files,
+                directory: directory
+            )
         }
     }
 

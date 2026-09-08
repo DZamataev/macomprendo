@@ -54,9 +54,13 @@ final class SpeechSourceModel: ObservableObject {
     /// Records which local voice is configured. Configuring is not activating: the source
     /// becomes live only through `activate(_:)`.
     func select(modelID: String) {
-        guard catalog.contains(where: { $0.id == modelID }) else { return }
+        guard let model = catalog.first(where: { $0.id == modelID }) else { return }
         objectWillChange.send()
         holder.settings.speech.localModelID = modelID
+        let maximumSpeakerID = max(0, model.speakerCount - 1)
+        holder.settings.speech.localSpeakerID = min(
+            max(0, holder.settings.speech.localSpeakerID),
+            maximumSpeakerID)
     }
 
     // MARK: - Status

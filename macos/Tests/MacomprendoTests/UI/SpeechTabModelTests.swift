@@ -228,6 +228,21 @@ import Testing
         #expect(toaster.messages == ["This voice has not been downloaded yet."])
     }
 
+    @Test func previewThroughAReadyLocalSourceUsesTheSpeechRouterBoundary() {
+        let speech = ScriptedSpeech()
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech.source = .local
+        holder.settings.speech.localModelID = "piper-ru"
+        let toaster = ScriptedToaster()
+        let tab = model(speech: speech, holder: holder, toaster: toaster,
+                        modelStates: { ["piper-ru": .downloaded] })
+
+        tab.preview()
+
+        #expect(speech.spoken.map(\.text) == [SpeechSettings.defaultPreviewText])
+        #expect(toaster.messages.isEmpty)
+    }
+
     @Test func previewThroughAReadySystemSourceStillSpeaksCurrentSettings() {
         let speech = ScriptedSpeech()
         let holder = ScriptedSettingsHolder()

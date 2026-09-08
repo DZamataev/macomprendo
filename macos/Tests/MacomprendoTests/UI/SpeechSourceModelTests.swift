@@ -61,6 +61,18 @@ import Testing
         #expect(tab.activeSource == .system)
     }
 
+    @Test func choosingASingleSpeakerModelClampsAStaleKokoroSpeaker() {
+        var settings = Settings.default
+        settings.speech.localModelID = Self.kokoro.id
+        settings.speech.localSpeakerID = 102
+        let tab = model(settings, catalog: [Self.piper, Self.kokoro])
+
+        tab.select(modelID: Self.piper.id)
+
+        #expect(tab.holder.settings.speech.localModelID == Self.piper.id)
+        #expect(tab.holder.settings.speech.localSpeakerID == 0)
+    }
+
     @Test func anUnknownModelIDIsIgnored() {
         let tab = model(.default, catalog: [Self.piper])
         tab.select(modelID: "not-in-the-catalog")
@@ -69,7 +81,7 @@ import Testing
 
     @Test func theCatalogListsTTSEntriesOnly() {
         let tab = SpeechSourceModel(holder: ScriptedSettingsHolder())
-        // Vacuous until Plan 2 lands the TTS entries; it exists to fail then.
+        #expect(tab.ttsModels.count == 8)
         #expect(tab.ttsModels.allSatisfy { $0.kind == .tts })
     }
 
@@ -109,16 +121,38 @@ import Testing
         #expect(tab.readiness == .notReady(reason: "Downloading… 50%", fix: nil))
     }
 
+    @Test func adoptingADownloadedRowMakesTheSelectedLocalSourceReady() {
+        var settings = Settings.default
+        settings.speech.source = .local
+        settings.speech.localModelID = Self.piper.id
+        let tab = model(settings, catalog: [Self.piper])
+
+        tab.adopt([ModelsViewModel.Row(model: Self.piper, state: .downloaded)])
+
+        #expect(tab.readiness == .ready)
+    }
+
     // MARK: - Fixtures
 
     private static let piper = LocalModel(
         id: "piper-ru",
         displayName: "Piper — Ruslan (Russian)",
-        engine: .whisperCpp,      // replaced by .sherpaVits in Plan 2; kind is what matters here
+        engine: .sherpaVits,
         languages: ["ru"],
         files: [],
         brief: ModelBrief(summary: "", strengths: [], limitations: [], benchmarks: [],
                           sourceURL: URL(string: "https://example.com")!),
         speakerCount: 1,
-        archiveSentinel: nil)
+        archiveSentinel: "ru_RU-ruslan-medium.onnx")
+
+    private static let kokoro = LocalModel(
+        id: "kokoro-multi-lang-v1_1",
+        displayName: "Kokoro — Multilingual",
+        engine: .sherpaKokoro,
+        languages: ["en", "zh"],
+        files: [],
+        brief: ModelBrief(summary: "", strengths: [], limitations: [], benchmarks: [],
+                          sourceURL: URL(string: "https://example.com")!),
+        speakerCount: 103,
+        archiveSentinel: "model.onnx")
 }
