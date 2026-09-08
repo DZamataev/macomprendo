@@ -61,7 +61,7 @@ import Testing
         ])
     }
 
-    @Test func generatorReloadsWhenTheResolvedModelChanges() async throws {
+    @Test func generatorRetainsTwoAlternatingModels() async throws {
         let backend = RecordingSherpaTTSBackend()
         let generator = SherpaSpeechGenerator(backend: backend)
         let first = LocalTTSConfiguration(
@@ -75,9 +75,58 @@ import Testing
 
         _ = try await generator.generate("one", configuration: first)
         _ = try await generator.generate("two", configuration: second)
+        _ = try await generator.generate("three", configuration: first)
 
         #expect(backend.loadCount == 2)
         #expect(backend.loadedModelIDs == ["vits-piper-en_US-lessac-medium", "kokoro-multi-lang-v1_1"])
+    }
+
+    @Test func aCacheHitPromotesTheModelBeforeLRUEviction() async throws {
+        let backend = RecordingSherpaTTSBackend()
+        let generator = SherpaSpeechGenerator(backend: backend, cacheCapacity: 2)
+        let a = configuration("vits-piper-en_US-lessac-medium", directory: "/tmp/a")
+        let b = configuration("vits-piper-ru_RU-ruslan-medium", directory: "/tmp/b")
+        let c = configuration("kokoro-multi-lang-v1_1", engine: .sherpaKokoro, directory: "/tmp/c")
+
+        _ = try await generator.generate("a1", configuration: a)
+        _ = try await generator.generate("b1", configuration: b)
+        _ = try await generator.generate("a2", configuration: a)
+        _ = try await generator.generate("c1", configuration: c)
+        _ = try await generator.generate("b2", configuration: b)
+
+        #expect(backend.loadedModelIDs == [a.modelID, b.modelID, c.modelID, b.modelID])
+    }
+
+    @Test func aFailedLoadDoesNotEvictUsableCachedModels() async throws {
+        let backend = RecordingSherpaTTSBackend()
+        let generator = SherpaSpeechGenerator(backend: backend, cacheCapacity: 2)
+        let a = configuration("vits-piper-en_US-lessac-medium", directory: "/tmp/a")
+        let b = configuration("vits-piper-ru_RU-ruslan-medium", directory: "/tmp/b")
+        let c = configuration("kokoro-multi-lang-v1_1", engine: .sherpaKokoro, directory: "/tmp/c")
+
+        _ = try await generator.generate("a1", configuration: a)
+        _ = try await generator.generate("b1", configuration: b)
+        backend.fail(modelID: c.modelID)
+        await #expect(throws: MacomprendoError.modelMissing(c.modelID)) {
+            try await generator.generate("c1", configuration: c)
+        }
+        _ = try await generator.generate("a2", configuration: a)
+        _ = try await generator.generate("b2", configuration: b)
+
+        #expect(backend.loadedModelIDs == [a.modelID, b.modelID, c.modelID])
+    }
+
+    private func configuration(
+        _ modelID: String,
+        engine: LocalEngine = .sherpaVits,
+        directory: String
+    ) -> LocalTTSConfiguration {
+        LocalTTSConfiguration(
+            modelID: modelID,
+            engine: engine,
+            directory: URL(fileURLWithPath: directory),
+            speakerID: 0,
+            speed: 1)
     }
 
     @Test func anIncompatibleEngineReportsTheExactModelAsMissing() {
@@ -100,13 +149,22 @@ private final class RecordingSherpaTTSBackend: SherpaTTSBackend, @unchecked Send
     private let lock = NSLock()
     private var recordedModelIDs: [String] = []
     private var recordedRequests: [Request] = []
+    private var failingModelIDs: Set<String> = []
 
     var loadCount: Int { lock.withLock { recordedModelIDs.count } }
     var loadedModelIDs: [String] { lock.withLock { recordedModelIDs } }
     var requests: [Request] { lock.withLock { recordedRequests } }
 
+    func fail(modelID: String) {
+        _ = lock.withLock { failingModelIDs.insert(modelID) }
+    }
+
     func load(_ identity: SherpaTTSModelIdentity) throws -> any LoadedSherpaTTSModel {
-        lock.withLock { recordedModelIDs.append(identity.modelID) }
+        let shouldFail = lock.withLock {
+            recordedModelIDs.append(identity.modelID)
+            return failingModelIDs.contains(identity.modelID)
+        }
+        if shouldFail { throw MacomprendoError.modelMissing(identity.modelID) }
         return RecordingLoadedSherpaTTS { [weak self] request in
             self?.lock.withLock { self?.recordedRequests.append(request) }
         }

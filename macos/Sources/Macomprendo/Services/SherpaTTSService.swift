@@ -92,24 +92,33 @@ protocol SherpaTTSBackend: Sendable {
 }
 
 actor SherpaSpeechGenerator: LocalSpeechGenerating {
-    private let backend: any SherpaTTSBackend
-    private var cachedIdentity: SherpaTTSModelIdentity?
-    private var cachedModel: (any LoadedSherpaTTSModel)?
+    private struct CacheEntry: Sendable {
+        let identity: SherpaTTSModelIdentity
+        let model: any LoadedSherpaTTSModel
+    }
 
-    init(backend: any SherpaTTSBackend = LiveSherpaTTSBackend()) {
+    private let backend: any SherpaTTSBackend
+    private let cacheCapacity: Int
+    /// Least recently used first, most recently used last.
+    private var cache: [CacheEntry] = []
+
+    init(backend: any SherpaTTSBackend = LiveSherpaTTSBackend(), cacheCapacity: Int = 2) {
         self.backend = backend
+        self.cacheCapacity = max(1, cacheCapacity)
     }
 
     func generate(_ text: String, configuration: LocalTTSConfiguration) async throws -> LocalSpeechAudio {
         try Task.checkCancellation()
         let identity = try SherpaTTSModelIdentity(configuration: configuration)
         let model: any LoadedSherpaTTSModel
-        if cachedIdentity == identity, let cachedModel {
-            model = cachedModel
+        if let index = cache.firstIndex(where: { $0.identity == identity }) {
+            let entry = cache.remove(at: index)
+            cache.append(entry)
+            model = entry.model
         } else {
             model = try backend.load(identity)
-            cachedIdentity = identity
-            cachedModel = model
+            cache.append(CacheEntry(identity: identity, model: model))
+            if cache.count > cacheCapacity { cache.removeFirst() }
         }
 
         let audio = try model.generate(
