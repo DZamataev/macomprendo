@@ -48,6 +48,126 @@ import Testing
         for _ in 0..<50 { await Task.yield() }
     }
 
+    private func available(_ model: LocalModel) -> AvailableLocalVoice {
+        AvailableLocalVoice(
+            model: model,
+            resolved: ResolvedLocalModel(
+                engine: model.engine,
+                files: [:],
+                directory: URL(fileURLWithPath: "/tmp/\(model.id)", isDirectory: true)))
+    }
+
+    @Test func anExplicitDownloadedLanguageMappingWinsAndClampsItsSpeaker() throws {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let kokoro = ModelCatalog.model(id: "kokoro-multi-lang-v1_1")!
+        var speech = settings(russian)
+        speech.localSegmentationEnabled = true
+        speech.localVoiceByLanguage["en"] = LocalVoiceSelection(
+            modelID: kokoro.id, speakerID: Int.max)
+        let russianText = "Это достаточно длинное русское предложение. "
+        let englishText = "This is a sufficiently long English sentence."
+
+        let plan = try SherpaTTSService.localVoicePlan(
+            text: russianText + englishText,
+            settings: speech,
+            available: [available(russian), available(kokoro)],
+            detector: ScriptedLanguageDetector([russianText: "ru", englishText: "en"]))
+
+        #expect(plan == [
+            PlannedSpeechRun(
+                text: russianText,
+                selection: LocalVoiceSelection(modelID: russian.id, speakerID: 0)),
+            PlannedSpeechRun(
+                text: englishText,
+                selection: LocalVoiceSelection(modelID: kokoro.id,
+                                               speakerID: kokoro.speakerCount - 1)),
+        ])
+    }
+
+    @Test func availabilitySnapshotKeepsOnlyResolvedDirectoriesWithTheExpectedEngine() async {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let english = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let kokoro = ModelCatalog.model(id: "kokoro-multi-lang-v1_1")!
+        let manager = StubModelManager()
+        manager.resolvedDirectories[russian.id] = URL(
+            fileURLWithPath: "/tmp/\(russian.id)", isDirectory: true)
+        manager.resolvedEngines[russian.id] = russian.engine
+        manager.resolvedDirectories[english.id] = URL(
+            fileURLWithPath: "/tmp/\(english.id)", isDirectory: true)
+        manager.resolvedEngines[english.id] = .sherpaKokoro
+        manager.resolvedEngines[kokoro.id] = kokoro.engine
+        let service = SherpaTTSService(
+            modelManager: manager,
+            generator: FakeLocalSpeechGenerator(),
+            player: FakeAudioPlayer(),
+            catalog: [russian, english, kokoro])
+
+        let available = await service.availableVoices()
+
+        #expect(available.map(\.model.id) == [russian.id])
+    }
+
+    @Test func anIncompatibleMappingFallsThroughToStableDownloadedAuto() throws {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let english = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let text = "This is a sufficiently long English sentence."
+        var speech = settings(russian)
+        speech.localSegmentationEnabled = true
+        speech.localVoiceByLanguage["en"] = LocalVoiceSelection(
+            modelID: russian.id, speakerID: 0)
+
+        let plan = try SherpaTTSService.localVoicePlan(
+            text: text,
+            settings: speech,
+            available: [available(russian), available(english)],
+            detector: ScriptedLanguageDetector([text: "en"]))
+
+        #expect(plan.map(\.selection) == [LocalVoiceSelection(modelID: english.id, speakerID: 0)])
+    }
+
+    @Test func aCompatibleDefaultWinsBeforeAnotherDownloadedAutoVoice() throws {
+        let english = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let kokoro = ModelCatalog.model(id: "kokoro-multi-lang-v1_1")!
+        let text = "This is a sufficiently long English sentence."
+        var speech = settings(kokoro, speakerID: 7)
+        speech.localSegmentationEnabled = true
+
+        let plan = try SherpaTTSService.localVoicePlan(
+            text: text,
+            settings: speech,
+            available: [available(english), available(kokoro)],
+            detector: ScriptedLanguageDetector([text: "en"]))
+
+        #expect(plan.map(\.selection) == [LocalVoiceSelection(modelID: kokoro.id, speakerID: 7)])
+    }
+
+    @Test func anUndetectedForeignScriptUsesTheFirstDownloadedCompatibleVoice() throws {
+        let english = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let text = "Это достаточно длинное русское предложение."
+        var speech = settings(english)
+        speech.localSegmentationEnabled = true
+
+        let plan = try SherpaTTSService.localVoicePlan(
+            text: text,
+            settings: speech,
+            available: [available(english), available(russian)],
+            detector: ScriptedLanguageDetector())
+
+        #expect(plan.map(\.selection) == [LocalVoiceSelection(modelID: russian.id, speakerID: 0)])
+    }
+
+    @Test func aMissingDefaultLocalVoiceStillFailsTheWholePlan() {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let speech = settings(russian)
+
+        #expect(throws: MacomprendoError.modelMissing(russian.id)) {
+            try SherpaTTSService.localVoicePlan(
+                text: "Hello.", settings: speech, available: [],
+                detector: ScriptedLanguageDetector())
+        }
+    }
+
     @Test func chunksGenerateAndPlayCanonicalWAVInOrder() async {
         let r = rig()
         r.service.speak("One. Two. Three.", settings: settings(r.model, speed: 1.25))
