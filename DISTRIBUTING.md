@@ -22,7 +22,8 @@ Everything below runs through Node scripts; there are no shell scripts in this r
   The output must contain a line like
   `"Developer ID Application: Denis Zamataev (68QJJA7HK9)"`. Never commit the `.cer`, the
   `.p12` export, or the private key — `npm run audit` refuses any commit that contains them.
-- Optional: `gitleaks` (`brew install gitleaks`) so `npm run audit` also scans for secrets.
+- `gitleaks` (`brew install gitleaks`), required by `npm run audit` to scan both the working
+  tree and Git history for secrets.
 
 ### Still outstanding: model checksums
 
@@ -305,8 +306,8 @@ Refuses any tree containing Xcode user state, `.swiftpm`, `.xcuserstate`, archiv
 notary logs, `.p8`/`.p12`/`.pem`/`.cer`/`.key`/`.mobileprovision` files, non-example `.env`
 files, or a machine-specific `/Users/<name>` path (`/Users/test`, `/Users/example` and
 `/Users/shared` are allowed, for exactly this kind of documentation). It also runs
-`git diff --check` and, when installed, `gitleaks` over both the working tree and the git
-history.
+`git diff --check` and invokes `gitleaks` twice: once over the working tree and once over the
+Git history.
 
 ## Verification the tooling performs
 

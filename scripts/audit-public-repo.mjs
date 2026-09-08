@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Refuse to publish sensitive filenames, machine-specific paths, or whitespace errors.
 import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 import { ROOT } from './lib/paths.mjs';
@@ -109,8 +111,52 @@ async function hasGitleaks(run) {
   return (result.stdout ?? '').trim() !== '';
 }
 
+export async function stageCandidateFiles(files, { root }) {
+  const stagedRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'macomprendo-gitleaks-'));
+  try {
+    for (const file of files) {
+      if (path.isAbsolute(file) || file.split(path.sep).includes('..')) {
+        throw new Error(`Refusing to stage an unsafe candidate path: ${file}`);
+      }
+      const source = path.join(root, file);
+      const destination = path.join(stagedRoot, file);
+      let stats;
+      try {
+        stats = await fs.lstat(source);
+      } catch (error) {
+        if (error?.code === 'ENOENT') continue;
+        throw error;
+      }
+      await fs.mkdir(path.dirname(destination), { recursive: true });
+      if (stats.isSymbolicLink()) {
+        await fs.symlink(await fs.readlink(source), destination);
+      } else if (stats.isFile()) {
+        try {
+          await fs.link(source, destination);
+        } catch (error) {
+          if (error?.code !== 'EXDEV') throw error;
+          await fs.copyFile(source, destination);
+        }
+      }
+    }
+  } catch (error) {
+    await fs.rm(stagedRoot, { recursive: true, force: true });
+    throw error;
+  }
+  return {
+    root: stagedRoot,
+    cleanup: () => fs.rm(stagedRoot, { recursive: true, force: true }),
+  };
+}
+
 export async function main(argv, deps = {}) {
-  const { run = realRun, log = realLog, io = realIO, root = ROOT } = deps;
+  const {
+    run = realRun,
+    log = realLog,
+    io = realIO,
+    root = ROOT,
+    stageCandidateFiles: stageFiles = stageCandidateFiles,
+  } = deps;
 
   try {
     log.step('Listing candidate files');
@@ -174,12 +220,20 @@ export async function main(argv, deps = {}) {
 
     if (await hasGitleaks(run)) {
       log.step('Scanning candidate files with Gitleaks');
-      await run('gitleaks', ['detect', '--source', '.', '--no-git', '--redact', '--no-banner'], { cwd: root });
+      const staged = await stageFiles(files, { root });
+      try {
+        await run('gitleaks', ['detect', '--source', '.', '--no-git', '--redact', '--no-banner'], {
+          cwd: staged.root,
+        });
+      } finally {
+        await staged.cleanup();
+      }
       log.step('Scanning Git history with Gitleaks');
       await run('gitleaks', ['detect', '--source', '.', '--redact', '--no-banner'], { cwd: root });
     } else {
-      log.info('Gitleaks is not installed; filename, path, and diff checks passed. '
+      log.error('Gitleaks is required for the public repository audit. '
         + 'Install it with: brew install gitleaks');
+      return 1;
     }
 
     log.info('Public repository audit passed.');

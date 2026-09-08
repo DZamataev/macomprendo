@@ -11,7 +11,8 @@ shell scripts. Full prose runbook: `DISTRIBUTING.md`. Manual checklist: `docs/SM
 ## Prerequisites
 
 - macOS 14+ with Xcode command-line tools, Node 20+, `npm ci` run once.
-- `xcodegen` if `macos/project.yml` changes; `gh` authenticated (`gh auth login`) for releases.
+- `xcodegen` if `macos/project.yml` changes; `gitleaks` for the mandatory working-tree and Git
+  history scans; `gh` authenticated (`gh auth login`) for releases.
 - A **Developer ID Application** certificate for team `68QJJA7HK9`, in the login keychain with
   its private key — this already exists on the maintainer's machine. Confirm with
   `security find-identity -v -p codesigning`; an *Apple Development* certificate is not enough,
@@ -47,7 +48,7 @@ npm run install-app                                # build + atomic install into
 npm run install-app -- --no-open
 MACOS_INSTALL_DIR="$HOME/Applications" npm run install-app
 
-npm run audit                                      # refuse to publish secrets / machine paths
+npm run audit                                      # repository checks + two Gitleaks scans
 npm run release -- --dry-run patch                 # resolve version, validate changelog, print plan
 npm run release -- --dry-run --notarize patch      # same, with the notarize step in the plan
 npm run release -- patch                           # real release, notes only, with confirmation

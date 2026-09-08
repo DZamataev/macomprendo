@@ -117,7 +117,7 @@ test('findHomePaths allows the sanctioned placeholder homes', () => {
 // real `check: true` (the default) fails a non-zero exit: it rejects with a plain
 // `Error(message)` — no custom properties — which is exactly what `main`'s outer
 // try/catch is written to handle for `git diff --check` and the Gitleaks calls.
-function auditDeps({ files, contents = {}, gitleaks = false, failLines = {} }) {
+function auditDeps({ files, contents = {}, gitleaks = true, failLines = {} }) {
   const table = {
     'git ls-files --cached --others --exclude-standard': { stdout: files.join('\n') },
     'git diff --check': { stdout: '' },
@@ -136,9 +136,26 @@ function auditDeps({ files, contents = {}, gitleaks = false, failLines = {} }) {
   };
   run.calls = calls;
   run.lines = () => calls.map((c) => c.line);
+  const stageCalls = [];
+  let cleaned = false;
+  const stageCandidateFiles = async (candidateFiles) => {
+    stageCalls.push([...candidateFiles]);
+    return {
+      root: '/tmp/macomprendo-gitleaks-candidates',
+      cleanup: async () => { cleaned = true; },
+    };
+  };
+  stageCandidateFiles.calls = stageCalls;
+  stageCandidateFiles.wasCleaned = () => cleaned;
   // root: '' makes the implementation's path.join(root, file) return the bare relative
   // path, which is exactly how makeFakeIO is keyed.
-  return { run, io: makeFakeIO(contents), log: makeFakeLog(), root: '' };
+  return {
+    run,
+    io: makeFakeIO(contents),
+    log: makeFakeLog(),
+    root: '',
+    stageCandidateFiles,
+  };
 }
 
 test('main passes on a clean tree', async () => {
@@ -177,11 +194,34 @@ test('main runs gitleaks when it is installed', async () => {
   assert.ok(deps.run.lines().some((l) => l === 'gitleaks detect --source . --redact --no-banner'));
 });
 
-test('main notes when gitleaks is unavailable but still passes', async () => {
-  const deps = auditDeps({ files: ['README.md'], contents: { 'README.md': 'x' } });
+test('main scans only the candidate-file snapshot and cleans it up', async () => {
+  const deps = auditDeps({
+    files: ['README.md', 'Sources/App.swift'],
+    contents: { 'README.md': 'x', 'Sources/App.swift': 'print("x")' },
+    gitleaks: true,
+  });
+
   const code = await main([], deps);
+
   assert.equal(code, 0);
-  assert.ok(deps.log.lines.some((l) => l.includes('Gitleaks is not installed')));
+  assert.deepEqual(deps.stageCandidateFiles.calls, [['README.md', 'Sources/App.swift']]);
+  const workingTreeScan = deps.run.calls.find(
+    ({ line }) => line === 'gitleaks detect --source . --no-git --redact --no-banner',
+  );
+  assert.equal(workingTreeScan.options.cwd, '/tmp/macomprendo-gitleaks-candidates');
+  assert.equal(deps.stageCandidateFiles.wasCleaned(), true);
+});
+
+test('main refuses publication when gitleaks is unavailable', async () => {
+  const deps = auditDeps({
+    files: ['README.md'],
+    contents: { 'README.md': 'x' },
+    gitleaks: false,
+  });
+  const code = await main([], deps);
+  assert.equal(code, 1);
+  assert.ok(deps.log.lines.some((l) => l.includes('Gitleaks is required')));
+  assert.ok(!deps.log.lines.some((l) => l.includes('Public repository audit passed')));
 });
 
 test('main fails when git diff --check finds trailing whitespace or a conflict marker', async () => {
@@ -215,6 +255,7 @@ test('main fails when Gitleaks finds a secret in the working tree', async () => 
     deps.run.lines().some((l) => l === 'gitleaks detect --source . --redact --no-banner'),
     false,
   );
+  assert.equal(deps.stageCandidateFiles.wasCleaned(), true);
 });
 
 // Distinguishing ENOENT (fine to skip — the file vanished mid-run) from every other read
@@ -276,7 +317,9 @@ test('main tolerates EISDIR from a tracked symlink whose target is a directory',
   };
   const run = async (cmd, args = []) => {
     const line = [cmd, ...args].join(' ');
-    if (cmd === 'which' && args[0] === 'gitleaks') return { stdout: '', stderr: '', code: 1 };
+    if (cmd === 'which' && args[0] === 'gitleaks') {
+      return { stdout: '/usr/local/bin/gitleaks', stderr: '', code: 0 };
+    }
     const hit = table[line];
     return { stdout: hit?.stdout ?? '', stderr: '', code: 0 };
   };
@@ -289,8 +332,11 @@ test('main tolerates EISDIR from a tracked symlink whose target is a directory',
     },
   };
   const log = makeFakeLog();
+  const stageCandidateFiles = async () => ({ root: '/tmp/gitleaks', cleanup: async () => {} });
 
-  const code = await main([], { run, io, log, root: '' });
+  const code = await main([], {
+    run, io, log, root: '', stageCandidateFiles,
+  });
   assert.equal(code, 0);
   assert.ok(log.lines.some((l) => l.includes('Public repository audit passed')));
 });

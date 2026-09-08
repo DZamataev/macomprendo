@@ -8,8 +8,8 @@ description: Use when building, testing, regenerating the Xcode project, or runn
 ## Prerequisites
 
 ```bash
-brew install xcodegen   # 2.46 or newer
-npm ci                  # installs picocolors, writes node_modules/
+brew install xcodegen gitleaks  # project generation + working-tree/history secret scans
+npm ci                         # installs picocolors, writes node_modules/
 ```
 
 Xcode 16 or newer (Swift 6.0). Check with `swift --version`.
@@ -20,6 +20,7 @@ Xcode 16 or newer (Swift 6.0). Check with `swift --version`.
 |---|---|
 | `npm run test:swift` | `swift test --package-path macos` — the authoritative unit-test run |
 | `npm run test:scripts` | `node --test 'scripts/__tests__/**/*.test.mjs'` |
+| `npm run audit` | Repository safety checks plus Gitleaks scans of the working tree and Git history |
 | `swift build --package-path macos` | Compiles the app target; fastest feedback loop |
 | `npm run gen` | Regenerates `macos/Macomprendo.xcodeproj` from `macos/project.yml` |
 | `npm run icon` | Regenerates the placeholder `macos/AppBundle/AppIcon.icns` |
