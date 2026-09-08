@@ -68,6 +68,11 @@ enum SpeechSource: String, Codable, Sendable, CaseIterable, Identifiable {
     }
 }
 
+struct LocalVoiceSelection: Codable, Sendable, Equatable, Hashable {
+    var modelID: String
+    var speakerID: Int
+}
+
 struct SpeechSettings: Codable, Sendable, Equatable {
     /// Any OpenAI-compatible `/v1/audio/speech` server: OpenAI itself, a reseller such as
     /// `https://api.proxyapi.ru/openai`, or a local server on `http://localhost:8000`.
@@ -101,7 +106,8 @@ struct SpeechSettings: Codable, Sendable, Equatable {
     // Which fields belong to which source. Getting this wrong is how a slider ends up doing
     // nothing, so it is written down rather than inferred:
     //   System only:   voiceID, rate, pitch, volume, voiceByLanguage, segmentationEnabled
-    //   Local only:    localModelID, localSpeakerID, localSpeed
+    //   Local only:    localModelID, localSpeakerID, localSpeed, localVoiceByLanguage,
+    //                  localSegmentationEnabled
     //   Endpoint only: endpointBaseURL, endpointModel, endpointVoice, endpointInstructions,
     //                  endpointAPIKeyRef
     //   Shared:        source, previewText, auditionOnSelect
@@ -113,6 +119,9 @@ struct SpeechSettings: Codable, Sendable, Equatable {
     var localSpeakerID: Int
     /// sherpa's `OfflineTts` speed. 1.0 reads at the pace the model was trained on.
     var localSpeed: Float
+    /// Base language code → downloaded local model and speaker. An absent key means Auto.
+    var localVoiceByLanguage: [String: LocalVoiceSelection]
+    var localSegmentationEnabled: Bool
 
     init(voiceID: String? = nil,
          rate: Float = 0.5,
@@ -130,7 +139,9 @@ struct SpeechSettings: Codable, Sendable, Equatable {
          auditionOnSelect: Bool = true,
          localModelID: String? = nil,
          localSpeakerID: Int = 0,
-         localSpeed: Float = 1.0) {
+         localSpeed: Float = 1.0,
+         localVoiceByLanguage: [String: LocalVoiceSelection] = [:],
+         localSegmentationEnabled: Bool = false) {
         self.voiceID = voiceID
         self.rate = rate
         self.pitch = pitch
@@ -148,6 +159,8 @@ struct SpeechSettings: Codable, Sendable, Equatable {
         self.localModelID = localModelID
         self.localSpeakerID = localSpeakerID
         self.localSpeed = localSpeed
+        self.localVoiceByLanguage = localVoiceByLanguage
+        self.localSegmentationEnabled = localSegmentationEnabled
     }
 }
 
@@ -179,6 +192,10 @@ extension SpeechSettings {
         localModelID = try c.decodeIfPresent(String.self, forKey: .localModelID)
         localSpeakerID = try c.decodeIfPresent(Int.self, forKey: .localSpeakerID) ?? d.localSpeakerID
         localSpeed = try c.decodeIfPresent(Float.self, forKey: .localSpeed) ?? d.localSpeed
+        localVoiceByLanguage = try c.decodeIfPresent(
+            [String: LocalVoiceSelection].self, forKey: .localVoiceByLanguage) ?? d.localVoiceByLanguage
+        localSegmentationEnabled = try c.decodeIfPresent(Bool.self, forKey: .localSegmentationEnabled)
+            ?? d.localSegmentationEnabled
     }
 }
 

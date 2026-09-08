@@ -231,6 +231,44 @@ import Testing
     #expect(decoded.schemaVersion == 2)
 }
 
+@Test func localMixedLanguageVoiceSettingsUseIndependentDefaults() {
+    let speech = SpeechSettings()
+
+    #expect(speech.localVoiceByLanguage.isEmpty)
+    #expect(speech.localSegmentationEnabled == false)
+    #expect(speech.segmentationEnabled == true)
+}
+
+@Test func localMixedLanguageVoiceSelectionsRoundTripModelAndSpeaker() throws {
+    var settings = Settings.default
+    settings.speech.localSegmentationEnabled = true
+    settings.speech.localVoiceByLanguage = [
+        "en": LocalVoiceSelection(modelID: "kokoro", speakerID: 11),
+        "zh": LocalVoiceSelection(modelID: "kokoro", speakerID: 42),
+    ]
+
+    let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+
+    #expect(decoded.speech.localSegmentationEnabled)
+    #expect(decoded.speech.localVoiceByLanguage["en"]?.modelID == "kokoro")
+    #expect(decoded.speech.localVoiceByLanguage["en"]?.speakerID == 11)
+    #expect(decoded.speech.localVoiceByLanguage["zh"]?.speakerID == 42)
+}
+
+@Test func speechPayloadWithoutLocalMixedLanguageKeysDecodesIndependentDefaults() throws {
+    let legacy = Data("""
+        {"schemaVersion":2,
+         "speech":{"segmentationEnabled":false,
+                   "voiceByLanguage":{"ru":"ru.milena"}}}
+        """.utf8)
+
+    let settings = try Settings.migrate(legacy)
+
+    #expect(settings.speech.segmentationEnabled == false)
+    #expect(settings.speech.localSegmentationEnabled == false)
+    #expect(settings.speech.localVoiceByLanguage.isEmpty)
+}
+
 @Test func addingTheLocalSourceDoesNotMoveTheSchemaVersion() {
     #expect(Settings.currentSchemaVersion == 2)
 }
