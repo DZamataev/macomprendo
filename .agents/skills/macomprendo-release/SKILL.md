@@ -44,7 +44,8 @@ npm run notarize                                   # universal signed build -> s
 npm run notarize -- --dry-run
 npm run notarize -- --sign "Developer ID Application: Denis Zamataev (68QJJA7HK9)"
 
-npm run install-app                                # build + atomic install into /Applications
+npm run install-app:signed                         # normal maintainer test build; preserves TCC grants
+npm run install-app                                # ad-hoc fallback for contributors without the certificate
 npm run install-app -- --no-open
 MACOS_INSTALL_DIR="$HOME/Applications" npm run install-app
 

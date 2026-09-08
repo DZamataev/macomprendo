@@ -235,7 +235,7 @@ import Testing
     let speech = SpeechSettings()
 
     #expect(speech.localVoiceByLanguage.isEmpty)
-    #expect(speech.localSegmentationEnabled == false)
+    #expect(speech.localSegmentationEnabled == true)
     #expect(speech.segmentationEnabled == true)
 }
 
@@ -265,7 +265,7 @@ import Testing
     let settings = try Settings.migrate(legacy)
 
     #expect(settings.speech.segmentationEnabled == false)
-    #expect(settings.speech.localSegmentationEnabled == false)
+    #expect(settings.speech.localSegmentationEnabled == true)
     #expect(settings.speech.localVoiceByLanguage.isEmpty)
 }
 

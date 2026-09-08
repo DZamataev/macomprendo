@@ -141,7 +141,7 @@ struct SpeechSettings: Codable, Sendable, Equatable {
          localSpeakerID: Int = 0,
          localSpeed: Float = 1.0,
          localVoiceByLanguage: [String: LocalVoiceSelection] = [:],
-         localSegmentationEnabled: Bool = false) {
+         localSegmentationEnabled: Bool = true) {
         self.voiceID = voiceID
         self.rate = rate
         self.pitch = pitch

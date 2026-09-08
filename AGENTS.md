@@ -27,11 +27,13 @@ and summarize go through Ollama or an OpenAI-compatible chat endpoint.
 ```bash
 npm run test:swift     # swift test --package-path macos
 npm run test:scripts   # node --test 'scripts/__tests__/**/*.test.mjs'
+npm run audit          # repository checks + Gitleaks working-tree/history scans
 npm run gen            # xcodegen generate --spec macos/project.yml
 npm run sync-agents    # repair the AGENTS.md / skills symlinks
 npm run sync-icons     # vendor the Phosphor SVGs listed in Resources/Icons/icons.json
 npm run icon           # regenerate the placeholder macos/AppBundle/AppIcon.icns
-npm run reset-permissions  # clear this app's Accessibility/Microphone TCC grants
+npm run install-app:signed  # normal local UI/hardware test build; preserves TCC grants
+npm run reset-permissions   # only when testing first-run permission flows
 swift build --package-path macos
 xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
   -configuration Release -destination 'generic/platform=macOS' \
@@ -96,6 +98,7 @@ Skills live in `.agents/skills/macomprendo-*/SKILL.md`.
 
 - [ ] A failing test existed before the implementation, and now passes.
 - [ ] `npm run test:swift` and `npm run test:scripts` are both green.
+- [ ] `npm run audit` passes, including both Gitleaks scans.
 - [ ] `swift build --package-path macos` produces no new warnings.
 - [ ] New OS-facing code sits behind a protocol and has a fake in `Tests/…/Fakes`.
 - [ ] New user-visible failures are `MacomprendoError` cases with recovery text.

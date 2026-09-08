@@ -75,6 +75,22 @@ import Testing
         #expect(SpeechTabModel.baseCode("EN") == "en")
     }
 
+    @Test func systemLayoutPutsPreviewSwitchAndParametersBeforeVoiceChoices() {
+        #expect(SpeechTabLayout.sections(for: .system) == [
+            .preview, .switchVoices, .parameters, .voices, .languageVoices,
+        ])
+    }
+
+    @Test func localLayoutPutsPreviewSwitchAndParametersBeforeVoiceChoices() {
+        #expect(SpeechTabLayout.sections(for: .local) == [
+            .preview, .switchVoices, .parameters, .voices, .languageVoices,
+        ])
+    }
+
+    @Test func endpointLayoutPutsPreviewBeforeEndpointSettings() {
+        #expect(SpeechTabLayout.sections(for: .endpoint) == [.preview, .endpoint])
+    }
+
     @Test func mappingAVoiceToALanguagePersistsAndClearingRemovesTheKey() {
         let (model, _, holder) = make(voices: catalog)
         model.setVoice("ru.milena", forLanguage: "ru")

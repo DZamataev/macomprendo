@@ -21,6 +21,7 @@ Xcode 16 or newer (Swift 6.0). Check with `swift --version`.
 | `npm run test:swift` | `swift test --package-path macos` — the authoritative unit-test run |
 | `npm run test:scripts` | `node --test 'scripts/__tests__/**/*.test.mjs'` |
 | `npm run audit` | Repository safety checks plus Gitleaks scans of the working tree and Git history |
+| `npm run install-app:signed` | Builds, signs, installs, and opens the normal local test app without invalidating TCC grants |
 | `swift build --package-path macos` | Compiles the app target; fastest feedback loop |
 | `npm run gen` | Regenerates `macos/Macomprendo.xcodeproj` from `macos/project.yml` |
 | `npm run icon` | Regenerates the placeholder `macos/AppBundle/AppIcon.icns` |
@@ -35,15 +36,16 @@ download fails, `swift package resolve --package-path macos` retries it.
 ## Running the app
 
 ```bash
-npm run gen
-xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
-  -configuration Debug -destination 'platform=macOS,arch=arm64' \
-  -derivedDataPath build build
-open build/Build/Products/Debug/Macomprendo.app
+npm run install-app:signed
 ```
 
-The app is `LSUIElement`, so it has no Dock icon and no window: look for the waveform
-in the menu bar. `pkill -f Macomprendo.app` stops it.
+Use this command for every local UI and hardware test that does not test the permission flow
+itself. Its stable Developer ID signature preserves the existing Microphone and Accessibility
+grants across rebuilds. Do not run `npm run reset-permissions` as routine setup. Use it only when
+the test explicitly covers first-run permission prompts, denied access, or grant recovery.
+
+The app is `LSUIElement`, so it has no Dock icon and no window. Look for the waveform in the menu
+bar. Quit it from that menu before replacing the installation by hand.
 
 To reset its state: `defaults delete com.dzamataev.macomprendo`.
 

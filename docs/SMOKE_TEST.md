@@ -4,16 +4,13 @@ Run this checklist on a real Mac before every release, and after any change to t
 hotkey, paste or HUD code. Unit tests cover the logic; this file covers the parts that need hardware,
 TCC permissions and a window server.
 
-**Build under test:** the Xcode Debug build (`⌘R`).
-Reset permissions when you want to rehearse a fresh install — quit the app first, then
-`npm run reset-permissions` (add `--dry-run` to see the commands, `--force` to reset anyway).
+**Build under test:** run `npm run install-app:signed`. Use this build for every manual check that
+does not test the permission flow itself. Its Developer ID signature preserves Microphone and
+Accessibility grants across rebuilds.
 
-> **An ad-hoc build loses its permissions on every rebuild.** macOS records a grant against the
-> app's code identity; ad-hoc signing gives it none, so the grant is tied to that build's code
-> hash and stops applying the moment you rebuild — while System Settings still shows the toggle
-> switched on. The app then reports no accessibility access for a permission that looks granted.
-> Sign with the Developer ID identity (`npm run build -- --sign "Developer ID Application: …"`)
-> when you need permissions to survive a rebuild.
+Do not reset permissions as routine smoke-test setup. Only permission-specific checks should quit
+the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the reset commands or
+`--force` to reset while the app is running.
 
 ## Dictation (hotkey #1)
 
@@ -229,6 +226,12 @@ preference controls recording only; it never records audio.
       localized name; enhanced/premium voices carry a quality badge.
 - [ ] Selecting a voice persists across an app restart.
 - [ ] Settings ▸ Speech: switching sub-tabs leaves the selector and the status block unchanged.
+- [ ] Preview is the first section inside System voices, Local TTS and Endpoint.
+- [ ] System voices and Local TTS show sections in this order after Preview: mixed-language
+      switching, parameters, voice choices, then per-language mappings. Both mixed-language
+      switches are on with fresh settings.
+- [ ] Each language in the System and Local TTS voice choices and mappings has its own visible
+      container. Models and controls from adjacent languages do not run together.
 - [ ] Selecting Endpoint with no saved API key shows "Not ready" and an "Add a key" button that
       opens the Endpoint tab with the key field focused.
 - [ ] With Local TTS selected and no voice chosen, ⌥S shows a toast naming the problem and
@@ -466,7 +469,8 @@ prerequisites, installed in the login keychain.
 
 ### Install and first run
 
-- [ ] `npm run install-app` installs into `/Applications` and relaunches the app.
+- [ ] `npm run install-app:signed` installs into `/Applications` and relaunches the app without
+      invalidating existing TCC grants.
 - [ ] Running it a second time while the app is open quits the running copy and relaunches it.
 - [ ] No `.macomprendo-update.*` directory is left behind in the install directory.
 - [ ] On a fresh user account, onboarding asks for Microphone, then Accessibility, and the

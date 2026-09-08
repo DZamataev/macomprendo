@@ -121,6 +121,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   translated — including a new "Translate & organize" preset.
 
 ### Changed
+- Settings ▸ Speech puts Preview first on every source tab. System and Local TTS put mixed-language
+  switching and playback parameters before voice choices, and show each language in its own group.
+  Mixed-language voice switching now defaults on for both sources.
 - Settings ▸ Speech now has an active-source selector with an explicit readiness status above
   three sub-tabs — System voices, Local TTS and Endpoint — matching Settings ▸ Dictation.
   Moving between sub-tabs no longer changes which source speaks.

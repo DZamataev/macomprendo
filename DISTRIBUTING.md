@@ -104,11 +104,11 @@ shows the toggle switched on, because that list is drawn by bundle id and path. 
 then genuinely untrusted: it cannot read the selection or paste. Two ways out, and the first
 is the real fix:
 
-- Sign with the Developer ID identity — its designated requirement is stable across rebuilds,
-  so the grant survives them: `npm run build -- --sign "Developer ID Application: …"`.
+- Install with `npm run install-app:signed`. Its Developer ID designated requirement stays stable
+  across rebuilds, so the grant survives them.
 - Clear the stale grant and start over: quit the app, run `npm run reset-permissions`, launch,
-  and grant again. Necessary once after switching from ad-hoc to a real identity, since the
-  old record does not match the new one either.
+  and grant again. Do this once after switching from ad-hoc to a real identity, or when testing
+  the permission flow itself. Do not make it part of ordinary local testing.
 
 ### What the build copies into the bundle
 

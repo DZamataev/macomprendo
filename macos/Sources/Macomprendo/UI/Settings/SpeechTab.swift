@@ -306,6 +306,26 @@ import SwiftUI
     }
 }
 
+enum SpeechTabSection: Hashable {
+    case preview
+    case switchVoices
+    case parameters
+    case voices
+    case languageVoices
+    case endpoint
+}
+
+enum SpeechTabLayout {
+    static func sections(for source: SpeechSource) -> [SpeechTabSection] {
+        switch source {
+        case .system, .local:
+            [.preview, .switchVoices, .parameters, .voices, .languageVoices]
+        case .endpoint:
+            [.preview, .endpoint]
+        }
+    }
+}
+
 /// The active-source selector and its status sit at the top; the three sub-tabs below are pure
 /// navigation. Moving between them changes what is on screen and nothing else — only the
 /// selector changes what speaks.
@@ -334,12 +354,9 @@ struct SpeechTab: View {
             .padding([.horizontal, .top])
 
             Form {
-                switch source.viewedTab {
-                case .system: systemSection
-                case .local: localSection
-                case .endpoint: endpointSection
+                ForEach(SpeechTabLayout.sections(for: source.viewedTab), id: \.self) { section in
+                    content(section)
                 }
-                footerSection
             }
             .formStyle(.grouped)
         }
@@ -414,11 +431,68 @@ struct SpeechTab: View {
         Binding(get: { source.activeSource }, set: { source.activate($0) })
     }
 
+    @ViewBuilder
+    private func content(_ section: SpeechTabSection) -> some View {
+        switch section {
+        case .preview:
+            previewSection
+        case .switchVoices:
+            if source.viewedTab == .system { systemSwitchSection } else { localSwitchSection }
+        case .parameters:
+            if source.viewedTab == .system { systemParametersSection } else { localParametersSection }
+        case .voices:
+            if source.viewedTab == .system { systemVoicesSection } else { localVoicesSection }
+        case .languageVoices:
+            if source.viewedTab == .system {
+                systemLanguageVoicesSection
+            } else {
+                localLanguageVoicesSection
+            }
+        case .endpoint:
+            endpointSection
+        }
+    }
+
     // MARK: - System voices
 
-    private var systemSection: some View {
-        Section("System voices") {
-            Text("Default voice").font(.headline)
+    private var systemSwitchSection: some View {
+        Section("Mixed-language text") {
+            Toggle("Switch voices for mixed-language text",
+                   isOn: $app.settings.speech.segmentationEnabled)
+            Text("""
+                Turn this on when one selection contains more than one language. Macomprendo \
+                detects each language run and reads it with that language's mapped voice instead \
+                of using the default voice for the whole selection. Short Latin fragments inside \
+                Cyrillic text stay with the Cyrillic voice, so one borrowed word does not trigger \
+                a voice change.
+                """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var systemParametersSection: some View {
+        Section("Parameters") {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                GridRow {
+                    Text("Rate")
+                    Slider(value: $app.settings.speech.rate, in: 0...1)
+                }
+                GridRow {
+                    Text("Pitch")
+                    Slider(value: $app.settings.speech.pitch, in: 0.5...2.0)
+                }
+                GridRow {
+                    Text("Volume")
+                    Slider(value: $app.settings.speech.volume, in: 0...1)
+                }
+            }
+        }
+    }
+
+    private var systemVoicesSection: some View {
+        Section("Default voice") {
             Text("Used for languages you have not mapped, and for everything when voice "
                  + "switching is off.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -444,73 +518,52 @@ struct SpeechTab: View {
                 }
             }
             .frame(minHeight: 200)
+        }
+    }
 
-            Toggle("Switch voices for mixed-language text",
-                   isOn: $app.settings.speech.segmentationEnabled)
-            Text("""
-                Text is cut into runs of a single script, each run's language is detected, and \
-                the run is read by the voice you mapped to that language. Short Latin fragments \
-                inside Cyrillic text stay on the Cyrillic voice on purpose, so one foreign word \
-                does not flip the voice mid-sentence.
-                """)
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            // The heading is inside the disabled container, not beside it: attached to the
-            // rows alone it stayed at full contrast over a greyed-out list.
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Voice per language").font(.headline)
+    private var systemLanguageVoicesSection: some View {
+        Section("Voice per language") {
+            VStack(alignment: .leading, spacing: 12) {
                 ForEach(model.groups) { group in
-                    Picker(group.displayName, selection: Binding(
-                        get: { model.voice(forLanguage: group.language) },
-                        set: { model.setVoice($0, forLanguage: group.language) })) {
-                            Text("Auto").tag(String?.none)
-                            ForEach(group.voices) { voice in
-                                Text(voice.name).tag(Optional(voice.id))
-                            }
+                    GroupBox {
+                        Picker("Voice", selection: Binding(
+                            get: { model.voice(forLanguage: group.language) },
+                            set: { model.setVoice($0, forLanguage: group.language) })) {
+                                Text("Auto").tag(String?.none)
+                                ForEach(group.voices) { voice in
+                                    Text(voice.name).tag(Optional(voice.id))
+                                }
                         }
+                    } label: {
+                        Text(group.displayName).font(.headline)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .disabled(!app.settings.speech.segmentationEnabled)
-
-            // Rate, pitch and volume are AVSpeechSynthesizer parameters; the endpoint takes
-            // free-form "Style instructions" instead.
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-                GridRow {
-                    Text("Rate")
-                    Slider(value: $app.settings.speech.rate, in: 0...1)
-                }
-                GridRow {
-                    Text("Pitch")
-                    Slider(value: $app.settings.speech.pitch, in: 0.5...2.0)
-                }
-                GridRow {
-                    Text("Volume")
-                    Slider(value: $app.settings.speech.volume, in: 0...1)
-                }
-            }
         }
     }
 
     // MARK: - Local TTS
 
-    /// Sibling catalog, parameter, and mixed-language sections require a view builder.
-    @ViewBuilder
-    private var localSection: some View {
-        Section("Voices") {
-            if source.ttsModels.isEmpty {
-                Text("No local voices are available in this build yet.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(SpeechTabModel.localCatalogGroups(source.ttsModels)) { group in
-                Text(group.displayName).font(.headline)
-                ForEach(group.models) { entry in
-                    localVoiceRow(entry, language: group.language)
-                }
-            }
+    private var localSwitchSection: some View {
+        Section("Mixed-language text") {
+            Toggle("Switch voices for mixed-language text",
+                   isOn: $app.settings.speech.localSegmentationEnabled)
+            Text("""
+                Turn this on when one selection contains more than one language. Macomprendo \
+                detects each language run and switches to a compatible downloaded local voice. \
+                A language mapping overrides automatic selection. Auto uses the default voice \
+                when it supports the language, then another downloaded voice.
+                """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+    }
 
+    @ViewBuilder
+    private var localParametersSection: some View {
         if let selected = source.selectedModel {
             Section("Parameters") {
                 if selected.speakerCount > 1 {
@@ -528,27 +581,56 @@ struct SpeechTab: View {
                 }
             }
         }
+    }
 
-        Section("Mixed-language text") {
-            Toggle("Switch voices for mixed-language text",
-                   isOn: $app.settings.speech.localSegmentationEnabled)
-            Text("Each language run uses its downloaded local voice. Auto prefers the "
-                 + "selected default when it supports that language, then another "
-                 + "downloaded compatible voice.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+    private var localVoicesSection: some View {
+        Section("Voices") {
+            if source.ttsModels.isEmpty {
+                Text("No local voices are available in this build yet.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(SpeechTabModel.localCatalogGroups(source.ttsModels)) { group in
+                        localVoiceGroup(group)
+                    }
+                }
+            }
+        }
+    }
 
+    private func localVoiceGroup(_ group: SpeechTabModel.LocalVoiceGroup) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(group.models) { entry in
+                    localVoiceRow(entry, language: group.language)
+                    if entry.id != group.models.last?.id {
+                        Divider().padding(.vertical, 6)
+                    }
+                }
+            }
+        } label: {
+            Text(group.displayName).font(.headline)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var localLanguageVoicesSection: some View {
+        Section("Voice per language") {
             let groups = model.downloadedLocalGroups(catalog: source.ttsModels)
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 12) {
                 if groups.isEmpty {
                     Text("Download a local voice to map it to a language.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Voice per language").font(.headline)
                     ForEach(groups) { group in
-                        localVoiceMappingRow(group)
+                        GroupBox {
+                            localVoiceMappingRow(group)
+                        } label: {
+                            Text(group.displayName).font(.headline)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
@@ -558,7 +640,7 @@ struct SpeechTab: View {
 
     @ViewBuilder
     private func localVoiceMappingRow(_ group: SpeechTabModel.LocalVoiceGroup) -> some View {
-        Picker(group.displayName, selection: Binding(
+        Picker("Voice", selection: Binding(
             get: { model.localVoice(forLanguage: group.language, catalog: source.ttsModels)?.modelID },
             set: { model.setLocalVoice(
                 $0,
@@ -574,7 +656,7 @@ struct SpeechTab: View {
         if let selection = model.localVoice(forLanguage: group.language, catalog: source.ttsModels),
            let selected = group.models.first(where: { $0.id == selection.modelID }),
            selected.speakerCount > 1 {
-            Picker("Speaker for \(group.displayName)", selection: Binding(
+            Picker("Speaker", selection: Binding(
                 get: { selection.speakerID },
                 set: { model.setLocalSpeaker(
                     $0,
@@ -714,7 +796,7 @@ struct SpeechTab: View {
 
     // MARK: - Preview
 
-    private var footerSection: some View {
+    private var previewSection: some View {
         Section {
             TextField("Preview text", text: $app.settings.speech.previewText, axis: .vertical)
                 .lineLimit(2...4)
