@@ -32,13 +32,26 @@ import Testing
         #expect(runs == [TextRun(text: "123 456 …", script: .neutral)])
     }
 
-    @Test func otherAlphabeticScriptsFormTheirOwnDetectableRuns() {
-        #expect(LanguageSegmenter.script(of: "世" as Character) == .other)
-        #expect(LanguageSegmenter.script(of: "ع" as Character) == .other)
-        let runs = LanguageSegmenter.runs(in: "Hello 世界 there", minRunLength: 1)
-        #expect(runs == [TextRun(text: "Hello ", script: .latin),
-                         TextRun(text: "世界 ", script: .other),
-                         TextRun(text: "there", script: .latin)])
+    @Test func HanCanOptIntoDetectableRunsWithoutChangingDefaultSegmentation() {
+        #expect(LanguageSegmenter.script(of: "世" as Character) == .neutral)
+        #expect(LanguageSegmenter.script(of: "世" as Character, separateHan: true) == .han)
+        #expect(LanguageSegmenter.script(of: "ع" as Character, separateHan: true) == .neutral)
+
+        let defaultRuns = LanguageSegmenter.runs(in: "Hello 世界 there", minRunLength: 1)
+        #expect(defaultRuns == [TextRun(text: "Hello 世界 there", script: .latin)])
+
+        let localRuns = LanguageSegmenter.runs(
+            in: "Hello 世界 there", minRunLength: 1, separateHan: true)
+        #expect(localRuns == [TextRun(text: "Hello ", script: .latin),
+                              TextRun(text: "世界 ", script: .han),
+                              TextRun(text: "there", script: .latin)])
+    }
+
+    @Test func aShortLatinRunDoesNotMergeIntoAHanRun() {
+        let runs = LanguageSegmenter.runs(in: "世界Hi中国", separateHan: true)
+        #expect(runs == [TextRun(text: "世界", script: .han),
+                         TextRun(text: "Hi", script: .latin),
+                         TextRun(text: "中国", script: .han)])
     }
 
     @Test func aShortForeignWordMergesIntoItsNeighbour() {
@@ -140,7 +153,8 @@ import Testing
         #expect(LanguageSegmenter.script(ofLanguage: "uk-UA") == .cyrillic)
         #expect(LanguageSegmenter.script(ofLanguage: "en-US") == .latin)
         #expect(LanguageSegmenter.script(ofLanguage: "fr-CA") == .latin)
-        #expect(LanguageSegmenter.script(ofLanguage: "zh-CN") == .other)
+        #expect(LanguageSegmenter.script(ofLanguage: "zh-CN") == .neutral)
+        #expect(LanguageSegmenter.script(ofLanguage: "zh-CN", separateHan: true) == .han)
         #expect(LanguageSegmenter.script(ofLanguage: "") == .latin)
     }
 

@@ -25,9 +25,11 @@ import Testing
 }
 
 @Suite struct LetterCountTests {
-    @Test func countsOnlyCyrillicAndLatinLetters() {
+    @Test func countsOnlyScriptsSeparatedByThePlannerMode() {
         #expect(LanguageSegmenter.letterCount("(swift 538/538, node 38/38)") == 9)
         #expect(LanguageSegmenter.letterCount("Привет, мир!") == 9)
+        #expect(LanguageSegmenter.letterCount("中文") == 0)
+        #expect(LanguageSegmenter.letterCount("中文", separateHan: true) == 2)
         #expect(LanguageSegmenter.letterCount("123 …") == 0)
     }
 }

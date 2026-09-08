@@ -82,16 +82,17 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
             enabled: settings.localSegmentationEnabled,
             defaultSelection: defaultSelection,
             detectLanguages: true,
-            detector: detector
-        ) { run, detectedLanguage in
-            localVoiceSelection(
-                for: run,
-                detectedLanguage: detectedLanguage,
-                settings: settings,
-                available: usable,
-                defaultVoice: defaultVoice,
-                defaultSelection: defaultSelection)
-        }
+            detector: detector,
+            separateHan: true,
+            resolve: { run, detectedLanguage in
+                localVoiceSelection(
+                    for: run,
+                    detectedLanguage: detectedLanguage,
+                    settings: settings,
+                    available: usable,
+                    defaultVoice: defaultVoice,
+                    defaultSelection: defaultSelection)
+            })
     }
 
     private nonisolated static func localVoiceSelection(
@@ -144,7 +145,7 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
     private nonisolated static func supports(_ script: ScriptClass, model: LocalModel) -> Bool {
         guard script != .neutral else { return false }
         return model.languages?.contains {
-            LanguageSegmenter.script(ofLanguage: baseLanguage($0)) == script
+            LanguageSegmenter.script(ofLanguage: $0, separateHan: true) == script
         } == true
     }
 
@@ -168,7 +169,7 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
             guard let self else { return }
             do {
                 let queue = try await self.queue(text: text, settings: settings)
-                try await self.play(queue)
+                try await self.play(queue, generation: generation)
                 self.finish(generation: generation, error: nil)
             } catch {
                 self.finish(generation: generation, error: error)
@@ -205,7 +206,7 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
     /// Awaits the current speech job. Used by tests and the real-model smoke harness.
     func drain() async { _ = await task?.value }
 
-    private func play(_ queue: [LocalSpeechQueueItem]) async throws {
+    private func play(_ queue: [LocalSpeechQueueItem], generation: Int) async throws {
         guard let first = queue.first else { return }
         var generated = try await generator.generate(
             first.text, configuration: first.configuration)
@@ -216,18 +217,18 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
                 let item = queue[index + 1]
                 async let next = generator.generate(
                     item.text, configuration: item.configuration)
-                try await playGenerated(generated)
+                try await playGenerated(generated, generation: generation)
                 generated = try await next
             } else {
-                try await playGenerated(generated)
+                try await playGenerated(generated, generation: generation)
             }
         }
     }
 
-    private func playGenerated(_ generated: LocalSpeechAudio) async throws {
+    private func playGenerated(_ generated: LocalSpeechAudio, generation: Int) async throws {
         try Task.checkCancellation()
         let wav = WAVEncoder.encode(pcm: generated.samples, sampleRate: generated.sampleRate)
-        try await playAndWait(wav)
+        try await playAndWait(wav, generation: generation)
     }
 
     private func queue(text: String, settings: SpeechSettings) async throws -> [LocalSpeechQueueItem] {
@@ -277,7 +278,7 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
         onStateChange?()
     }
 
-    private func playAndWait(_ audio: Data) async throws {
+    private func playAndWait(_ audio: Data, generation: Int) async throws {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 playback = continuation
@@ -290,10 +291,15 @@ struct LocalSpeechQueueItem: Sendable, Equatable {
             }
         } onCancel: {
             Task { @MainActor [weak self] in
-                self?.player.stop()
-                self?.resumePlayback(throwing: CancellationError())
+                self?.cancelPlayback(for: generation)
             }
         }
+    }
+
+    func cancelPlayback(for generation: Int) {
+        guard generation == self.generation else { return }
+        player.stop()
+        resumePlayback(throwing: CancellationError())
     }
 
     private func resumePlayback(throwing error: Error?) {

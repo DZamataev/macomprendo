@@ -207,7 +207,11 @@ import SwiftUI
         auditionLocal(updated, language: language, catalog: catalog)
     }
 
-    func setDefaultLocalVoice(_ modelID: String, catalog: [LocalModel]) {
+    func setDefaultLocalVoice(
+        _ modelID: String,
+        auditionLanguage: String? = nil,
+        catalog: [LocalModel]
+    ) {
         guard let model = catalog.first(where: { $0.id == modelID }), isDownloaded(modelID) else { return }
         objectWillChange.send()
         holder.settings.speech.localModelID = modelID
@@ -218,7 +222,7 @@ import SwiftUI
             LocalVoiceSelection(
                 modelID: modelID,
                 speakerID: holder.settings.speech.localSpeakerID),
-            language: model.languages?.first ?? "en",
+            language: auditionLanguage ?? model.languages?.first ?? "en",
             catalog: catalog)
     }
 
@@ -490,8 +494,7 @@ struct SpeechTab: View {
 
     // MARK: - Local TTS
 
-    /// Two sibling `Section`s — one for the catalog, one for a selected voice's parameters —
-    /// which only compiles as a view body with `@ViewBuilder`.
+    /// Sibling catalog, parameter, and mixed-language sections require a view builder.
     @ViewBuilder
     private var localSection: some View {
         Section("Voices") {
@@ -503,7 +506,7 @@ struct SpeechTab: View {
             ForEach(SpeechTabModel.localCatalogGroups(source.ttsModels)) { group in
                 Text(group.displayName).font(.headline)
                 ForEach(group.models) { entry in
-                    localVoiceRow(entry)
+                    localVoiceRow(entry, language: group.language)
                 }
             }
         }
@@ -536,8 +539,8 @@ struct SpeechTab: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if app.settings.speech.localSegmentationEnabled {
-                let groups = model.downloadedLocalGroups(catalog: source.ttsModels)
+            let groups = model.downloadedLocalGroups(catalog: source.ttsModels)
+            VStack(alignment: .leading, spacing: 8) {
                 if groups.isEmpty {
                     Text("Download a local voice to map it to a language.")
                         .font(.callout)
@@ -549,6 +552,7 @@ struct SpeechTab: View {
                     }
                 }
             }
+            .disabled(!app.settings.speech.localSegmentationEnabled)
         }
     }
 
@@ -585,7 +589,7 @@ struct SpeechTab: View {
     }
 
     @ViewBuilder
-    private func localVoiceRow(_ entry: LocalModel) -> some View {
+    private func localVoiceRow(_ entry: LocalModel, language: String) -> some View {
         let state = models.rows.first { $0.id == entry.id }?.state
         let chosen = app.settings.speech.localModelID == entry.id
 
@@ -606,7 +610,10 @@ struct SpeechTab: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     if !chosen, case .downloaded = state {
                         Button("Use this voice") {
-                            model.setDefaultLocalVoice(entry.id, catalog: source.ttsModels)
+                            model.setDefaultLocalVoice(
+                                entry.id,
+                                auditionLanguage: language,
+                                catalog: source.ttsModels)
                         }
                     }
                     localStateView(entry.id, state)

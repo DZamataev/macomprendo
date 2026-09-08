@@ -4,6 +4,15 @@ import Testing
 
 @MainActor
 @Suite struct SpeechTabModelTests {
+    @MainActor
+    private final class ModelStatesBox {
+        var value: [String: ModelState]
+
+        init(_ value: [String: ModelState]) {
+            self.value = value
+        }
+    }
+
     private let voices = [
         Voice(id: "v.fr", name: "Amélie", language: "fr-FR", quality: "premium"),
         Voice(id: "v.en2", name: "Alex", language: "en-US", quality: "default"),
@@ -146,6 +155,31 @@ import Testing
         #expect(groups.first { $0.language == "zh" }?.models.map(\.id) == [kokoro.id])
     }
 
+    @Test func deletingAndRedownloadingAMultilingualModelRefreshesEveryGroupAndMapping() {
+        let local = ModelCatalog.all(kind: .tts)
+        let kokoro = local.first { $0.id == "kokoro-multi-lang-v1_1" }!
+        let states = ModelStatesBox([kokoro.id: .downloaded])
+        let holder = ScriptedSettingsHolder()
+        holder.settings.speech.localVoiceByLanguage["zh"] = LocalVoiceSelection(
+            modelID: kokoro.id,
+            speakerID: 42)
+        let tab = model(holder: holder, modelStates: { states.value })
+
+        #expect(tab.downloadedLocalGroups(catalog: local)
+            .flatMap(\.models).count(where: { $0.id == kokoro.id }) == 2)
+        #expect(tab.localVoice(forLanguage: "zh", catalog: local)?.speakerID == 42)
+
+        states.value[kokoro.id] = .notDownloaded
+        #expect(tab.downloadedLocalGroups(catalog: local)
+            .flatMap(\.models).allSatisfy { $0.id != kokoro.id })
+        #expect(tab.localVoice(forLanguage: "zh", catalog: local) == nil)
+
+        states.value[kokoro.id] = .downloaded
+        #expect(tab.downloadedLocalGroups(catalog: local)
+            .flatMap(\.models).count(where: { $0.id == kokoro.id }) == 2)
+        #expect(tab.localVoice(forLanguage: "zh", catalog: local)?.speakerID == 42)
+    }
+
     @Test func staleLocalMappingIsPresentedAsAuto() {
         let local = ModelCatalog.all(kind: .tts)
         let kokoro = local.first { $0.id == "kokoro-multi-lang-v1_1" }!
@@ -228,10 +262,11 @@ import Testing
             holder: holder,
             modelStates: { [kokoro.id: .downloaded] })
 
-        tab.setDefaultLocalVoice(kokoro.id, catalog: local)
+        tab.setDefaultLocalVoice(kokoro.id, auditionLanguage: "zh", catalog: local)
 
         #expect(holder.settings.speech.localModelID == kokoro.id)
         #expect(holder.settings.speech.source == .system)
+        #expect(speech.spoken.last?.text == SpeechTabModel.auditionPhrases["zh"])
         #expect(speech.spoken.last?.settings.source == .local)
         #expect(speech.spoken.last?.settings.localModelID == kokoro.id)
         #expect(speech.spoken.last?.settings.localSegmentationEnabled == false)

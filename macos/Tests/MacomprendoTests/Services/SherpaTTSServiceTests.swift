@@ -116,6 +116,22 @@ import Testing
         #expect(backend.loadedModelIDs == [a.modelID, b.modelID, c.modelID])
     }
 
+    @Test func evictionReleasesTheNativeModelHandleImmediately() async throws {
+        let backend = RecordingSherpaTTSBackend()
+        let generator = SherpaSpeechGenerator(backend: backend, cacheCapacity: 2)
+        let a = configuration("vits-piper-en_US-lessac-medium", directory: "/tmp/a")
+        let b = configuration("vits-piper-ru_RU-ruslan-medium", directory: "/tmp/b")
+        let c = configuration(
+            "kokoro-multi-lang-v1_1", engine: .sherpaKokoro, directory: "/tmp/c")
+
+        _ = try await generator.generate("a", configuration: a)
+        _ = try await generator.generate("b", configuration: b)
+        #expect(backend.releasedModelIDs.isEmpty)
+        _ = try await generator.generate("c", configuration: c)
+
+        #expect(backend.releasedModelIDs == [a.modelID])
+    }
+
     private func configuration(
         _ modelID: String,
         engine: LocalEngine = .sherpaVits,
@@ -148,11 +164,13 @@ private final class RecordingSherpaTTSBackend: SherpaTTSBackend, @unchecked Send
 
     private let lock = NSLock()
     private var recordedModelIDs: [String] = []
+    private var recordedReleasedModelIDs: [String] = []
     private var recordedRequests: [Request] = []
     private var failingModelIDs: Set<String> = []
 
     var loadCount: Int { lock.withLock { recordedModelIDs.count } }
     var loadedModelIDs: [String] { lock.withLock { recordedModelIDs } }
+    var releasedModelIDs: [String] { lock.withLock { recordedReleasedModelIDs } }
     var requests: [Request] { lock.withLock { recordedRequests } }
 
     func fail(modelID: String) {
@@ -165,17 +183,30 @@ private final class RecordingSherpaTTSBackend: SherpaTTSBackend, @unchecked Send
             return failingModelIDs.contains(identity.modelID)
         }
         if shouldFail { throw MacomprendoError.modelMissing(identity.modelID) }
-        return RecordingLoadedSherpaTTS { [weak self] request in
-            self?.lock.withLock { self?.recordedRequests.append(request) }
-        }
+        return RecordingLoadedSherpaTTS(
+            record: { [weak self] request in
+                self?.lock.withLock { self?.recordedRequests.append(request) }
+            },
+            onDeinit: { [weak self] in
+                self?.lock.withLock { self?.recordedReleasedModelIDs.append(identity.modelID) }
+            })
     }
 }
 
 private final class RecordingLoadedSherpaTTS: LoadedSherpaTTSModel, @unchecked Sendable {
     private let record: (RecordingSherpaTTSBackend.Request) -> Void
+    private let onDeinit: () -> Void
 
-    init(record: @escaping (RecordingSherpaTTSBackend.Request) -> Void) {
+    init(
+        record: @escaping (RecordingSherpaTTSBackend.Request) -> Void,
+        onDeinit: @escaping () -> Void
+    ) {
         self.record = record
+        self.onDeinit = onDeinit
+    }
+
+    deinit {
+        onDeinit()
     }
 
     func generate(text: String, speakerID: Int, speed: Float) throws -> LocalSpeechAudio {

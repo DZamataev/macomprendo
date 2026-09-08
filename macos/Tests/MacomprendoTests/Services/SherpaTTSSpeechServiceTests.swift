@@ -183,6 +183,21 @@ import Testing
         #expect(plan.map(\.selection) == [LocalVoiceSelection(modelID: russian.id, speakerID: 0)])
     }
 
+    @Test func anUndetectedArabicRunDoesNotTreatChineseAsScriptCompatible() throws {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let kokoro = ModelCatalog.model(id: "kokoro-multi-lang-v1_1")!
+        var speech = settings(russian)
+        speech.localSegmentationEnabled = true
+
+        let plan = try SherpaTTSService.localVoicePlan(
+            text: "مرحبا",
+            settings: speech,
+            available: [available(kokoro), available(russian)],
+            detector: ScriptedLanguageDetector())
+
+        #expect(plan.map(\.selection) == [LocalVoiceSelection(modelID: russian.id, speakerID: 0)])
+    }
+
     @Test func aMissingDefaultLocalVoiceStillFailsTheWholePlan() {
         let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
         let speech = settings(russian)
@@ -260,6 +275,84 @@ import Testing
         #expect(await generator.requests.map(\.configuration.modelID) == [russian.id, english.id])
         player.finishCurrent()
         await settle()
+        player.finishCurrent()
+        await service.drain()
+    }
+
+    @Test func mixedLanguagePlanningHappensBeforePerRunChunking() async throws {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let english = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let first = "Это первое длинное предложение. Это второе длинное предложение. "
+        let second = "This is the first long sentence. This is the second long sentence."
+        let (service, generator, _) = mixedService(
+            models: [russian, english],
+            detector: ScriptedLanguageDetector([first: "ru", second: "en"]),
+            chunkCharacterLimit: 24)
+        var speech = settings(russian)
+        speech.localSegmentationEnabled = true
+
+        service.speak(first + second, settings: speech)
+        await service.drain()
+
+        let modelIDs = await generator.requests.map(\.configuration.modelID)
+        let firstEnglish = try #require(modelIDs.firstIndex(of: english.id))
+        #expect(firstEnglish > 0)
+        #expect(modelIDs[..<firstEnglish].allSatisfy { $0 == russian.id })
+        #expect(modelIDs[firstEnglish...].allSatisfy { $0 == english.id })
+    }
+
+    @Test func stopDropsAPrefetchedSecondLanguageRun() async {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let english = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let first = "Это достаточно длинное русское предложение. "
+        let second = "This is a sufficiently long English sentence."
+        let (service, generator, player) = mixedService(
+            models: [russian, english],
+            detector: ScriptedLanguageDetector([first: "ru", second: "en"]))
+        player.finishesImmediately = false
+        var speech = settings(russian)
+        speech.localSegmentationEnabled = true
+
+        service.speak(first + second, settings: speech)
+        for _ in 0..<100 {
+            if player.played.count == 1, await generator.requests.count == 2 { break }
+            await Task.yield()
+        }
+        service.stop()
+        await service.drain()
+        player.finishCurrent()
+        await settle()
+
+        #expect(await generator.requests.count == 2)
+        #expect(player.played.count == 1)
+        #expect(!service.isSpeaking)
+    }
+
+    @Test func pauseHoldsAPrefetchedSecondLanguageRunUntilResume() async {
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let english = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let first = "Это достаточно длинное русское предложение. "
+        let second = "This is a sufficiently long English sentence."
+        let (service, generator, player) = mixedService(
+            models: [russian, english],
+            detector: ScriptedLanguageDetector([first: "ru", second: "en"]))
+        player.finishesImmediately = false
+        var speech = settings(russian)
+        speech.localSegmentationEnabled = true
+
+        service.speak(first + second, settings: speech)
+        for _ in 0..<100 {
+            if player.played.count == 1, await generator.requests.count == 2 { break }
+            await Task.yield()
+        }
+        service.pause()
+        player.finishCurrent()
+        await settle()
+        #expect(player.played.count == 1)
+
+        service.resume()
+        for _ in 0..<100 where player.played.count < 2 { await Task.yield() }
+        #expect(player.played.count == 2)
         player.finishCurrent()
         await service.drain()
     }
@@ -437,6 +530,31 @@ import Testing
         r.player.finishCurrent()
         await r.service.drain()
         #expect(!r.service.isSpeaking)
+    }
+
+    @Test func lateCancellationCleanupCannotStopSupersedingPlayback() async {
+        let r = rig(chunkCharacterLimit: 100)
+        r.player.finishesImmediately = false
+        r.service.speak("First.", settings: settings(r.model))
+        for _ in 0..<50 {
+            if r.player.played.count == 1 { break }
+            await Task.yield()
+        }
+
+        r.service.speak("Second.", settings: settings(r.model))
+        for _ in 0..<100 {
+            if r.player.played.count == 2 { break }
+            await Task.yield()
+        }
+        let stopsBeforeLateCleanup = r.player.stopCount
+
+        r.service.cancelPlayback(for: 1)
+
+        #expect(r.player.stopCount == stopsBeforeLateCleanup)
+        #expect(r.player.isPlaying)
+        #expect(r.service.isSpeaking)
+        r.player.finishCurrent()
+        await r.service.drain()
     }
 
     @Test func generatorFailureIsPublishedOnceAndStopsSpeaking() async {

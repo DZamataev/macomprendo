@@ -249,6 +249,20 @@ import Testing
         #expect(plan.map(\.voiceID) == ["ru.milena.enhanced", "en.alex"])
     }
 
+    @Test func HanRemainsAttachedToTheConfiguredSystemVoice() {
+        let chinese = "这是一个相当长的中文句子。 "
+        let text = "This is a substantial English opening. " + chinese + "English continues."
+        var speech = settings("en.alex")
+        speech.voiceByLanguage["zh"] = "zh.tingting"
+        let plan = AVSpeechService.utterancePlan(
+            text: text,
+            settings: speech,
+            voices: voices,
+            detector: ScriptedLanguageDetector([chinese: "zh"]))
+
+        #expect(plan == [UtterancePlan(text: text, voiceID: "en.alex")])
+    }
+
     @Test func emptyTextProducesNoUtterances() {
         #expect(AVSpeechService.utterancePlan(text: "", settings: settings("en.alex"),
                                               voices: voices,

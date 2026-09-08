@@ -15,14 +15,19 @@ enum MixedLanguageSpeechPlanner {
         detectLanguages: Bool,
         detector: any LanguageDetecting,
         minRunLength: Int = LanguageSegmenter.defaultMinRunLength,
+        separateHan: Bool = false,
         resolve: (TextRun, String?) -> Selection
     ) -> [PlannedSpeechRun<Selection>] {
         guard !text.isEmpty else { return [] }
         guard enabled else {
             return [PlannedSpeechRun(text: text, selection: defaultSelection)]
         }
-        let resolved = LanguageSegmenter.runs(in: text, minRunLength: minRunLength).map { run in
-            let language = detectLanguages && LanguageSegmenter.letterCount(run.text) >= minDetectionLetters
+        let resolved = LanguageSegmenter.runs(
+            in: text,
+            minRunLength: minRunLength,
+            separateHan: separateHan).map { run in
+            let language = detectLanguages
+                && LanguageSegmenter.letterCount(run.text, separateHan: separateHan) >= minDetectionLetters
                 ? detector.dominantLanguage(of: run.text)
                 : nil
             return PlannedSpeechRun(text: run.text, selection: resolve(run, language))

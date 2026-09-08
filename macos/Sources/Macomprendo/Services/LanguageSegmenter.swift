@@ -1,6 +1,6 @@
 import Foundation
 
-enum ScriptClass: Equatable, Sendable { case cyrillic, latin, other, neutral }
+enum ScriptClass: Equatable, Sendable { case cyrillic, latin, han, neutral }
 
 struct TextRun: Equatable, Sendable {
     var text: String
@@ -23,9 +23,9 @@ struct TextRun: Equatable, Sendable {
 ///   "(swift 538/538, node 38/38)" is a 17-letter Latin run, not a 39-character one.
 ///
 /// - Note: The Swift standard library exposes no `Unicode.Scalar.Properties.script`, so
-///   classification is `isAlphabetic` plus explicit Cyrillic/Latin block ranges. Other
-///   alphabetic scripts form `.other` runs for language detection; digits, punctuation,
-///   whitespace and emoji remain `.neutral` and attach to a neighbouring run.
+///   classification uses explicit block ranges. Han can be separated by Local speech without
+///   changing the shipped System segmentation; other scripts, digits, punctuation, whitespace,
+///   and emoji remain `.neutral` and attach to a neighbouring run.
 enum LanguageSegmenter {
     /// A Latin run with fewer than this many LETTERS merges into a neighboring Cyrillic run,
     /// so a single short foreign word ("Merge" inside a Russian sentence) does not flip the
@@ -40,7 +40,7 @@ enum LanguageSegmenter {
 
     /// Base language codes written in neither Cyrillic nor Latin. Voices for these languages
     /// are never picked as a fallback for a Latin run.
-    static let otherScriptLanguageCodes: Set<String> = [
+    static let nonLatinLanguageCodes: Set<String> = [
         "am", "ar", "bn", "el", "fa", "gu", "he", "hi", "hy", "iw", "ja", "ka", "km", "kn",
         "ko", "lo", "ml", "mr", "my", "ne", "pa", "si", "ta", "te", "th", "ur", "yi", "zh"
     ]
@@ -61,29 +61,38 @@ enum LanguageSegmenter {
         0x2C60...0x2C7F    // Latin Extended-C
     ]
 
-    static func script(of scalar: Unicode.Scalar) -> ScriptClass {
+    private static let hanRanges: [ClosedRange<UInt32>] = [
+        0x3400...0x4DBF,   // CJK Unified Ideographs Extension A
+        0x4E00...0x9FFF,   // CJK Unified Ideographs
+        0xF900...0xFAFF,   // CJK Compatibility Ideographs
+        0x20000...0x3134F  // CJK Unified Ideographs Extensions B–H
+    ]
+
+    static func script(of scalar: Unicode.Scalar, separateHan: Bool = false) -> ScriptClass {
         guard scalar.properties.isAlphabetic else { return .neutral }
         let value = scalar.value
         if cyrillicRanges.contains(where: { $0.contains(value) }) { return .cyrillic }
         if latinRanges.contains(where: { $0.contains(value) }) { return .latin }
-        return .other
+        if separateHan, hanRanges.contains(where: { $0.contains(value) }) { return .han }
+        return .neutral
     }
 
     /// A grapheme counts as Cyrillic/Latin when any of its scalars does, so a base letter
     /// plus combining marks ("й" spelled и + U+0306) stays with its letter.
-    static func script(of character: Character) -> ScriptClass {
+    static func script(of character: Character, separateHan: Bool = false) -> ScriptClass {
         for scalar in character.unicodeScalars {
-            let scriptClass = script(of: scalar)
+            let scriptClass = script(of: scalar, separateHan: separateHan)
             if scriptClass != .neutral { return scriptClass }
         }
         return .neutral
     }
 
     /// The script a BCP-47 tag is written in, by base code. Unknown codes are assumed Latin.
-    static func script(ofLanguage language: String) -> ScriptClass {
+    static func script(ofLanguage language: String, separateHan: Bool = false) -> ScriptClass {
         let base = language.split(separator: "-").first.map { $0.lowercased() } ?? ""
         if cyrillicLanguageCodes.contains(base) { return .cyrillic }
-        if otherScriptLanguageCodes.contains(base) { return .other }
+        if separateHan, base == "zh" { return .han }
+        if nonLatinLanguageCodes.contains(base) { return .neutral }
         return .latin
     }
 
@@ -91,12 +100,16 @@ enum LanguageSegmenter {
     /// following one at the start of the text. A Latin run with fewer than `minRunLength`
     /// LETTERS merges into a neighboring Cyrillic run; Cyrillic runs never merge (see the
     /// type doc comment for why the rule is asymmetric).
-    static func runs(in text: String, minRunLength: Int = defaultMinRunLength) -> [TextRun] {
+    static func runs(
+        in text: String,
+        minRunLength: Int = defaultMinRunLength,
+        separateHan: Bool = false
+    ) -> [TextRun] {
         guard !text.isEmpty else { return [] }
 
         var runs: [TextRun] = []
         for character in text {
-            let scriptClass = script(of: character)
+            let scriptClass = script(of: character, separateHan: separateHan)
             guard var last = runs.last else {
                 runs.append(TextRun(text: String(character), script: scriptClass))
                 continue
@@ -113,13 +126,12 @@ enum LanguageSegmenter {
             }
         }
 
-        // Because same-script runs already coalesce above, the list here strictly
-        // alternates Cyrillic/Latin, so a short Latin run's only neighbours are Cyrillic.
+        // Short Latin fragments merge only into Cyrillic. Local-only Han runs remain independent.
         // Each iteration removes one run, so this terminates at a single run at the latest.
         while runs.count > 1, let index = shortLatinIndex(below: minRunLength, in: runs) {
             let left = index - 1
             let right = index + 1
-            let mergeLeft = left >= 0
+            let mergeLeft = left >= 0 && runs[left].script == .cyrillic
             let neighbor = mergeLeft ? left : right
             let first = mergeLeft ? neighbor : index
             let second = mergeLeft ? index : neighbor
@@ -138,22 +150,25 @@ enum LanguageSegmenter {
         return coalesced
     }
 
-    /// The first Latin run whose letter count (not character count) is below `minRunLength`.
-    /// Cyrillic runs are never candidates: they never merge into a Latin neighbor.
+    /// The first short Latin run adjacent to Cyrillic. Other scripts never absorb it.
     private static func shortLatinIndex(below minRunLength: Int, in runs: [TextRun]) -> Int? {
         for index in runs.indices
-        where runs[index].script == .latin && letterCount(runs[index]) < minRunLength {
+        where runs[index].script == .latin
+            && letterCount(runs[index]) < minRunLength
+            && ((index > runs.startIndex && runs[index - 1].script == .cyrillic)
+                || (index < runs.index(before: runs.endIndex)
+                    && runs[index + 1].script == .cyrillic)) {
             return index
         }
         return nil
     }
 
-    /// Counts only letters (Cyrillic or Latin), ignoring digits, punctuation and whitespace.
+    /// Counts letters separated by the selected planner mode, ignoring neutral characters.
     /// Internal because the speech planner uses it to decide whether a run is long enough for
     /// language detection to be trustworthy.
-    static func letterCount(_ text: String) -> Int {
+    static func letterCount(_ text: String, separateHan: Bool = false) -> Int {
         text.reduce(into: 0) { count, character in
-            if script(of: character) != .neutral { count += 1 }
+            if script(of: character, separateHan: separateHan) != .neutral { count += 1 }
         }
     }
 

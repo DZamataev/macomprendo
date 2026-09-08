@@ -247,9 +247,12 @@ preference controls recording only; it never records audio.
       English and Chinese text, then switch to a single-speaker Piper voice — Speaker clamps to 0
       and the Piper preview still succeeds.
 - [ ] Local voices are grouped under localized language headings. Kokoro appears under both
-      English and Chinese; downloading or deleting it updates both rows consistently.
+      English and Chinese; selecting its Chinese row auditions a Chinese phrase, and downloading
+      or deleting it updates both rows consistently.
 - [ ] Turn on **Switch voices for mixed-language text** for Local TTS. "Voice per language" shows
       downloaded voices only; an undownloaded voice never appears in a mapping picker.
+- [ ] Turn that switch off. "Voice per language" remains visible but its controls are disabled;
+      Preview reads the whole text with the default Local voice.
 - [ ] Download one Russian Piper voice and one English Piper voice. Keep Russian as the default,
       map English to the downloaded English voice, and Preview a long Russian → English → Russian
       passage. All three runs play in order and the first voice returns for the final run.

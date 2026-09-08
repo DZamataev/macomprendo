@@ -101,6 +101,7 @@ enum MixedLanguageSpeechPlanner {
         defaultSelection: Selection,
         detectLanguages: Bool,
         detector: any LanguageDetecting,
+        separateHan: Bool = false,
         resolve: (TextRun, String?) -> Selection
     ) -> [PlannedSpeechRun<Selection>]
 }
@@ -116,6 +117,10 @@ enum MixedLanguageSpeechPlanner {
 - language detection is skipped when the System map is empty, as today.
 
 Existing System segmentation tests are behavior-preservation tests for this extraction. This feature must not change System output plans.
+
+The shared planner keeps its default segmentation byte-for-byte compatible with System speech.
+Local speech opts into separating Han runs so downloaded Chinese voices can be resolved without
+making every unsupported alphabetic script equivalent to Chinese.
 
 ## Local voice availability snapshot
 
