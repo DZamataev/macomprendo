@@ -395,7 +395,10 @@ import Testing
         r.http.isGated = false
         r.player.finishesImmediately = false
         r.service.speak("One. Two.", settings: settings())
-        await settle()
+        for _ in 0..<1_000 {
+            if inputs(r.http).count == 2, r.player.played.count == 1 { break }
+            await Task.yield()
+        }
         #expect(inputs(r.http).last == "Two.")
         #expect(r.player.played == [Self.audioResponse.body])
 
