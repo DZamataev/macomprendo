@@ -242,6 +242,24 @@ export function findUngatedSigningSteps(workflow, { name }) {
   return problems;
 }
 
+/**
+ * Re-publishing an existing release must also clear the draft flag. Deleting a tag turns its
+ * published release into a draft, and `gh release edit --latest` on a draft fails with
+ * "Latest release cannot be draft or prerelease" — so a re-run would upload the assets and
+ * then die, leaving the release invisible to everyone.
+ */
+export function findDraftClearingProblems(workflow, { name }) {
+  const problems = [];
+  for (const { source, command } of runCommands(workflow, { name })) {
+    if (!/gh\s+release\s+edit/.test(command)) continue;
+    if (!/--draft=false/.test(command)) {
+      problems.push(`${source} edits a release without --draft=false; a release orphaned into `
+        + 'a draft (by deleting its tag) cannot be marked --latest.');
+    }
+  }
+  return problems;
+}
+
 export const RELEASE_ASSET_PATTERN = /Macomprendo-[^\s"']*\.zip|\$\{?ZIP\}?/;
 export const RELEASE_CHECKSUM_PATTERN = /\.sha256/;
 

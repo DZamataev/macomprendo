@@ -224,7 +224,14 @@ jobs:
           NOTES="dist/release-notes-${TAG}.md"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ZIP" "${ZIP}.sha256" --clobber
-            gh release edit "$TAG" --notes-file "$NOTES" --title "Macomprendo ${VERSION}" --latest
+            # --draft=false is load-bearing: deleting a tag demotes its published release to
+            # a draft, and --latest on a draft fails with "Latest release cannot be draft or
+            # prerelease" — after the assets have already been uploaded.
+            gh release edit "$TAG" \
+              --notes-file "$NOTES" \
+              --title "Macomprendo ${VERSION}" \
+              --draft=false \
+              --latest
           else
             gh release create "$TAG" \
               --title "Macomprendo ${VERSION}" \

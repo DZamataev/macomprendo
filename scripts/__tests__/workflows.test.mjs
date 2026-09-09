@@ -7,7 +7,7 @@ import {
   findNodeTestSpellingProblems, findUncoveredTestFiles, parseWorkflow, runCommands,
   findAuditSetupProblems, findReleasePublishProblems, findUnpinnedNodeJobs,
   findSecretsInJobConditions, findSigningTeardownProblems, findUngatedSigningSteps,
-  findJobEnvContextProblems,
+  findJobEnvContextProblems, findDraftClearingProblems,
 } from '../lib/workflows.mjs';
 import { WORKFLOWS_DIR, PACKAGE_JSON } from '../lib/paths.mjs';
 
@@ -390,6 +390,25 @@ test('findJobEnvContextProblems accepts contexts job env may use', () => {
   assert.deepEqual(findJobEnvContextProblems(good, { name: 'release' }), []);
 });
 
+test('findDraftClearingProblems requires --draft=false when editing a release', () => {
+  // Deleting a tag demotes its release to a draft; `--latest` then fails with HTTP 422.
+  const stale = parseWorkflow([
+    'jobs:',
+    '  publish:',
+    '    steps:',
+    '      - run: gh release edit "$TAG" --notes-file n.md --latest',
+  ].join('\n'), { name: 'release.yml' });
+  assert.match(findDraftClearingProblems(stale, { name: 'release' })[0], /--draft=false/);
+
+  const good = parseWorkflow([
+    'jobs:',
+    '  publish:',
+    '    steps:',
+    '      - run: gh release edit "$TAG" --notes-file n.md --draft=false --latest',
+  ].join('\n'), { name: 'release.yml' });
+  assert.deepEqual(findDraftClearingProblems(good, { name: 'release' }), []);
+});
+
 test('the committed workflows keep the signing path safe', async () => {
   const names = (await fs.readdir(WORKFLOWS_DIR)).filter((f) => f.endsWith('.yml'));
   const problems = [];
@@ -401,6 +420,7 @@ test('the committed workflows keep the signing path safe', async () => {
       ...findSigningTeardownProblems(document, { name: label }),
       ...findUngatedSigningSteps(document, { name: label }),
       ...findJobEnvContextProblems(document, { name: label }),
+      ...findDraftClearingProblems(document, { name: label }),
     );
   }
   assert.deepEqual(problems, []);
