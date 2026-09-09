@@ -196,6 +196,36 @@ async function readOriginalKeychains(io, statePath) {
   }
 }
 
+async function teardownFromState({ run, fsOps, io, root, keychain, certificatePath, statePath }) {
+  let originalKeychains;
+  let stateError;
+  try {
+    originalKeychains = await readOriginalKeychains(io, statePath);
+  } catch (error) {
+    // A corrupt state file means the search list cannot be restored automatically, but it must
+    // never prevent removal of the private key and decoded certificate. Keep the file so an
+    // operator can inspect/recover it, and fail after attempting the sensitive cleanup.
+    stateError = error;
+  }
+
+  let cleanupError;
+  try {
+    await teardown(planTeardown({
+      keychain,
+      certificatePath,
+      statePath: stateError ? undefined : statePath,
+      originalKeychains,
+    }), { run, fsOps, io, root, keychain });
+  } catch (error) {
+    cleanupError = error;
+  }
+
+  const failures = [];
+  if (stateError) failures.push(`Could not read the keychain search-list state: ${stateError.message}`);
+  if (cleanupError) failures.push(cleanupError.message);
+  if (failures.length > 0) throw new Error(failures.join('\n'));
+}
+
 export async function main(argv, deps = {}) {
   const {
     run = realRun, log = realLog, fsOps = realFsOps, io = realIO,
@@ -216,9 +246,7 @@ export async function main(argv, deps = {}) {
 
   if (command === 'teardown') {
     try {
-      const originalKeychains = await readOriginalKeychains(io, statePath);
-      await teardown(planTeardown({ keychain, certificatePath, statePath, originalKeychains }),
-        { run, fsOps, io, root, keychain });
+      await teardownFromState({ run, fsOps, io, root, keychain, certificatePath, statePath });
       log.info('Signing keychain and certificate removed.');
       return 0;
     } catch (error) {
@@ -281,9 +309,7 @@ export async function main(argv, deps = {}) {
     // A half-built keychain is worse than none: it can hold the private key without the
     // partition list that makes codesign non-interactive, so a later step would hang.
     try {
-      const originalKeychains = await readOriginalKeychains(io, statePath);
-      await teardown(planTeardown({ keychain, certificatePath, statePath, originalKeychains }),
-        { run, fsOps, io, root, keychain });
+      await teardownFromState({ run, fsOps, io, root, keychain, certificatePath, statePath });
     } catch (cleanupError) {
       log.error(`Cleanup also failed: ${cleanupError.message}`);
     }

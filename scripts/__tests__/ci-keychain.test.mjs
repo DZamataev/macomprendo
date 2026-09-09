@@ -253,6 +253,19 @@ test('a failed search-list restore keeps its state file so teardown can be retri
   assert.ok(d.log.lines.some((line) => /restore the original keychain search list/i.test(line)));
 });
 
+test('malformed search-list state cannot block deletion of the keychain and certificate', async () => {
+  const d = deps();
+  d.io.store.set('/tmp/build-search-list.json', '{truncated');
+  assert.equal(await main(['teardown'], d), 1);
+  assert.ok(d.run.lines().some((line) => line.startsWith('security delete-keychain')));
+  assert.ok(d.fsOps.events.some((event) => event[0] === 'rmrf' && event[1] === '/tmp/cert.p12'));
+  assert.equal(
+    d.fsOps.events.some((event) => event[0] === 'rmrf' && event[1] === '/tmp/build-search-list.json'),
+    false,
+  );
+  assert.ok(d.log.lines.some((line) => /search-list state/i.test(line)));
+});
+
 test('keychainPath honours the environment so CI and the script agree on one location', async () => {
   // The workflow passes runner.temp to notarytool; if this script defaulted to os.tmpdir()
   // instead, setup would build the keychain somewhere notarytool never looks.

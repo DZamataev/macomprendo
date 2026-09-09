@@ -245,7 +245,13 @@ export function findUngatedSigningSteps(workflow, { name }) {
 function executableShell(command) {
   return String(command).split('\n')
     .filter((line) => !line.trimStart().startsWith('#'))
+    // A guard token after an inline shell comment is inert and must not satisfy an invariant.
+    .map((line) => line.replace(/\s+#.*$/, ''))
     .join('\n');
+}
+
+function commandLines(shell) {
+  return executableShell(shell).split('\n').map((line) => line.trim()).filter(Boolean);
 }
 
 function normalizedExpression(value) {
@@ -284,11 +290,17 @@ export function findSigningGateProblems(workflow, { name }) {
 export function findReleaseAssetReconciliationProblems(workflow, { name }) {
   const problems = [];
   for (const { source, command } of runCommands(workflow, { name })) {
-    const shell = executableShell(command);
-    if (!/gh\s+release\s+upload/.test(shell)) continue;
-    if (!/gh\s+release\s+delete-asset/.test(shell)
-        || !/STALE_ZIP/.test(shell)
-        || !/STALE_ZIP\}\.sha256/.test(shell)) {
+    const lines = commandLines(command);
+    if (!lines.some((line) => /^gh\s+release\s+upload\b/.test(line))) continue;
+    const staleLoop = lines.some((line) => /^for\s+STALE_ASSET\s+in\b/.test(line)
+      && line.includes('$(basename "$STALE_ZIP")')
+      && line.includes('$(basename "${STALE_ZIP}.sha256")'));
+    const deletesLoopAsset = lines.some((line) =>
+      /^gh\s+release\s+delete-asset\s+"\$TAG"\s+"\$STALE_ASSET"\s+--yes$/.test(line));
+    const identifiesBothModes = lines.some((line) =>
+      /^STALE_ZIP=.*-macos\.zip"?$/.test(line))
+      && lines.some((line) => /^STALE_ZIP=.*-macos-unsigned\.zip"?$/.test(line));
+    if (!staleLoop || !deletesLoopAsset || !identifiesBothModes) {
       problems.push(`${source} uploads release assets without removing the opposite signing mode.`);
     }
   }
@@ -304,9 +316,10 @@ export function findReleaseAssetReconciliationProblems(workflow, { name }) {
 export function findDraftClearingProblems(workflow, { name }) {
   const problems = [];
   for (const { source, command } of runCommands(workflow, { name })) {
-    const shell = executableShell(command);
-    if (!/gh\s+release\s+edit/.test(shell)) continue;
-    if (!/--draft=false/.test(shell)) {
+    const edits = commandLines(command).filter((line) => /^gh\s+release\s+edit\b/.test(line));
+    if (edits.length === 0) continue;
+    if (!commandLines(command).some((line) => /^--draft=false(?:\s|$|\\)/.test(line)
+      || (/^gh\s+release\s+edit\b/.test(line) && /\s--draft=false(?:\s|$|\\)/.test(line)))) {
       problems.push(`${source} edits a release without --draft=false; a release orphaned into `
         + 'a draft (by deleting its tag) cannot be marked --latest.');
     }
