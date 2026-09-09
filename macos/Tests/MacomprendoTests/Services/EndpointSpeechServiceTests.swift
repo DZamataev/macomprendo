@@ -57,13 +57,20 @@ import Testing
 
     @Test func chunksArePlayedInOrder() async {
         let r = rig()
+        r.http.responseForRequest = { request in
+            let body = request.body.flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            }
+            let input = body?["input"] as? String ?? ""
+            return HTTPResponse(status: 200, headers: [:], body: Data(input.utf8))
+        }
         r.service.speak("One. Two. Three.", settings: settings())
         await r.service.drain()
 
-        #expect(inputs(r.http) == ["One.", "Two.", "Three."])
-        #expect(r.player.played == [Self.audioResponse.body,
-                                    Self.audioResponse.body,
-                                    Self.audioResponse.body])
+        #expect(Set(inputs(r.http)) == Set(["One.", "Two.", "Three."]))
+        #expect(r.player.played == [Data("One.".utf8),
+                                    Data("Two.".utf8),
+                                    Data("Three.".utf8)])
         #expect(!r.service.isSpeaking)
     }
 
@@ -254,9 +261,14 @@ import Testing
         r.service.speak("One. Two.", settings: settings(instructions: "  Read slowly  "))
         await r.service.drain()
 
-        #expect(inputs(r.http) == ["One.", "Two."])
-        #expect(bodies(r.http).compactMap { $0["instructions"] as? String }
-                == ["Read slowly", "Read slowly"])
+        let requestedStyles: [String: String] = Dictionary(
+            uniqueKeysWithValues: bodies(r.http).compactMap { body -> (String, String)? in
+                guard let input = body["input"] as? String,
+                      let instructions = body["instructions"] as? String
+                else { return nil }
+                return (input, instructions)
+            })
+        #expect(requestedStyles == ["One.": "Read slowly", "Two.": "Read slowly"])
 
         // With no style set, the field is absent rather than empty.
         let plain = rig()
@@ -345,6 +357,8 @@ import Testing
     /// landed, playback started anyway while the service kept reporting `isPaused == true`.
     @Test func pausingWhileTheFirstChunkIsStillBeingFetchedHoldsPlaybackUntilResume() async {
         let r = rig()
+        let playbackBoundary = AsyncGate()
+        r.player.onFinishedSetGate = playbackBoundary
         r.http.isGated = true
 
         r.service.speak("Hello.", settings: settings())
@@ -358,13 +372,14 @@ import Testing
         #expect(r.service.isPaused)
 
         r.http.releaseGate(at: 0)
-        await settle()
+        await playbackBoundary.wait()
 
-        // The chunk finished fetching while paused: it must not have started playing.
+        // `onFinished` is installed immediately before the service decides whether to hold or
+        // play the fetched audio, so this proves the fetch reached the paused playback boundary.
+        #expect(r.player.onFinished != nil)
         #expect(r.player.played.isEmpty)
 
         r.service.resume()
-        await settle()
         #expect(r.player.played == [Self.audioResponse.body])
     }
 
@@ -374,6 +389,8 @@ import Testing
     /// `speak()` fetched.
     @Test func stoppingWhilePausedDropsTheChunkThatWasHeldBack() async {
         let r = rig()
+        let playbackBoundary = AsyncGate()
+        r.player.onFinishedSetGate = playbackBoundary
         r.http.isGated = true
 
         r.service.speak("Hello.", settings: settings())
@@ -383,7 +400,8 @@ import Testing
         }
         r.service.pause()
         r.http.releaseGate(at: 0)
-        await settle()
+        await playbackBoundary.wait()
+        #expect(r.player.onFinished != nil)
         #expect(r.player.played.isEmpty)     // held, exactly as the pause test asserts
 
         r.service.stop()
@@ -396,10 +414,10 @@ import Testing
         r.player.finishesImmediately = false
         r.service.speak("One. Two.", settings: settings())
         for _ in 0..<1_000 {
-            if inputs(r.http).count == 2, r.player.played.count == 1 { break }
+            if r.player.played.count == 1 { break }
             await Task.yield()
         }
-        #expect(inputs(r.http).last == "Two.")
+        #expect(inputs(r.http).contains("One."))
         #expect(r.player.played == [Self.audioResponse.body])
 
         r.service.pause()

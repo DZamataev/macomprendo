@@ -2,7 +2,14 @@ import Foundation
 @testable import Macomprendo
 
 @MainActor final class FakeAudioPlayer: AudioPlaying {
-    var onFinished: (@MainActor () -> Void)?
+    var onFinished: (@MainActor () -> Void)? {
+        didSet {
+            if onFinished != nil { onFinishedSetGate?.open() }
+        }
+    }
+    /// Opens when the service installs its playback continuation. Tests use this event instead
+    /// of guessing how many scheduler yields an HTTP response needs to reach the player.
+    var onFinishedSetGate: AsyncGate?
 
     private(set) var played: [Data] = []
     private(set) var stopCount = 0

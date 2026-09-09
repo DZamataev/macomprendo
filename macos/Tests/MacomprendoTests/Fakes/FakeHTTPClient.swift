@@ -5,6 +5,7 @@ final class FakeHTTPClient: HTTPClient, @unchecked Sendable {
     private let lock = NSLock()
     private var _requests: [HTTPRequest] = []
     private var _response = HTTPResponse(status: 200, headers: [:], body: Data())
+    private var _responseForRequest: (@Sendable (HTTPRequest) -> HTTPResponse)?
     private var _error: Error?
     private var _isGated = false
     /// When `true`, a cancelled gate stays suspended (instead of resuming itself immediately)
@@ -22,6 +23,14 @@ final class FakeHTTPClient: HTTPClient, @unchecked Sendable {
     var response: HTTPResponse {
         get { lock.withLock { _response } }
         set { lock.withLock { _response = newValue } }
+    }
+
+    /// Lets queue tests return distinguishable audio for each request, so they assert playback
+    /// order directly instead of assuming concurrent prefetch requests reach the transport in
+    /// creation order.
+    var responseForRequest: (@Sendable (HTTPRequest) -> HTTPResponse)? {
+        get { lock.withLock { _responseForRequest } }
+        set { lock.withLock { _responseForRequest = newValue } }
     }
 
     var error: Error? {
@@ -91,6 +100,7 @@ final class FakeHTTPClient: HTTPClient, @unchecked Sendable {
             }
         }
         if let error { throw error }
+        if let responseForRequest { return responseForRequest(request) }
         return response
     }
 
