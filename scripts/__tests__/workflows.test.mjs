@@ -4,8 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import {
-  findNodeTestGlobs, parseWorkflow, runCommands,
-  findAuditSetupProblems, findReleasePublishProblems,
+  findNodeTestSpellingProblems, findUncoveredTestFiles, parseWorkflow, runCommands,
+  findAuditSetupProblems, findReleasePublishProblems, findUnpinnedNodeJobs,
 } from '../lib/workflows.mjs';
 import { WORKFLOWS_DIR, PACKAGE_JSON } from '../lib/paths.mjs';
 
@@ -18,25 +18,45 @@ async function workflow(name) {
 
 // --- pure unit coverage -----------------------------------------------------
 
-test('findNodeTestGlobs flags a glob argument to node --test', () => {
-  const hits = findNodeTestGlobs([
+test('findNodeTestSpellingProblems flags a Node-expanded glob', () => {
+  const hits = findNodeTestSpellingProblems([
     { source: 'ci:tooling', command: "node --test 'scripts/__tests__/**/*.test.mjs'" },
   ]);
   assert.equal(hits.length, 1);
-  assert.equal(hits[0].source, 'ci:tooling');
+  assert.match(hits[0].reason, /v21/);
 });
 
-test('findNodeTestGlobs accepts a directory argument', () => {
-  assert.deepEqual(findNodeTestGlobs([
+test('findNodeTestSpellingProblems flags a bare directory argument', () => {
+  const hits = findNodeTestSpellingProblems([
     { source: 'ci:tooling', command: 'node --test scripts/__tests__' },
+  ]);
+  assert.equal(hits.length, 1);
+  assert.match(hits[0].reason, /Node 22/);
+});
+
+test('findNodeTestSpellingProblems accepts a shell-expanded glob of files', () => {
+  assert.deepEqual(findNodeTestSpellingProblems([
+    { source: 'ci:tooling', command: 'node --test scripts/__tests__/*.test.mjs' },
   ]), []);
 });
 
-test('findNodeTestGlobs ignores globs that are not node --test arguments', () => {
-  assert.deepEqual(findNodeTestGlobs([
+test('findNodeTestSpellingProblems ignores commands that are not node --test', () => {
+  assert.deepEqual(findNodeTestSpellingProblems([
     { source: 'ci:tooling', command: 'ls dist/Macomprendo-*-macos-unsigned.zip' },
-    { source: 'ci:tooling', command: 'node --test scripts/__tests__\nls dist/*.zip' },
+    { source: 'ci:tooling', command: 'swift test --package-path macos' },
   ]), []);
+});
+
+test('findUncoveredTestFiles names test files a non-recursive glob would miss', () => {
+  const command = 'node --test scripts/__tests__/*.test.mjs';
+  assert.deepEqual(
+    findUncoveredTestFiles(command, ['scripts/__tests__/a.test.mjs']),
+    [],
+  );
+  assert.deepEqual(
+    findUncoveredTestFiles(command, ['scripts/__tests__/nested/b.test.mjs']),
+    ['scripts/__tests__/nested/b.test.mjs'],
+  );
 });
 
 test('parseWorkflow rejects text that is not a workflow object', () => {
@@ -93,6 +113,33 @@ test('findAuditSetupProblems ignores jobs that never audit', () => {
     '      - run: swift test',
   ].join('\n'), { name: 'ci.yml' });
   assert.deepEqual(findAuditSetupProblems(none, { name: 'ci' }), []);
+});
+
+test('findUnpinnedNodeJobs flags a job that runs npm without setup-node', () => {
+  const unpinned = parseWorkflow([
+    'jobs:',
+    '  macos:',
+    '    steps:',
+    '      - uses: actions/checkout@abc',
+    '      - run: npm ci',
+  ].join('\n'), { name: 'ci.yml' });
+  const problems = findUnpinnedNodeJobs(unpinned, { name: 'ci' });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /setup-node/);
+});
+
+test('findUnpinnedNodeJobs passes a pinned job and ignores npm-free jobs', () => {
+  const good = parseWorkflow([
+    'jobs:',
+    '  macos:',
+    '    steps:',
+    '      - uses: actions/setup-node@abc',
+    '      - run: npm ci',
+    '  swift:',
+    '    steps:',
+    '      - run: swift test --package-path macos',
+  ].join('\n'), { name: 'ci.yml' });
+  assert.deepEqual(findUnpinnedNodeJobs(good, { name: 'ci' }), []);
 });
 
 test('findReleasePublishProblems reports a workflow that only uploads an artifact', () => {
@@ -169,7 +216,7 @@ test('findReleasePublishProblems reports a workflow with no tag trigger', () => 
 
 // --- the workflows actually committed to this repository --------------------
 
-test('no workflow passes a glob to node --test', async () => {
+test('no workflow spells node --test in a way some supported Node rejects', async () => {
   const names = (await fs.readdir(WORKFLOWS_DIR)).filter((f) => f.endsWith('.yml'));
   assert.ok(names.length > 0, 'expected workflows in .github/workflows');
   const commands = [];
@@ -177,14 +224,30 @@ test('no workflow passes a glob to node --test', async () => {
     const { document } = await workflow(name);
     commands.push(...runCommands(document, { name: path.basename(name, '.yml') }));
   }
-  assert.deepEqual(findNodeTestGlobs(commands), []);
+  assert.deepEqual(findNodeTestSpellingProblems(commands), []);
 });
 
-test('package.json test:scripts uses a directory, not a glob', async () => {
+test('package.json test:scripts runs on every supported Node and covers every test file', async () => {
   const pkg = JSON.parse(await read(PACKAGE_JSON));
-  assert.deepEqual(findNodeTestGlobs([
-    { source: 'package.json:test:scripts', command: pkg.scripts['test:scripts'] },
+  const command = pkg.scripts['test:scripts'];
+  assert.deepEqual(findNodeTestSpellingProblems([
+    { source: 'package.json:test:scripts', command },
   ]), []);
+
+  const testsDir = path.dirname(new URL(import.meta.url).pathname);
+  const found = [];
+  const walk = async (dir) => {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.name.endsWith('.test.mjs')) {
+        found.push(path.join('scripts/__tests__', path.relative(testsDir, full)));
+      }
+    }
+  };
+  await walk(testsDir);
+  assert.ok(found.length > 0);
+  assert.deepEqual(findUncoveredTestFiles(command, found), []);
 });
 
 test('every committed workflow audits on a full clone with gitleaks available', async () => {
@@ -200,4 +263,14 @@ test('every committed workflow audits on a full clone with gitleaks available', 
 test('the release workflow publishes the ZIP and its checksum on a tag', async () => {
   const { document } = await workflow('release.yml');
   assert.deepEqual(findReleasePublishProblems(document, { name: 'release' }), []);
+});
+
+test('every job that runs npm pins its Node version', async () => {
+  const names = (await fs.readdir(WORKFLOWS_DIR)).filter((f) => f.endsWith('.yml'));
+  const problems = [];
+  for (const name of names) {
+    const { document } = await workflow(name);
+    problems.push(...findUnpinnedNodeJobs(document, { name: path.basename(name, '.yml') }));
+  }
+  assert.deepEqual(problems, []);
 });

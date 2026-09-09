@@ -53,8 +53,9 @@ One `scripts/__tests__/<name>.test.mjs` per module, using `node:test` and
 `node:assert/strict`. Create temporary directories with
 `fs.mkdtemp(path.join(os.tmpdir(), "macomprendo-…"))` — never write inside the repo.
 
-Run them with `npm run test:scripts`, which passes the **directory** to `node --test`.
-Do not spell it as a glob: `node --test` only expands glob patterns itself from Node 21
-onwards, so on the Node 20 that `package.json` and CI pin, a pattern argument is taken
-literally and the run dies with `Could not find '…'`. `scripts/__tests__/workflows.test.mjs`
-asserts this for both `package.json` and every workflow.
+Run them with `npm run test:scripts`, which passes a **shell-expanded glob of files**
+(`node --test scripts/__tests__/*.test.mjs`). The other two spellings are each broken on
+some Node this project supports: a quoted `'…/**/*.test.mjs'` is taken literally before
+Node 21 (CI pins 20), and a bare `scripts/__tests__` directory is resolved as a module on
+Node 22. Because a shell glob does not recurse, a test file in a subdirectory would silently
+never run — `scripts/__tests__/workflows.test.mjs` asserts both properties.

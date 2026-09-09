@@ -6,18 +6,53 @@
 // happened, so the script test suite catches them instead of a red run on main.
 import YAML from 'yaml';
 
-// `node --test` only expands glob patterns itself from Node 21 onwards. On the Node 20 the
-// workflows pin (and the >=20 floor package.json declares) a pattern argument is taken
-// literally and the run dies with "Could not find '<pattern>'". A directory argument works on
-// every supported version, so a glob is always the wrong spelling here.
-const NODE_TEST_GLOB = /node\s+(?:--[\w=-]+\s+)*--test\s+[^\n&|;]*\*/;
+// Two spellings of this command are broken, on different Node versions, and each was found
+// only after a red CI run:
+//   `node --test 'scripts/__tests__/**/*.test.mjs'`  Node expands `**` itself only from 21
+//       onwards; on Node 20 the pattern is taken literally ("Could not find '<pattern>'").
+//   `node --test scripts/__tests__`                  a bare directory is resolved as a module
+//       on Node 22 ("Cannot find module '…/__tests__'"), though it works on 20 and 26.
+// A *shell*-expanded glob of concrete files works on every version, so that is the one
+// spelling allowed here. `findUncoveredTestFiles` guards its one weakness: it does not
+// recurse into subdirectories.
+const NODE_TEST_NODE_GLOB = /node\s+(?:--[\w=-]+\s+)*--test\s+(['"])[^'"]*\*/;
+const NODE_TEST_BARE_DIR = /node\s+(?:--[\w=-]+\s+)*--test\s+(?!-)([^\s'"&|;]+)(?=\s|$)/;
 
-export function findNodeTestGlobs(commands) {
+export function findNodeTestSpellingProblems(commands) {
   const hits = [];
   for (const { source, command } of commands) {
-    if (NODE_TEST_GLOB.test(command)) hits.push({ source, command: command.trim() });
+    if (NODE_TEST_NODE_GLOB.test(command)) {
+      hits.push({
+        source,
+        command: command.trim(),
+        reason: 'quoted glob: Node only expands patterns itself from v21, and CI pins v20',
+      });
+      continue;
+    }
+    const bare = NODE_TEST_BARE_DIR.exec(command);
+    if (bare !== null && !bare[1].endsWith('.mjs') && !bare[1].includes('*')) {
+      hits.push({
+        source,
+        command: command.trim(),
+        reason: `bare directory "${bare[1]}": Node 22 resolves it as a module and fails`,
+      });
+    }
   }
   return hits;
+}
+
+/**
+ * The shell glob `scripts/__tests__/*.test.mjs` does not recurse, so a test file added in a
+ * subdirectory would simply never run — silently, with the suite still green. This names any
+ * such file so the omission fails instead.
+ */
+export function findUncoveredTestFiles(command, testFiles) {
+  const patterns = [...command.matchAll(/(\S*\*\S*)/g)].map((m) => m[1].replace(/^['"]|['"]$/g, ''));
+  if (patterns.length === 0) return [];
+  const matchers = patterns.map((pattern) => new RegExp(
+    `^${pattern.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`,
+  ));
+  return testFiles.filter((file) => !matchers.some((matcher) => matcher.test(file)));
 }
 
 export function parseWorkflow(text, { name }) {
@@ -80,6 +115,29 @@ export function findAuditSetupProblems(workflow, { name }) {
     } else if (Number(checkout.with?.['fetch-depth']) !== 0) {
       problems.push(`${name}:${jobName} runs the audit on a shallow clone; `
         + "set actions/checkout's fetch-depth: 0 so the gitleaks history scan sees every commit.");
+    }
+  }
+  return problems;
+}
+
+/**
+ * A job that runs npm without `actions/setup-node` silently inherits whatever Node the
+ * runner image preinstalls — which differs between the ubuntu and macOS images and moves
+ * under us. That is how a `node --test` spelling passed on one job and failed on another in
+ * the same commit.
+ */
+export function findUnpinnedNodeJobs(workflow, { name }) {
+  const problems = [];
+  for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+    const steps = job?.steps ?? [];
+    const usesNpm = steps.some(
+      (step) => typeof step?.run === 'string' && /(^|\s)(npm|node)\s/.test(step.run),
+    );
+    if (!usesNpm) continue;
+    const setsUpNode = steps.some((step) => stepUses(step).startsWith('actions/setup-node'));
+    if (!setsUpNode) {
+      problems.push(`${name}:${jobName} runs npm/node without actions/setup-node; `
+        + 'it would inherit whatever version the runner image ships.');
     }
   }
   return problems;

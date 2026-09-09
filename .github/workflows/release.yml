@@ -39,6 +39,14 @@ jobs:
           swift --version
           xcodebuild -version
 
+      # Pinned so this job runs the same Node CI does, instead of whatever the macOS runner
+      # image happens to preinstall.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+
       - name: Install Node dependencies
         run: npm ci
 

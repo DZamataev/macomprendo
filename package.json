@@ -24,7 +24,7 @@
     "sync-agents:check": "node scripts/sync-agent-config.mjs --check",
     "sync-icons": "node scripts/sync-icons.mjs",
     "sync-icons:check": "node scripts/sync-icons.mjs --check",
-    "test:scripts": "node --test scripts/__tests__",
+    "test:scripts": "node --test scripts/__tests__/*.test.mjs",
     "test:swift": "swift test --package-path macos"
   },
   "dependencies": {
