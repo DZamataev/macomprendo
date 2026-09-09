@@ -12,6 +12,7 @@ final class AsyncGate: @unchecked Sendable {
     /// background task has actually reached the gate before it acts on that timing,
     /// instead of guessing with a fixed sleep.
     var waiterCount: Int { lock.withLock { waiters.count } }
+    var opened: Bool { lock.withLock { isOpen } }
 
     func openOne() {
         let waiter = lock.withLock {

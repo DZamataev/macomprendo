@@ -223,6 +223,17 @@ jobs:
           set -euo pipefail
           NOTES="dist/release-notes-${TAG}.md"
           if gh release view "$TAG" >/dev/null 2>&1; then
+            if [[ "$ZIP" == *-unsigned.zip ]]; then
+              STALE_ZIP="dist/Macomprendo-${VERSION}-macos.zip"
+            else
+              STALE_ZIP="dist/Macomprendo-${VERSION}-macos-unsigned.zip"
+            fi
+            EXISTING_ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+            for STALE_ASSET in "$(basename "$STALE_ZIP")" "$(basename "${STALE_ZIP}.sha256")"; do
+              if grep -Fxq "$STALE_ASSET" <<<"$EXISTING_ASSETS"; then
+                gh release delete-asset "$TAG" "$STALE_ASSET" --yes
+              fi
+            done
             gh release upload "$TAG" "$ZIP" "${ZIP}.sha256" --clobber
             # --draft=false is load-bearing: deleting a tag demotes its published release to
             # a draft, and --latest on a draft fails with "Latest release cannot be draft or

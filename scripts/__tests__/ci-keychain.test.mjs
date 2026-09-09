@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   parseKeychainArgs, planImportCertificate, planStoreNotaryCredentials, planTeardown,
-  readEnvironment, main,
+  parseKeychainList, readEnvironment, main,
 } from '../ci-keychain.mjs';
 import { makeFakeRun, makeFakeFsOps, makeFakeIO, makeFakeLog } from './helpers/fake-run.mjs';
 
@@ -54,6 +54,7 @@ const IMPORT = () => planImportCertificate({
   keychainPassword: 'ephemeral',
   certificatePath: '/tmp/cert.p12',
   certificatePassword: 'p12-pass',
+  originalKeychains: ['/Users/test/Library/Keychains/login.keychain-db', '/tmp/extra.keychain-db'],
 });
 
 test('planImportCertificate creates, unlocks and defaults a dedicated keychain', () => {
@@ -74,7 +75,6 @@ test('planImportCertificate imports the p12 for codesign only and allows non-int
     '-P', 'p12-pass',
     '-T', '/usr/bin/codesign',
     '-f', 'pkcs12',
-    '-A',
   ]);
   // Without this, codesign blocks on a GUI "allow access" prompt no runner can answer.
   const partition = steps.find((s) => s.args.includes('set-key-partition-list'));
@@ -91,12 +91,24 @@ test('planImportCertificate never leaks a password into a logged command line', 
   }
 });
 
-test('planImportCertificate keeps the new keychain in the search list', () => {
+test('planImportCertificate prepends the new keychain without dropping existing keychains', () => {
   const listStep = IMPORT().find((s) => s.args.includes('list-keychains'));
-  assert.ok(listStep, 'expected a list-keychains step');
-  assert.ok(listStep.args.includes('/tmp/build.keychain-db'));
-  // The login keychain must survive: dropping it breaks unrelated tooling on the runner.
-  assert.ok(listStep.args.includes('login.keychain-db'));
+  assert.deepEqual(listStep.args, [
+    'list-keychains', '-d', 'user', '-s',
+    '/tmp/build.keychain-db',
+    '/Users/test/Library/Keychains/login.keychain-db',
+    '/tmp/extra.keychain-db',
+  ]);
+});
+
+test('parseKeychainList reads every quoted keychain path in order', () => {
+  assert.deepEqual(parseKeychainList([
+    '    "/Users/test/Library/Keychains/login.keychain-db"',
+    '    "/tmp/extra keychain.keychain-db"',
+  ].join('\n')), [
+    '/Users/test/Library/Keychains/login.keychain-db',
+    '/tmp/extra keychain.keychain-db',
+  ]);
 });
 
 test('planStoreNotaryCredentials passes the app-specific password on stdin, not argv', () => {
@@ -115,12 +127,19 @@ test('planStoreNotaryCredentials passes the app-specific password on stdin, not 
   assert.ok(step.args.includes('/tmp/build.keychain-db'));
 });
 
-test('planTeardown deletes the keychain and the decoded certificate', () => {
-  const steps = planTeardown({ keychain: '/tmp/build.keychain-db', certificatePath: '/tmp/cert.p12' });
+test('planTeardown restores the original search list and deletes all temporary files', () => {
+  const steps = planTeardown({
+    keychain: '/tmp/build.keychain-db',
+    certificatePath: '/tmp/cert.p12',
+    statePath: '/tmp/build-search-list.json',
+    originalKeychains: ['/tmp/original.keychain-db'],
+  });
   const lines = steps.map((s) => (s.type === 'rm' ? `rm ${s.path}` : [s.cmd, ...s.args].join(' ')));
   assert.deepEqual(lines, [
+    'security list-keychains -d user -s /tmp/original.keychain-db',
     'security delete-keychain /tmp/build.keychain-db',
     'rm /tmp/cert.p12',
+    'rm /tmp/build-search-list.json',
   ]);
 });
 
@@ -133,6 +152,7 @@ function deps(env = ENV, script = []) {
     env,
     keychain: '/tmp/build.keychain-db',
     certificatePath: '/tmp/cert.p12',
+    statePath: '/tmp/build-search-list.json',
     randomPassword: () => 'ephemeral',
   };
 }
@@ -145,11 +165,26 @@ test('setup writes the decoded certificate as raw bytes, and runs the whole plan
   assert.ok(lines.some((l) => l.startsWith('security create-keychain')));
   assert.ok(lines.some((l) => l.includes('set-key-partition-list')));
   assert.ok(lines.some((l) => l.includes('notarytool store-credentials')));
-  assert.deepEqual(d.io.writes, ['/tmp/cert.p12']);
+  assert.deepEqual(d.io.writes, ['/tmp/build-search-list.json', '/tmp/cert.p12']);
   // A .p12 is binary; writing it through the text path would corrupt it.
   const written = d.io.store.get('/tmp/cert.p12');
   assert.ok(Buffer.isBuffer(written), 'the certificate must be written as bytes, not text');
   assert.ok(written.equals(Buffer.from('YmFzZTY0', 'base64')));
+  assert.ok(d.fsOps.events.some((event) => event[0] === 'rmrf' && event[1] === '/tmp/cert.p12'),
+    'the decoded certificate should be deleted immediately after import');
+});
+
+test('setup captures every existing keychain before prepending the temporary one', async () => {
+  const existing = [
+    '/Users/test/Library/Keychains/login.keychain-db',
+    '/tmp/extra.keychain-db',
+  ];
+  const d = deps(ENV, [{ stdout: existing.map((item) => `    "${item}"`).join('\n') }]);
+  assert.equal(await main(['setup'], d), 0);
+  assert.deepEqual(JSON.parse(d.io.store.get('/tmp/build-search-list.json')), existing);
+  assert.ok(d.run.calls.some((call) => call.args.join('\0') === [
+    'list-keychains', '-d', 'user', '-s', '/tmp/build.keychain-db', ...existing,
+  ].join('\0')));
 });
 
 test('setup refuses to run with a missing secret, and names every one', async () => {
@@ -162,7 +197,7 @@ test('setup refuses to run with a missing secret, and names every one', async ()
 });
 
 test('setup never prints a secret, even when a step fails', async () => {
-  const d = deps(ENV, [{}, {}, {}, { throws: 'security import failed' }]);
+  const d = deps(ENV, [{}, {}, {}, {}, { throws: 'security import failed' }]);
   await main(['setup'], d);
   const text = d.log.lines.join('\n');
   for (const secret of ['p12-pass', 'abcd-efgh-ijkl-mnop', 'ephemeral']) {
@@ -171,15 +206,49 @@ test('setup never prints a secret, even when a step fails', async () => {
 });
 
 test('a failed setup tears the keychain down instead of leaving it behind', async () => {
-  const d = deps(ENV, [{}, {}, {}, { throws: 'security import failed' }]);
+  const d = deps(ENV, [{}, {}, {}, {}, { throws: 'security import failed' }]);
   assert.equal(await main(['setup'], d), 1);
   assert.ok(d.run.lines().some((l) => l.startsWith('security delete-keychain')));
 });
 
-test('teardown deletes the keychain and never fails the job over it', async () => {
+test('teardown tolerates an already-missing keychain', async () => {
   const d = deps(ENV, [{ throws: 'no such keychain' }]);
   assert.equal(await main(['teardown'], d), 0);
   assert.ok(d.run.lines().some((l) => l.startsWith('security delete-keychain')));
+});
+
+test('teardown restores the captured keychain list before deleting the temporary keychain', async () => {
+  const d = deps();
+  d.io.store.set('/tmp/build-search-list.json', JSON.stringify([
+    '/Users/test/Library/Keychains/login.keychain-db',
+    '/tmp/extra.keychain-db',
+  ]));
+  assert.equal(await main(['teardown'], d), 0);
+  assert.deepEqual(d.run.calls[0].args, [
+    'list-keychains', '-d', 'user', '-s',
+    '/Users/test/Library/Keychains/login.keychain-db',
+    '/tmp/extra.keychain-db',
+  ]);
+  assert.deepEqual(d.run.calls[1].args, ['delete-keychain', '/tmp/build.keychain-db']);
+});
+
+test('teardown fails instead of claiming removal when the keychain still exists', async () => {
+  const d = deps(ENV, [{ code: 1, stderr: 'permission denied' }]);
+  d.io.store.set('/tmp/build.keychain-db', Buffer.alloc(0));
+  assert.equal(await main(['teardown'], d), 1);
+  assert.ok(d.log.lines.some((line) => /still exists|permission denied/i.test(line)));
+  assert.equal(d.log.lines.some((line) => /removed/.test(line)), false);
+});
+
+test('a failed search-list restore keeps its state file so teardown can be retried', async () => {
+  const d = deps(ENV, [{ code: 1, stderr: 'search list locked' }, {}]);
+  d.io.store.set('/tmp/build-search-list.json', JSON.stringify(['/Users/test/login.keychain-db']));
+  assert.equal(await main(['teardown'], d), 1);
+  assert.equal(
+    d.fsOps.events.some((event) => event[0] === 'rmrf' && event[1] === '/tmp/build-search-list.json'),
+    false,
+  );
+  assert.ok(d.log.lines.some((line) => /restore the original keychain search list/i.test(line)));
 });
 
 test('keychainPath honours the environment so CI and the script agree on one location', async () => {
@@ -196,6 +265,7 @@ test('keychainPath honours the environment so CI and the script agree on one loc
 test('setup uses the environment-provided keychain path end to end', async () => {
   const d = deps({ ...ENV, MACOMPRENDO_SIGNING_KEYCHAIN: '/runner/temp/signing.keychain-db' });
   delete d.keychain;
+  delete d.statePath;
   assert.equal(await main(['setup'], d), 0);
   assert.ok(d.run.lines().every((l) => !l.includes('/tmp/build.keychain-db')));
   assert.ok(d.run.lines().some((l) => l.includes('/runner/temp/signing.keychain-db')));

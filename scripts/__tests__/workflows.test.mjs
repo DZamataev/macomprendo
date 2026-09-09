@@ -8,6 +8,7 @@ import {
   findAuditSetupProblems, findReleasePublishProblems, findUnpinnedNodeJobs,
   findSecretsInJobConditions, findSigningTeardownProblems, findUngatedSigningSteps,
   findJobEnvContextProblems, findDraftClearingProblems,
+  findSigningGateProblems, findReleaseAssetReconciliationProblems,
 } from '../lib/workflows.mjs';
 import { WORKFLOWS_DIR, PACKAGE_JSON } from '../lib/paths.mjs';
 
@@ -409,6 +410,42 @@ test('findDraftClearingProblems requires --draft=false when editing a release', 
   assert.deepEqual(findDraftClearingProblems(good, { name: 'release' }), []);
 });
 
+test('findDraftClearingProblems ignores --draft=false mentioned only in a shell comment', () => {
+  const stale = parseWorkflow([
+    'jobs:',
+    '  publish:',
+    '    steps:',
+    '      - run: |',
+    '          # keep --draft=false here',
+    '          gh release edit "$TAG" --latest',
+  ].join('\n'), { name: 'release.yml' });
+  assert.equal(findDraftClearingProblems(stale, { name: 'release' }).length, 1);
+});
+
+test('findSigningGateProblems rejects inverted signed and unsigned predicates', () => {
+  const bad = parseWorkflow([
+    'jobs:',
+    '  release:',
+    '    steps:',
+    "      - { name: Build unsigned, if: env.SIGNING_AVAILABLE == 'true', run: npm run build }",
+    "      - { name: Set up signing keychain, if: env.SIGNING_AVAILABLE != 'true', run: node scripts/ci-keychain.mjs setup }",
+    "      - { name: Sign and notarize, if: env.SIGNING_AVAILABLE != 'true', run: npm run notarize }",
+    '      - name: Archive',
+    '        run: if [ "${SIGNING_AVAILABLE}" != "true" ]; then echo signed; fi',
+  ].join('\n'), { name: 'release.yml' });
+  assert.equal(findSigningGateProblems(bad, { name: 'release' }).length, 4);
+});
+
+test('findReleaseAssetReconciliationProblems requires removal of opposite-mode assets', () => {
+  const bad = parseWorkflow([
+    'jobs:',
+    '  release:',
+    '    steps:',
+    '      - run: gh release upload "$TAG" "$ZIP" "${ZIP}.sha256" --clobber',
+  ].join('\n'), { name: 'release.yml' });
+  assert.equal(findReleaseAssetReconciliationProblems(bad, { name: 'release' }).length, 1);
+});
+
 test('the committed workflows keep the signing path safe', async () => {
   const names = (await fs.readdir(WORKFLOWS_DIR)).filter((f) => f.endsWith('.yml'));
   const problems = [];
@@ -421,6 +458,8 @@ test('the committed workflows keep the signing path safe', async () => {
       ...findUngatedSigningSteps(document, { name: label }),
       ...findJobEnvContextProblems(document, { name: label }),
       ...findDraftClearingProblems(document, { name: label }),
+      ...findSigningGateProblems(document, { name: label }),
+      ...findReleaseAssetReconciliationProblems(document, { name: label }),
     );
   }
   assert.deepEqual(problems, []);

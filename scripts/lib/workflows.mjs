@@ -242,6 +242,59 @@ export function findUngatedSigningSteps(workflow, { name }) {
   return problems;
 }
 
+function executableShell(command) {
+  return String(command).split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n');
+}
+
+function normalizedExpression(value) {
+  return String(value ?? '').replace(/\$\{\{|\}\}|\s/g, '');
+}
+
+/** The signed and fallback paths must be exact complements, not merely mention the gate. */
+export function findSigningGateProblems(workflow, { name }) {
+  const problems = [];
+  for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+    const signingJob = (job?.steps ?? []).some((step) =>
+      /ci-keychain\.mjs\s+setup|npm\s+run\s+notarize/.test(executableShell(step?.run)));
+    if (!signingJob) continue;
+    for (const step of job?.steps ?? []) {
+      const run = executableShell(step?.run);
+      const label = `${name}:${jobName} step "${step.name ?? step.id ?? 'unnamed'}"`;
+      let expected;
+      if (/ci-keychain\.mjs\s+setup|npm\s+run\s+notarize/.test(run)) {
+        expected = "env.SIGNING_AVAILABLE=='true'";
+      } else if (/unsigned/i.test(step?.name ?? '') && /npm\s+run\s+build/.test(run)) {
+        expected = "env.SIGNING_AVAILABLE!='true'";
+      }
+      if (expected && normalizedExpression(step.if) !== expected) {
+        problems.push(`${label} must use exactly "${expected}".`);
+      }
+      if (/Archive/i.test(step?.name ?? '') && /SIGNING_AVAILABLE/.test(run)
+          && !/if\s+\[\s+"\$\{SIGNING_AVAILABLE\}"\s+=\s+"true"\s+\]/.test(run)) {
+        problems.push(`${label} must select the signed artifact only when SIGNING_AVAILABLE = true.`);
+      }
+    }
+  }
+  return problems;
+}
+
+/** A rerun that changes signing mode must remove assets belonging to the previous mode. */
+export function findReleaseAssetReconciliationProblems(workflow, { name }) {
+  const problems = [];
+  for (const { source, command } of runCommands(workflow, { name })) {
+    const shell = executableShell(command);
+    if (!/gh\s+release\s+upload/.test(shell)) continue;
+    if (!/gh\s+release\s+delete-asset/.test(shell)
+        || !/STALE_ZIP/.test(shell)
+        || !/STALE_ZIP\}\.sha256/.test(shell)) {
+      problems.push(`${source} uploads release assets without removing the opposite signing mode.`);
+    }
+  }
+  return problems;
+}
+
 /**
  * Re-publishing an existing release must also clear the draft flag. Deleting a tag turns its
  * published release into a draft, and `gh release edit --latest` on a draft fails with
@@ -251,8 +304,9 @@ export function findUngatedSigningSteps(workflow, { name }) {
 export function findDraftClearingProblems(workflow, { name }) {
   const problems = [];
   for (const { source, command } of runCommands(workflow, { name })) {
-    if (!/gh\s+release\s+edit/.test(command)) continue;
-    if (!/--draft=false/.test(command)) {
+    const shell = executableShell(command);
+    if (!/gh\s+release\s+edit/.test(shell)) continue;
+    if (!/--draft=false/.test(shell)) {
       problems.push(`${source} edits a release without --draft=false; a release orphaned into `
         + 'a draft (by deleting its tag) cannot be marked --latest.');
     }

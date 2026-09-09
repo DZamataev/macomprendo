@@ -141,6 +141,11 @@ export const realIO = {
   // Base64 in, raw bytes out. A .p12 certificate is not valid UTF-8, so decoding it to a
   // string and writing that re-encodes every byte above 0x7f and produces a larger, corrupt
   // file that `security import` rejects.
-  writeBinaryFile: (p, base64) => fs.writeFile(p, Buffer.from(base64, "base64")),
+  writeBinaryFile: async (p, base64) => {
+    await fs.writeFile(p, Buffer.from(base64, "base64"), { mode: 0o600 });
+    // `mode` only applies when creating a file. Clamp an existing path too, so a stale file
+    // from an interrupted run cannot keep broader permissions.
+    await fs.chmod(p, 0o600);
+  },
   exists: pathExists,
 };

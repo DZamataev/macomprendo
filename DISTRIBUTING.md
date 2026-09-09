@@ -304,12 +304,13 @@ below and the same workflow builds, signs, notarizes and staples instead, publis
 `Macomprendo-<version>-macos.zip` in place of the `-unsigned` one. Remove the secrets and it
 silently falls back — nothing else changes.
 
-The mechanism: `scripts/ci-keychain.mjs setup` decodes the certificate into a **temporary
-keychain** with a random password that exists only in that process's memory, grants `codesign`
-non-interactive access to the key, stores the notarization credentials in the same keychain,
-and `… teardown` deletes all of it in an `if: always()` step. The certificate never enters the
-repository, argv, or the log; `scripts/lib/run.mjs` redacts every password it is given, and the
-app-specific password reaches `notarytool` on stdin only.
+The mechanism: `scripts/ci-keychain.mjs setup` writes the decoded certificate with mode `0600`,
+imports it into a **temporary keychain**, immediately deletes the decoded file, grants only
+`codesign` non-interactive access to the key, and stores the notarization credentials in that
+keychain. `… teardown` restores the runner's original keychain search list, verifies deletion,
+and runs under `if: always()`. Apple's `security` CLI requires the keychain and `.p12` passwords
+as arguments; the runner is ephemeral and `scripts/lib/run.mjs` redacts those values from public
+logs and errors. The app-specific notary password supports stdin and never enters argv.
 
 ### Export the certificate
 

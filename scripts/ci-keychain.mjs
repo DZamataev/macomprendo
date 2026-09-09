@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Build (and tear down) a temporary keychain holding the Developer ID certificate and the
 // notarization credentials, so a CI runner can sign and notarize without any secret ever
-// touching the repository, argv, or the log.
+// touching the repository or the log.
 //
 // Why a *dedicated* keychain and not the login one:
 //   - It is created with a random password this process invents and never persists, so the
@@ -11,8 +11,9 @@
 //   - `set-key-partition-list` is what stops codesign from blocking on the GUI "allow access"
 //     prompt that no runner can answer; it applies to a keychain, so we need our own.
 //
-// Every step that takes a password declares it in `redact`, and the notarization password
-// goes in on stdin rather than argv. Job logs for this repository are public.
+// Apple's `security` CLI only accepts the keychain and PKCS#12 passwords as arguments. Every
+// such step declares them in `redact`; the notary password does support stdin and uses it.
+// GitHub-hosted runners are ephemeral and single-tenant, and job logs for this repo are public.
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -87,8 +88,18 @@ export function certificatePathFor(env = process.env) {
   return `${keychainPath(env).replace(/\.keychain-db$/, '')}-certificate.p12`;
 }
 
+export function statePathFor(env = process.env) {
+  return `${keychainPath(env).replace(/\.keychain-db$/, '')}-search-list.json`;
+}
+
+export function parseKeychainList(output) {
+  return String(output).split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+    try { return JSON.parse(line); } catch { return line.replace(/^"|"$/g, ''); }
+  });
+}
+
 export function planImportCertificate({
-  keychain, keychainPassword, certificatePath, certificatePassword,
+  keychain, keychainPassword, certificatePath, certificatePassword, originalKeychains = [],
 }) {
   const redact = [keychainPassword, certificatePassword];
   const step = (args) => ({ cmd: 'security', args, redact });
@@ -104,7 +115,6 @@ export function planImportCertificate({
       '-P', certificatePassword,
       '-T', '/usr/bin/codesign',
       '-f', 'pkcs12',
-      '-A',
     ]),
     // Grants codesign non-interactive access to the imported key. Skipping this is the classic
     // "CI hangs forever at the codesign step" bug: the GUI prompt has nobody to answer it.
@@ -112,9 +122,10 @@ export function planImportCertificate({
       'set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:',
       '-s', '-k', keychainPassword, keychain,
     ]),
-    // Prepend, never replace: dropping the login keychain from the search list breaks
-    // unrelated tooling (and Homebrew) on the runner for the rest of the job.
-    step(['list-keychains', '-d', 'user', '-s', keychain, 'login.keychain-db']),
+    // Prepend, never replace: a runner can have keychains besides login, and teardown restores
+    // this exact captured list rather than guessing what existed before the job.
+    step(['list-keychains', '-d', 'user', '-s', keychain,
+      ...originalKeychains.filter((item) => item !== keychain)]),
   ];
 }
 
@@ -132,23 +143,56 @@ export function planStoreNotaryCredentials({ keychain, profile, appleID, teamID,
   };
 }
 
-export function planTeardown({ keychain, certificatePath }) {
-  return [
-    { cmd: 'security', args: ['delete-keychain', keychain] },
+export function planTeardown({ keychain, certificatePath, statePath, originalKeychains }) {
+  const steps = [];
+  if (Array.isArray(originalKeychains)) {
+    steps.push({
+      cmd: 'security', args: ['list-keychains', '-d', 'user', '-s', ...originalKeychains],
+      kind: 'restore-search-list',
+    });
+  }
+  steps.push(
+    { cmd: 'security', args: ['delete-keychain', keychain], kind: 'delete-keychain' },
     { type: 'rm', path: certificatePath },
-  ];
+  );
+  if (statePath) steps.push({ type: 'rm', path: statePath, kind: 'search-list-state' });
+  return steps;
 }
 
-async function teardown(steps, { run, fsOps, root }) {
+async function teardown(steps, { run, fsOps, io, root, keychain }) {
+  const failures = [];
+  let restoreFailed = false;
   for (const step of steps) {
     if (step.type === 'rm') {
+      if (step.kind === 'search-list-state' && restoreFailed) continue;
       await fsOps.rmrf(step.path);
       continue;
     }
-    // Teardown runs in `if: always()`, including after a failed setup that may never have
-    // created the keychain. A missing keychain must not turn a real failure into a confusing
-    // second one, so every teardown step is best-effort.
-    await run(step.cmd, step.args, { cwd: root, check: false, redact: step.redact ?? [] });
+    const result = await run(step.cmd, step.args, {
+      cwd: root, check: false, redact: step.redact ?? [],
+    });
+    if (result.code !== 0 && step.kind === 'restore-search-list') {
+      restoreFailed = true;
+      failures.push(`Could not restore the original keychain search list: ${result.stderr}`);
+    }
+    if (result.code !== 0 && step.kind === 'delete-keychain' && await io.exists(keychain)) {
+      failures.push(`Could not delete the signing keychain: ${result.stderr}`);
+    }
+  }
+  if (await io.exists(keychain)) failures.push(`Signing keychain still exists at ${keychain}.`);
+  if (failures.length > 0) throw new Error(failures.join('\n'));
+}
+
+async function readOriginalKeychains(io, statePath) {
+  try {
+    const value = JSON.parse(await io.readFile(statePath));
+    if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+      throw new Error('invalid keychain search-list state');
+    }
+    return value;
+  } catch (error) {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
   }
 }
 
@@ -158,6 +202,7 @@ export async function main(argv, deps = {}) {
     env = process.env, root = ROOT,
     keychain = keychainPath(env),
     certificatePath = certificatePathFor(env),
+    statePath = statePathFor(env),
     randomPassword = () => crypto.randomBytes(24).toString('base64url'),
   } = deps;
 
@@ -170,9 +215,16 @@ export async function main(argv, deps = {}) {
   }
 
   if (command === 'teardown') {
-    await teardown(planTeardown({ keychain, certificatePath }), { run, fsOps, root });
-    log.info('Signing keychain and certificate removed.');
-    return 0;
+    try {
+      const originalKeychains = await readOriginalKeychains(io, statePath);
+      await teardown(planTeardown({ keychain, certificatePath, statePath, originalKeychains }),
+        { run, fsOps, io, root, keychain });
+      log.info('Signing keychain and certificate removed.');
+      return 0;
+    } catch (error) {
+      log.error(error.message);
+      return 1;
+    }
   }
 
   let secrets;
@@ -192,6 +244,9 @@ export async function main(argv, deps = {}) {
 
   const keychainPassword = randomPassword();
   try {
+    const listed = await run('security', ['list-keychains', '-d', 'user'], { cwd: root });
+    const originalKeychains = parseKeychainList(listed.stdout);
+    await io.writeFile(statePath, JSON.stringify(originalKeychains));
     await io.writeBinaryFile(certificatePath, secrets.certificateBase64);
 
     const steps = planImportCertificate({
@@ -199,9 +254,11 @@ export async function main(argv, deps = {}) {
       keychainPassword,
       certificatePath,
       certificatePassword: secrets.certificatePassword,
+      originalKeychains,
     });
     for (const step of steps) {
       await run(step.cmd, step.args, { cwd: root, redact: step.redact });
+      if (step.args.includes('import')) await fsOps.rmrf(certificatePath);
     }
 
     const credentials = planStoreNotaryCredentials({
@@ -221,7 +278,13 @@ export async function main(argv, deps = {}) {
     log.error(error.message);
     // A half-built keychain is worse than none: it can hold the private key without the
     // partition list that makes codesign non-interactive, so a later step would hang.
-    await teardown(planTeardown({ keychain, certificatePath }), { run, fsOps, root });
+    try {
+      const originalKeychains = await readOriginalKeychains(io, statePath);
+      await teardown(planTeardown({ keychain, certificatePath, statePath, originalKeychains }),
+        { run, fsOps, io, root, keychain });
+    } catch (cleanupError) {
+      log.error(`Cleanup also failed: ${cleanupError.message}`);
+    }
     return 1;
   }
 }
