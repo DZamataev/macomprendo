@@ -17,13 +17,17 @@ import Testing
     private func makeRig(deltas: [String] = ["Short", " summary"],
                          failure: MacomprendoError? = nil,
                          delayPerDelta: Duration = .zero,
+                         gate: AsyncGate? = nil,
+                         pauseAfterDeltaCount: Int = 0,
                          holder: ScriptedSettingsHolder = .seeded()) -> Rig {
         let panel = QuickPanelController(holder: holder)
         panel.attach(ScriptedPanelHost())
 
         let recorder = LLMCallRecorder()
         let provider = ScriptedLLMProvider(deltas: deltas, failure: failure,
-                                           delayPerDelta: delayPerDelta, recorder: recorder)
+                                           delayPerDelta: delayPerDelta, gate: gate,
+                                           pauseAfterDeltaCount: pauseAfterDeltaCount,
+                                           recorder: recorder)
         let pasteboard = ScriptedPasteboard()
         let inserter = ScriptedInserter()
         let toaster = ScriptedToaster()
@@ -85,15 +89,26 @@ import Testing
         #expect(!rig.controller.isStreaming)
     }
 
+    /// Uses an `AsyncGate` rather than a fixed sleep so the cancel lands deterministically
+    /// between the first and second delta. The `Task.sleep(60ms)` this replaced raced
+    /// `delayPerDelta: 40ms`: on a loaded CI runner all three deltas streamed before `stop()`
+    /// fired and the partial-summary assertion failed. See `RefineControllerTests`, which hit
+    /// the same flake first.
     @Test func stopKeepsThePartialSummary() async {
-        let rig = makeRig(deltas: ["x", "y", "z"], delayPerDelta: .milliseconds(40))
+        let gate = AsyncGate()
+        let rig = makeRig(deltas: ["x", "y", "z"], gate: gate, pauseAfterDeltaCount: 1)
         rig.controller.start(text: "text")
-        try? await Task.sleep(for: .milliseconds(60))
+        await waitFor("the stream to suspend after the first delta") {
+            gate.waiterCount == 1 && rig.controller.summary == "x"
+        }
+
         rig.controller.stop()
+        gate.open()
         await rig.controller.drain()
+
         #expect(!rig.controller.isStreaming)
-        #expect(rig.controller.summary.count < 3)
-        #expect(rig.controller.error == nil)
+        #expect(rig.controller.summary == "x")   // no further delta after the cancel
+        #expect(rig.controller.error == nil)     // cancellation is not an error
     }
 
     @Test func copyWritesTheSummaryAndKeepsThePanelOpen() async {

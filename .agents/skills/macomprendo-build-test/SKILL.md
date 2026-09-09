@@ -19,7 +19,7 @@ Xcode 16 or newer (Swift 6.0). Check with `swift --version`.
 | Command | What it does |
 |---|---|
 | `npm run test:swift` | `swift test --package-path macos` — the authoritative unit-test run |
-| `npm run test:scripts` | `node --test 'scripts/__tests__/**/*.test.mjs'` |
+| `npm run test:scripts` | `node --test scripts/__tests__` |
 | `npm run audit` | Repository safety checks plus Gitleaks scans of the working tree and Git history |
 | `npm run install-app:signed` | Builds, signs, installs, and opens the normal local test app without invalidating TCC grants |
 | `swift build --package-path macos` | Compiles the app target; fastest feedback loop |
@@ -64,7 +64,7 @@ xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
 | `type 'Bundle?' has no member 'module'` | A dependency ships resources it never declared — it cannot be an SPM dependency |
 | `static property … is not concurrency-safe` | Add `@MainActor`, or make the type `Sendable` |
 | `requires that 'Settings' conform to 'Scene'` | Our Core `Settings` is shadowing SwiftUI's — write `SwiftUI.Settings` |
-| `MODULE_NOT_FOUND` from `node --test` | The glob lost its quotes; Node must expand it, not the shell |
+| `Could not find '…/*.test.mjs'` from `node --test` | A glob was passed instead of the `scripts/__tests__` directory; Node only expands globs itself from 21 onwards, and CI pins 20 |
 | `everyIconHasAVendoredSVG` fails | An `AppIcon` case has no SVG: add it to `Resources/Icons/icons.json` and run `npm run sync-icons` |
 | An icon renders as an SF Symbol instead of Phosphor | The SVG is missing from the built bundle — check the `resources:` entry in `Package.swift` and the folder reference in `project.yml` |
 | xcodebuild cannot find a package | Run `npm run gen` after editing `macos/project.yml` |
