@@ -39,3 +39,36 @@ test("run writes input to stdin and closes it", async () => {
   assert.equal(result.code, 0);
   assert.equal(result.stdout, "hello\nworld\n");
 });
+
+test("run redacts listed values from the logged command line", async () => {
+  const lines = [];
+  const log = { info() {}, warn() {}, error() {}, step: (m) => lines.push(m) };
+  await run("echo", ["--password", "hunter2", "--user", "me"], {
+    capture: true, log, redact: ["hunter2"],
+  });
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].includes("hunter2"), false);
+  assert.match(lines[0], /--password \*\*\*/);
+  assert.match(lines[0], /--user me/);
+});
+
+test("run redacts the same value everywhere it appears, and ignores empty entries", async () => {
+  const lines = [];
+  const log = { info() {}, warn() {}, error() {}, step: (m) => lines.push(m) };
+  await run("echo", ["s3cret", "keep", "s3cret"], {
+    capture: true, log, redact: ["s3cret", "", undefined, null],
+  });
+  assert.equal(lines[0], "echo *** keep ***");
+});
+
+test("run keeps a redacted value out of the error it throws", async () => {
+  const silentLog = { info() {}, warn() {}, error() {}, step() {} };
+  await assert.rejects(
+    () => run("sh", ["-c", "exit 3", "hunter2"], { capture: true, log: silentLog, redact: ["hunter2"] }),
+    (error) => {
+      assert.equal(error.message.includes("hunter2"), false);
+      assert.match(error.message, /exited with 3/);
+      return true;
+    },
+  );
+});

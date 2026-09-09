@@ -39,13 +39,13 @@ Download the ZIP for the version you want from the
 
 | Asset | Signing | First launch |
 |---|---|---|
-| `Macomprendo-<version>-macos-unsigned.zip` | Ad-hoc, built by CI on the release tag | Gatekeeper blocks it; right-click ▸ Open, or `xattr -dr com.apple.quarantine Macomprendo.app` |
-| `Macomprendo-<version>-macos.zip` | Developer ID signed, notarized and stapled by the maintainer (`npm run release -- --notarize`, see [DISTRIBUTING.md](DISTRIBUTING.md)) | Opens without a warning |
+| `Macomprendo-<version>-macos.zip` | Developer ID signed, notarized and stapled (by CI when the signing secrets are configured, or locally with `npm run release -- --notarize`, see [DISTRIBUTING.md](DISTRIBUTING.md)) | Opens without a warning |
+| `Macomprendo-<version>-macos-unsigned.zip` | Ad-hoc, built by CI on the release tag when no signing secrets are set | Gatekeeper blocks it; right-click ▸ Open, or `xattr -dr com.apple.quarantine Macomprendo.app` |
 
 Verify either download against the `.sha256` published next to it:
 
 ```sh
-shasum -a 256 -c Macomprendo-<version>-macos-unsigned.zip.sha256
+shasum -a 256 -c Macomprendo-<version>-macos.zip.sha256
 ```
 
 ### Build from source
