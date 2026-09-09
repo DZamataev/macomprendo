@@ -181,6 +181,8 @@ test('setup captures every existing keychain before prepending the temporary one
   ];
   const d = deps(ENV, [{ stdout: existing.map((item) => `    "${item}"`).join('\n') }]);
   assert.equal(await main(['setup'], d), 0);
+  assert.equal(d.run.calls[0].options.capture, true,
+    'production run() only returns stdout when capture is explicitly enabled');
   assert.deepEqual(JSON.parse(d.io.store.get('/tmp/build-search-list.json')), existing);
   assert.ok(d.run.calls.some((call) => call.args.join('\0') === [
     'list-keychains', '-d', 'user', '-s', '/tmp/build.keychain-db', ...existing,

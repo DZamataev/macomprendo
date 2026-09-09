@@ -244,7 +244,9 @@ export async function main(argv, deps = {}) {
 
   const keychainPassword = randomPassword();
   try {
-    const listed = await run('security', ['list-keychains', '-d', 'user'], { cwd: root });
+    const listed = await run('security', ['list-keychains', '-d', 'user'], {
+      cwd: root, capture: true,
+    });
     const originalKeychains = parseKeychainList(listed.stdout);
     await io.writeFile(statePath, JSON.stringify(originalKeychains));
     await io.writeBinaryFile(certificatePath, secrets.certificateBase64);
