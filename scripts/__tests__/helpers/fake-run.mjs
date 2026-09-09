@@ -78,6 +78,7 @@ export function makeFakeIO(files = {}) {
       return store.get(p);
     },
     async writeFile(p, text) { store.set(p, text); writes.push(p); },
+    async writeBinaryFile(p, base64) { store.set(p, Buffer.from(base64, 'base64')); writes.push(p); },
     async exists(p) { return store.has(p); },
   };
 }

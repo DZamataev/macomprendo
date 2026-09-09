@@ -18,12 +18,44 @@ env:
   GITLEAKS_VERSION: "8.30.1"
 
 jobs:
+  # `secrets` is not a valid context in `jobs.<id>.if` — a condition like
+  # `if: ${{ secrets.X != '' }}` is a hard workflow syntax error ("Unrecognized named-value:
+  # 'secrets'"), not a false condition. Presence has to be turned into a plain output here,
+  # inside a step, where the secrets context *is* available. The value is never printed: only
+  # the boolean derived from it.
+  check-signing-secrets:
+    name: Check for signing secrets
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.probe.outputs.available }}
+    steps:
+      - id: probe
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CERTIFICATE" ] && [ -n "$CERTIFICATE_PASSWORD" ] \
+             && [ -n "$NOTARY_APPLE_ID" ] && [ -n "$NOTARY_PASSWORD" ]; then
+            echo "All four signing secrets are set; the release will be notarized."
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Signing secrets are not fully configured; publishing an ad-hoc signed build."
+            echo "See DISTRIBUTING.md > 'Signing and notarizing from CI'."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
   verify-and-build:
     name: Verify, build and publish
     runs-on: macos-15
+    needs: check-signing-secrets
     # Needed by `gh release create`. Scoped to this job rather than the workflow.
     permissions:
       contents: write
+    env:
+      SIGNING_AVAILABLE: ${{ needs.check-signing-secrets.outputs.available }}
 
     steps:
       # fetch-depth: 0 — `npm run audit` scans the whole Git history with Gitleaks.
@@ -87,11 +119,40 @@ jobs:
       - name: Audit public repository files
         run: npm run audit
 
-      # Ad-hoc signed only: notarization needs the maintainer's Developer ID certificate
-      # and Apple notary credentials, which this repository deliberately does not hold.
-      # A notarized build is produced locally with `npm run release -- --notarize`.
+      # ---------------------------------------------------------------------------------
+      # Unsigned path: always runs, so a release without secrets still ships a usable build.
+      # ---------------------------------------------------------------------------------
       - name: Build an unsigned universal app bundle
+        if: env.SIGNING_AVAILABLE != 'true'
         run: npm run build -- --arch arm64,x86_64
+
+      # ---------------------------------------------------------------------------------
+      # Signed path: only when all four secrets exist. The certificate lives in a temporary
+      # keychain that is torn down in `if: always()` below, so it never outlives the job.
+      # ---------------------------------------------------------------------------------
+      # MACOMPRENDO_SIGNING_KEYCHAIN is set per step rather than for the job: the `runner`
+      # context is not available in job-level env, and GitHub does not shell-expand env
+      # values, so `${RUNNER_TEMP}/…` there would be passed through as a literal string.
+      # Every step that touches the keychain names the same path.
+      - name: Set up the signing keychain
+        if: env.SIGNING_AVAILABLE == 'true'
+        env:
+          MACOMPRENDO_SIGNING_KEYCHAIN: ${{ runner.temp }}/macomprendo-signing.keychain-db
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_APP_SPECIFIC_PASSWORD: ${{ secrets.NOTARY_APP_SPECIFIC_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: node scripts/ci-keychain.mjs setup
+
+      # notarize-app.mjs rebuilds the app itself with the Developer ID identity, submits it,
+      # staples the ticket and writes Macomprendo-<version>-macos.zip plus its .sha256.
+      - name: Build, sign and notarize a universal app bundle
+        if: env.SIGNING_AVAILABLE == 'true'
+        env:
+          NOTARYTOOL_KEYCHAIN: ${{ runner.temp }}/macomprendo-signing.keychain-db
+        run: npm run notarize
+
 
       - name: Report the built artifact
         run: |
@@ -99,20 +160,29 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             dist/Macomprendo.app/Contents/Info.plist
           ls dist/Macomprendo.app/Contents/Resources
+          codesign -dv dist/Macomprendo.app 2>&1 | grep -E 'Authority|Signature' || true
 
       # The ZIP's version comes from the built bundle, not from the tag, so a mismatch
       # cannot be papered over by the filename — and the tag check above already proved
-      # the two agree.
-      - name: Archive the unsigned build
+      # the two agree. The notarized path has already produced its own ZIP and sidecar
+      # (named without `-unsigned`), so this only archives the ad-hoc build.
+      - name: Archive the build
         id: archive
         run: |
           set -euo pipefail
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             dist/Macomprendo.app/Contents/Info.plist)
-          ZIP="dist/Macomprendo-${VERSION}-macos-unsigned.zip"
-          ditto -c -k --sequesterRsrc --keepParent dist/Macomprendo.app "$ZIP"
-          # `shasum -c` needs the digest and a bare filename, so it is written from dist/.
-          ( cd dist && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
+          if [ "${SIGNING_AVAILABLE}" = "true" ]; then
+            ZIP="dist/Macomprendo-${VERSION}-macos.zip"
+            # notarize-app.mjs wrote both files; fail loudly rather than publishing a release
+            # whose "notarized" asset silently does not exist.
+            test -f "$ZIP" && test -f "${ZIP}.sha256"
+          else
+            ZIP="dist/Macomprendo-${VERSION}-macos-unsigned.zip"
+            ditto -c -k --sequesterRsrc --keepParent dist/Macomprendo.app "$ZIP"
+            # `shasum -c` needs the digest and a bare filename, so it is written from dist/.
+            ( cd dist && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
+          fi
           cat "${ZIP}.sha256"
           echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -120,11 +190,21 @@ jobs:
       - name: Verify the checksum sidecar
         run: cd dist && shasum -a 256 -c "$(basename '${{ steps.archive.outputs.zip }}').sha256"
 
-      - name: Upload the unsigned build as a workflow artifact
+      # Runs even when an earlier step failed, so a broken run cannot leave the private key
+      # behind on a runner.
+      - name: Remove the signing keychain
+        if: always()
+        env:
+          MACOMPRENDO_SIGNING_KEYCHAIN: ${{ runner.temp }}/macomprendo-signing.keychain-db
+        run: node scripts/ci-keychain.mjs teardown
+
+      - name: Upload the build as a workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: macomprendo-unsigned
+          name: macomprendo-${{ steps.archive.outputs.version }}
           path: |
+            dist/Macomprendo-*-macos.zip
+            dist/Macomprendo-*-macos.zip.sha256
             dist/Macomprendo-*-macos-unsigned.zip
             dist/Macomprendo-*-macos-unsigned.zip.sha256
           if-no-files-found: error

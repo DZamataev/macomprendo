@@ -6,6 +6,8 @@ import path from 'node:path';
 import {
   findNodeTestSpellingProblems, findUncoveredTestFiles, parseWorkflow, runCommands,
   findAuditSetupProblems, findReleasePublishProblems, findUnpinnedNodeJobs,
+  findSecretsInJobConditions, findSigningTeardownProblems, findUngatedSigningSteps,
+  findJobEnvContextProblems,
 } from '../lib/workflows.mjs';
 import { WORKFLOWS_DIR, PACKAGE_JSON } from '../lib/paths.mjs';
 
@@ -271,6 +273,135 @@ test('every job that runs npm pins its Node version', async () => {
   for (const name of names) {
     const { document } = await workflow(name);
     problems.push(...findUnpinnedNodeJobs(document, { name: path.basename(name, '.yml') }));
+  }
+  assert.deepEqual(problems, []);
+});
+
+// --- optional signed release path -------------------------------------------
+
+test('findSecretsInJobConditions flags the syntax error GitHub rejects outright', () => {
+  const broken = parseWorkflow([
+    'jobs:',
+    '  sign:',
+    "    if: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 != '' }}",
+    '    steps:',
+    '      - run: true',
+  ].join('\n'), { name: 'release.yml' });
+  const problems = findSecretsInJobConditions(broken, { name: 'release' });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /rejects the workflow/);
+});
+
+test('findSecretsInJobConditions accepts a needs-based gate', () => {
+  const good = parseWorkflow([
+    'jobs:',
+    '  sign:',
+    "    if: ${{ needs.check-signing-secrets.outputs.available == 'true' }}",
+    '    steps:',
+    '      - run: true',
+  ].join('\n'), { name: 'release.yml' });
+  assert.deepEqual(findSecretsInJobConditions(good, { name: 'release' }), []);
+});
+
+test('findSigningTeardownProblems requires an always() teardown', () => {
+  const missing = parseWorkflow([
+    'jobs:',
+    '  build:',
+    '    steps:',
+    '      - run: node scripts/ci-keychain.mjs setup',
+  ].join('\n'), { name: 'release.yml' });
+  assert.match(findSigningTeardownProblems(missing, { name: 'release' })[0], /never tears it down/);
+
+  const conditional = parseWorkflow([
+    'jobs:',
+    '  build:',
+    '    steps:',
+    '      - run: node scripts/ci-keychain.mjs setup',
+    '      - if: success()',
+    '        run: node scripts/ci-keychain.mjs teardown',
+  ].join('\n'), { name: 'release.yml' });
+  assert.match(findSigningTeardownProblems(conditional, { name: 'release' })[0], /if: always\(\)/);
+
+  const good = parseWorkflow([
+    'jobs:',
+    '  build:',
+    '    steps:',
+    '      - run: node scripts/ci-keychain.mjs setup',
+    '      - if: always()',
+    '        run: node scripts/ci-keychain.mjs teardown',
+  ].join('\n'), { name: 'release.yml' });
+  assert.deepEqual(findSigningTeardownProblems(good, { name: 'release' }), []);
+});
+
+test('findUngatedSigningSteps flags a secret-consuming step with no gate', () => {
+  const ungated = parseWorkflow([
+    'jobs:',
+    '  build:',
+    '    steps:',
+    '      - name: Sign',
+    '        env:',
+    '          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}',
+    '        run: node scripts/ci-keychain.mjs setup',
+  ].join('\n'), { name: 'release.yml' });
+  assert.match(findUngatedSigningSteps(ungated, { name: 'release' })[0], /without gating/);
+});
+
+test('findUngatedSigningSteps allows the probe job that produces the gate', () => {
+  const probe = parseWorkflow([
+    'jobs:',
+    '  check-signing-secrets:',
+    '    outputs:',
+    '      available: ${{ steps.probe.outputs.available }}',
+    '    steps:',
+    '      - id: probe',
+    '        env:',
+    '          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}',
+    '        run: echo "available=true" >> "$GITHUB_OUTPUT"',
+  ].join('\n'), { name: 'release.yml' });
+  assert.deepEqual(findUngatedSigningSteps(probe, { name: 'release' }), []);
+});
+
+test('findJobEnvContextProblems flags contexts and shell variables job env cannot use', () => {
+  const bad = parseWorkflow([
+    'jobs:',
+    '  build:',
+    '    env:',
+    '      FROM_RUNNER: ${{ runner.temp }}/keychain',
+    '      FROM_SHELL: ${RUNNER_TEMP}/keychain',
+    '    steps:',
+    '      - run: true',
+  ].join('\n'), { name: 'release.yml' });
+  const problems = findJobEnvContextProblems(bad, { name: 'release' });
+  assert.equal(problems.length, 2);
+  assert.ok(problems.some((p) => /not\s+available there/.test(p)));
+  assert.ok(problems.some((p) => /never expands/.test(p)));
+});
+
+test('findJobEnvContextProblems accepts contexts job env may use', () => {
+  const good = parseWorkflow([
+    'jobs:',
+    '  build:',
+    '    env:',
+    "      FROM_NEEDS: ${{ needs.check.outputs.available }}",
+    '      LITERAL: some/path',
+    '    steps:',
+    '      - run: true',
+  ].join('\n'), { name: 'release.yml' });
+  assert.deepEqual(findJobEnvContextProblems(good, { name: 'release' }), []);
+});
+
+test('the committed workflows keep the signing path safe', async () => {
+  const names = (await fs.readdir(WORKFLOWS_DIR)).filter((f) => f.endsWith('.yml'));
+  const problems = [];
+  for (const name of names) {
+    const { document } = await workflow(name);
+    const label = path.basename(name, '.yml');
+    problems.push(
+      ...findSecretsInJobConditions(document, { name: label }),
+      ...findSigningTeardownProblems(document, { name: label }),
+      ...findUngatedSigningSteps(document, { name: label }),
+      ...findJobEnvContextProblems(document, { name: label }),
+    );
   }
   assert.deepEqual(problems, []);
 });

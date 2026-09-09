@@ -255,3 +255,43 @@ test('main reports a killed notary-log fetch instead of claiming a log was writt
   assert.ok(message.includes('SIGKILL'));
   assert.equal(message.includes('Notary log written'), false);
 });
+
+test('parseNotarizeArgs accepts a keychain path and prefers it over the environment', () => {
+  assert.equal(parseNotarizeArgs([], {}).keychain, null);
+  assert.equal(parseNotarizeArgs(['--keychain', '/tmp/ci.keychain-db'], {}).keychain,
+    '/tmp/ci.keychain-db');
+  assert.equal(parseNotarizeArgs([], { NOTARYTOOL_KEYCHAIN: '/tmp/env.keychain-db' }).keychain,
+    '/tmp/env.keychain-db');
+  assert.equal(
+    parseNotarizeArgs(['--keychain', '/tmp/flag.keychain-db'], { NOTARYTOOL_KEYCHAIN: '/tmp/env.keychain-db' }).keychain,
+    '/tmp/flag.keychain-db',
+  );
+});
+
+test('planNotarize passes --keychain to every notarytool call when one is given', () => {
+  // Without this, notarytool looks the profile up in the default keychain and cannot find
+  // credentials that ci-keychain.mjs deliberately stored in a temporary one.
+  const steps = planNotarize({
+    identity: 'Developer ID Application: Denis Zamataev (68QJJA7HK9)',
+    profile: 'macomprendo-notary',
+    timeout: '60m',
+    dist: '/out',
+    version: '1.2.3',
+    keychain: '/tmp/ci.keychain-db',
+  });
+  const notarytool = steps.filter((s) => s.cmd === 'xcrun' && s.args[0] === 'notarytool');
+  assert.ok(notarytool.length >= 2);
+  for (const step of notarytool) {
+    const line = step.args.join(' ');
+    assert.match(line, /--keychain \/tmp\/ci\.keychain-db/, line);
+  }
+});
+
+test('planNotarize omits --keychain when none is given', () => {
+  const steps = planNotarize({
+    identity: 'X', profile: 'p', timeout: '60m', dist: '/out', version: '1.2.3',
+  });
+  for (const step of steps) {
+    assert.equal((step.args ?? []).includes('--keychain'), false);
+  }
+});

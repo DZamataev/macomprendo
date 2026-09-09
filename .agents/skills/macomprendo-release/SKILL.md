@@ -100,14 +100,20 @@ network round trip to Apple, with a default 60-minute wait.
   build **errors** (not warns) with "swift build produced no SwiftPM resource bundle next to
   the executable" if none is found — that check only becomes a warning under `--dry-run`,
   where nothing has actually been built yet. Either way, stop and fix it before shipping.
-- CI never notarizes: no Apple secrets are assumed to exist in the repository.
+- CI notarizes only when the four signing secrets are configured; without them it publishes an
+  ad-hoc build, and no Apple credentials are assumed to exist in the repository.
 - **Pushing a `vX.Y.Z` tag publishes a GitHub release by itself** (`.github/workflows/release.yml`).
   The workflow re-verifies the tag against `MARKETING_VERSION`, runs both test suites, the
-  unsigned xcodebuild and `npm run audit`, then builds a universal **ad-hoc signed** bundle and
-  attaches `Macomprendo-<version>-macos-unsigned.zip` plus its `.sha256` sidecar, with notes from
-  `CHANGELOG.md`. Re-running the same tag updates that release instead of failing. That artifact
-  is *not notarized*: downloaders get a Gatekeeper warning. A notarized ZIP still comes only from
-  `npm run release -- --notarize`, run locally, and is uploaded to the same release by hand.
+  unsigned xcodebuild and `npm run audit`, then builds a universal bundle and attaches it with
+  its `.sha256` sidecar and notes from `CHANGELOG.md`. Re-running the same tag updates that
+  release instead of failing.
+  - **Without** the signing secrets it publishes `Macomprendo-<version>-macos-unsigned.zip`,
+    ad-hoc signed; downloaders get a Gatekeeper warning.
+  - **With** `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `NOTARY_APPLE_ID`
+    and `NOTARY_APP_SPECIFIC_PASSWORD` set, `scripts/ci-keychain.mjs` builds a temporary
+    keychain and `npm run notarize` produces `Macomprendo-<version>-macos.zip` instead. See
+    DISTRIBUTING.md § "Signing and notarizing from CI"; the keychain is torn down in an
+    `if: always()` step.
   `scripts/ci-release-notes.mjs` is the CI-side notes writer; `scripts/release.mjs` remains the
   local release driver, and the two are deliberately separate.
 - **No real notarization has ever been run against this toolchain.** No submission has ever
@@ -136,6 +142,13 @@ network round trip to Apple, with a default 60-minute wait.
   shallow clone would make the history scan meaningless.
 - **Publishing needs job-scoped `permissions: contents: write`**, and `gh` does not expand
   globs — pass the concrete asset paths through a shell variable.
+- **`if: ${{ secrets.X != '' }}` on a job is a hard syntax error**, not a false condition:
+  GitHub rejects the whole workflow ("Unrecognized named-value: 'secrets'"). Probe the secrets
+  in a step and expose a boolean output for later jobs to gate on.
+- **`runner` is not available in `jobs.<id>.env`**, and GitHub never shell-expands env values
+  (`${RUNNER_TEMP}/…` stays literal). Set such paths per step.
+- **Run `actionlint` before pushing a workflow change** (`brew install actionlint`): it catches
+  context-availability errors that no local test can, and it caught one here.
 - A timing-sensitive controller test must gate on `AsyncGate`, never on a `Task.sleep` racing
   a scripted delay: those pass locally forever and fail on loaded runners.
 - Verify a published release for real: download the ZIP and `.sha256`, `shasum -a 256 -c`,

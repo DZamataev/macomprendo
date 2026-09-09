@@ -21,6 +21,7 @@ export function parseNotarizeArgs(argv, env = process.env) {
     options: {
       sign: { type: 'string' },
       profile: { type: 'string' },
+      keychain: { type: 'string' },
       timeout: { type: 'string' },
       dist: { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
@@ -30,6 +31,9 @@ export function parseNotarizeArgs(argv, env = process.env) {
   return {
     sign: values.sign ?? null,
     profile: values.profile ?? env.NOTARYTOOL_PROFILE ?? NOTARY_PROFILE,
+    // CI stores the notary credentials in a temporary keychain (scripts/ci-keychain.mjs);
+    // without this, notarytool looks the profile up in the default one and finds nothing.
+    keychain: values.keychain ?? env.NOTARYTOOL_KEYCHAIN ?? null,
     timeout: values.timeout ?? '60m',
     dist: values.dist ?? DIST_DIR,
     dryRun: values['dry-run'],
@@ -58,14 +62,16 @@ export function parseSubmission(jsonText) {
   }
 }
 
-export function planNotarize({ identity, profile, timeout, dist, version }) {
+export function planNotarize({ identity, profile, timeout, dist, version, keychain = null }) {
   const app = path.join(dist, APP_NAME);
   const submission = path.join(dist, `Macomprendo-${version}-notarization.zip`);
   const final = path.join(dist, `Macomprendo-${version}-macos.zip`);
+  const inKeychain = keychain === null ? [] : ['--keychain', keychain];
   return [
     {
       type: 'exec', cmd: 'xcrun',
-      args: ['notarytool', 'history', '--keychain-profile', profile, '--output-format', 'json'],
+      args: ['notarytool', 'history', '--keychain-profile', profile, ...inKeychain,
+        '--output-format', 'json'],
     },
     {
       type: 'exec', cmd: 'node',
@@ -88,7 +94,7 @@ export function planNotarize({ identity, profile, timeout, dist, version }) {
       type: 'exec', cmd: 'xcrun', capture: true,
       args: [
         'notarytool', 'submit', submission,
-        '--keychain-profile', profile,
+        '--keychain-profile', profile, ...inKeychain,
         '--wait', '--timeout', timeout,
         '--output-format', 'json',
       ],
@@ -138,6 +144,7 @@ export async function main(argv, deps = {}) {
       '',
       '  --sign <identity>  Developer ID identity (default: the first one found)',
       '  --profile <name>   notarytool keychain profile (default: macomprendo-notary)',
+      '  --keychain <path>  keychain holding that profile (default: the search list)',
       '  --timeout <dur>    notarytool --wait timeout (default: 60m)',
       '  --dist <dir>       output directory (default: dist/)',
       '  --dry-run          print the plan without contacting Apple',
@@ -165,7 +172,7 @@ export async function main(argv, deps = {}) {
     const version = readVersion(await io.readFile(PROJECT_YML));
     const steps = planNotarize({
       identity, profile: options.profile, timeout: options.timeout,
-      dist: options.dist, version,
+      dist: options.dist, version, keychain: options.keychain,
     });
 
     if (options.dryRun) {
@@ -197,7 +204,8 @@ export async function main(argv, deps = {}) {
           if (submission.id !== null) {
             const logPath = path.join(options.dist, `notary-log-${submission.id}.json`);
             const logResult = await run('xcrun', [
-              'notarytool', 'log', submission.id, '--keychain-profile', options.profile, logPath,
+              'notarytool', 'log', submission.id, '--keychain-profile', options.profile,
+              ...(options.keychain === null ? [] : ['--keychain', options.keychain]), logPath,
             ], { cwd: ROOT, check: false });
             if (logResult.code === null) {
               log.error(`Fetching the notary log was killed (signal ${logResult.signal}); `

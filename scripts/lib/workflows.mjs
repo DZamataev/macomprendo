@@ -143,6 +143,105 @@ export function findUnpinnedNodeJobs(workflow, { name }) {
   return problems;
 }
 
+/**
+ * `secrets` is not an allowed context in `jobs.<id>.if` — GitHub rejects the whole workflow
+ * with "Unrecognized named-value: 'secrets'", so this mistake takes CI down entirely rather
+ * than merely skipping a job. Presence must be probed in a step and passed on as an output.
+ */
+export function findSecretsInJobConditions(workflow, { name }) {
+  const problems = [];
+  for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+    // Must not match a job named `check-signing-secrets` referenced through `needs.…`:
+    // only the bare `secrets` context, i.e. not preceded by a word character, hyphen or dot.
+    if (typeof job?.if === 'string' && /(^|[^\w.-])secrets\./.test(job.if)) {
+      problems.push(`${name}:${jobName} uses the secrets context in a job-level if; `
+        + 'GitHub rejects the workflow. Probe it in a step and expose a boolean output.');
+    }
+  }
+  return problems;
+}
+
+/**
+ * A job that imports a signing certificate must remove it again unconditionally. Without an
+ * `if: always()` teardown, a failure between import and cleanup leaves the private key on
+ * the runner.
+ */
+export function findSigningTeardownProblems(workflow, { name }) {
+  const problems = [];
+  for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+    const steps = job?.steps ?? [];
+    const setsUp = steps.some(
+      (step) => typeof step?.run === 'string' && /ci-keychain\.mjs\s+setup/.test(step.run),
+    );
+    if (!setsUp) continue;
+    const teardown = steps.find(
+      (step) => typeof step?.run === 'string' && /ci-keychain\.mjs\s+teardown/.test(step.run),
+    );
+    if (teardown === undefined) {
+      problems.push(`${name}:${jobName} sets up a signing keychain but never tears it down.`);
+    } else if (String(teardown.if ?? '').replace(/\s|\$\{\{|\}\}/g, '') !== 'always()') {
+      problems.push(`${name}:${jobName} tears the signing keychain down without if: always(); `
+        + 'a failed run would leave the private key on the runner.');
+    }
+  }
+  return problems;
+}
+
+/**
+ * `runner` is not available in `jobs.<id>.env` — only in step-level env, `with:` and `run:`.
+ * actionlint catches it, but a workflow that reaches GitHub with it simply expands to an
+ * empty string, silently pointing tools at a bogus path instead of failing.
+ */
+export function findJobEnvContextProblems(workflow, { name }) {
+  const problems = [];
+  const disallowedContext = /\$\{\{\s*(runner|steps|job|env)\./;
+  // GitHub does not shell-expand env values, so `${RUNNER_TEMP}/…` is passed through as
+  // that literal string — a silent wrong path rather than an error.
+  const shellExpansion = /\$\{?[A-Z_][A-Z0-9_]*\}?/;
+  for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+    for (const [key, value] of Object.entries(job?.env ?? {})) {
+      if (typeof value !== 'string') continue;
+      if (disallowedContext.test(value)) {
+        problems.push(`${name}:${jobName} job-level env ${key} uses a context that is not `
+          + 'available there (runner/steps/job/env); move it to the step that needs it.');
+      } else if (!value.includes('${{') && shellExpansion.test(value)) {
+        problems.push(`${name}:${jobName} job-level env ${key} looks like a shell variable; `
+          + 'GitHub passes env values through literally and never expands them.');
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * Every step that consumes a signing secret must be gated, so a fork or an unconfigured
+ * repository publishes the ad-hoc build instead of failing.
+ */
+export function findUngatedSigningSteps(workflow, { name }) {
+  const problems = [];
+  for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+    // The probe job's whole purpose is to read the secrets and publish a boolean; it is the
+    // thing that produces SIGNING_AVAILABLE, so it cannot itself be gated on it. It is safe
+    // because it only ever emits true/false, never a secret value.
+    const producesTheGate = Object.values(job?.outputs ?? {}).some(
+      (value) => typeof value === 'string' && /available/i.test(value),
+    );
+    if (producesTheGate) continue;
+
+    for (const step of job?.steps ?? []) {
+      const usesSigningSecret = Object.values(step?.env ?? {}).some(
+        (value) => typeof value === 'string' && /secrets\.(MACOS_CERTIFICATE|NOTARY_)/.test(value),
+      );
+      if (!usesSigningSecret) continue;
+      if (!String(step.if ?? '').includes('SIGNING_AVAILABLE')) {
+        problems.push(`${name}:${jobName} step "${step.name ?? step.id ?? 'unnamed'}" reads a `
+          + 'signing secret without gating on SIGNING_AVAILABLE.');
+      }
+    }
+  }
+  return problems;
+}
+
 export const RELEASE_ASSET_PATTERN = /Macomprendo-[^\s"']*\.zip|\$\{?ZIP\}?/;
 export const RELEASE_CHECKSUM_PATTERN = /\.sha256/;
 

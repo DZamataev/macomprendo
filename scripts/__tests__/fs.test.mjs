@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { ensureSymlink, sha256 } from "../lib/fs.mjs";
+import { ensureSymlink, sha256, realIO } from "../lib/fs.mjs";
 
 async function tmpdir() {
   return await fs.mkdtemp(path.join(os.tmpdir(), "macomprendo-test-"));
@@ -39,4 +39,15 @@ test("sha256 hashes file contents", async () => {
   const file = path.join(dir, "a.txt");
   await fs.writeFile(file, "abc");
   assert.equal(await sha256(file), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+});
+
+test("realIO.writeBinaryFile round-trips bytes a utf8 write would corrupt", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "macomprendo-binary-"));
+  const file = path.join(dir, "cert.p12");
+  // Real .p12 bytes are not valid UTF-8; writing them as text re-encodes and grows the file.
+  const bytes = Buffer.from([0x30, 0x82, 0x0a, 0xff, 0xfe, 0x00, 0x80, 0xc3, 0x28]);
+  await realIO.writeBinaryFile(file, bytes.toString("base64"));
+  assert.ok(bytes.equals(await fs.readFile(file)));
+  assert.equal((await fs.stat(file)).size, bytes.length);
+  await fs.rm(dir, { recursive: true, force: true });
 });

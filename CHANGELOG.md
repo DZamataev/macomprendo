@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- The tag-driven release workflow signs and notarizes the published build when the
+  `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `NOTARY_APPLE_ID` and
+  `NOTARY_APP_SPECIFIC_PASSWORD` repository secrets are configured, and falls back to the
+  ad-hoc signed build when they are not; the certificate lives in a temporary keychain that
+  is removed even if the run fails. See DISTRIBUTING.md § "Signing and notarizing from CI".
 - Local TTS can download checksum-pinned Piper and Kokoro archives, extract them atomically, and
   read selections entirely offline through sherpa-onnx; Russian and English Piper voices plus a
   103-speaker multilingual Kokoro model are available in Settings ▸ Speech.

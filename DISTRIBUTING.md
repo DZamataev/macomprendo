@@ -296,6 +296,105 @@ The installer stages the new bundle inside the destination directory, quits any 
 moves the old app to a backup, swaps in the new one, verifies the signature, and restores the
 backup if anything fails.
 
+## 6. Signing and notarizing from CI
+
+By default the tag-driven `Release` workflow publishes an **ad-hoc signed** build: it holds no
+Apple credentials, so downloaders get a Gatekeeper warning. Add the four repository secrets
+below and the same workflow builds, signs, notarizes and staples instead, publishing
+`Macomprendo-<version>-macos.zip` in place of the `-unsigned` one. Remove the secrets and it
+silently falls back — nothing else changes.
+
+The mechanism: `scripts/ci-keychain.mjs setup` decodes the certificate into a **temporary
+keychain** with a random password that exists only in that process's memory, grants `codesign`
+non-interactive access to the key, stores the notarization credentials in the same keychain,
+and `… teardown` deletes all of it in an `if: always()` step. The certificate never enters the
+repository, argv, or the log; `scripts/lib/run.mjs` redacts every password it is given, and the
+app-specific password reaches `notarytool` on stdin only.
+
+### Export the certificate
+
+The private key never leaves your Mac in usable form except as an encrypted `.p12`.
+
+1. **Keychain Access** → *My Certificates* → select **Developer ID Application: … (68QJJA7HK9)**.
+   It must show a disclosure triangle with the private key underneath; without the key the
+   export is useless.
+2. Right-click → *Export "Developer ID Application: …"* → format **Personal Information
+   Exchange (.p12)** → save as `~/Desktop/macomprendo-signing.p12`.
+3. It asks for a password to protect the file. **Generate a long random one and keep it** —
+   this becomes `MACOS_CERTIFICATE_PASSWORD`:
+
+   ```sh
+   openssl rand -base64 24 | tee ~/Desktop/p12-password.txt
+   ```
+
+4. Turn the file into the one-line base64 blob a secret can hold:
+
+   ```sh
+   base64 -i ~/Desktop/macomprendo-signing.p12 | pbcopy   # now in the clipboard
+   ```
+
+### Create an app-specific password
+
+Notarization must never see your real Apple Account password. An app-specific password is
+scoped and individually revocable.
+
+1. Sign in at [appleid.apple.com](https://appleid.apple.com) → *Sign-In and Security* →
+   *App-Specific Passwords* → **+**, name it `macomprendo-ci`.
+2. Copy the `xxxx-xxxx-xxxx-xxxx` value it shows once.
+
+### Store them as repository secrets
+
+Settings → *Secrets and variables* → *Actions* → **New repository secret**, or from the CLI
+(`gh secret set` reads the value from stdin whenever `--body` is absent, so nothing lands in
+your shell history):
+
+```sh
+base64 -i ~/Desktop/macomprendo-signing.p12 | gh secret set MACOS_CERTIFICATE_P12_BASE64
+gh secret set MACOS_CERTIFICATE_PASSWORD          # paste the .p12 password, then Ctrl-D
+gh secret set NOTARY_APPLE_ID                     # your Apple Account email
+gh secret set NOTARY_APP_SPECIFIC_PASSWORD        # the xxxx-xxxx-xxxx-xxxx value
+gh secret set NOTARY_TEAM_ID --body 68QJJA7HK9    # optional; defaults to this team
+```
+
+Confirm afterwards with `gh secret list` — it shows names and update times, never values.
+
+| Secret | Value |
+|---|---|
+| `MACOS_CERTIFICATE_P12_BASE64` | `base64 -i macomprendo-signing.p12` |
+| `MACOS_CERTIFICATE_PASSWORD` | The password you set when exporting the `.p12` |
+| `NOTARY_APPLE_ID` | The Apple Account email that owns the notarization access |
+| `NOTARY_APP_SPECIFIC_PASSWORD` | The app-specific password, not the account password |
+| `NOTARY_TEAM_ID` | Optional override; `68QJJA7HK9` is the default |
+
+All four of the first must be present; if any is missing the workflow reports which ones and
+publishes the ad-hoc build.
+
+Then **delete the exported files** — they are the crown jewels, and the audit refuses to
+publish a tree containing a `.p12` anyway:
+
+```sh
+rm -P ~/Desktop/macomprendo-signing.p12 ~/Desktop/p12-password.txt
+```
+
+### Things that will bite you
+
+- **Secrets are unavailable to workflows triggered from a fork's pull request.** That is by
+  design and why signing hangs off tag pushes only. A fork's CI publishes nothing.
+- **`if: ${{ secrets.X != '' }}` on a job is a syntax error**, not a false condition —
+  GitHub rejects the entire workflow with "Unrecognized named-value: 'secrets'". Presence is
+  probed in the `check-signing-secrets` job and passed on as an output.
+- **Anyone who can push a tag can use the certificate.** For a stricter setup, move the
+  signing job into a GitHub *Environment* with a required reviewer, so using the certificate
+  needs an explicit approval.
+- **A leaked value cannot be un-leaked**: revoke the certificate at developer.apple.com and
+  the app-specific password at appleid.apple.com, then re-issue both. Masking in logs is a
+  safety net, not a guarantee.
+- **Rotate before expiry.** A Developer ID certificate lasts five years; when it is replaced,
+  re-export and update `MACOS_CERTIFICATE_P12_BASE64` and `MACOS_CERTIFICATE_PASSWORD`
+  together.
+- An **App Store Connect API key** (`.p8` + key id + issuer) is a tighter alternative to the
+  app-specific password for notarization; the tooling does not use it today.
+
 ## Before publishing anything
 
 ```sh

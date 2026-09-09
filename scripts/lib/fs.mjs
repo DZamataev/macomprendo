@@ -138,5 +138,9 @@ export const realFsOps = {
 export const realIO = {
   readFile: (p) => fs.readFile(p, "utf8"),
   writeFile: (p, text) => fs.writeFile(p, text, "utf8"),
+  // Base64 in, raw bytes out. A .p12 certificate is not valid UTF-8, so decoding it to a
+  // string and writing that re-encodes every byte above 0x7f and produces a larger, corrupt
+  // file that `security import` rejects.
+  writeBinaryFile: (p, base64) => fs.writeFile(p, Buffer.from(base64, "base64")),
   exists: pathExists,
 };
