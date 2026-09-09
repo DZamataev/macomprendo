@@ -55,6 +55,16 @@ import Testing
         for _ in 0..<50 { await Task.yield() }
     }
 
+    private func waitUntilOpen(_ gate: AsyncGate) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while clock.now < deadline {
+            if gate.opened { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return gate.opened
+    }
+
     @Test func chunksArePlayedInOrder() async {
         let r = rig()
         r.http.responseForRequest = { request in
@@ -372,7 +382,7 @@ import Testing
         #expect(r.service.isPaused)
 
         r.http.releaseGate(at: 0)
-        await playbackBoundary.wait()
+        #expect(await waitUntilOpen(playbackBoundary), "fetch never reached the playback boundary")
 
         // `onFinished` is installed immediately before the service decides whether to hold or
         // play the fetched audio, so this proves the fetch reached the paused playback boundary.
@@ -400,7 +410,7 @@ import Testing
         }
         r.service.pause()
         r.http.releaseGate(at: 0)
-        await playbackBoundary.wait()
+        #expect(await waitUntilOpen(playbackBoundary), "fetch never reached the playback boundary")
         #expect(r.player.onFinished != nil)
         #expect(r.player.played.isEmpty)     // held, exactly as the pause test asserts
 

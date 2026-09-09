@@ -242,6 +242,88 @@ export function findUngatedSigningSteps(workflow, { name }) {
   return problems;
 }
 
+function executableShell(command) {
+  let quote = null;
+  const executable = [];
+  for (const rawLine of String(command).split('\n')) {
+    // Lines that begin inside a multiline quote are data for the command that opened the quote,
+    // not shell commands. Discard them even if the quote closes later on the same line; this
+    // deliberately fails closed for unusual scripts rather than blessing printed guard text.
+    const beginsInsideQuote = quote !== null;
+    let line = '';
+    for (let index = 0; index < rawLine.length; index += 1) {
+      const character = rawLine[index];
+      if (quote) {
+        if (character === quote && (quote === "'" || rawLine[index - 1] !== '\\')) quote = null;
+        if (!beginsInsideQuote) line += character;
+        continue;
+      }
+      if (character === '#' && (index === 0 || /[;\s]/.test(rawLine[index - 1]))) break;
+      if (character === "'" || character === '"') quote = character;
+      if (!beginsInsideQuote) line += character;
+    }
+    if (!beginsInsideQuote && line.trim() !== '') executable.push(line);
+  }
+  return executable.join('\n');
+}
+
+function commandLines(shell) {
+  return executableShell(shell).split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+function normalizedExpression(value) {
+  return String(value ?? '').replace(/\$\{\{|\}\}|\s/g, '');
+}
+
+/** The signed and fallback paths must be exact complements, not merely mention the gate. */
+export function findSigningGateProblems(workflow, { name }) {
+  const problems = [];
+  for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+    const signingJob = (job?.steps ?? []).some((step) =>
+      /ci-keychain\.mjs\s+setup|npm\s+run\s+notarize/.test(executableShell(step?.run)));
+    if (!signingJob) continue;
+    for (const step of job?.steps ?? []) {
+      const run = executableShell(step?.run);
+      const label = `${name}:${jobName} step "${step.name ?? step.id ?? 'unnamed'}"`;
+      let expected;
+      if (/ci-keychain\.mjs\s+setup|npm\s+run\s+notarize/.test(run)) {
+        expected = "env.SIGNING_AVAILABLE=='true'";
+      } else if (/unsigned/i.test(step?.name ?? '') && /npm\s+run\s+build/.test(run)) {
+        expected = "env.SIGNING_AVAILABLE!='true'";
+      }
+      if (expected && normalizedExpression(step.if) !== expected) {
+        problems.push(`${label} must use exactly "${expected}".`);
+      }
+      if (/Archive/i.test(step?.name ?? '') && /SIGNING_AVAILABLE/.test(run)
+          && !/if\s+\[\s+"\$\{SIGNING_AVAILABLE\}"\s+=\s+"true"\s+\]/.test(run)) {
+        problems.push(`${label} must select the signed artifact only when SIGNING_AVAILABLE = true.`);
+      }
+    }
+  }
+  return problems;
+}
+
+/** A rerun that changes signing mode must remove assets belonging to the previous mode. */
+export function findReleaseAssetReconciliationProblems(workflow, { name }) {
+  const problems = [];
+  for (const { source, command } of runCommands(workflow, { name })) {
+    const lines = commandLines(command);
+    if (!lines.some((line) => /^gh\s+release\s+upload\b/.test(line))) continue;
+    const staleLoop = lines.some((line) => /^for\s+STALE_ASSET\s+in\b/.test(line)
+      && line.includes('$(basename "$STALE_ZIP")')
+      && line.includes('$(basename "${STALE_ZIP}.sha256")'));
+    const deletesLoopAsset = lines.some((line) =>
+      /^gh\s+release\s+delete-asset\s+"\$TAG"\s+"\$STALE_ASSET"\s+--yes$/.test(line));
+    const identifiesBothModes = lines.some((line) =>
+      /^STALE_ZIP=.*-macos\.zip"?$/.test(line))
+      && lines.some((line) => /^STALE_ZIP=.*-macos-unsigned\.zip"?$/.test(line));
+    if (!staleLoop || !deletesLoopAsset || !identifiesBothModes) {
+      problems.push(`${source} uploads release assets without removing the opposite signing mode.`);
+    }
+  }
+  return problems;
+}
+
 /**
  * Re-publishing an existing release must also clear the draft flag. Deleting a tag turns its
  * published release into a draft, and `gh release edit --latest` on a draft fails with
@@ -251,8 +333,10 @@ export function findUngatedSigningSteps(workflow, { name }) {
 export function findDraftClearingProblems(workflow, { name }) {
   const problems = [];
   for (const { source, command } of runCommands(workflow, { name })) {
-    if (!/gh\s+release\s+edit/.test(command)) continue;
-    if (!/--draft=false/.test(command)) {
+    const edits = commandLines(command).filter((line) => /^gh\s+release\s+edit\b/.test(line));
+    if (edits.length === 0) continue;
+    if (!commandLines(command).some((line) => /^--draft=false(?:\s|$|\\)/.test(line)
+      || (/^gh\s+release\s+edit\b/.test(line) && /\s--draft=false(?:\s|$|\\)/.test(line)))) {
       problems.push(`${source} edits a release without --draft=false; a release orphaned into `
         + 'a draft (by deleting its tag) cannot be marked --latest.');
     }

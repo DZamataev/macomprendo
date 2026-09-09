@@ -277,8 +277,10 @@ discovery, notarytool submit/staple/validate, zip + sha256), `configure-notariza
 `scripts/lib/` (`run.mjs` for spawning with logging, `version.mjs`, `log.mjs`).
 `package.json` exposes them as `npm run build|notarize|release|audit|sync-agents|test:scripts`.
 Scripts are unit-tested with `node:test` in `scripts/__tests__/` (process spawning
-injected/mocked). CI: `npm run test:scripts`, `swift test`, unsigned `xcodebuild`,
-audit, symlink check.
+injected/mocked). CI: `npm run test:scripts`, `swift test`, unsigned `xcodebuild`, audit and
+symlink checks. A `vX.Y.Z` tag always publishes a universal ad-hoc ZIP; when all release signing
+secrets are present, the same workflow instead imports the Developer ID identity into a temporary
+keychain, signs, notarizes, staples and publishes the notarized ZIP, then verifies cleanup.
 Identity: bundle id `com.dzamataev.macomprendo`, `DEVELOPMENT_TEAM 68QJJA7HK9`,
 copyright "© 2026 Denis Zamataev", MIT license. Placeholder app icon until final art
 is supplied. Release prerequisite (documented in `DISTRIBUTING.md`): a "Developer ID

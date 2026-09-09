@@ -49,5 +49,6 @@ test("realIO.writeBinaryFile round-trips bytes a utf8 write would corrupt", asyn
   await realIO.writeBinaryFile(file, bytes.toString("base64"));
   assert.ok(bytes.equals(await fs.readFile(file)));
   assert.equal((await fs.stat(file)).size, bytes.length);
+  assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
   await fs.rm(dir, { recursive: true, force: true });
 });

@@ -4788,7 +4788,9 @@ npm run fetch-model-hashes                         # (from Plan 2) refresh whisp
   vendored Phosphor icons live) and every dynamic `*.framework` into `Contents/Frameworks`.
   whisper.cpp is a prebuilt xcframework, so there are no ggml Metal bundles to copy. If the build
   warns "No SwiftPM resource bundle found", stop and fix it before shipping.
-- CI never notarizes: no Apple secrets are assumed to exist in the repository.
+- CI assumes no Apple secrets by default and publishes an ad-hoc ZIP. The tag workflow notarizes
+  only when the complete optional signing-secret set exists; credentials live in a temporary
+  keychain whose search-list changes are restored and whose deletion is verified.
 
 ## When something fails
 
