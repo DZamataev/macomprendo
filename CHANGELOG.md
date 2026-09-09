@@ -121,6 +121,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   translated — including a new "Translate & organize" preset.
 
 ### Changed
+- Pushing a `vX.Y.Z` tag now publishes the GitHub release itself, with a universal ad-hoc
+  signed `Macomprendo-<version>-macos-unsigned.zip`, its `.sha256` sidecar, and notes taken
+  from `CHANGELOG.md`; re-running the same tag updates that release instead of failing.
+  The build is not notarized — a notarized ZIP still comes from
+  `npm run release -- --notarize` run locally.
 - Settings ▸ Speech puts Preview first on every source tab. System and Local TTS put mixed-language
   switching and playback parameters before voice choices, and show each language in its own group.
   Mixed-language voice switching now defaults on for both sources.

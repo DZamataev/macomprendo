@@ -1,5 +1,7 @@
 name: Release
 
+# Read by default; the publishing job widens this to contents: write for itself alone,
+# so nothing else in this workflow can write to the repository.
 permissions:
   contents: read
 
@@ -10,15 +12,25 @@ on:
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
 
 jobs:
   verify-and-build:
+    name: Verify, build and publish
     runs-on: macos-15
+    # Needed by `gh release create`. Scoped to this job rather than the workflow.
+    permissions:
+      contents: write
 
     steps:
+      # fetch-depth: 0 — `npm run audit` scans the whole Git history with Gitleaks.
       - name: Check out repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Report toolchain versions
         run: |
@@ -30,22 +42,13 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      - name: Verify the tag matches the release version
-        run: |
-          node -e '
-          import("node:fs/promises").then(async (fs) => {
-            const { readVersion } = await import("./scripts/lib/version.mjs");
-            const { PROJECT_YML } = await import("./scripts/lib/paths.mjs");
-            const version = readVersion(await fs.readFile(PROJECT_YML, "utf8"));
-            const tag = process.env.GITHUB_REF_NAME;
-            const expected = `v${version}`;
-            if (tag !== expected) {
-              console.error(`Tag ${tag} does not match MARKETING_VERSION ${version} in macos/project.yml (expected ${expected}).`);
-              process.exit(1);
-            }
-            console.log(`Tag ${tag} matches MARKETING_VERSION ${version}.`);
-          });
-          '
+      # Also the tag/version agreement check: refuses a tag that does not match
+      # MARKETING_VERSION in macos/project.yml, before anything is built.
+      - name: Verify the tag and write the release notes
+        run: >-
+          node scripts/ci-release-notes.mjs
+          --tag "${GITHUB_REF_NAME}"
+          --out "dist/release-notes-${GITHUB_REF_NAME}.md"
 
       - name: Run Node script tests
         run: npm run test:scripts
@@ -63,9 +66,22 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
 
+      - name: Install Gitleaks
+        run: |
+          set -euo pipefail
+          curl -fsSL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_darwin_arm64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f gitleaks gitleaks.tar.gz
+          gitleaks version
+
       - name: Audit public repository files
         run: npm run audit
 
+      # Ad-hoc signed only: notarization needs the maintainer's Developer ID certificate
+      # and Apple notary credentials, which this repository deliberately does not hold.
+      # A notarized build is produced locally with `npm run release -- --notarize`.
       - name: Build an unsigned universal app bundle
         run: npm run build -- --arch arm64,x86_64
 
@@ -76,18 +92,57 @@ jobs:
             dist/Macomprendo.app/Contents/Info.plist
           ls dist/Macomprendo.app/Contents/Resources
 
+      # The ZIP's version comes from the built bundle, not from the tag, so a mismatch
+      # cannot be papered over by the filename — and the tag check above already proved
+      # the two agree.
       - name: Archive the unsigned build
+        id: archive
         run: |
+          set -euo pipefail
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             dist/Macomprendo.app/Contents/Info.plist)
-          ditto -c -k --sequesterRsrc --keepParent \
-            dist/Macomprendo.app "dist/Macomprendo-${VERSION}-macos-unsigned.zip"
-          shasum -a 256 "dist/Macomprendo-${VERSION}-macos-unsigned.zip"
+          ZIP="dist/Macomprendo-${VERSION}-macos-unsigned.zip"
+          ditto -c -k --sequesterRsrc --keepParent dist/Macomprendo.app "$ZIP"
+          # `shasum -c` needs the digest and a bare filename, so it is written from dist/.
+          ( cd dist && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
+          cat "${ZIP}.sha256"
+          echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload the unsigned build
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Verify the checksum sidecar
+        run: cd dist && shasum -a 256 -c "$(basename '${{ steps.archive.outputs.zip }}').sha256"
+
+      - name: Upload the unsigned build as a workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: macomprendo-unsigned
-          path: dist/Macomprendo-*-macos-unsigned.zip
+          path: |
+            dist/Macomprendo-*-macos-unsigned.zip
+            dist/Macomprendo-*-macos-unsigned.zip.sha256
           if-no-files-found: error
           retention-days: 14
+
+      # README.md points downloaders at the Releases page and tells them to verify the ZIP
+      # against the .sha256 sidecar, so both files have to be attached. Idempotent: a re-run
+      # of the same tag edits the existing release instead of failing.
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          ZIP: ${{ steps.archive.outputs.zip }}
+          VERSION: ${{ steps.archive.outputs.version }}
+        run: |
+          set -euo pipefail
+          NOTES="dist/release-notes-${TAG}.md"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" "${ZIP}.sha256" --clobber
+            gh release edit "$TAG" --notes-file "$NOTES" --title "Macomprendo ${VERSION}" --latest
+          else
+            gh release create "$TAG" \
+              --title "Macomprendo ${VERSION}" \
+              --notes-file "$NOTES" \
+              --latest \
+              "$ZIP" "${ZIP}.sha256"
+          fi
+          gh release view "$TAG" --json url,assets \
+            --jq '"Published \(.url)", (.assets[] | "  asset: \(.name)")'

@@ -33,17 +33,19 @@ Other things it does:
 
 ## Install
 
-Download `Macomprendo-<version>-macos.zip` from the
+Download the ZIP for the version you want from the
 [Releases page](https://github.com/DZamataev/macomprendo/releases), expand it, and drag
-`Macomprendo.app` to `/Applications`. Once a release has been through the notarization step
-(`npm run release -- --notarize`, see [DISTRIBUTING.md](DISTRIBUTING.md)), the build is signed
-with a Developer ID certificate and notarized by Apple, so it opens without a Gatekeeper
-warning. A notes-only release has no ZIP attached; build from source instead.
+`Macomprendo.app` to `/Applications`. Two kinds of build can be attached to a release:
 
-Verify the download if you like:
+| Asset | Signing | First launch |
+|---|---|---|
+| `Macomprendo-<version>-macos-unsigned.zip` | Ad-hoc, built by CI on the release tag | Gatekeeper blocks it; right-click ▸ Open, or `xattr -dr com.apple.quarantine Macomprendo.app` |
+| `Macomprendo-<version>-macos.zip` | Developer ID signed, notarized and stapled by the maintainer (`npm run release -- --notarize`, see [DISTRIBUTING.md](DISTRIBUTING.md)) | Opens without a warning |
+
+Verify either download against the `.sha256` published next to it:
 
 ```sh
-shasum -a 256 -c Macomprendo-<version>-macos.zip.sha256
+shasum -a 256 -c Macomprendo-<version>-macos-unsigned.zip.sha256
 ```
 
 ### Build from source
