@@ -419,6 +419,21 @@ Every box must be ticked before `npm run release`.
 - [ ] `npm run audit` — the public repository audit passes.
 - [ ] `npm run build -- --dry-run` — the build plan prints without error.
 - [ ] `npm run release -- --dry-run patch` — the version resolves and the changelog validates.
+- [ ] The GitHub Actions **CI** workflow is green on `main` for the commit being released.
+
+### After the tag is pushed
+
+The `Release` workflow runs on every `vX.Y.Z` tag and publishes the release itself.
+
+- [ ] The `Release` run for the tag is green (`gh run list --workflow Release`).
+- [ ] `gh release view vX.Y.Z` shows both `Macomprendo-<version>-macos-unsigned.zip` and its
+      `.sha256`, and the notes came from `CHANGELOG.md`.
+- [ ] Download both, and `shasum -a 256 -c Macomprendo-<version>-macos-unsigned.zip.sha256`
+      reports `OK`.
+- [ ] `lipo -archs` on the expanded app prints `x86_64 arm64`, and `codesign -dv` reports
+      `adhoc` — this CI artifact is deliberately not notarized.
+- [ ] If this release ships a notarized build, `npm run release -- --notarize` was used (or the
+      notarized ZIP was uploaded to the same release afterwards).
 
 ### Build artifact
 

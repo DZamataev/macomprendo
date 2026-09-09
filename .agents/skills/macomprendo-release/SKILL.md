@@ -118,6 +118,29 @@ network round trip to Apple, with a default 60-minute wait.
   of that path, and budget time in case it surfaces something only Apple's servers can tell you
   about.
 
+## CI and the release workflow
+
+`.github/workflows/ci.yml` runs on pushes to `main` and every PR; `release.yml` runs on a
+`vX.Y.Z` tag and publishes the release. Facts learned the hard way, all now asserted by
+`scripts/__tests__/workflows.test.mjs` against the committed workflow files:
+
+- **Spell the test command `node --test scripts/__tests__/*.test.mjs`** (shell-expanded glob).
+  A quoted `'…/**/*.test.mjs'` is taken literally before Node 21; a bare `scripts/__tests__`
+  directory is resolved as a module on Node 22. Only the shell glob works on 20, 22 and 26.
+- **Every job that runs npm must use `actions/setup-node`.** The ubuntu and macOS runner
+  images preinstall different Node majors, so an unpinned job silently runs a different
+  version from its sibling — that is how the same command passed in one job and failed in
+  another on the same commit.
+- **The audit job needs `fetch-depth: 0` and an explicit gitleaks install.** Runner images do
+  not ship gitleaks, `audit-public-repo.mjs` fails rather than skipping its scan, and a
+  shallow clone would make the history scan meaningless.
+- **Publishing needs job-scoped `permissions: contents: write`**, and `gh` does not expand
+  globs — pass the concrete asset paths through a shell variable.
+- A timing-sensitive controller test must gate on `AsyncGate`, never on a `Task.sleep` racing
+  a scripted delay: those pass locally forever and fail on loaded runners.
+- Verify a published release for real: download the ZIP and `.sha256`, `shasum -a 256 -c`,
+  expand it, then `lipo -archs` (expect `x86_64 arm64`) and `codesign -dv` (expect `adhoc`).
+
 ## When something fails
 
 If a step after the confirmation prompt fails mid-release (files already rewritten, a commit
