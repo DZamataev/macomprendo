@@ -341,5 +341,6 @@ import Testing
         await waitForCompletedCopySleeps(1, in: sleeper)
 
         #expect(controller.copiedEntryID == 2)
+        secondGate.open()
     }
 }

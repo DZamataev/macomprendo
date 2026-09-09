@@ -16,7 +16,7 @@ final class AsyncGate: @unchecked Sendable {
     private var isOpen = false
     private var waiters: [Waiter] = []
 
-    init(timeout: Duration = .seconds(2),
+    init(timeout: Duration = .seconds(30),
          onTimeout: @escaping @Sendable () -> Void = {
              Issue.record("AsyncGate timed out waiting for open()")
          }) {

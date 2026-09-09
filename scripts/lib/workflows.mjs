@@ -243,11 +243,28 @@ export function findUngatedSigningSteps(workflow, { name }) {
 }
 
 function executableShell(command) {
-  return String(command).split('\n')
-    .filter((line) => !line.trimStart().startsWith('#'))
-    // A guard token after an inline shell comment is inert and must not satisfy an invariant.
-    .map((line) => line.replace(/\s+#.*$/, ''))
-    .join('\n');
+  let quote = null;
+  const executable = [];
+  for (const rawLine of String(command).split('\n')) {
+    // Lines that begin inside a multiline quote are data for the command that opened the quote,
+    // not shell commands. Discard them even if the quote closes later on the same line; this
+    // deliberately fails closed for unusual scripts rather than blessing printed guard text.
+    const beginsInsideQuote = quote !== null;
+    let line = '';
+    for (let index = 0; index < rawLine.length; index += 1) {
+      const character = rawLine[index];
+      if (quote) {
+        if (character === quote && (quote === "'" || rawLine[index - 1] !== '\\')) quote = null;
+        if (!beginsInsideQuote) line += character;
+        continue;
+      }
+      if (character === '#' && (index === 0 || /[;\s]/.test(rawLine[index - 1]))) break;
+      if (character === "'" || character === '"') quote = character;
+      if (!beginsInsideQuote) line += character;
+    }
+    if (!beginsInsideQuote && line.trim() !== '') executable.push(line);
+  }
+  return executable.join('\n');
 }
 
 function commandLines(shell) {

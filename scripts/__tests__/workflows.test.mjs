@@ -444,7 +444,7 @@ test('findSigningGateProblems ignores a correct archive predicate hidden in an i
     "      - { name: Set up signing keychain, if: env.SIGNING_AVAILABLE == 'true', run: node scripts/ci-keychain.mjs setup }",
     '      - name: Archive',
     '        run: |',
-    '          if [ "${SIGNING_AVAILABLE}" != "true" ]; then # if [ "${SIGNING_AVAILABLE}" = "true" ]',
+    '          if [ "${SIGNING_AVAILABLE}" != "true" ]; then;# if [ "${SIGNING_AVAILABLE}" = "true" ]',
     '            echo wrong',
     '          fi',
   ].join('\n'), { name: 'release.yml' });
@@ -470,6 +470,23 @@ test('findReleaseAssetReconciliationProblems requires executable deletion of bot
     '          STALE_ZIP="dist/Macomprendo-1.0.0-macos-unsigned.zip"',
     '          echo "gh release delete-asset $TAG $STALE_ZIP"',
     '          echo "${STALE_ZIP}.sha256"',
+    '          gh release upload "$TAG" "$ZIP" "${ZIP}.sha256" --clobber',
+  ].join('\n'), { name: 'release.yml' });
+  assert.equal(findReleaseAssetReconciliationProblems(bad, { name: 'release' }).length, 1);
+});
+
+test('findReleaseAssetReconciliationProblems ignores a cleanup script printed as multiline text', () => {
+  const bad = parseWorkflow([
+    'jobs:',
+    '  release:',
+    '    steps:',
+    '      - run: |',
+    "          echo '",
+    '          STALE_ZIP="dist/Macomprendo-1.0.0-macos.zip"',
+    '          STALE_ZIP="dist/Macomprendo-1.0.0-macos-unsigned.zip"',
+    '          for STALE_ASSET in "$(basename "$STALE_ZIP")" "$(basename "${STALE_ZIP}.sha256")"; do',
+    '          gh release delete-asset "$TAG" "$STALE_ASSET" --yes',
+    "          '",
     '          gh release upload "$TAG" "$ZIP" "${ZIP}.sha256" --clobber',
   ].join('\n'), { name: 'release.yml' });
   assert.equal(findReleaseAssetReconciliationProblems(bad, { name: 'release' }).length, 1);
