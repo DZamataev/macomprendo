@@ -74,11 +74,11 @@ npm run build -- --arch arm64,x86_64 \
   --sign "Developer ID Application: Denis Zamataev (68QJJA7HK9)"
 ```
 
-The build compiles each architecture with
-`swift build --package-path macos -c release --triple <arch>-apple-macosx14.0`, merges the
-slices with `lipo`, assembles `dist/Macomprendo.app`, stamps
-`CFBundleShortVersionString` / `CFBundleVersion` / `CFBundleIdentifier` with `PlistBuddy`,
-signs, and finishes with `codesign --verify --deep --strict`.
+The build invokes Xcode with an explicit `ARCHS` list and a deterministic DerivedData directory
+under `dist/`, copies Xcode's standard app product to `dist/Macomprendo.app`, stamps
+`CFBundleShortVersionString` / `CFBundleVersion` / `CFBundleIdentifier` with `PlistBuddy`, signs
+the two embedded dynamic frameworks before the app, and finishes with
+`codesign --verify --deep --strict`.
 
 An ad-hoc signature (`--sign -`, the default) is fine for local use. Passing a real identity
 switches on the hardened runtime (`--options runtime --timestamp`) and applies
@@ -89,12 +89,9 @@ Other `build-app.mjs` flags: `--configuration release|debug` (default `release`)
 (override `MARKETING_VERSION`), `--build-number <n>` (default: the version), and
 `--dist <dir>` (default `dist/`).
 
-**`error: command …/swift-version-<hash>.txt not registered` during `npm run build -- --arch
-arm64,x86_64`:** stale/inconsistent state in `macos/.build` from alternating single-arch and
-multi-arch (`--triple`) builds. Run `rm -rf macos/.build`, then re-run the build. This is a
-SwiftPM/llbuild incremental-build issue, not a `build-app.mjs` bug — it surfaces for anyone
-who has been doing ordinary single-architecture dev builds and then runs the universal build
-for the first time.
+`scripts/build-app.mjs` removes `dist/.derived-data` before every build. The resulting app must
+not depend on that directory: the release workflow deletes it again and proves that the app
+remains running before publishing an archive.
 
 **"Accessibility access is granted in System Settings, but the app says it is not":** an
 ad-hoc signed build has no stable code identity — no Team ID, no certificate chain — so macOS
@@ -110,72 +107,31 @@ is the real fix:
   and grant again. Do this once after switching from ad-hoc to a real identity, or when testing
   the permission flow itself. Do not make it part of ordinary local testing.
 
-### What the build copies into the bundle
+### Xcode app layout
 
-`swift build` leaves sidecars next to the executable, and `scripts/build-app.mjs` discovers
-and copies all of them rather than assuming a fixed list:
+Xcode, not the packaging script, creates the app structure:
 
-| Emitted | Goes to | Why |
-|---|---|---|
-| every `*.bundle` | `Contents/Resources/` | Every SwiftPM resource bundle found next to the executable — our own target's (`Macomprendo_Macomprendo.bundle`, the vendored Phosphor SVG icons, see `docs/DECISIONS/ADR-0008`) and any dependency's that ships its own (`KeyboardShortcuts_KeyboardShortcuts.bundle`). SwiftPM's generated `Bundle.module` accessor finds them via `Bundle.main.resourceURL`. |
-| `*.framework` | `Contents/Frameworks/` | Slices of a binary xcframework target, **only if they are dynamic**. An `@executable_path/../Frameworks` rpath is added and each framework is signed before the enclosing app. |
+| Xcode product | Destination |
+|---|---|
+| `AppIcon.icns`, the vendored `Icons/` directory, `KeyboardShortcuts_KeyboardShortcuts.bundle` | `Contents/Resources/` |
+| `whisper.framework`, `SherpaOnnxC.framework` | `Contents/Frameworks/` |
 
-whisper.cpp is consumed as a **prebuilt xcframework** (`docs/DECISIONS/ADR-0007`), and its
-slice is **dynamically linked** — the executable's load commands reference
-`@rpath/whisper.framework/Versions/Current/whisper` — so `whisper.framework` is copied into
-`Contents/Frameworks` and signed as nested code in its own right. Its Metal resources travel
-inside the framework, so there are no separate ggml resource bundles to copy.
+This is the standard macOS layout: the app root contains only `Contents/`. App-owned resources
+resolve through `Bundle.main`; KeyboardShortcuts' generated package accessor checks
+`Bundle.main.resourceURL`. Resource directories are sealed by the enclosing app signature and
+are not signed individually.
 
-sherpa-onnx is also consumed as a prebuilt xcframework (`docs/DECISIONS/ADR-0009`). Its
-`SherpaOnnxC.framework` slice is a second dynamic framework in the bundle, alongside the
-already dynamic `whisper.framework`. The build copies both to `Contents/Frameworks`, adds
-`@executable_path/../Frameworks`, and signs each framework before signing the app itself.
-
-Resource bundles are **not** signed individually — not because `codesign` always refuses
-them, but because they are *resources*, not nested code, and are sealed by the app's own
-signature instead. The two bundles here aren't even alike: `Macomprendo_Macomprendo.bundle`
-is declared `.copy(...)` (not `.process(...)`) in `macos/Package.swift`, so SwiftPM emits it
-as a plain directory with **no** `Info.plist`, and `codesign` genuinely refuses it as a
-signing target ("bundle format unrecognized, invalid, or unsuitable" — confirmed by signing
-it directly). `KeyboardShortcuts_KeyboardShortcuts.bundle` comes from the KeyboardShortcuts
-package's own `.process(...)`-declared resources, **does** have an `Info.plist`, and
-`codesign` accepts it individually without complaint. Neither is signed on its own regardless
-— only nested *code* needs its own signature before the enclosing app. Both
-`whisper.framework` and `SherpaOnnxC.framework` are signed nested code.
-
-Re-run the discovery after any vendored xcframework bump or any change to the app target's
-resources or dependencies:
+Both vendored frameworks are dynamically linked. `scripts/build-app.mjs` therefore signs
+`whisper.framework` and `SherpaOnnxC.framework` before signing the app. After a vendored
+xcframework upgrade, verify the assumptions explicitly:
 
 ```sh
-BIN=$(swift build --package-path macos -c release --triple arm64-apple-macosx14.0 --show-bin-path)
-ls -d "$BIN"/*.bundle 2>/dev/null || echo "(no .bundle)"
-ls -d "$BIN"/*.framework 2>/dev/null || echo "(no .framework)"
-otool -L "$BIN/Macomprendo" | grep -Ei 'whisper|SherpaOnnxC' || echo "framework is statically linked"
+otool -L dist/Macomprendo.app/Contents/MacOS/Macomprendo | grep -E 'whisper|SherpaOnnxC'
+codesign --verify --deep --strict --verbose=2 dist/Macomprendo.app
 ```
 
-Current result for this project:
-
-```text
-$BIN/KeyboardShortcuts_KeyboardShortcuts.bundle
-$BIN/Macomprendo_Macomprendo.bundle
-$BIN/whisper.framework
-$BIN/SherpaOnnxC.framework
-
-@rpath/whisper.framework/Versions/Current/whisper (compatibility version 0.0.0, current version 0.0.0)
-@rpath/SherpaOnnxC.framework/Versions/A/SherpaOnnxC (compatibility version 0.0.0, current version 0.0.0)
-```
-
-whisper and SherpaOnnxC are dynamically linked, so both frameworks are copied and signed; both
-`.bundle` directories are copied unsigned and sealed by the app's signature.
-
-`build-app.mjs` only hard-fails when **no** resource bundle at all is found next to the
-executable (`resourceBundles.length === 0`) — it does not check that any *specific* bundle
-(such as `Macomprendo_Macomprendo.bundle`) is among them. If `KeyboardShortcuts_KeyboardShortcuts.bundle`
-were still present but ours had somehow stopped being emitted, the build would succeed and warn
-about nothing; the app would simply ship without its icons. The `find … | wc -l` check in
-`docs/SMOKE_TEST.md`'s release checklist is what actually verifies *our* bundle specifically.
-Missing `.framework` entries are only a problem when `otool -L` says the corresponding slice is
-dynamic.
+If a dynamic framework is added or removed, update `EMBEDDED_FRAMEWORKS` in
+`scripts/build-app.mjs` and its tests in the same change.
 
 ## 3. Notarize and package
 

@@ -439,15 +439,13 @@ The `Release` workflow runs on every `vX.Y.Z` tag and publishes the release itse
 
 - [ ] `npm run build -- --arch arm64,x86_64` succeeds.
 - [ ] `lipo -archs dist/Macomprendo.app/Contents/MacOS/Macomprendo` prints `x86_64 arm64`.
-- [ ] `ls dist/Macomprendo.app/Contents/Resources` contains `AppIcon.icns`, `LICENSE`,
-      `Macomprendo_Macomprendo.bundle` (the vendored Phosphor icons), and
-      `KeyboardShortcuts_KeyboardShortcuts.bundle`.
-- [ ] `find dist/Macomprendo.app/Contents/Resources/Macomprendo_Macomprendo.bundle -type f | wc -l`
-      prints a number greater than zero. This is the actual proof the vendored Phosphor SVGs
-      shipped inside the built app — nothing about the running app's *appearance* proves it (the
-      menubar icon is a hardcoded SF Symbol, not drawn from this bundle, and a missing bundle
-      degrades every other icon silently to a similar-looking SF Symbol instead of failing
-      visibly; see the "Icons in Settings" row below).
+- [ ] `ls dist/Macomprendo.app` contains only `Contents`; no resource bundle sits beside it.
+- [ ] `ls dist/Macomprendo.app/Contents/Resources` contains `AppIcon.icns`, `LICENSE`, `Icons`,
+      and `KeyboardShortcuts_KeyboardShortcuts.bundle`.
+- [ ] `find dist/Macomprendo.app/Contents/Resources/Icons -type f | wc -l` prints a number
+      greater than zero. This is the actual proof the vendored Phosphor SVGs shipped inside the
+      app — the menubar icon is a hardcoded SF Symbol, and other missing icons degrade to SF
+      Symbol fallbacks instead of making the process crash.
 - [ ] `ls dist/Macomprendo.app/Contents/Frameworks` contains `whisper.framework` and
       `SherpaOnnxC.framework` — both are dynamically linked (confirm with
       `otool -L dist/Macomprendo.app/Contents/MacOS/Macomprendo | grep -E 'whisper|SherpaOnnxC'`),
@@ -459,6 +457,10 @@ The `Release` workflow runs on every `vX.Y.Z` tag and publishes the release itse
       prints `com.dzamataev.macomprendo`.
 - [ ] `/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' …` matches
       `MARKETING_VERSION` in `macos/project.yml`.
+- [ ] Remove `dist/.derived-data`, then launch
+      `dist/Macomprendo.app/Contents/MacOS/Macomprendo`. It remains running for at least five
+      seconds and the log contains no resource-bundle fatal error. This catches an app that only
+      works while Xcode's build products are still available.
 
 ### Notarized artifact
 
@@ -495,13 +497,13 @@ prerequisites, installed in the login keychain.
 
 - [ ] **Icons in Settings look like Phosphor glyphs, not system symbols.** Open Settings and
       look at any tab with icons (Hotkeys, Providers, Models…). Every icon in the app is drawn
-      by `Icon.swift`, which loads a vendored Phosphor SVG from `Macomprendo_Macomprendo.bundle`
+      by `Icon.swift`, which loads a vendored Phosphor SVG from the app's `Icons/` resources
       (see ADR-0008) — Phosphor's glyphs have a noticeably different weight and shape from
       Apple's SF Symbols. If the SVG can't be found, `Icon.swift` falls back **silently** to a
       similar but not identical SF Symbol (`AppIcon.fallbackSymbol`) — no error, no log line, and
       the app keeps running normally. So this row is a judgement call about how the icons *look*,
       not a pass/fail the app itself reports, and a "yes, they look like Phosphor icons" here is
-      the closest a human glance gets to confirming the bundle loaded — it is not conclusive on
+      the closest a human glance gets to confirming the resources loaded — it is not conclusive on
       its own (use the `find`/`wc -l` check in Build artifact for that). The menubar's own status
       item is not evidence either way: it is deliberately hardcoded to the SF Symbol `waveform`
       (`MenuBarExtra("Macomprendo", systemImage: "waveform")` in `MacomprendoApp.swift`), per

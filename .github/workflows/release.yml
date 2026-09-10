@@ -159,8 +159,29 @@ jobs:
           lipo -archs dist/Macomprendo.app/Contents/MacOS/Macomprendo
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             dist/Macomprendo.app/Contents/Info.plist
+          ls dist/Macomprendo.app
           ls dist/Macomprendo.app/Contents/Resources
           codesign -dv dist/Macomprendo.app 2>&1 | grep -E 'Authority|Signature' || true
+
+      - name: Smoke test the self-contained app
+        run: |
+          set -euo pipefail
+          rm -rf dist/.derived-data
+          APP_LOG="${RUNNER_TEMP}/macomprendo-launch.log"
+          dist/Macomprendo.app/Contents/MacOS/Macomprendo >"${APP_LOG}" 2>&1 &
+          APP_PID=$!
+          sleep 5
+          if ! kill -0 "${APP_PID}" 2>/dev/null; then
+            wait "${APP_PID}" || true
+            cat "${APP_LOG}"
+            exit 1
+          fi
+          kill "${APP_PID}"
+          wait "${APP_PID}" || true
+          if grep -q 'could not load resource bundle' "${APP_LOG}"; then
+            cat "${APP_LOG}"
+            exit 1
+          fi
 
       # The ZIP's version comes from the built bundle, not from the tag, so a mismatch
       # cannot be papered over by the filename — and the tag check above already proved

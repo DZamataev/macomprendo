@@ -1,17 +1,11 @@
 #!/usr/bin/env node
-// Build Macomprendo.app: swift build per architecture, lipo, assemble the bundle, codesign.
+// Build Macomprendo.app with Xcode, then sign the finished bundle inner-to-outer.
 //
-// SwiftPM emits two kinds of sidecar next to the executable, and both must reach the app:
-//   *.bundle     our own target's resources (Macomprendo_Macomprendo.bundle: vendored
-//                Phosphor SVGs and other assets). Copied into Contents/Resources, where
-//                the generated `Bundle.module` accessor finds them via
-//                Bundle.main.resourceURL.
-//   *.framework  slices extracted from binary xcframework targets (whisper.cpp is consumed
-//                as a prebuilt xcframework, see docs/DECISIONS/ADR-0007). Copied into
-//                Contents/Frameworks, an @rpath is added, and each is signed before the
-//                enclosing app. If the slices are static, `swift build` emits none and this
-//                whole branch is skipped.
-// See DISTRIBUTING.md > "What the build copies into the bundle".
+// `swift build` emits resource accessors for executable targets that look beside
+// `Bundle.main.bundleURL`. That location is outside Contents/ and cannot be signed as a valid
+// macOS app. Xcode emits app-aware accessors and places package resources in Contents/Resources,
+// so its product is the source bundle for local installs and releases.
+// See DISTRIBUTING.md > "Xcode app layout".
 import path from 'node:path';
 import os from 'node:os';
 import { parseArgs } from 'node:util';
@@ -19,7 +13,7 @@ import { pathToFileURL } from 'node:url';
 
 import {
   ROOT, MACOS_DIR, PROJECT_YML, DIST_DIR, APP_NAME, EXECUTABLE_NAME, BUNDLE_ID,
-  DEPLOYMENT_TARGET, INFO_PLIST_SRC, ICON_SRC, ENTITLEMENTS_SRC, LICENSE_PATH,
+  DEPLOYMENT_TARGET, ENTITLEMENTS_SRC, LICENSE_PATH,
 } from './lib/paths.mjs';
 import { run as realRun } from './lib/run.mjs';
 import { log as realLog } from './lib/log.mjs';
@@ -27,6 +21,7 @@ import { realFsOps, realIO } from './lib/fs.mjs';
 import { readVersion } from './lib/version.mjs';
 
 const SUPPORTED_ARCHS = ['arm64', 'x86_64'];
+const EMBEDDED_FRAMEWORKS = ['SherpaOnnxC.framework', 'whisper.framework'];
 
 export function parseBuildArgs(argv) {
   const { values } = parseArgs({
@@ -81,20 +76,6 @@ export function parseBuildArgs(argv) {
   };
 }
 
-export function tripleFor(arch, deploymentTarget) {
-  return `${arch}-apple-macosx${deploymentTarget}`;
-}
-
-export function predictBinPath(root, triple, configuration) {
-  // SwiftPM's --show-bin-path drops the deployment-target version suffix from the
-  // triple when naming .build's per-triple directory (arm64-apple-macosx14.0 builds
-  // land in .build/arm64-apple-macosx/release, not .build/arm64-apple-macosx14.0/...).
-  // tripleFor's version-qualified triple is still what --triple itself needs; only the
-  // directory name it predicts here has to match what SwiftPM actually emits on disk.
-  const buildDir = triple.replace(/^(.*-apple-macosx)[0-9][0-9.]*$/, '$1');
-  return path.join(root, 'macos', '.build', buildDir, configuration);
-}
-
 export function bundleLayout(distDir) {
   const app = path.join(distDir, APP_NAME);
   const contents = path.join(app, 'Contents');
@@ -110,64 +91,37 @@ export function bundleLayout(distDir) {
 }
 
 export function planBuild(options, context) {
-  const { version, buildNumber, binPaths, resourceBundles, frameworks = [] } = context;
+  const { version, buildNumber } = context;
   const layout = bundleLayout(options.dist);
+  const derivedData = path.join(options.dist, '.derived-data');
+  const xcodeConfiguration = options.configuration === 'release' ? 'Release' : 'Debug';
+  const xcodeApp = path.join(derivedData, 'Build', 'Products', xcodeConfiguration, APP_NAME);
   const steps = [];
 
-  for (const arch of options.archs) {
-    steps.push({
-      type: 'exec',
-      cmd: 'swift',
-      args: [
-        'build', '--package-path', MACOS_DIR,
-        '-c', options.configuration,
-        '--triple', tripleFor(arch, options.deploymentTarget),
-      ],
-    });
-  }
-
+  steps.push({ type: 'rm', path: derivedData });
   steps.push({ type: 'rm', path: layout.app });
-  steps.push({ type: 'mkdir', path: layout.macosDir });
-  steps.push({ type: 'mkdir', path: layout.resources });
-  if (frameworks.length > 0) steps.push({ type: 'mkdir', path: layout.frameworks });
-
-  const slices = options.archs.map((arch) => path.join(binPaths[arch], EXECUTABLE_NAME));
-  if (slices.length === 1) {
-    steps.push({ type: 'copy', from: slices[0], to: layout.executable });
-  } else {
-    steps.push({
-      type: 'exec',
-      cmd: 'lipo',
-      args: ['-create', ...slices, '-output', layout.executable],
-    });
-  }
-
-  steps.push({ type: 'copy', from: INFO_PLIST_SRC, to: layout.infoPlist });
-  steps.push({ type: 'copy', from: ICON_SRC, to: path.join(layout.resources, 'AppIcon.icns') });
+  steps.push({
+    type: 'exec',
+    cmd: 'xcodebuild',
+    args: [
+      '-project', path.join(MACOS_DIR, 'Macomprendo.xcodeproj'),
+      '-scheme', 'Macomprendo',
+      '-configuration', xcodeConfiguration,
+      '-destination', 'generic/platform=macOS',
+      '-derivedDataPath', derivedData,
+      `ARCHS=${options.archs.join(' ')}`,
+      `ONLY_ACTIVE_ARCH=${options.archs.length === 1 ? 'YES' : 'NO'}`,
+      `MACOSX_DEPLOYMENT_TARGET=${options.deploymentTarget}`,
+      `MARKETING_VERSION=${version}`,
+      `CURRENT_PROJECT_VERSION=${buildNumber}`,
+      `PRODUCT_BUNDLE_IDENTIFIER=${BUNDLE_ID}`,
+      'CODE_SIGNING_ALLOWED=NO',
+      'CODE_SIGNING_REQUIRED=NO',
+      'build',
+    ],
+  });
+  steps.push({ type: 'copy', from: xcodeApp, to: layout.app });
   steps.push({ type: 'copy', from: LICENSE_PATH, to: path.join(layout.resources, 'LICENSE') });
-
-  const primaryBin = binPaths[options.archs[0]];
-  for (const bundle of resourceBundles) {
-    steps.push({
-      type: 'copy',
-      from: path.join(primaryBin, bundle),
-      to: path.join(layout.resources, bundle),
-    });
-  }
-  for (const framework of frameworks) {
-    steps.push({
-      type: 'copy',
-      from: path.join(primaryBin, framework),
-      to: path.join(layout.frameworks, framework),
-    });
-  }
-  if (frameworks.length > 0) {
-    steps.push({
-      type: 'exec',
-      cmd: 'install_name_tool',
-      args: ['-add_rpath', '@executable_path/../Frameworks', layout.executable],
-    });
-  }
 
   const plist = (command) => ({
     type: 'exec',
@@ -180,15 +134,12 @@ export function planBuild(options, context) {
 
   steps.push({ type: 'chmod', path: layout.executable });
 
-  // Nested *code* is signed innermost-out, then the app; resource bundles are data,
-  // not code, and are sealed as part of the app's own signature instead of getting a
-  // signature of their own — Macomprendo_Macomprendo.bundle has no Info.plist (it is
-  // declared `.copy(...)` in macos/Package.swift, not `.process(...)`), so codesign
-  // does not even accept it as a signable target on its own. --deep is intentionally
-  // never used for signing (only for the --verify step below): it is deprecated for
-  // that purpose and would silently paper over exactly this class of ordering bug.
+  // Nested code is signed innermost-out, then the app. Xcode has already placed package
+  // resources under Contents/Resources, where the app signature seals them. --deep is
+  // intentionally never used for signing (only for the verification step below): it is
+  // deprecated for signing and would hide ordering bugs.
   if (options.sign === '-') {
-    for (const framework of frameworks) {
+    for (const framework of EMBEDDED_FRAMEWORKS) {
       steps.push({
         type: 'exec',
         cmd: 'codesign',
@@ -197,8 +148,8 @@ export function planBuild(options, context) {
     }
     steps.push({ type: 'exec', cmd: 'codesign', args: ['--force', '--sign', '-', layout.app] });
   } else {
-    const timestampArgs = options.timestamp === 'none' ? [] : ['--timestamp'];
-    for (const framework of frameworks) {
+    const timestampArgs = options.timestamp === 'none' ? ['--timestamp=none'] : ['--timestamp'];
+    for (const framework of EMBEDDED_FRAMEWORKS) {
       steps.push({
         type: 'exec',
         cmd: 'codesign',
@@ -270,52 +221,14 @@ export async function executePlan(steps, { run, fsOps, log, dryRun }) {
   return { outputs };
 }
 
-export async function resolveContext(options, { run, fsOps, io }) {
+export async function resolveContext(options, { io }) {
   const version = options.version ?? readVersion(await io.readFile(PROJECT_YML));
   if (!/^\d+\.\d+\.\d+$/.test(version)) {
     throw new Error(`Could not read a valid X.Y.Z MARKETING_VERSION (got "${version}").`);
   }
   const buildNumber = options.buildNumber ?? version;
 
-  const binPaths = {};
-  for (const arch of options.archs) {
-    const triple = tripleFor(arch, options.deploymentTarget);
-    if (options.dryRun) {
-      binPaths[arch] = predictBinPath(ROOT, triple, options.configuration);
-    } else {
-      // `--show-bin-path` only prints where SwiftPM would put its output — it never
-      // builds anything. On a fresh clone (or after `rm -rf macos/.build`) that means
-      // the directory it names does not exist yet, so the listBundles/listFrameworks
-      // calls below would silently come back empty and the app would be assembled
-      // without its icons bundle or whisper.framework. So build for real first, with
-      // the exact same invocation planBuild's own build step issues; executePlan then
-      // runs that step again as a harmless incremental no-op.
-      await run('swift', [
-        'build', '--package-path', MACOS_DIR,
-        '-c', options.configuration, '--triple', triple,
-      ], { cwd: ROOT });
-      const shown = await run('swift', [
-        'build', '--package-path', MACOS_DIR,
-        '-c', options.configuration, '--triple', triple, '--show-bin-path',
-      ], { cwd: ROOT, capture: true });
-      binPaths[arch] = shown.stdout.trim();
-    }
-  }
-
-  const primaryBin = binPaths[options.archs[0]];
-  const resourceBundles = await fsOps.listBundles(primaryBin);
-  const frameworks = await fsOps.listFrameworks(primaryBin);
-
-  if (!options.dryRun && resourceBundles.length === 0) {
-    throw new Error(
-      'swift build produced no SwiftPM resource bundle next to the executable '
-      + `(expected at least Macomprendo_Macomprendo.bundle in ${primaryBin}). `
-      + 'The app target declares resources (vendored Phosphor SVGs) — this usually '
-      + 'means macos/Package.swift dropped them, or the build silently failed.',
-    );
-  }
-
-  return { version, buildNumber, binPaths, resourceBundles, frameworks };
+  return { version, buildNumber };
 }
 
 export async function main(argv, deps = {}) {
@@ -350,13 +263,8 @@ export async function main(argv, deps = {}) {
   }
 
   try {
-    const context = await resolveContext(options, { run, fsOps, io });
+    const context = await resolveContext(options, { io });
     const steps = planBuild(options, context);
-    if (context.resourceBundles.length === 0) {
-      log.warn('No SwiftPM resource bundle found next to the executable. The app target '
-        + 'declares resources (vendored Phosphor SVGs), so this usually means the build '
-        + 'did not run or the resources were dropped from macos/Package.swift.');
-    }
     const { outputs } = await executePlan(steps, { run, fsOps, log, dryRun: options.dryRun });
     if (options.dryRun) {
       log.info(`Dry run complete: ${steps.length} steps planned for ${bundleLayout(options.dist).app}`);

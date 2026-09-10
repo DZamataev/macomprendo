@@ -268,6 +268,21 @@ test('the release workflow publishes the ZIP and its checksum on a tag', async (
   assert.deepEqual(findReleasePublishProblems(document, { name: 'release' }), []);
 });
 
+test('the release workflow proves the Xcode app launches without DerivedData', async () => {
+  const { document } = await workflow('release.yml');
+  const steps = document.jobs['verify-and-build'].steps;
+  const smokeIndex = steps.findIndex((step) => step.name === 'Smoke test the self-contained app');
+  const archiveIndex = steps.findIndex((step) => step.name === 'Archive the build');
+  assert.ok(smokeIndex >= 0, 'expected a self-contained app smoke test');
+  assert.ok(smokeIndex < archiveIndex, 'the app must be smoke-tested before it is archived');
+
+  const command = steps[smokeIndex].run;
+  assert.match(command, /rm -rf dist\/\.derived-data/);
+  assert.doesNotMatch(command, /macos\/\.build/);
+  assert.match(command, /dist\/Macomprendo\.app\/Contents\/MacOS\/Macomprendo/);
+  assert.match(command, /kill -0/);
+});
+
 test('every job that runs npm pins its Node version', async () => {
   const names = (await fs.readdir(WORKFLOWS_DIR)).filter((f) => f.endsWith('.yml'));
   const problems = [];
