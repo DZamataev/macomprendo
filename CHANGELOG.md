@@ -101,9 +101,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   each, edit a preset's system prompt and user template with placeholder
   validation shown on selecting or saving a preset, restore deleted factory
   presets, and test a preset against sample text with a live streamed preview.
-- Node release toolchain (`scripts/`, Node ≥ 20 ESM): `npm run build` assembles a
-  universal, ad-hoc or Developer ID signed `Macomprendo.app`, discovering and copying
-  whichever SwiftPM resource bundles and dynamic frameworks the build actually emits;
+- Node release toolchain (`scripts/`, Node ≥ 20 ESM): `npm run build` packages the standard
+  Xcode app product as a universal, ad-hoc or Developer ID signed `Macomprendo.app`, preserving
+  Xcode's resource layout and signing embedded frameworks before the enclosing app;
   `npm run notarize` builds, submits to Apple's notary service, staples the ticket and
   packages a checksummed ZIP; `npm run configure-notary` stores notarization credentials
   in the Keychain without ever putting a password on a command line; `npm run release`
@@ -134,11 +134,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   translated — including a new "Translate & organize" preset.
 
 ### Changed
-- Pushing a `vX.Y.Z` tag now publishes the GitHub release itself, with a universal ad-hoc
-  signed `Macomprendo-<version>-macos-unsigned.zip`, its `.sha256` sidecar, and notes taken
-  from `CHANGELOG.md`; re-running the same tag updates that release instead of failing.
-  The build is not notarized — a notarized ZIP still comes from
-  `npm run release -- --notarize` run locally.
+- Pushing a `vX.Y.Z` tag now publishes the GitHub release itself from a GitHub-hosted macOS
+  runner. With signing secrets it builds, Developer ID signs and notarizes the universal app;
+  otherwise it publishes an explicitly unsigned-mode ad-hoc build. The workflow verifies the
+  checksum, structure, signatures and architectures of the final ZIP, then launches the app
+  extracted from that ZIP before attaching it and its `.sha256` sidecar to the release.
 - Settings ▸ Speech puts Preview first on every source tab. System and Local TTS put mixed-language
   switching and playback parameters before voice choices, and show each language in its own group.
   Mixed-language voice switching now defaults on for both sources.
