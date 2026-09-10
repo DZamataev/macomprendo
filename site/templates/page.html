@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}} — Macomprendo</title>
+<meta name="description" content="{{description}}">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="{{title}} — Macomprendo">
+<meta property="og:description" content="{{description}}">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="{{root}}assets/site.css">
+</head>
+<body>
+<header class="bar">
+  <a class="wordmark" href="{{root}}">Macomprendo</a>
+  <nav>
+    <a href="{{root}}privacy/"{{navPrivacy}}>Privacy</a>
+    <a href="{{root}}terms/"{{navTerms}}>Terms</a>
+    <a href="{{root}}support/"{{navSupport}}>Support</a>
+    <a href="https://github.com/DZamataev/macomprendo">Source</a>
+  </nav>
+</header>
+<main class="{{layout}}">
+{{content}}
+</main>
+<footer class="bar">
+  <span>© {{year}} Denis Zamataev · MIT licensed</span>
+  <span><a href="{{releasesURL}}">All releases</a></span>
+</footer>
+</body>
+</html>

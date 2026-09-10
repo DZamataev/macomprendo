@@ -1,0 +1,194 @@
+/* Hand-written: `npm run audit` scans committed files for machine paths, and a design-tool
+   export embeds an absolute generator path. Two shapes only — a text column, and the home
+   page's card grid. */
+
+:root {
+  color-scheme: light dark;
+  --ink: #14171a;
+  --ink-soft: #4a5157;
+  --paper: #fbfaf8;
+  --card: #ffffff;
+  --line: #e3ded6;
+  --accent: #7a4a2b;
+  --accent-ink: #ffffff;
+  --code-bg: #f2efe9;
+  --measure: 42rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #eceff1;
+    --ink-soft: #a8b0b7;
+    --paper: #14161a;
+    --card: #1c1f24;
+    --line: #2c3138;
+    --accent: #e0a074;
+    --accent-ink: #1a1207;
+    --code-bg: #23272d;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 17px/1.65 ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+
+code {
+  font: 0.88em/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  background: var(--code-bg);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  overflow-wrap: break-word;
+}
+
+/* ---- chrome ---- */
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem clamp(1.25rem, 5vw, 3rem);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.94rem;
+}
+
+footer.bar {
+  border-bottom: 0;
+  border-top: 1px solid var(--line);
+  margin-top: auto;
+  color: var(--ink-soft);
+}
+
+.wordmark {
+  font-weight: 650;
+  font-size: 1.05rem;
+  color: var(--ink);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.bar nav { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+
+.bar nav a[aria-current="page"] {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+/* ---- text pages ---- */
+
+main {
+  width: 100%;
+  padding: clamp(2rem, 6vw, 3.5rem) clamp(1.25rem, 5vw, 3rem);
+}
+
+main.page {
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+
+h1 {
+  font-size: clamp(1.9rem, 5vw, 2.6rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0 0 1.25rem;
+}
+
+h2 {
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+  margin: 2.5rem 0 0.75rem;
+}
+
+h3 { font-size: 1.05rem; margin: 1.75rem 0 0.5rem; }
+
+p, ul { margin: 0 0 1.1rem; }
+ul { padding-left: 1.3rem; }
+li { margin-bottom: 0.45rem; }
+li::marker { color: var(--ink-soft); }
+
+/* ---- home ---- */
+
+main.home { max-width: 66rem; margin-inline: auto; }
+
+/* Everything before the first <section> is the hero: headline, pitch, download. */
+main.home > h1 { max-width: 32rem; }
+main.home > p { max-width: var(--measure); font-size: 1.08rem; }
+main.home > h1 + p { font-size: 1.22rem; color: var(--ink-soft); }
+
+/* The download list: first item is the button, the rest read as fine print. */
+main.home > ul {
+  list-style: none;
+  padding: 0;
+  margin: 1.75rem 0 0.75rem;
+  max-width: var(--measure);
+}
+
+main.home > ul > li { margin-bottom: 0.9rem; }
+
+main.home > ul > li:first-child > a:first-child {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0.7rem 1.4rem;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+main.home > ul > li:first-child > a:first-child:hover { filter: brightness(1.08); }
+
+main.home > ul > li:not(:first-child) { font-size: 0.92rem; color: var(--ink-soft); }
+
+/* Sections are the cards. They are single elements (see renderMarkdown's groupSections),
+   so a grid can place each one whole instead of splitting a heading from its own text. */
+main.home > section {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.4rem 1.5rem;
+  margin-top: 1.25rem;
+}
+
+main.home > section > h2 {
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+main.home > section > :last-child { margin-bottom: 0; }
+
+@media (min-width: 56rem) {
+  main.home {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem;
+    align-items: start;
+  }
+  /* The hero spans the full width; the cards fall into the two columns. */
+  main.home > h1,
+  main.home > p,
+  main.home > ul {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+  main.home > section { margin-top: 0; }
+  /* The first card holds the five hotkeys and is longer than the rest. */
+  main.home > section:first-of-type { grid-column: 1 / -1; }
+}
