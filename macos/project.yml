@@ -35,7 +35,11 @@ targets:
       - path: Sources/Macomprendo
         excludes:
           - "Resources/Icons"
+          - "Resources/Licenses"
       - path: Sources/Macomprendo/Resources/Icons
+        type: folder
+        buildPhase: resources
+      - path: Sources/Macomprendo/Resources/Licenses
         type: folder
         buildPhase: resources
       - path: AppBundle/AppIcon.icns

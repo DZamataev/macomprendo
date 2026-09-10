@@ -1,6 +1,6 @@
 import Foundation
 
-/// The bundle holding `Resources/Icons`.
+/// The bundle holding `Resources/Icons` and `Resources/Licenses`.
 enum ResourceBundle {
     static var current: Bundle {
         #if SWIFT_PACKAGE
