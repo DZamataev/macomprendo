@@ -12,6 +12,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `npm run site` and published by the `Pages` workflow, which re-runs when a release is
   published so the download button always points at the current asset. The privacy page is
   generated from `PRIVACY.md`, so there is one source of truth for it.
+- A `NOTICE` file and a bundled licence set covering every redistributed component, listed by
+  `LicenseRegistry` and destined for the About window. This discloses that the **distributed
+  application is under GPL-3.0, not MIT**: `SherpaOnnxC.framework` has espeak-ng (GPL-3.0)
+  statically linked into it, and those terms reach the combined binary. Macomprendo's own
+  source stays MIT, all corresponding source is public, and upstream is removing the
+  dependency in sherpa-onnx 2.0.0 for the same reason.
 
 ### Fixed
 - Whisper model downloads are now checksum-verified. All nine entries shipped with an empty
