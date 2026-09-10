@@ -272,14 +272,21 @@ test('the release workflow validates and launches the app extracted from the pub
   const { document } = await workflow('release.yml');
   const steps = document.jobs['verify-and-build'].steps;
   const archiveIndex = steps.findIndex((step) => step.name === 'Archive the build');
+  const checksumIndex = steps.findIndex((step) => step.name === 'Verify the checksum sidecar');
   const expandIndex = steps.findIndex((step) => step.name === 'Expand the release archive');
   const reportIndex = steps.findIndex((step) => step.name === 'Validate the archived app');
   const smokeIndex = steps.findIndex((step) => step.name === 'Smoke test the archived app');
+  const publishIndex = steps.findIndex((step) => step.name === 'Publish the GitHub release');
   assert.ok(archiveIndex >= 0, 'expected the final archive to be selected first');
-  assert.ok(expandIndex > archiveIndex, 'the exact final archive must be expanded');
+  assert.ok(checksumIndex > archiveIndex, 'the final archive checksum must be verified');
+  assert.ok(expandIndex > checksumIndex, 'the exact verified archive must be expanded');
   assert.ok(reportIndex > expandIndex, 'the extracted app must be structurally validated');
   assert.ok(smokeIndex >= 0, 'expected a self-contained app smoke test');
   assert.ok(smokeIndex > reportIndex, 'the extracted app must be launched after validation');
+  assert.ok(publishIndex > smokeIndex, 'only the validated archive may be published');
+
+  const checksumCommand = steps[checksumIndex].run;
+  assert.match(checksumCommand, /steps\.archive\.outputs\.zip/);
 
   const expandCommand = steps[expandIndex].run;
   assert.match(expandCommand, /steps\.archive\.outputs\.zip/);
@@ -292,13 +299,18 @@ test('the release workflow validates and launches the app extracted from the pub
   assert.match(reportCommand, /KeyboardShortcuts_KeyboardShortcuts\.bundle/);
   assert.match(reportCommand, /Contents\/Frameworks\/whisper\.framework/);
   assert.match(reportCommand, /Contents\/Frameworks\/SherpaOnnxC\.framework/);
-  assert.match(reportCommand, /lipo [^\n]+ -verify_arch arm64 x86_64/);
+  assert.match(reportCommand, /lipo "\$APP\/Contents\/MacOS\/Macomprendo" -verify_arch arm64 x86_64/);
+  assert.match(reportCommand, /lipo "\$APP\/Contents\/Frameworks\/whisper\.framework\/Versions\/Current\/whisper"[^]*-verify_arch arm64 x86_64/);
+  assert.match(reportCommand, /lipo "\$APP\/Contents\/Frameworks\/SherpaOnnxC\.framework\/Versions\/Current\/SherpaOnnxC"[^]*-verify_arch arm64 x86_64/);
   assert.doesNotMatch(reportCommand, /lipo -verify_arch/);
   assert.match(reportCommand, /nm [^\n]+Macomprendo/);
   assert.match(reportCommand, /grep -q '__llvm_profile'/);
+  assert.match(reportCommand, /grep -q '__llvm_profile'[^]*exit 1/);
   assert.match(reportCommand, /codesign --verify --deep --strict/);
+  assert.match(reportCommand, /if \[ "\$\{SIGNING_AVAILABLE\}" = "true" \]; then[^]*stapler validate[^]*spctl --assess[^]*fi/);
 
   const command = steps[smokeIndex].run;
+  assert.equal(steps[smokeIndex]['timeout-minutes'], 2);
   assert.match(command, /rm -rf dist\/\.derived-data/);
   assert.doesNotMatch(command, /macos\/\.build/);
   assert.match(command, /steps\.expand\.outputs\.app/);
@@ -306,8 +318,19 @@ test('the release workflow validates and launches the app extracted from the pub
   assert.match(command, /sleep 5/);
   assert.match(command, /kill -0/);
   assert.match(command, /isFinishedLaunching/);
+  assert.match(command, /FINISHED[^]*!= "true"[^]*exit 1/);
   assert.match(command, /ps -o state=/);
+  assert.match(command, /''\|T\|Z\)[^]*exit 1/);
   assert.match(command, /trap cleanup EXIT/);
+  assert.match(command, /kill -TERM/);
+  assert.match(command, /kill -KILL/);
+  assert.match(command, /for _ in \{1\.\.20\}/);
+  assert.match(command, /wait "\$\{APP_PID\}"/);
+
+  assert.equal(steps[publishIndex].env.ZIP, '${{ steps.archive.outputs.zip }}');
+  const publishCommand = steps[publishIndex].run;
+  assert.match(publishCommand, /gh release upload "\$TAG" "\$ZIP" "\$\{ZIP\}\.sha256"/);
+  assert.match(publishCommand, /gh release create[^]*"\$ZIP" "\$\{ZIP\}\.sha256"/);
 });
 
 test('every job that runs npm pins its Node version', async () => {

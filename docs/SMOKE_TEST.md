@@ -426,14 +426,18 @@ Every box must be ticked before `npm run release`.
 The `Release` workflow runs on every `vX.Y.Z` tag and publishes the release itself.
 
 - [ ] The `Release` run for the tag is green (`gh run list --workflow Release`).
-- [ ] `gh release view vX.Y.Z` shows both `Macomprendo-<version>-macos-unsigned.zip` and its
-      `.sha256`, and the notes came from `CHANGELOG.md`.
-- [ ] Download both, and `shasum -a 256 -c Macomprendo-<version>-macos-unsigned.zip.sha256`
-      reports `OK`.
-- [ ] `lipo -archs` on the expanded app prints `x86_64 arm64`, and `codesign -dv` reports
-      `adhoc` — this CI artifact is deliberately not notarized.
-- [ ] If this release ships a notarized build, `npm run release -- --notarize` was used (or the
-      notarized ZIP was uploaded to the same release afterwards).
+- [ ] The release contains exactly one platform ZIP mode and its matching `.sha256`:
+      - without signing secrets: `Macomprendo-<version>-macos-unsigned.zip`;
+      - with signing secrets: `Macomprendo-<version>-macos.zip`.
+      In both modes, confirm the notes came from `CHANGELOG.md`.
+- [ ] Download that ZIP and sidecar; `shasum -a 256 -c <sidecar>` reports `OK`.
+- [ ] `lipo -archs` on the expanded app and both embedded frameworks prints `x86_64 arm64`.
+- [ ] For an unsigned-mode release, `codesign -dv` reports `adhoc` and no notarization is
+      expected.
+- [ ] For a signed-mode release, `codesign -dv` reports the Developer ID Application authority,
+      `xcrun stapler validate` succeeds, and `spctl --assess --type execute --verbose=4` reports
+      `source=Notarized Developer ID`. The tag workflow performs this path automatically when
+      all signing secrets are configured; do not run a second local release to replace it.
 
 ### Build artifact
 

@@ -226,6 +226,7 @@ jobs:
           fi
 
       - name: Smoke test the archived app
+        timeout-minutes: 2
         run: |
           set -euo pipefail
           APP="${{ steps.expand.outputs.app }}"
@@ -234,7 +235,16 @@ jobs:
           "$APP/Contents/MacOS/Macomprendo" >"${APP_LOG}" 2>&1 &
           APP_PID=$!
           cleanup() {
-            kill "${APP_PID}" 2>/dev/null || true
+            kill -TERM "${APP_PID}" 2>/dev/null || true
+            for _ in {1..20}; do
+              if ! kill -0 "${APP_PID}" 2>/dev/null; then
+                break
+              fi
+              sleep 0.25
+            done
+            if kill -0 "${APP_PID}" 2>/dev/null; then
+              kill -KILL "${APP_PID}" 2>/dev/null || true
+            fi
             wait "${APP_PID}" 2>/dev/null || true
           }
           trap cleanup EXIT
