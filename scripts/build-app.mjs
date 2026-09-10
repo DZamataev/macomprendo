@@ -117,6 +117,10 @@ export function planBuild(options, context) {
       `PRODUCT_BUNDLE_IDENTIFIER=${BUNDLE_ID}`,
       'CODE_SIGNING_ALLOWED=NO',
       'CODE_SIGNING_REQUIRED=NO',
+      'ENABLE_CODE_COVERAGE=NO',
+      'CLANG_ENABLE_CODE_COVERAGE=NO',
+      'CLANG_COVERAGE_MAPPING=NO',
+      'CLANG_COVERAGE_MAPPING_LINKER_ARGS=NO',
       'build',
     ],
   });
@@ -196,6 +200,17 @@ export function describeStep(step) {
   }
 }
 
+export function validateArchitectures(requested, output) {
+  const expected = [...new Set(requested)].sort();
+  const actual = [...new Set(output.trim().split(/\s+/).filter(Boolean))].sort();
+  if (expected.length !== actual.length || expected.some((arch, index) => arch !== actual[index])) {
+    throw new Error(
+      `Architecture mismatch: requested ${expected.join(', ')}; built ${actual.join(', ') || 'none'}.`,
+    );
+  }
+  return actual;
+}
+
 export async function executePlan(steps, { run, fsOps, log, dryRun }) {
   const outputs = [];
   for (const step of steps) {
@@ -270,10 +285,11 @@ export async function main(argv, deps = {}) {
       log.info(`Dry run complete: ${steps.length} steps planned for ${bundleLayout(options.dist).app}`);
       return 0;
     }
+    const architectures = validateArchitectures(options.archs, outputs.at(-1) ?? '');
     log.info(`Built ${bundleLayout(options.dist).app}`);
     log.info(`Version: ${context.version} (${context.buildNumber})`);
     log.info(`Bundle identifier: ${BUNDLE_ID}`);
-    log.info(`Architectures: ${outputs.at(-1) ?? 'unknown'}`);
+    log.info(`Architectures: ${architectures.join(' ')}`);
     log.info(options.sign === '-' ? 'Signed ad hoc for local use.' : `Signed with ${options.sign}`);
     return 0;
   } catch (error) {

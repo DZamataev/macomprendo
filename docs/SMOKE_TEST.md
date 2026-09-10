@@ -449,10 +449,13 @@ The `Release` workflow runs on every `vX.Y.Z` tag and publishes the release itse
 - [ ] `ls dist/Macomprendo.app/Contents/Frameworks` contains `whisper.framework` and
       `SherpaOnnxC.framework` — both are dynamically linked (confirm with
       `otool -L dist/Macomprendo.app/Contents/MacOS/Macomprendo | grep -E 'whisper|SherpaOnnxC'`),
-      so this directory must be present, not absent. See DISTRIBUTING.md → "What the build
-      copies into the bundle" if a future vendored xcframework bump changes this.
+      so this directory must be present, not absent. See DISTRIBUTING.md → "Xcode app layout"
+      if a future vendored xcframework bump changes this.
 - [ ] `codesign --verify --deep --strict --verbose=2 dist/Macomprendo.app` reports the bundle as
       valid on disk and satisfying its designated requirement.
+- [ ] `nm dist/Macomprendo.app/Contents/MacOS/Macomprendo | grep __llvm_profile` prints nothing
+      and exits nonzero. Release builds must not carry test-coverage instrumentation or write
+      `default.profraw` into their launch directory.
 - [ ] `/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/Macomprendo.app/Contents/Info.plist`
       prints `com.dzamataev.macomprendo`.
 - [ ] `/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' …` matches
@@ -460,7 +463,8 @@ The `Release` workflow runs on every `vX.Y.Z` tag and publishes the release itse
 - [ ] Remove `dist/.derived-data`, then launch
       `dist/Macomprendo.app/Contents/MacOS/Macomprendo`. It remains running for at least five
       seconds and the log contains no resource-bundle fatal error. This catches an app that only
-      works while Xcode's build products are still available.
+      works while Xcode's build products are still available. Confirm the launch directory gains
+      no `.profraw` file.
 
 ### Notarized artifact
 
@@ -518,7 +522,7 @@ prerequisites, installed in the login keychain.
 
 - [ ] `CHANGELOG.md` has entries under `## [Unreleased]` describing everything in this release.
 - [ ] `README.md` install instructions match the artifact names actually produced.
-- [ ] `DISTRIBUTING.md` lists the bundle and framework names currently emitted by `swift build`.
+- [ ] `DISTRIBUTING.md` lists the resources and frameworks in the current Xcode app product.
 
 ## GigaAM local transcription
 

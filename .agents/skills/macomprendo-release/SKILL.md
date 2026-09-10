@@ -10,7 +10,8 @@ shell scripts. Full prose runbook: `DISTRIBUTING.md`. Manual checklist: `docs/SM
 
 ## Prerequisites
 
-- macOS 14+ with Xcode command-line tools, Node 20+, `npm ci` run once.
+- macOS 14+ with full Xcode selected (`xcodebuild -version` and `xcode-select -p` must work),
+  Node 20+, `npm ci` run once. Standalone Command Line Tools are not sufficient.
 - `xcodegen` if `macos/project.yml` changes; `gitleaks` for the mandatory working-tree and Git
   history scans; `gh` authenticated (`gh auth login`) for releases.
 - A **Developer ID Application** certificate for team `68QJJA7HK9`, in the login keychain with
@@ -94,12 +95,12 @@ network round trip to Apple, with a default 60-minute wait.
 - Bundle id `com.dzamataev.macomprendo`, team `68QJJA7HK9`, notary profile `macomprendo-notary`.
 - Ad-hoc (`--sign -`, the default) is fine locally. Notarization needs a **Developer ID
   Application** certificate; an *Apple Development* certificate cannot be notarized.
-- The build copies every `*.bundle` SwiftPM emits into `Contents/Resources` (that is where the
-  vendored Phosphor icons live) and every dynamic `*.framework` into `Contents/Frameworks`.
-  whisper.cpp is a prebuilt xcframework, so there are no ggml Metal bundles to copy. A real
-  build **errors** (not warns) with "swift build produced no SwiftPM resource bundle next to
-  the executable" if none is found — that check only becomes a warning under `--dry-run`,
-  where nothing has actually been built yet. Either way, stop and fix it before shipping.
+- `xcodebuild` produces the standard `.app`: Phosphor SVGs and package resource bundles are in
+  `Contents/Resources`; dynamic frameworks are in `Contents/Frameworks`. The Node builder copies
+  that product, applies final metadata, signs frameworks inner-to-outer, validates the exact
+  requested architecture set, then signs and verifies the enclosing app. Coverage settings are
+  explicitly disabled; reject a release executable containing `__llvm_profile` symbols.
+  `dist/.derived-data` is disposable and the packaged app must still launch after it is removed.
 - CI notarizes only when the four signing secrets are configured; without them it publishes an
   ad-hoc build, and no Apple credentials are assumed to exist in the repository.
 - **Pushing a `vX.Y.Z` tag publishes a GitHub release by itself** (`.github/workflows/release.yml`).
@@ -171,4 +172,4 @@ block before retrying or touching anything by hand.
 | `CHANGELOG.md has no entries under "## [Unreleased]"` | Write the release notes in `CHANGELOG.md` first |
 | `…project.pbxproj declares MARKETING_VERSION … but … was expected` | Run `npm run gen` and commit the regenerated project |
 | Audit flags a `/Users/<name>` path | Replace it with `~/`, `<repo>`, or `/Users/test` |
-| `error: command …/swift-version-<hash>.txt not registered` during `npm run build -- --arch arm64,x86_64` | Stale/inconsistent state in `macos/.build` from alternating single-arch and multi-arch (`--triple`) builds. Run `rm -rf macos/.build`, then re-run the build. |
+| Xcode reports stale or inconsistent generated build state during `npm run build` | Remove `dist/.derived-data`, then re-run the build. Do not debug the packager through `macos/.build`; that directory belongs to separate SwiftPM builds. |

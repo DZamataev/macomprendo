@@ -268,19 +268,46 @@ test('the release workflow publishes the ZIP and its checksum on a tag', async (
   assert.deepEqual(findReleasePublishProblems(document, { name: 'release' }), []);
 });
 
-test('the release workflow proves the Xcode app launches without DerivedData', async () => {
+test('the release workflow validates and launches the app extracted from the published ZIP', async () => {
   const { document } = await workflow('release.yml');
   const steps = document.jobs['verify-and-build'].steps;
-  const smokeIndex = steps.findIndex((step) => step.name === 'Smoke test the self-contained app');
   const archiveIndex = steps.findIndex((step) => step.name === 'Archive the build');
+  const expandIndex = steps.findIndex((step) => step.name === 'Expand the release archive');
+  const reportIndex = steps.findIndex((step) => step.name === 'Validate the archived app');
+  const smokeIndex = steps.findIndex((step) => step.name === 'Smoke test the archived app');
+  assert.ok(archiveIndex >= 0, 'expected the final archive to be selected first');
+  assert.ok(expandIndex > archiveIndex, 'the exact final archive must be expanded');
+  assert.ok(reportIndex > expandIndex, 'the extracted app must be structurally validated');
   assert.ok(smokeIndex >= 0, 'expected a self-contained app smoke test');
-  assert.ok(smokeIndex < archiveIndex, 'the app must be smoke-tested before it is archived');
+  assert.ok(smokeIndex > reportIndex, 'the extracted app must be launched after validation');
+
+  const expandCommand = steps[expandIndex].run;
+  assert.match(expandCommand, /steps\.archive\.outputs\.zip/);
+  assert.match(expandCommand, /ditto -x -k/);
+  assert.match(expandCommand, /GITHUB_OUTPUT/);
+
+  const reportCommand = steps[reportIndex].run;
+  assert.match(reportCommand, /steps\.expand\.outputs\.app/);
+  assert.match(reportCommand, /Contents\/Resources\/Icons/);
+  assert.match(reportCommand, /KeyboardShortcuts_KeyboardShortcuts\.bundle/);
+  assert.match(reportCommand, /Contents\/Frameworks\/whisper\.framework/);
+  assert.match(reportCommand, /Contents\/Frameworks\/SherpaOnnxC\.framework/);
+  assert.match(reportCommand, /lipo [^\n]+ -verify_arch arm64 x86_64/);
+  assert.doesNotMatch(reportCommand, /lipo -verify_arch/);
+  assert.match(reportCommand, /nm [^\n]+Macomprendo/);
+  assert.match(reportCommand, /grep -q '__llvm_profile'/);
+  assert.match(reportCommand, /codesign --verify --deep --strict/);
 
   const command = steps[smokeIndex].run;
   assert.match(command, /rm -rf dist\/\.derived-data/);
   assert.doesNotMatch(command, /macos\/\.build/);
-  assert.match(command, /dist\/Macomprendo\.app\/Contents\/MacOS\/Macomprendo/);
+  assert.match(command, /steps\.expand\.outputs\.app/);
+  assert.doesNotMatch(command, /dist\/Macomprendo\.app\/Contents\/MacOS\/Macomprendo/);
+  assert.match(command, /sleep 5/);
   assert.match(command, /kill -0/);
+  assert.match(command, /isFinishedLaunching/);
+  assert.match(command, /ps -o state=/);
+  assert.match(command, /trap cleanup EXIT/);
 });
 
 test('every job that runs npm pins its Node version', async () => {

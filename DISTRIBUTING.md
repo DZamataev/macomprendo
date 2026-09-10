@@ -8,7 +8,10 @@ Everything below runs through Node scripts; there are no shell scripts in this r
 
 ## Prerequisites
 
-- macOS 14 or newer with Xcode command-line tools (`xcode-select --install`).
+- macOS 14 or newer with full Xcode installed, its license/first-launch setup completed, and
+  its developer directory selected. Verify with `xcodebuild -version` and `xcode-select -p`;
+  the standalone Command Line Tools are not sufficient. If necessary, run
+  `sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer`.
 - Node.js 20 or newer, then `npm ci` in the repository root.
 - `xcodegen` (`brew install xcodegen`) if you change `macos/project.yml`.
 - `gh` (`brew install gh`) authenticated with `gh auth login`, for releases.
@@ -368,15 +371,15 @@ Git history.
 ## Verification the tooling performs
 
 - Developer ID signing with hardened runtime and a secure timestamp
-- Nested frameworks signed before the enclosing app (SwiftPM resource bundles are copied
-  unsigned and sealed by the app's own signature — see "What the build copies into the
-  bundle" above)
-- Universal architecture report (`lipo -archs`) after assembly
+- Nested frameworks signed before the enclosing Xcode-built app
+- Exact requested architecture-set validation (`lipo -archs`) after assembly
+- Release executable rejection when LLVM coverage instrumentation is present
 - Synchronous `notarytool` submission with an explicit `Accepted` check
 - Ticket stapling plus `stapler validate`
 - `codesign --verify --deep --strict`
 - Gatekeeper assessment with `spctl`
-- SHA-256 sidecar for the published ZIP
+- SHA-256 sidecar plus structure, resource, architecture, signature and launch validation of
+  the app extracted from the exact ZIP that will be published
 
 All of the above is exercised by `scripts/__tests__/*.test.mjs` against faked `codesign`,
 `notarytool`, `spctl` and `git`/`gh` binaries — real Apple notarization itself has not yet

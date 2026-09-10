@@ -153,36 +153,6 @@ jobs:
           NOTARYTOOL_KEYCHAIN: ${{ runner.temp }}/macomprendo-signing.keychain-db
         run: npm run notarize
 
-
-      - name: Report the built artifact
-        run: |
-          lipo -archs dist/Macomprendo.app/Contents/MacOS/Macomprendo
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
-            dist/Macomprendo.app/Contents/Info.plist
-          ls dist/Macomprendo.app
-          ls dist/Macomprendo.app/Contents/Resources
-          codesign -dv dist/Macomprendo.app 2>&1 | grep -E 'Authority|Signature' || true
-
-      - name: Smoke test the self-contained app
-        run: |
-          set -euo pipefail
-          rm -rf dist/.derived-data
-          APP_LOG="${RUNNER_TEMP}/macomprendo-launch.log"
-          dist/Macomprendo.app/Contents/MacOS/Macomprendo >"${APP_LOG}" 2>&1 &
-          APP_PID=$!
-          sleep 5
-          if ! kill -0 "${APP_PID}" 2>/dev/null; then
-            wait "${APP_PID}" || true
-            cat "${APP_LOG}"
-            exit 1
-          fi
-          kill "${APP_PID}"
-          wait "${APP_PID}" || true
-          if grep -q 'could not load resource bundle' "${APP_LOG}"; then
-            cat "${APP_LOG}"
-            exit 1
-          fi
-
       # The ZIP's version comes from the built bundle, not from the tag, so a mismatch
       # cannot be papered over by the filename — and the tag check above already proved
       # the two agree. The notarized path has already produced its own ZIP and sidecar
@@ -210,6 +180,86 @@ jobs:
 
       - name: Verify the checksum sidecar
         run: cd dist && shasum -a 256 -c "$(basename '${{ steps.archive.outputs.zip }}').sha256"
+
+      - name: Expand the release archive
+        id: expand
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/macomprendo-release"
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+          ditto -x -k "${{ steps.archive.outputs.zip }}" "$DEST"
+          APP="$DEST/Macomprendo.app"
+          test -d "$APP"
+          echo "app=$APP" >> "$GITHUB_OUTPUT"
+
+      - name: Validate the archived app
+        run: |
+          set -euo pipefail
+          APP="${{ steps.expand.outputs.app }}"
+          test -d "$APP/Contents"
+          test -z "$(find "$APP" -mindepth 1 -maxdepth 1 ! -name Contents -print -quit)"
+          test -f "$APP/Contents/Resources/AppIcon.icns"
+          test -f "$APP/Contents/Resources/LICENSE"
+          test -d "$APP/Contents/Resources/Icons"
+          test -d "$APP/Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle"
+          test "$(find "$APP/Contents/Resources/Icons" -type f -name '*.svg' | wc -l | tr -d ' ')" -gt 0
+          test -d "$APP/Contents/Frameworks/whisper.framework"
+          test -d "$APP/Contents/Frameworks/SherpaOnnxC.framework"
+          lipo "$APP/Contents/MacOS/Macomprendo" -verify_arch arm64 x86_64
+          lipo "$APP/Contents/Frameworks/whisper.framework/Versions/Current/whisper" \
+            -verify_arch arm64 x86_64
+          lipo "$APP/Contents/Frameworks/SherpaOnnxC.framework/Versions/Current/SherpaOnnxC" \
+            -verify_arch arm64 x86_64
+          PROFILE_SYMBOLS="${RUNNER_TEMP}/macomprendo-profile-symbols.txt"
+          nm "$APP/Contents/MacOS/Macomprendo" > "$PROFILE_SYMBOLS"
+          if grep -q '__llvm_profile' "$PROFILE_SYMBOLS"; then
+            echo "Release executable contains LLVM coverage instrumentation." >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist"
+          codesign -dv "$APP" 2>&1 | grep -E 'Authority|Signature' || true
+          if [ "${SIGNING_AVAILABLE}" = "true" ]; then
+            xcrun stapler validate "$APP"
+            spctl --assess --type execute --verbose=4 "$APP"
+          fi
+
+      - name: Smoke test the archived app
+        run: |
+          set -euo pipefail
+          APP="${{ steps.expand.outputs.app }}"
+          rm -rf dist/.derived-data
+          APP_LOG="${RUNNER_TEMP}/macomprendo-launch.log"
+          "$APP/Contents/MacOS/Macomprendo" >"${APP_LOG}" 2>&1 &
+          APP_PID=$!
+          cleanup() {
+            kill "${APP_PID}" 2>/dev/null || true
+            wait "${APP_PID}" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          sleep 5
+          if ! kill -0 "${APP_PID}" 2>/dev/null; then
+            cat "${APP_LOG}"
+            exit 1
+          fi
+          APP_STATE=$(ps -o state= -p "${APP_PID}" | tr -d '[:space:]')
+          case "${APP_STATE}" in
+            ''|T|Z)
+              cat "${APP_LOG}"
+              exit 1
+              ;;
+          esac
+          FINISHED=$(osascript -l JavaScript -e \
+            "ObjC.import('AppKit'); const app = $.NSRunningApplication.runningApplicationWithProcessIdentifier(${APP_PID}); app ? app.isFinishedLaunching : false")
+          if [ "${FINISHED}" != "true" ]; then
+            cat "${APP_LOG}"
+            exit 1
+          fi
+          if grep -Eq 'could not load resource bundle|Fatal error' "${APP_LOG}"; then
+            cat "${APP_LOG}"
+            exit 1
+          fi
 
       # Runs even when an earlier step failed, so a broken run cannot leave the private key
       # behind on a runner.

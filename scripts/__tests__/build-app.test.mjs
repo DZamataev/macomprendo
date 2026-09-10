@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import {
   parseBuildArgs, bundleLayout, planBuild, describeStep,
-  executePlan, resolveContext, main,
+  executePlan, resolveContext, validateArchitectures, main,
 } from '../build-app.mjs';
 import { ROOT, DIST_DIR, BUNDLE_ID, PROJECT_YML } from '../lib/paths.mjs';
 import { makeFakeRun, makeFakeFsOps, makeFakeIO, makeFakeLog } from './helpers/fake-run.mjs';
@@ -70,6 +70,10 @@ test('planBuild asks Xcode for the app bundle and copies that product into dist'
   assert.ok(build.args.includes(path.join(ROOT, 'macos/Macomprendo.xcodeproj')));
   assert.ok(build.args.includes('ARCHS=arm64 x86_64'));
   assert.ok(build.args.includes('CODE_SIGNING_ALLOWED=NO'));
+  assert.ok(build.args.includes('ENABLE_CODE_COVERAGE=NO'));
+  assert.ok(build.args.includes('CLANG_ENABLE_CODE_COVERAGE=NO'));
+  assert.ok(build.args.includes('CLANG_COVERAGE_MAPPING=NO'));
+  assert.ok(build.args.includes('CLANG_COVERAGE_MAPPING_LINKER_ARGS=NO'));
 
   assert.ok(steps.some((step) => step.type === 'copy'
     && step.from === '/out/.derived-data/Build/Products/Release/Macomprendo.app'
@@ -186,6 +190,18 @@ test('planBuild ends by reporting the architectures actually produced', () => {
   });
 });
 
+test('validateArchitectures requires the exact requested architecture set', () => {
+  assert.doesNotThrow(() => validateArchitectures(['arm64', 'x86_64'], 'x86_64 arm64'));
+  assert.throws(
+    () => validateArchitectures(['arm64', 'x86_64'], 'arm64'),
+    /requested arm64, x86_64; built arm64/,
+  );
+  assert.throws(
+    () => validateArchitectures(['arm64'], 'arm64 x86_64'),
+    /requested arm64; built arm64, x86_64/,
+  );
+});
+
 test('describeStep renders every step type as one readable line', () => {
   assert.equal(describeStep({ type: 'exec', cmd: 'lipo', args: ['-archs', '/a b'] }), 'lipo -archs "/a b"');
   assert.equal(describeStep({ type: 'rm', path: '/a' }), 'rm -rf /a');
@@ -276,6 +292,24 @@ test('main --dry-run prints the plan and exits zero without running anything', a
   assert.ok(log.lines.some((line) => line.includes('xcodebuild')));
   assert.ok(log.lines.some((line) => line.includes('ARCHS=arm64 x86_64')));
   assert.ok(log.lines.some((line) => line.includes('lipo -archs')));
+});
+
+test('main fails when Xcode omits a requested architecture', async () => {
+  const run = makeFakeRun([
+    {}, {}, {}, {}, {}, {}, {}, {}, { stdout: 'arm64' },
+  ]);
+  const log = makeFakeLog();
+  const code = await main(['--arch', 'arm64,x86_64'], {
+    run,
+    fsOps: makeFakeFsOps(),
+    log,
+    io: makeFakeIO({ [PROJECT_YML]: PROJECT_YML_TEXT }),
+  });
+
+  assert.equal(code, 1);
+  assert.ok(log.lines.includes(
+    'error: Architecture mismatch: requested arm64, x86_64; built arm64.',
+  ));
 });
 
 test('main reports a bad argument as exit code 2 without spawning anything', async () => {

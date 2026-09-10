@@ -8,7 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 - Packaged apps now use Xcode's standard macOS bundle layout, and release builds are launched
-  after DerivedData is removed so a downloaded app cannot depend on build-machine resources.
+  after DerivedData is removed so a downloaded app cannot depend on build-machine resources;
+  the exact published ZIP is validated and release binaries no longer contain test-coverage
+  instrumentation.
 
 ### Added
 - The tag-driven release workflow signs and notarizes the published build when the
