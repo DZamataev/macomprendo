@@ -257,15 +257,13 @@ actor LocalModelManager: ModelManaging {
         // NOTE: `HTTPClient.stream` deliberately does not expose the response status
         // (see its doc comment), so if a server ignores our `Range` header and sends
         // the full 200 body instead of a 206 partial one, we cannot detect that from
-        // the status here. It still fails safely in practice: we append onto the
-        // existing `received` bytes, so `received` overshoots `total` and the
-        // completeness check below throws `modelDownloadFailed` and cleans up. The one
-        // gap is a pathological, currently-accepted limitation: an ignored-Range body
-        // that happens to be exactly `total - received` bytes long (matching the
-        // expected remainder count) combined with an empty catalog `sha256` (which
-        // skips verification, see Task 13) would pass unnoticed. That closes once
-        // `ModelCatalog`'s hashes are filled in, since the checksum check would then
-        // catch the wrong bytes.
+        // the status here. It still fails safely: we append onto the existing
+        // `received` bytes, so `received` overshoots `total` and the completeness check
+        // below throws `modelDownloadFailed` and cleans up. An ignored-Range body that
+        // happens to be exactly `total - received` bytes long would slip past that
+        // count, but the checksum check then catches the wrong bytes — every catalog
+        // entry pins a digest, and `everyCatalogEntryPinsAChecksumForEveryFile` fails
+        // the build if one is ever added without.
         let handle = try FileHandle(forWritingTo: partial)
         defer { try? handle.close() }
         try handle.seekToEnd()

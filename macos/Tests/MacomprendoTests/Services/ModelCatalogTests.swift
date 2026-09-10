@@ -19,6 +19,49 @@ import Testing
         #expect(asr.count + tts.count == ModelCatalog.all.count)
     }
 
+    @Test func everyCatalogEntryPinsAChecksumForEveryFile() throws {
+        // An empty sha256 means ModelManager skips verification for that file, so a
+        // corrupted or substituted download would install silently. This test is the
+        // guard: adding a model without its digest fails here rather than shipping.
+        for model in ModelCatalog.all {
+            for file in model.files {
+                #expect(!file.sha256.isEmpty,
+                        "\(model.id): \(file.fileName) ships without a sha256")
+                #expect(file.sha256.count == 64,
+                        "\(model.id): \(file.fileName) has a \(file.sha256.count)-character digest")
+                #expect(file.sha256.allSatisfy { $0.isHexDigit && !$0.isUppercase },
+                        "\(model.id): \(file.fileName) digest is not lowercase hex")
+            }
+        }
+    }
+
+    @Test func whisperCatalogPinsTheNinePublishedDigests() throws {
+        // Digests come from Hugging Face's paths-info API (`lfs.oid`), which was verified
+        // against a locally computed shasum for ggml-tiny.bin before being trusted.
+        let expected: [String: String] = [
+            "tiny": "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+            "tiny.en": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
+            "base": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+            "base.en": "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+            "small": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+            "small.en": "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d",
+            "medium": "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
+            "medium.en": "cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356",
+            "large-v3-turbo": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"
+        ]
+
+        let whisper = ModelCatalog.all.filter { $0.engine == .whisperCpp }
+        #expect(Set(whisper.map(\.id)) == Set(expected.keys))
+        #expect(whisper.count == 9)
+
+        for model in whisper {
+            let digest = try #require(expected[model.id])
+            let file = try #require(model.files.first)
+            #expect(file.fileName == "ggml-\(model.id).bin")
+            #expect(file.sha256 == digest, "\(model.id) digest drifted")
+        }
+    }
+
     @Test func localTTSCatalogContainsTheEightPinnedArchives() throws {
         let expected: [String: (fileName: String, size: Int64, sha256: String)] = [
             "vits-piper-ru_RU-ruslan-medium":

@@ -160,21 +160,31 @@ enum ModelCatalog {
     private static let whisperSource = URL(string: "https://github.com/openai/whisper#available-models-and-languages")!
 
     private static let whisper: [LocalModel] = [
-        whisperModel("tiny", "Tiny (multilingual)", 77691713, multilingual: true),
-        whisperModel("tiny.en", "Tiny (English)", 77704715, multilingual: false),
-        whisperModel("base", "Base (multilingual)", 147951465, multilingual: true),
-        whisperModel("base.en", "Base (English)", 147964211, multilingual: false),
-        whisperModel("small", "Small (multilingual)", 487601967, multilingual: true),
-        whisperModel("small.en", "Small (English)", 487614201, multilingual: false),
-        whisperModel("medium", "Medium (multilingual)", 1533763059, multilingual: true),
-        whisperModel("medium.en", "Medium (English)", 1533774781, multilingual: false),
-        whisperModel("large-v3-turbo", "Large v3 Turbo", 1624555275, multilingual: true)
+        whisperModel("tiny", "Tiny (multilingual)", 77691713,
+                     "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21", multilingual: true),
+        whisperModel("tiny.en", "Tiny (English)", 77704715,
+                     "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f", multilingual: false),
+        whisperModel("base", "Base (multilingual)", 147951465,
+                     "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe", multilingual: true),
+        whisperModel("base.en", "Base (English)", 147964211,
+                     "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002", multilingual: false),
+        whisperModel("small", "Small (multilingual)", 487601967,
+                     "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b", multilingual: true),
+        whisperModel("small.en", "Small (English)", 487614201,
+                     "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d", multilingual: false),
+        whisperModel("medium", "Medium (multilingual)", 1533763059,
+                     "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208", multilingual: true),
+        whisperModel("medium.en", "Medium (English)", 1533774781,
+                     "cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356", multilingual: false),
+        whisperModel("large-v3-turbo", "Large v3 Turbo", 1624555275,
+                     "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69", multilingual: true)
     ]
 
     private static func whisperModel(
         _ id: String,
         _ displayName: String,
         _ sizeBytes: Int64,
+        _ sha256: String,
         multilingual: Bool
     ) -> LocalModel {
         LocalModel(
@@ -183,7 +193,7 @@ enum ModelCatalog {
             engine: .whisperCpp,
             languages: multilingual ? nil : ["en"],
             files: [
-                ModelFile(role: .ggml, fileName: "ggml-\(id).bin", sizeBytes: sizeBytes, sha256: "", downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-\(id).bin")!)
+                ModelFile(role: .ggml, fileName: "ggml-\(id).bin", sizeBytes: sizeBytes, sha256: sha256, downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-\(id).bin")!)
             ],
             brief: ModelBrief(
                 summary: multilingual
