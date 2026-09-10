@@ -28,21 +28,28 @@ Everything below runs through Node scripts; there are no shell scripts in this r
 - `gitleaks` (`brew install gitleaks`), required by `npm run audit` to scan both the working
   tree and Git history for secrets.
 
-### Still outstanding: model checksums
+### Refreshing model checksums
 
-The whisper model catalog (`macos/Sources/Macomprendo/Services/ModelCatalog.swift`) ships
-with every `sha256` field empty. Model downloads still work, but they are not
-checksum-verified until this is fixed. Before a release ships checksum-verified model
-downloads, run:
+Every catalog entry pins a `sha256`, and a test fails the build if one is missing, so
+downloads are always checksum-verified. To refresh sizes and digests after changing the
+catalog:
 
 ```sh
-npm run fetch-model-hashes -- --download
+npm run fetch-model-hashes                      # sizes only, fast HEAD requests
+npm run fetch-model-hashes -- --download        # sizes + digests, downloads everything
+npm run fetch-model-hashes -- --download --only ggml-tiny.bin   # one file
 ```
 
-This downloads all nine catalog models (~6 GB of traffic) to compute their digests and
-rewrites `ModelCatalog.swift` in place. Run `npm run fetch-model-hashes` (no `--download`)
-to refresh just the recorded sizes with a fast HEAD request, or add `--dry-run` to either
-form to print the records without writing anything.
+Add `--dry-run` to print the records without writing. `--download` fetches the whole
+catalog (several GB), so prefer `--only` when checking a single entry.
+
+For the whisper models specifically, Hugging Face publishes the digest without a download —
+its `lfs.oid` is the file's SHA-256, verified against a locally computed `shasum`:
+
+```sh
+curl -s -X POST https://huggingface.co/api/models/ggerganov/whisper.cpp/paths-info/main \
+  -H 'Content-Type: application/json' -d '{"paths":["ggml-tiny.bin"]}'
+```
 
 ## 1. Store notarization credentials
 

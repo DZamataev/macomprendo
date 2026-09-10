@@ -13,6 +13,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   published so the download button always points at the current asset. The privacy page is
   generated from `PRIVACY.md`, so there is one source of truth for it.
 
+### Fixed
+- Whisper model downloads are now checksum-verified. All nine entries shipped with an empty
+  `sha256`, which made the app skip integrity verification for exactly the largest downloads
+  it offers; every catalog entry now pins a digest and a test fails the build if one is ever
+  added without. `fetch-model-hashes` also learned to expand the templated whisper literal,
+  so it reports 27 files instead of 18 and can no longer silently miss them.
+
 ## [0.1.1] - 2026-09-10
 
 ### Fixed
