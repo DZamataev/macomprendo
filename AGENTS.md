@@ -19,6 +19,7 @@ and summarize go through Ollama or an OpenAI-compatible chat endpoint.
 | `macos/Packages/{WhisperBinary,SherpaOnnxBinary}` | Local SwiftPM wrappers for the deliberately vendored whisper.cpp and sherpa-onnx xcframeworks |
 | `macos/Tests/MacomprendoTests` | swift-testing tests mirroring the source tree; `Fakes/` holds protocol doubles |
 | `scripts/` | Node ≥ 20 ESM tooling; `lib/` holds shared helpers; `__tests__/` holds `node:test` tests |
+| `site/` | Sources for the public site: `content/*.md`, `templates/`, hand-written `assets/` |
 | `docs/` | `ARCHITECTURE.md`, `SMOKE_TEST.md`, `DECISIONS/ADR-*.md`, `superpowers/{specs,plans}` |
 | `DISTRIBUTING.md` | Signing, notarization, and releasing — the operator-facing counterpart to `scripts/` |
 
@@ -28,6 +29,7 @@ and summarize go through Ollama or an OpenAI-compatible chat endpoint.
 npm run test:swift     # swift test --package-path macos
 npm run test:scripts   # node --test 'scripts/__tests__/**/*.test.mjs'
 npm run audit          # repository checks + Gitleaks working-tree/history scans
+npm run site           # build the public site from site/ into build/site
 npm run gen            # xcodegen generate --spec macos/project.yml
 npm run sync-agents    # repair the AGENTS.md / skills symlinks
 npm run sync-icons     # vendor the Phosphor SVGs listed in Resources/Icons/icons.json
@@ -80,6 +82,11 @@ xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
     and verify local transcription after every upgrade.
 14. **Computer use always goes through Peekaboo.** For desktop or UI inspection and
     interaction, use Peekaboo; never use Orca computer-use.
+15. **The site is served from a project subpath**, `dzamataev.github.io/macomprendo/`, so
+    every link and asset reference in `site/` must be path-relative — a root-relative
+    `/assets/site.css` resolves against the user site and 404s. `PRIVACY.md` is the single
+    source for the privacy page; never hand-maintain a second copy. The download URL is
+    generated from `MARKETING_VERSION` because the release asset name carries the version.
 
 ## How to…
 

@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- A public website at `https://dzamataev.github.io/macomprendo/`, carrying the landing page,
+  the Terms of Use, the privacy statement and a support page. It is built from Markdown by
+  `npm run site` and published by the `Pages` workflow, which re-runs when a release is
+  published so the download button always points at the current asset. The privacy page is
+  generated from `PRIVACY.md`, so there is one source of truth for it.
+
 ## [0.1.1] - 2026-09-10
 
 ### Fixed
