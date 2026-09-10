@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-10
+
 ### Fixed
 - Packaged apps now use Xcode's standard macOS bundle layout, and release builds are launched
   after DerivedData is removed so a downloaded app cannot depend on build-machine resources;
