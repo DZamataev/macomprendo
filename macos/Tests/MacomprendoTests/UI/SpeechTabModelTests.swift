@@ -69,6 +69,11 @@ import Testing
         #expect(english.voices.map(\.id) == ["en.alex", "en.daniel"])
     }
 
+    @Test func systemVoiceListTagsMatchItsOptionalSelection() {
+        let tag: String? = SpeechTabModel.systemVoiceSelectionTag(catalog[0])
+        #expect(tag == "en.alex")
+    }
+
     @Test func baseCodeStripsRegionAndScript() {
         #expect(SpeechTabModel.baseCode("ru-RU") == "ru")
         #expect(SpeechTabModel.baseCode("zh-Hans-CN") == "zh")

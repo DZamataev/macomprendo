@@ -126,6 +126,12 @@ import SwiftUI
             .sorted { ($0.displayName, $0.language) < ($1.displayName, $1.language) }
     }
 
+    /// `List(selection:)` may transiently clear its selection while AppKit updates the outline.
+    /// Keep row tags optional too, or SwiftUI inserts a force-unwrapping projection that traps.
+    nonisolated static func systemVoiceSelectionTag(_ voice: Voice) -> String? {
+        voice.id
+    }
+
     static func localCatalogGroups(_ models: [LocalModel]) -> [LocalVoiceGroup] {
         var grouped: [String: [LocalModel]] = [:]
         for model in models where model.kind == .tts {
@@ -512,7 +518,7 @@ struct SpeechTab: View {
                                 }
                                 Spacer()
                             }
-                            .tag(voice.id)
+                            .tag(SpeechTabModel.systemVoiceSelectionTag(voice))
                         }
                     }
                 }
