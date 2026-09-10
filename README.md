@@ -1,11 +1,16 @@
 # Macomprendo
 
-A menubar-only macOS app that turns global hotkeys into dictation, speech, and LLM text
-actions. Transcription runs locally with whisper.cpp; refinement and summarization run through
-Ollama or any OpenAI-compatible endpoint you configure. No telemetry, no account, no network
-call you did not ask for.
+A menubar-only macOS app for dictation, reading selected text, refinement, and summarization.
+Speech-to-text runs locally with whisper.cpp or GigaAM. Text-to-speech can use macOS voices,
+downloaded Piper and Kokoro models, or an OpenAI-compatible endpoint. Refinement and
+summarization run through local Ollama or another endpoint you configure.
+
+Macomprendo has no account, telemetry, update ping, or automatic network traffic. It connects
+only to services you configure and model downloads you start.
 
 Requires macOS 14 or newer. Universal (Apple silicon and Intel). MIT licensed.
+
+![Macomprendo Local TTS settings with mixed-language voice switching](docs/images/speech-local-tts.png)
 
 ## Features
 
@@ -19,30 +24,47 @@ Requires macOS 14 or newer. Universal (Apple silicon and Intel). MIT licensed.
 
 Other things it does:
 
-- **Local transcription** with whisper.cpp and Metal. Models (`tiny` … `large-v3-turbo`) are
+- **Local transcription** with whisper.cpp or GigaAM. Whisper uses Metal and supports models
+  from `tiny` through `large-v3-turbo`; GigaAM provides Russian-focused models. Files are
   downloaded on demand and stored in
   `~/Library/Application Support/Macomprendo/models/`.
+- **Automatic multi-voice text-to-speech.** Macomprendo detects language runs inside one
+  selection and switches to the configured System or downloaded Local voice for each language.
+  Mixed English, Russian, and Chinese text can be read without changing the voice by hand.
+- **Offline Local TTS** with downloadable Piper voices and the multilingual Kokoro model.
+  After download, synthesis stays on the Mac.
 - **Remote transcription** through any `/v1/audio/transcriptions` endpoint, if you prefer.
 - **Optional local dictation history** for text-only Dictate and Dictate & Refine transcripts,
   browsed newest-first in a paged window and capped at 100,000 entries; audio is never saved.
-- **Editable prompt presets** for both refine and summarize — Clean up, Formal, Casual,
-  Shorten, Expand, Fix grammar, Translate, Brief, Bullets, TL;DR, Key actions — all of which
-  you can rename, rewrite, reorder, delete, or add to.
-- **Multiple endpoints**: add as many Ollama or OpenAI-compatible providers as you like, test
+- **Editable prompt presets** for both refine and summarize: Clean up, Formal, Casual,
+  Shorten, Expand, Fix grammar, Translate, Brief, Bullets, TL;DR, and Key actions. You can
+  rename, rewrite, reorder, delete, or add to.
+- **Multiple endpoints.** Add as many Ollama or OpenAI-compatible providers as you like, test
   the connection from Settings, and pick a different model per feature.
+
+## Screenshots
+
+| Local speech-to-text | Global keyboard and mouse actions |
+|---|---|
+| ![Local whisper.cpp model and dictation parameters](docs/images/dictation-local-whisper.png) | ![Configurable global keyboard and middle-mouse actions](docs/images/hotkeys.png) |
 
 ## Install
 
 Download the ZIP for the version you want from the
 [Releases page](https://github.com/DZamataev/macomprendo/releases), expand it, and drag
-`Macomprendo.app` to `/Applications`. Two kinds of build can be attached to a release:
+`Macomprendo.app` to `/Applications`.
 
-| Asset | Signing | First launch |
-|---|---|---|
-| `Macomprendo-<version>-macos.zip` | Developer ID signed, notarized and stapled (by CI when the signing secrets are configured, or locally with `npm run release -- --notarize`, see [DISTRIBUTING.md](DISTRIBUTING.md)) | Opens without a warning |
-| `Macomprendo-<version>-macos-unsigned.zip` | Ad-hoc, built by CI on the release tag when no signing secrets are set | Gatekeeper blocks it; right-click ▸ Open, or `xattr -dr com.apple.quarantine Macomprendo.app` |
+The official asset is `Macomprendo-<version>-macos.zip`. It is universal, Developer ID signed,
+notarized, and stapled. GitHub Actions builds it from the tagged source commit. Before publishing,
+the workflow verifies the final ZIP checksum, extracts that ZIP, checks its structure, signatures,
+and architectures, and launches the extracted app. The maintainer does not upload a locally built
+application to the release.
 
-Verify either download against the `.sha256` published next to it:
+The [release workflow](.github/workflows/release.yml), its
+[public runs](https://github.com/DZamataev/macomprendo/actions/workflows/release.yml), the tagged
+source, and the resulting assets are all visible on GitHub.
+
+Verify the download against the `.sha256` published next to it:
 
 ```sh
 shasum -a 256 -c Macomprendo-<version>-macos.zip.sha256
@@ -57,9 +79,9 @@ npm ci
 npm run install-app
 ```
 
-`npm run install-app` builds an ad-hoc signed app for your Mac's own architecture and
-installs it into `/Applications`. See [DISTRIBUTING.md](DISTRIBUTING.md) for signed,
-notarized, universal builds.
+`npm run install-app` builds an ad-hoc developer copy for your Mac's architecture and installs it
+into `/Applications`. This local build is not an official release asset. See
+[DISTRIBUTING.md](DISTRIBUTING.md) for build, signing, and release details.
 
 ## First run
 
