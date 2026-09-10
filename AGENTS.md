@@ -16,10 +16,11 @@ and summarize go through Ollama or an OpenAI-compatible chat endpoint.
 | `macos/Sources/Macomprendo/Features` | `@MainActor` controllers with explicit state enums; `Prompts/` holds `PromptPreset`, the renderer and `FactoryPresets`, whose `Factory/` subfolder has one content file per language |
 | `macos/Sources/Macomprendo/UI` | MenuBar, Settings tabs (General, Hotkeys, Dictation, Speech, Refine & Summarize, Providers), Quick Panel, Recording HUD, Onboarding, Components |
 | `macos/Sources/Macomprendo/Resources/Icons` | Vendored Phosphor SVGs + `icons.json` + their MIT licence |
+| `macos/Sources/Macomprendo/Resources/Licenses` | Licence text per redistributed component; `LicenseRegistry` is the single source for the list |
 | `macos/Packages/{WhisperBinary,SherpaOnnxBinary}` | Local SwiftPM wrappers for the deliberately vendored whisper.cpp and sherpa-onnx xcframeworks |
 | `macos/Tests/MacomprendoTests` | swift-testing tests mirroring the source tree; `Fakes/` holds protocol doubles |
 | `scripts/` | Node ≥ 20 ESM tooling; `lib/` holds shared helpers; `__tests__/` holds `node:test` tests |
-| `site/` | Sources for the public site: `content/*.md`, `templates/`, hand-written `assets/` |
+| `site/` | Public site sources: `content/*.md` with YAML front matter, `templates/`, hand-written `assets/` |
 | `docs/` | `ARCHITECTURE.md`, `SMOKE_TEST.md`, `DECISIONS/ADR-*.md`, `superpowers/{specs,plans}` |
 | `DISTRIBUTING.md` | Signing, notarization, and releasing — the operator-facing counterpart to `scripts/` |
 
@@ -87,6 +88,16 @@ xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
     `/assets/site.css` resolves against the user site and 404s. `PRIVACY.md` is the single
     source for the privacy page; never hand-maintain a second copy. The download URL is
     generated from `MARKETING_VERSION` because the release asset name carries the version.
+16. **`LicenseRegistry` is the single source for third-party notices.** Adding or upgrading a
+    redistributed component means an entry there plus its text in `Resources/Licenses`; tests
+    fail if a text is missing or does not read like the licence it claims. Build the list from
+    the shipped binary, not from documentation — statically linked components (onnxruntime,
+    espeak-ng) never appear in `otool -L`. The bundled framework carries **GPL-3.0** espeak-ng,
+    so the distributed app is GPL-3.0 while Macomprendo's own source stays MIT; `NOTICE`, the
+    Terms page and the About window must keep saying so until sherpa-onnx 2.0.0 removes it.
+17. **A new resource directory must be declared twice**: `resources:` in `macos/Package.swift`
+    *and* a `type: folder, buildPhase: resources` entry in `macos/project.yml`. Miss the
+    second and `swift test` stays green while the `xcodebuild` bundle ships without the files.
 
 ## How to…
 
