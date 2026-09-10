@@ -1,0 +1,92 @@
+name: Pages
+
+# The published download button is version-pinned (the release asset name carries the
+# version), so the site must be rebuilt when a release is published as well as when its
+# sources change on main. `workflow_dispatch` covers a manual re-publish.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "PRIVACY.md"
+      - "scripts/build-site.mjs"
+      - "scripts/lib/markdown.mjs"
+      - "scripts/lib/version.mjs"
+      - "macos/project.yml"
+      - ".github/workflows/pages.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Read-only by default; the deploy job raises exactly what Pages needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run script tests
+        run: npm run test:scripts
+
+      - name: Build the site
+        run: npm run site -- --out build/site
+
+      # A published page that 404s on its own stylesheet or links to a missing page is worse
+      # than a failed build, and neither shows up in a green Node test run.
+      - name: Check the built output
+        run: |
+          set -euo pipefail
+          for page in index.html privacy/index.html terms/index.html support/index.html; do
+            test -f "build/site/$page" || { echo "missing build/site/$page"; exit 1; }
+          done
+          test -f build/site/.nojekyll || { echo "missing .nojekyll"; exit 1; }
+          test -f build/site/assets/site.css || { echo "missing assets/site.css"; exit 1; }
+          if grep -rnoE '(href|src)="/[^/]' build/site/; then
+            echo "root-relative reference found; the site is served from a project subpath"
+            exit 1
+          fi
+          if grep -rno '{{[a-z]*}}' build/site/; then
+            echo "unresolved template placeholder in the built output"
+            exit 1
+          fi
+
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload the site artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: build/site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
