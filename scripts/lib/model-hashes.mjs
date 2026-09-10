@@ -23,6 +23,15 @@ const MODEL_FILE_LITERAL =
 const STRING_CONSTANT = /private static let (\w+)\s*=\s*"([^"]*)"/g;
 
 /**
+ * Matches a *templated* `ModelFile(...)` literal, where `sizeBytes`/`sha256` are helper
+ * parameters rather than literals. `MODEL_FILE_LITERAL` deliberately requires plain-digit
+ * sizeBytes so rewriting cannot corrupt a template, so template detection needs its own
+ * pattern. Capture groups: 1 fileName, 2 downloadURL string.
+ */
+const MODEL_FILE_TEMPLATE =
+  /ModelFile\(role: \.\w+, fileName: "([^"]+)", sizeBytes: \w+, sha256: \w+, downloadURL: URL\(string: "([^"]*)"\)!\)/;
+
+/**
  * Rewrites the `sizeBytes` and `sha256` fields of a single `ModelFile(...)` literal
  * line, leaving the rest of the line — including a `downloadURL` built from string
  * interpolation — untouched. A line that isn't a recognisable `ModelFile` literal is
@@ -92,12 +101,59 @@ function substituteConstants(source, constants) {
 }
 
 /**
+ * Expands a templated `ModelFile(...)` literal into one record per call site.
+ *
+ * Whisper's nine models share a single literal inside a `whisperModel(id, …)` helper,
+ * so its `fileName` and `downloadURL` both interpolate `\(id)` — a function parameter,
+ * not a resolvable constant. `extractFileRecords` alone therefore reports zero whisper
+ * records, which silently left all nine digests empty. Rather than guess, this reads the
+ * helper's call sites (`whisperModel("tiny", …)`) and substitutes each literal id.
+ *
+ * Only `\(id)` is handled, because that is the one templated parameter the catalog uses.
+ * A template interpolating anything else is skipped, not approximated.
+ */
+export function expandTemplateRecords(source) {
+  const records = [];
+  const lines = source.split('\n');
+  for (const [index, line] of lines.entries()) {
+    const match = MODEL_FILE_TEMPLATE.exec(line);
+    if (!match) continue;
+    const [, fileName, url] = match;
+    if (!fileName.includes('\\(id)') || !url.includes('\\(id)')) continue;
+
+    // The helper owning this literal is the nearest `private static func` above it.
+    let helperName = null;
+    for (let i = index; i >= 0; i--) {
+      const helper = /private static func (\w+)\(/.exec(lines[i]);
+      if (helper) { [, helperName] = helper; break; }
+    }
+    if (helperName === null) continue;
+
+    const callSite = new RegExp(`${helperName}\\("([^"]+)"`, 'g');
+    for (const call of source.matchAll(callSite)) {
+      const id = call[1];
+      records.push({
+        fileName: fileName.split('\\(id)').join(id),
+        downloadURL: url.split('\\(id)').join(id),
+      });
+    }
+  }
+  // A malformed catalog could produce the same file twice; keep the first.
+  const seen = new Set();
+  return records.filter(({ fileName }) => {
+    if (seen.has(fileName)) return false;
+    seen.add(fileName);
+    return true;
+  });
+}
+
+/**
  * Parses `{ fileName, downloadURL }` records out of the catalog source: one per
  * `ModelFile(...)` literal whose `downloadURL` can be resolved to a plain string,
  * after substituting the source's own `private static let` string constants into any
- * `\(...)` interpolation. A literal whose URL still can't be resolved (whisper's
- * `\(id)`-templated line, which is a single template shared by nine models rather
- * than nine distinct literals) is skipped rather than guessed at.
+ * `\(...)` interpolation. Templated literals whose URL interpolates a function
+ * parameter are expanded from their call sites by `expandTemplateRecords`, so whisper's
+ * nine models are covered rather than skipped.
  */
 export function extractFileRecords(source) {
   const constants = resolveConstants(source);
@@ -110,6 +166,10 @@ export function extractFileRecords(source) {
     const downloadURL = downloadURLOf(resolvedLines[i]);
     if (!downloadURL) continue;
     records.push({ fileName, downloadURL });
+  }
+  const known = new Set(records.map((record) => record.fileName));
+  for (const record of expandTemplateRecords(source)) {
+    if (!known.has(record.fileName)) records.push(record);
   }
   return records;
 }

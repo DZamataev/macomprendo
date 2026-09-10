@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   rewriteModelFileLiteral, downloadURLOf, resolveConstants, extractFileRecords,
+  expandTemplateRecords,
 } from '../lib/model-hashes.mjs'
 
 const line = '                ModelFile(role: .tokens, fileName: "x-tokens.txt", sizeBytes: 4000, sha256: "", downloadURL: URL(string: "https://example.com/tokens.txt")!)'
@@ -62,16 +63,43 @@ const FIXTURE = `enum ModelCatalog {
         )
     ]
 
-    private static func whisperModel(_ id: String, _ sizeBytes: Int64) -> LocalModel {
+    private static let whisper: [LocalModel] = [
+        whisperModel("tiny", 77691713, "aaa"),
+        whisperModel("large-v3-turbo", 1624555275, "bbb")
+    ]
+
+    private static func whisperModel(_ id: String, _ sizeBytes: Int64, _ sha256: String) -> LocalModel {
         LocalModel(
             id: id,
             files: [
-                ModelFile(role: .ggml, fileName: "ggml-\\(id).bin", sizeBytes: sizeBytes, sha256: "", downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-\\(id).bin")!)
+                ModelFile(role: .ggml, fileName: "ggml-\\(id).bin", sizeBytes: sizeBytes, sha256: sha256, downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-\\(id).bin")!)
             ]
         )
     }
 }
 `
+
+test('expandTemplateRecords turns the whisper template into one record per call site', () => {
+  const records = expandTemplateRecords(FIXTURE)
+  assert.deepEqual(records, [
+    {
+      fileName: 'ggml-tiny.bin',
+      downloadURL: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
+    },
+    {
+      fileName: 'ggml-large-v3-turbo.bin',
+      downloadURL: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin',
+    },
+  ])
+})
+
+test('extractFileRecords includes the expanded template records alongside the resolvable ones', () => {
+  const names = extractFileRecords(FIXTURE).map((record) => record.fileName)
+  assert.ok(names.includes('ggml-tiny.bin'), 'whisper template was not expanded')
+  assert.ok(names.includes('ggml-large-v3-turbo.bin'))
+  assert.ok(names.includes('gigaam-v3-e2e-ctc-model.onnx'), 'resolvable records were lost')
+  assert.equal(new Set(names).size, names.length, 'records must be unique by fileName')
+})
 
 test('resolveConstants collects private static let string constants into a name to value map', () => {
   const source = 'private static let v3CTCBase = "https://example.com/v3-ctc/resolve/main"\n'
@@ -111,18 +139,21 @@ test('extractFileRecords leaves a literal (non-interpolated) downloadURL as-is',
   })
 })
 
-test('extractFileRecords skips rather than mis-records the whisper-template literal whose URL interpolates a function parameter', () => {
+test('extractFileRecords never emits a record carrying an unresolved interpolation', () => {
   const records = extractFileRecords(FIXTURE)
-  assert.equal(records.some((r) => r.fileName.startsWith('ggml-')), false)
-  // Not merely absent by accident: no record anywhere carries an unresolved "\(...)".
+  // Templated whisper entries are expanded from their call sites rather than skipped, but
+  // an entry whose URL still interpolates something unknown must never be guessed at.
   assert.equal(records.every((r) => !r.downloadURL.includes('\\(')), true)
+  assert.equal(records.every((r) => !r.fileName.includes('\\(')), true)
 })
 
-test('extractFileRecords returns exactly the resolvable records, in source order', () => {
+test('extractFileRecords returns every record, resolvable ones first then expanded templates', () => {
   const records = extractFileRecords(FIXTURE)
   assert.deepEqual(records.map((r) => r.fileName), [
     'gigaam-v3-e2e-ctc-model.onnx',
     'gigaam-v3-e2e-ctc-tokens.txt',
     'literal-example-tokens.txt',
+    'ggml-tiny.bin',
+    'ggml-large-v3-turbo.bin',
   ])
 })
