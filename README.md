@@ -8,7 +8,9 @@ summarization run through local Ollama or another endpoint you configure.
 Macomprendo has no account, telemetry, update ping, or automatic network traffic. It connects
 only to services you configure and model downloads you start.
 
-Requires macOS 14 or newer. Universal (Apple silicon and Intel). MIT licensed.
+Requires macOS 14 or newer. Universal (Apple silicon and Intel). The source is MIT licensed;
+the distributed app is under GPL-3.0 because it bundles a framework with espeak-ng statically
+linked — see [NOTICE](NOTICE).
 
 ![Macomprendo Local TTS settings with mixed-language voice switching](docs/images/speech-local-tts.png)
 
@@ -124,4 +126,8 @@ See [PRIVACY.md](PRIVACY.md) for the full statement.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). © 2026 Denis Zamataev.
+Macomprendo's own source is MIT — see [LICENSE](LICENSE). © 2026 Denis Zamataev.
+
+The **distributed application** is under **GPL-3.0**, because it bundles
+`SherpaOnnxC.framework` with espeak-ng (GPL-3.0) statically linked into it. Full disclosure,
+the component list, and why this is expected to be temporary are in [NOTICE](NOTICE).

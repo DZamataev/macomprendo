@@ -10,14 +10,32 @@ Macomprendo is provided by Denis Zamataev, an individual, free of charge.
 
 ## The licence
 
-The app and its source code are licensed under the **MIT License**, whose full text is in the
-[repository](https://github.com/DZamataev/macomprendo/blob/main/LICENSE). That licence already
-grants you the right to use, copy, modify, merge, publish, distribute, sublicense and sell
-copies of the software, and it disclaims all warranties and liability. Nothing on this page
-takes any of that away.
+Macomprendo's own source code is licensed under the **MIT License**, whose full text is in the
+[repository](https://github.com/DZamataev/macomprendo/blob/main/LICENSE). That licence grants
+you the right to use, copy, modify, merge, publish, distribute, sublicense and sell copies of
+the software, and it disclaims all warranties and liability.
 
-The rest of this page covers three things the licence does not describe, because they are
-about how the app behaves rather than what you may do with it.
+**The application you download is under GPL-3.0, not MIT.** It bundles
+`SherpaOnnxC.framework`, which has **espeak-ng statically linked into it**, and espeak-ng is
+GPL-3.0. Those terms extend to the combined work.
+
+This is disclosure rather than a change of intent, and the corresponding source for the whole
+combined work is public: this app at
+[github.com/DZamataev/macomprendo](https://github.com/DZamataev/macomprendo), the framework at
+[github.com/k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), and espeak-ng at
+[github.com/espeak-ng/espeak-ng](https://github.com/espeak-ng/espeak-ng). espeak-ng is the
+phonemiser behind offline speech; choosing a different voice does not change anything, because
+every offline voice runs through the same framework.
+
+Upstream is removing that dependency in a future release precisely because it conflicts with
+sherpa-onnx's own Apache-2.0 licence. When that lands and this app adopts it, the distributed
+build returns to MIT terms. The full component list, with every licence and how it reaches
+you, is in
+[NOTICE](https://github.com/DZamataev/macomprendo/blob/main/NOTICE) and in the app's About
+window.
+
+The rest of this page covers three things no licence describes, because they are about how the
+app behaves rather than what you may do with it.
 
 ## You own the endpoint relationship
 

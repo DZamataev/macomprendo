@@ -1,0 +1,65 @@
+# Third-party notices
+
+Macomprendo's own source code is MIT licensed — see [LICENSE](LICENSE).
+
+**The distributed application is not.** It bundles `SherpaOnnxC.framework`, which has
+**espeak-ng statically linked into it**, and espeak-ng is licensed under **GPL-3.0**. The
+terms of that licence extend to the combined work, so the `.app` you download from the
+Releases page is governed by GPL-3.0, not by MIT alone.
+
+This is disclosure, not a change of intent. The corresponding source for the whole combined
+work is public:
+
+- this application — <https://github.com/DZamataev/macomprendo>
+- the bundled framework — <https://github.com/k2-fsa/sherpa-onnx>
+- espeak-ng itself — <https://github.com/espeak-ng/espeak-ng>
+
+espeak-ng is the grapheme-to-phoneme engine behind Local TTS. It is reached through
+[piper-phonemize](https://github.com/rhasspy/piper-phonemize), which is itself published as
+GPL-3.0-or-later for the same reason, and every downloaded Piper voice ships its own
+`espeak-ng-data` directory.
+
+Choosing a different voice does not change this: VITS, Kokoro, Matcha and Kitten all live in
+the same framework, and the obligation attaches to distributing the linked binary rather than
+to whether espeak runs.
+
+Upstream is removing the dependency —
+[k2-fsa/sherpa-onnx#3731](https://github.com/k2-fsa/sherpa-onnx/issues/3731), *"Breaking
+Change: Remove espeak-ng and piper-phonemize"* — because it is incompatible with
+sherpa-onnx's own Apache-2.0 licence. That issue is open, not merged, and targets a breaking
+2.0.0 release. When it lands and this app adopts it, the notice above stops applying.
+
+## Components
+
+Verified against the shipped artifact by reading symbols and verbatim source strings out of
+`Macomprendo.app/Contents/Frameworks/`, not assembled from documentation. Note that
+statically linked components do not appear in `otool -L` output at all.
+
+| Component | Licence | How it reaches you |
+|---|---|---|
+| [whisper.cpp](https://github.com/ggml-org/whisper.cpp) v1.9.2 | MIT | Vendored xcframework (`whisper.framework`) |
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) v1.13.4 | Apache-2.0 | Vendored xcframework (`SherpaOnnxC.framework`) |
+| **[espeak-ng](https://github.com/espeak-ng/espeak-ng)** | **GPL-3.0** | **Statically linked inside `SherpaOnnxC.framework`** |
+| [onnxruntime](https://github.com/microsoft/onnxruntime) | MIT | Statically linked inside `SherpaOnnxC.framework` |
+| [Kaldi](https://github.com/kaldi-asr/kaldi) | Apache-2.0 | Statically linked inside `SherpaOnnxC.framework` |
+| [Abseil](https://github.com/abseil/abseil-cpp) | Apache-2.0 | Statically linked inside `SherpaOnnxC.framework` |
+| [RE2](https://github.com/google/re2) | BSD-3-Clause | Statically linked inside `SherpaOnnxC.framework` |
+| [Protocol Buffers](https://github.com/protocolbuffers/protobuf) | BSD-3-Clause | Statically linked inside `SherpaOnnxC.framework` |
+| [OpenFst](https://www.openfst.org) | Apache-2.0 | Statically linked inside `SherpaOnnxC.framework` |
+| [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) 2.4.0 | MIT | Swift package |
+| [Phosphor Icons](https://phosphoricons.com) | MIT | Vendored SVGs |
+
+The full text of each licence is in
+[`macos/Sources/Macomprendo/Resources/Licenses/`](macos/Sources/Macomprendo/Resources/Licenses),
+bundled into the app and listed in its About window. `LicenseRegistry` is the single source
+for that list, and a test fails the build if an entry loses its licence text or declares a
+licence its text does not match.
+
+## Downloaded models
+
+Speech and transcription models are **not** part of the application. They are downloaded at
+your request from their publishers and carry their own licences, which you are responsible for
+observing. Notably, the Piper voice **ru_RU-ruslan** was trained on the
+[RUSLAN corpus](https://ruslan-corpus.github.io/), licensed **CC BY-NC-SA 4.0 —
+non-commercial use only**, and **ru_RU-irina**'s training data has no declared licence.
+whisper's GGML weights are MIT, and GigaAM is MIT.

@@ -13,8 +13,8 @@ already have. Transcription runs **on your Mac** with whisper.cpp or GigaAM. Spe
 runs on your Mac too. Refinement and summarization go to your local Ollama — or to any
 endpoint you choose.
 
-No account. No subscription. No telemetry. No update pinging. MIT licensed, and the source is
-on GitHub.
+No account. No subscription. No telemetry. No update pinging. Open source, and the code is on
+GitHub.
 
 - [**Download for macOS**]({{downloadURL}}) — version {{version}}, universal, Developer ID
   signed, notarized
@@ -49,9 +49,10 @@ local database. Transcripts are never written to the system log.
 
 ## Open source
 
-MIT licensed, built in the open, and released by a GitHub Actions workflow whose runs you can
-read. The published ZIP is checksummed, signed and notarized before it is attached — the
-maintainer never uploads a locally built app.
+Built in the open and released by a GitHub Actions workflow whose runs you can read. The
+published ZIP is checksummed, signed and notarized before it is attached — the maintainer
+never uploads a locally built app. The app's own code is MIT; the distributed build is
+GPL-3.0 because of a bundled framework, and the [licensing notice](terms/) says exactly why.
 
 ## Yours to configure
 
