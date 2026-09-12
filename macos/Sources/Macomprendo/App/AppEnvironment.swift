@@ -38,6 +38,8 @@ struct AppEnvironment {
     /// services' own players so stopping one never silences the other.
     var historyAudioPlayer: any AudioPlaying
     var fileRevealer: any FileRevealing
+    /// Hands a URL to the default browser: the About window's privacy and homepage links.
+    var urlOpener: any URLOpening
     var launchAtLogin: any LaunchAtLoginManaging
     var escapeMonitor: any EscapeMonitoring
     var keySimulator: any KeySimulating
@@ -85,6 +87,7 @@ struct AppEnvironment {
             dictationAudioEncoder: AACDictationAudioEncoder(),
             historyAudioPlayer: AVAudioPlayerPlayer(),
             fileRevealer: NSWorkspaceFileRevealer(),
+            urlOpener: NSWorkspaceURLOpener(),
             launchAtLogin: SMAppServiceLaunchAtLogin(),
             escapeMonitor: GlobalEscapeMonitor(),
             keySimulator: keySimulator,
