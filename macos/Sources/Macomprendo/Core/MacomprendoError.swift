@@ -23,6 +23,7 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case insertFailed
     case dictationHistory(String)
     case licenseTextMissing(String)
+    case licenseTextUnreadable(String)
     case cancelled
 
     var errorDescription: String? {
@@ -59,6 +60,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Dictation history is unavailable: \(reason)"
         case .licenseTextMissing(let component):
             return "The licence text for \"\(component)\" is missing from this build."
+        case .licenseTextUnreadable(let component):
+            return "The licence text for \"\(component)\" is bundled but could not be read."
         case .cancelled:
             return "Cancelled."
         }
@@ -97,6 +100,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
         case .dictationHistory:
             return "Open Dictation History and clear it, or check that Macomprendo can write to Application Support."
         case .licenseTextMissing:
+            return "Read it at the component's homepage, or in macos/Sources/Macomprendo/Resources/Licenses in the project source."
+        case .licenseTextUnreadable:
             return "Read it at the component's homepage, or in macos/Sources/Macomprendo/Resources/Licenses in the project source."
         case .cancelled:
             return nil

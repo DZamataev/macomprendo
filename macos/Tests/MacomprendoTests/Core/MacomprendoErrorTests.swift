@@ -17,7 +17,8 @@ import Testing
     .noSelection,
     .insertFailed,
     .dictationHistory("database is read-only"),
-    .licenseTextMissing("espeak-ng")
+    .licenseTextMissing("espeak-ng"),
+    .licenseTextUnreadable("espeak-ng")
 ])
 func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
     #expect(error.errorDescription?.isEmpty == false)

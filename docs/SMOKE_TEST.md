@@ -466,6 +466,7 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
 | Drag-select a paragraph of a licence and press ⌘C | The text is selectable and copies verbatim |
 | Click a component's homepage link | The browser opens that project's page |
 | Close the window, reopen it from the menubar | The component you last selected is still selected — reopening must not reset it |
+| Narrow the window as far as it goes | It stops shrinking well before the licence text's hard-wrapped lines reflow illegibly |
 
 > The window is a SwiftUI `Window` scene like Dictation History. If the Dock icon lingers
 > after closing it, that is the same `.onDisappear` caveat recorded under **Dock icon**.

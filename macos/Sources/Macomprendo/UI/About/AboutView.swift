@@ -18,6 +18,11 @@ struct AboutView: View {
             }
         }
         .onAppear { model.selectDefaultIfNeeded() }
+        // Unbounded narrowing was not a deliberate choice: below this width the
+        // hard-wrapped GPL/Apache lines in the licence pane reflow into something the
+        // monospaced font can no longer read cleanly. Floor rather than fix — the reader
+        // can still resize down to it, just not below it.
+        .frame(minWidth: 620, minHeight: 420)
     }
 
     // MARK: - Header
@@ -34,14 +39,18 @@ struct AboutView: View {
             }
 
             // The copyleft disclosure sits at the top rather than under the licence list:
-            // it is the one thing a reader must not have to scroll to find.
-            Text(model.copyleftDisclosure)
-                .font(.callout)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
+            // it is the one thing a reader must not have to scroll to find. Hidden
+            // entirely rather than shown empty — sherpa-onnx 2.0.0 removes espeak-ng's
+            // GPL-3.0 note by design, and a filled-but-blank box would look broken.
+            if !model.copyleftDisclosure.isEmpty {
+                Text(model.copyleftDisclosure)
+                    .font(.callout)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
+            }
 
             Button("Privacy statement") { model.openPrivacyStatement() }
                 .buttonStyle(.link)

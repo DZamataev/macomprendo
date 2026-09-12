@@ -43,6 +43,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it offers; every catalog entry now pins a digest and a test fails the build if one is ever
   added without. `fetch-model-hashes` also learned to expand the templated whisper literal,
   so it reports 27 files instead of 18 and can no longer silently miss them.
+- OpenFst's bundled licence text now ships the full Apache-2.0 body instead of the 13-line
+  "how to apply this licence" boilerplate; the length and content guards in
+  `LicenseRegistryTests` are now per-SPDX so a boilerplate-only file fails again. The About
+  window's copyleft disclosure box is hidden rather than shown empty when no bundled
+  component carries a note. The window no longer narrows without limit, which used to reflow
+  the hard-wrapped licence text illegibly.
 
 ## [0.1.1] - 2026-09-10
 

@@ -82,4 +82,37 @@ import Testing
                     "\(entry.component) claims \(entry.spdx) but its text does not read like it")
         }
     }
+
+    /// `try?` alone collapses "no such resource" and "resource present but unreadable" into
+    /// the same `nil`, which then reports an unreadable file as "missing from this build" —
+    /// the wrong recovery text for a reader whose disk has a permissions problem.
+    @Test func readLicenseTextDistinguishesMissingFromUnreadable() throws {
+        let entry = try #require(LicenseRegistry.all.first)
+        let emptyRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("LicenseRegistryTests-empty-\(UUID().uuidString)",
+                                    isDirectory: true)
+        try FileManager.default.createDirectory(at: emptyRoot, withIntermediateDirectories: true)
+        let emptyBundle = try #require(Bundle(url: emptyRoot))
+
+        #expect(throws: MacomprendoError.licenseTextMissing(entry.component)) {
+            try entry.readLicenseText(in: emptyBundle)
+        }
+
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("LicenseRegistryTests-unreadable-\(UUID().uuidString)",
+                                    isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let licensesDir = root.appendingPathComponent("Licenses", isDirectory: true)
+        try FileManager.default.createDirectory(at: licensesDir, withIntermediateDirectories: true)
+        // A directory where a .txt file is expected: `Bundle.url` still resolves it (it
+        // matches the name and extension) but reading its contents as a file fails.
+        let fakeFile = licensesDir.appendingPathComponent("\(entry.resourceName).txt",
+                                                          isDirectory: true)
+        try FileManager.default.createDirectory(at: fakeFile, withIntermediateDirectories: true)
+        let bundle = try #require(Bundle(url: root))
+
+        #expect(throws: MacomprendoError.licenseTextUnreadable(entry.component)) {
+            try entry.readLicenseText(in: bundle)
+        }
+    }
 }

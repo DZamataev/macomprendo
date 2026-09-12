@@ -49,7 +49,8 @@ final class AboutModel: ObservableObject {
 
     /// The copyleft disclosure, taken from the entries that carry it rather than restated
     /// here: a third copy of this wording alongside `NOTICE` and the registry note would be a
-    /// third thing to keep in step.
+    /// third thing to keep in step. Empty when no entry carries a note — `AboutView` hides
+    /// the disclosure box entirely in that case rather than showing a blank one.
     var copyleftDisclosure: String {
         LicenseRegistry.copyleft
             .compactMap(\.note)
@@ -58,12 +59,12 @@ final class AboutModel: ObservableObject {
 
     func select(_ entry: LicenseEntry) {
         selected = entry
-        if let text = entry.licenseText(in: bundle) {
-            licenseText = text
+        do {
+            licenseText = try entry.readLicenseText(in: bundle)
             errorMessage = nil
-        } else {
+        } catch {
             licenseText = nil
-            errorMessage = ErrorText.describe(MacomprendoError.licenseTextMissing(entry.component))
+            errorMessage = ErrorText.describe(error)
         }
     }
 

@@ -52,8 +52,13 @@ final class AppModel: ObservableObject {
         })
     lazy var speechSourceModel = SpeechSourceModel(holder: self)
     lazy var savedAudioModel = SavedAudioModel(history: history, revealer: env.fileRevealer)
-    /// The About window's content. Lazy so the licence registry is only read when the window
-    /// is first opened, and owned here so the view never constructs a service (invariant 1).
+    /// The About window's content, owned here so the view never constructs a service
+    /// (invariant 1). Not actually deferred to first open: SwiftUI evaluates every `Scene`'s
+    /// content `ViewBuilder` — including this one's `AboutView(model: model.aboutModel)` —
+    /// while building the scene graph at launch, so `lazy` only defers construction to
+    /// whichever `AppModel` property is read first during that pass, not to the reader
+    /// opening the window. Confirmed by tracing `AboutModel.init` at launch with the About
+    /// window never opened: it still runs.
     lazy var aboutModel = AboutModel(opener: env.urlOpener)
     lazy var promptsTabModel = PromptsTabModel(
         holder: self,
