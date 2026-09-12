@@ -7,6 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Dictation history can now keep the microphone recording behind each entry. **Save the
+  original recording** (Settings ▸ General) is off by default and applies only while dictation
+  history is on; recordings are written as AAC `.m4a` files (48 kbit/s, 16 kHz mono) to
+  `~/Library/Application Support/Macomprendo/dictation-audio/` and play back from the history
+  window. Settings shows the space in use, reveals the folder in Finder, and offers **Delete
+  saved audio**, which removes the recordings and keeps the transcripts. Settings ▸ Dictation
+  gains **Maximum recording length**, and a recording that reaches it stops and says so in the
+  HUD.
+- **History retention is now age-based, and defaults to 90 days — including for settings
+  written before this release.** On the first launch after upgrading, every history entry older
+  than 90 days is deleted along with its recording; existing installations that have been
+  dictating for longer will lose those older transcripts. Choose a longer period, or
+  `Unlimited`, in Settings ▸ General ▸ **Keep history for** before first launch if you need to
+  keep them. The 100,000-entry ceiling still applies.
 - A public website at `https://dzamataev.github.io/macomprendo/`, carrying the landing page,
   the Terms of Use, the privacy statement and a support page. It is built from Markdown by
   `npm run site` and published by the `Pages` workflow, which re-runs when a release is

@@ -22,10 +22,22 @@ API keys live in the login Keychain under the service
 Dictation history is off by default. When enabled, it stores accepted text from Dictate and
 the original accepted microphone transcript from Dictate & Refine before any LLM processing, in
 the local SQLite database at
-`~/Library/Application Support/Macomprendo/dictation-history.sqlite3`; audio is never saved.
+`~/Library/Application Support/Macomprendo/dictation-history.sqlite3`.
 The newest 100,000 entries are retained. Disabling history stops new writes but preserves
-existing entries, while Clear History removes them. The database is plaintext protected by
-your macOS account and, when enabled, FileVault.
+existing entries, while Clear History removes them.
+
+**Saved recordings.** “Save the original recording” is off by default and has no effect unless
+dictation history is on. While both are on, the microphone recording behind each history entry
+is written as an AAC `.m4a` file (48 kbit/s, 16 kHz mono) into
+`~/Library/Application Support/Macomprendo/dictation-audio/`, one file per entry. “Keep history
+for” sets how long transcripts and their recordings are kept — 90 days by default — and anything
+older is deleted automatically. Clear History deletes the transcripts and their recordings;
+Delete saved audio removes the recordings and keeps the transcripts. Turning the setting off
+stops new recordings but keeps the ones already on disk.
+
+The database and the recordings are plaintext files protected by your macOS account and, when
+enabled, FileVault. Macomprendo is deliberately not sandboxed, so any program running under your
+macOS account can read them; the app adds no protection beyond the account itself.
 
 **Logging.** Macomprendo logs to the unified system log under the subsystem
 `com.dzamataev.macomprendo`. Transcript and LLM text are never logged at the
