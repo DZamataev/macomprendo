@@ -157,6 +157,30 @@ import Testing
         #expect(await store.attachRequests.isEmpty)
     }
 
+    @Test func aCleanupFailureAfterAnEncodingFailureIsFoldedIntoTheReportedMessage() async {
+        // The cleanup after a failed encode/attach must not be `try?`ed away: when it also
+        // fails, the orphaned partial recording stays on disk with no signal until the next
+        // launch's purge, while the user is only told the save failed.
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let encodingFailure = MacomprendoError.audioEncoding("disk full")
+        await encoder.setError(encodingFailure)
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { true },
+            encoder: encoder, shouldSaveRecording: { true }, retention: { .ninetyDays },
+            now: { date })
+
+        let result = await controller.append(text: "hello", kind: .dictation)
+        await store.setRemoveAudioFilesError(MacomprendoError.dictationHistory("permission denied"))
+        let error = await controller.saveRecording([0.1], for: result.entry)
+
+        #expect(error != nil)
+        let message = ErrorText.describe(error!)
+        #expect(message.localizedCaseInsensitiveContains("disk full"))
+        #expect(message.localizedCaseInsensitiveContains("partial recording")
+                || message.localizedCaseInsensitiveContains("could not be removed"))
+    }
+
     @Test func cancellationDuringSaveRecordingIsSilent() async {
         // Esc or a new hotkey press during the encode cancels this task on purpose, exactly
         // like every other cancellation path in the controller (`mappedHistoryError`,

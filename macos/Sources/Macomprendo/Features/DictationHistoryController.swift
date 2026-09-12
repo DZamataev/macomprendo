@@ -111,12 +111,24 @@ final class DictationHistoryController: ObservableObject {
             }
             return nil
         } catch {
-            try? await store.removeAudioFiles(named: [filename])
-            if error is CancellationError { return nil }
+            if error is CancellationError {
+                try? await store.removeAudioFiles(named: [filename])
+                return nil
+            }
             let mapped = error as? MacomprendoError
                 ?? MacomprendoError.audioEncoding(error.localizedDescription)
-            errorMessage = ErrorText.describe(mapped)
-            return mapped
+            do {
+                try await store.removeAudioFiles(named: [filename])
+                errorMessage = ErrorText.describe(mapped)
+                return mapped
+            } catch {
+                let combined = MacomprendoError.audioEncoding(
+                    "\(mapped.errorDescription ?? mapped.localizedDescription); "
+                    + "the partial recording could not be removed"
+                )
+                errorMessage = ErrorText.describe(combined)
+                return combined
+            }
         }
     }
 

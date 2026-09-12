@@ -48,6 +48,7 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
     private var retentionError: (any Error)?
     private var appendGate: AsyncGate?
     private var fetchGate: AsyncGate?
+    private var removeAudioFilesError: (any Error)?
 
     func setPages(_ pages: [DictationHistoryPage]) {
         self.pages = pages
@@ -94,6 +95,10 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
 
     func setRetentionError(_ error: (any Error)?) {
         retentionError = error
+    }
+
+    func setRemoveAudioFilesError(_ error: (any Error)?) {
+        removeAudioFilesError = error
     }
 
     /// Suspends an append only after its request has been accepted, so callers can
@@ -188,6 +193,7 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
     }
 
     func removeAudioFiles(named filenames: [String]) async throws {
+        if let removeAudioFilesError { throw removeAudioFilesError }
         if let retentionError { throw retentionError }
         for filename in filenames {
             let url = audioDirectoryURL.appendingPathComponent(filename)
