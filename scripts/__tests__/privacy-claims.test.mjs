@@ -67,11 +67,14 @@ test('README.md describes the optional recording instead of denying it', async (
   assert.match(readme, /Save the original recording/);
 });
 
-test('CHANGELOG.md records the feature and the retention default under Unreleased', async () => {
-  const unreleased = squash(unreleasedSection(await read(CHANGELOG_PATH)));
-  assert.match(unreleased, /90 days/);
-  assert.match(unreleased, /Keep history for/);
-  assert.match(unreleased, /Save the original recording/);
+// The claim has to be *somewhere* in the changelog, not specifically under Unreleased:
+// cutting a release moves the Unreleased body into a versioned section, which would make an
+// Unreleased-only assertion fail during the release itself and pass again afterwards.
+test('CHANGELOG.md records the feature and the retention default', async () => {
+  const changelog = squash(await read(CHANGELOG_PATH));
+  assert.match(changelog, /90 days/);
+  assert.match(changelog, /Keep history for/);
+  assert.match(changelog, /Save the original recording/);
 });
 
 test('the General tab caption agrees with PRIVACY.md about when recordings are stored', async () => {
