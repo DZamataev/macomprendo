@@ -34,4 +34,5 @@ macos/AppBundle/AppIcon.iconset/
 
 # Agent scratch — isolated worktrees and SDD ledgers
 .claude/worktrees/
+.worktrees/
 .superpowers/

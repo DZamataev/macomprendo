@@ -127,6 +127,23 @@ Repository constraints worth restating on every code card:
   card can afford to run it, and should;
 - record objective blockers instead of guessing.
 
+### Write outcomes, not mechanisms
+
+A card body is the worker's specification, and a worker implements what it says —
+including the parts you wrote carelessly. "A row whose file has vanished offers no
+control rather than a dead button" sounded reasonable when it was written into a
+card here; it produced a Play button that disappeared the moment a recording was
+deleted, a test that asserted that disappearance, and a reviewer with no grounds
+to object.
+
+State the outcome the user should see and let the worker choose the mechanism:
+
+> A recording the user deleted outside the app must still offer Play, and pressing
+> it must say the file is gone. Restoring the file must make playback work again.
+
+That phrasing is checkable, survives a redesign, and would have failed the wrong
+implementation on the first run.
+
 ### Repo-specific traps to name in the card
 
 - **`AGENTS.md` and `CLAUDE.md` are write-protected.** A card whose work implies
@@ -182,6 +199,34 @@ condition or returning a wrong constant from the function under test.
 This matters most for the parts of Macomprendo whose failure mode is silence —
 retention that deletes nothing, an error that never surfaces, a setting that
 round-trips to its default.
+
+### What mutation evidence cannot buy you
+
+A test can be mutation-proof and still assert the wrong rule. Three defects
+survived a twelve-finding adversarial review on the first run here, and every one
+of them was covered by a passing test:
+
+- the history window did not show a new dictation until it was closed and
+  reopened — `append` wrote to the database and never touched the published list;
+- the Settings size readout never moved, because it was read once in `.task`;
+- deleting a recording in Finder made the Play control **disappear**, because
+  playability was decided from a cached directory listing that was pruned on the
+  first failed read.
+
+Each had tests. The third had a test that asserted exactly the wrong behaviour —
+`aVanishedFileReportsAnErrorAndStopsOfferingTheControl` — written from a card body
+that said a vanished file should "offer no control rather than a dead button".
+The card was wrong, the implementation matched it, the test locked it in, and the
+reviewer had no way to see the mistake because the card was its ground truth.
+
+The lesson is not "write more tests". It is that **a card body's wording becomes
+the specification**, and a plausible-sounding phrase in it will be implemented and
+then defended by a test. Prefer stating the user-visible outcome ("a recording the
+user deleted must still offer Play, and say the file is gone when pressed") over
+the mechanism ("hide the control when the file is missing"). And treat any
+end-to-end behaviour that only a human can see — a window open while something
+else changes it — as un-reviewable by agents: it goes on the smoke test, or it
+ships broken.
 
 ## Human gates
 
@@ -340,8 +385,10 @@ gate. Recorded so a later effort can calibrate.
 | Wall-clock, slice 1 start to remediation done | about 90 minutes |
 | Fastest slice | 3 minutes (settings model) |
 | Review | 12 findings in 17 minutes |
-| Tests | 982 → 1051 Swift, 333 → 339 Node |
-| Coordinator interventions | one decision reversal, one changelog fix |
+| Tests | 982 → 1064 Swift, 333 → 339 Node |
+| Defects the board produced and closed itself | 12 |
+| Defects only the operator found, after acceptance | 3 |
+| Coordinator interventions | one decision reversal, one changelog fix, three post-acceptance fixes |
 
 The review paid for itself on the first run: it caught that `0700` was applied
 only to directories the app actually created, so every upgraded install kept its
@@ -349,3 +396,26 @@ transcript database at `0755` — and the test that claimed to cover it passed,
 because it built a fresh path under a new UUID. That class of defect (a test that
 cannot see the case it names) is exactly what an implementer cannot catch in its
 own work.
+
+The three defects it missed are just as instructive, and they share a shape: all
+were **states a human sees and a test does not** — a window left open while
+something else changes the data, a control whose disappearance is only wrong if
+you know what the user expects next. Budget a real acceptance pass on hardware;
+it is not a formality after a green board, it is where this class lands.
+
+### Cost accounting
+
+An honest tally for the whole effort, so the next one can be planned rather than
+hoped for:
+
+- **Setup is not free.** Four profiles, a worktree, a warmed build, nine card
+  bodies and this runbook came before a single line of the feature was written.
+  That investment amortises across later efforts on the same repo; it does not
+  amortise inside one.
+- **The chain, not the worker count, sets the pace.** Six serialized slices ran
+  one at a time by construction. More workers would not have been faster.
+- **The operator stays in the loop regardless.** One decision the board tried to
+  make (retention defaults), one contradiction it created between code and
+  changelog, and three defects it could not see. A board is a way to keep
+  long-running work moving without a chat session held open — not a way to stop
+  reading the diff.
