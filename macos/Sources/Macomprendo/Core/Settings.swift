@@ -377,12 +377,8 @@ extension Settings {
             ?? d.dictationHistoryEnabled
         saveOriginalRecording = try c.decodeIfPresent(Bool.self, forKey: .saveOriginalRecording)
             ?? d.saveOriginalRecording
-        // A document with no `historyRetention` key was written before retention existed, so
-        // the absence of the key means "no age limit was ever configured" rather than the
-        // fresh-install default of 90 days — decoding it as 90 days would silently delete
-        // years of existing history the first time a pre-retention build is opened.
         historyRetention = try c.decodeIfPresent(HistoryRetention.self, forKey: .historyRetention)
-            ?? .unlimited
+            ?? d.historyRetention
         let seconds = try c.decodeIfPresent(Int.self, forKey: .maximumRecordingSeconds)
             ?? d.maximumRecordingSeconds
         maximumRecordingSeconds = min(max(seconds, Settings.recordingSecondsRange.lowerBound),

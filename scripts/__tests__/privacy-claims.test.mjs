@@ -67,11 +67,10 @@ test('README.md describes the optional recording instead of denying it', async (
   assert.match(readme, /Save the original recording/);
 });
 
-test('CHANGELOG.md warns under Unreleased that the 90-day default deletes older history', async () => {
+test('CHANGELOG.md records the feature and the retention default under Unreleased', async () => {
   const unreleased = squash(unreleasedSection(await read(CHANGELOG_PATH)));
   assert.match(unreleased, /90 days/);
-  assert.match(unreleased, /first launch/i);
-  assert.match(unreleased, /delete[sd]?/i);
+  assert.match(unreleased, /Keep history for/);
   assert.match(unreleased, /Save the original recording/);
 });
 

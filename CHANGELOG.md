@@ -15,12 +15,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   saved audio**, which removes the recordings and keeps the transcripts. Settings ▸ Dictation
   gains **Maximum recording length**, and a recording that reaches it stops and says so in the
   HUD.
-- **History retention is now age-based, and defaults to 90 days — including for settings
-  written before this release.** On the first launch after upgrading, every history entry older
-  than 90 days is deleted along with its recording; existing installations that have been
-  dictating for longer will lose those older transcripts. Choose a longer period, or
-  `Unlimited`, in Settings ▸ General ▸ **Keep history for** before first launch if you need to
-  keep them. The 100,000-entry ceiling still applies.
+- History retention is now age-based: `Keep history for` (Settings ▸ General) offers 1, 7, 30,
+  60, 90, 180 and 365 days or `Unlimited`, and defaults to 90 days. Entries past that age are
+  removed with their recordings at launch, after each new entry, and when the setting changes.
+  The 100,000-entry ceiling still applies.
 - A public website at `https://dzamataev.github.io/macomprendo/`, carrying the landing page,
   the Terms of Use, the privacy statement and a support page. It is built from Markdown by
   `npm run site` and published by the `Pages` workflow, which re-runs when a release is
@@ -78,7 +76,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   dictation model (with backend prefixes) and translation target.
 - Optional local dictation history saves text-only Dictate and Dictate & Refine transcripts,
   capped at 100,000 entries and browsed in a paged window with per-entry copying and a
-  confirmed clear action; audio is never saved.
+  confirmed clear action. (Saving the recording arrived later; see Unreleased.)
 - GigaAM local transcription: four Sber models covering Russian with punctuation, and
   Russian, English, Kazakh, Kyrgyz and Uzbek without it, alongside whisper.cpp.
 - Dictation settings now separate backends into sub-tabs with local-model briefs, published

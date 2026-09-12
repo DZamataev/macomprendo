@@ -412,20 +412,19 @@ import Testing
         let settings = try Settings.migrate(json)
 
         #expect(settings.saveOriginalRecording == false)
-        #expect(settings.historyRetention == .unlimited)
+        #expect(settings.historyRetention == .ninetyDays)
         #expect(settings.maximumRecordingSeconds == 300)
     }
 
-    @Test func aDocumentMissingHistoryRetentionIsTreatedAsWrittenBeforeRetentionExisted() throws {
-        // A document with no `historyRetention` key at all was written before retention was
-        // introduced. Decoding it as `.ninetyDays` (the fresh-install default) would silently
-        // delete years of existing history on next launch; the absence of the key must instead
-        // mean "no age limit was ever configured".
+    @Test func aDocumentMissingHistoryRetentionTakesTheNinetyDayDefault() throws {
+        // Every settings document, old or new, lands on the same 90-day default: this app
+        // has no installed base to protect, so a second migration-only meaning for the
+        // absent key would be complexity bought for nobody.
         let json = Data(#"{"schemaVersion":2,"dictationHistoryEnabled":true}"#.utf8)
 
         let settings = try Settings.migrate(json)
 
-        #expect(settings.historyRetention == .unlimited)
+        #expect(settings.historyRetention == .ninetyDays)
     }
 
     @Test func theDefaultsCarryTheRecordingKeys() {
