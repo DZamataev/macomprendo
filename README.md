@@ -36,8 +36,11 @@ Other things it does:
 - **Offline Local TTS** with downloadable Piper voices and the multilingual Kokoro model.
   After download, synthesis stays on the Mac.
 - **Remote transcription** through any `/v1/audio/transcriptions` endpoint, if you prefer.
-- **Optional local dictation history** for text-only Dictate and Dictate & Refine transcripts,
-  browsed newest-first in a paged window and capped at 100,000 entries; audio is never saved.
+- **Optional local dictation history** for Dictate and Dictate & Refine transcripts, browsed
+  newest-first in a paged window and capped at 100,000 entries. With **Save the original
+  recording** additionally on, each entry keeps its microphone recording as an AAC `.m4a` file
+  you can play back from the history window; both are deleted once they pass the retention age
+  you choose (90 days by default).
 - **Editable prompt presets** for both refine and summarize: Clean up, Formal, Casual,
   Shorten, Expand, Fix grammar, Translate, Brief, Bullets, TL;DR, and Key actions. You can
   rename, rewrite, reorder, delete, or add to.
@@ -109,7 +112,9 @@ All hotkeys are rebindable in Settings → Hotkeys.
   endpoint you configured — your local Ollama by default.
 - **API keys live in the Keychain only.** They are never written to settings, logs, or exports.
 - **Dictation history is opt-in.** When enabled, it stores text locally in SQLite; disabling
-  preserves existing entries and Clear History removes them.
+  preserves existing entries and Clear History removes them. Recordings are stored only while
+  **Save the original recording** is also on, and are deleted with the entry at the retention
+  age you choose.
 - **Transcripts and LLM output are never logged** at the default log level.
 - **The clipboard is restored.** Copy/paste simulation snapshots the pasteboard and puts it
   back 300 ms later, guarded by a change-count check so anything you copied meanwhile survives.

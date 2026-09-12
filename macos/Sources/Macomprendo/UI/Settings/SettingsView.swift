@@ -3,7 +3,8 @@ import SwiftUI
 struct SettingsView: View {
     var body: some View {
         TabView {
-            GeneralTab()
+            GeneralTab(savedAudio: AppRoot.model.savedAudioModel,
+                       history: AppRoot.model.history)
                 .tabItem { Label { Text("General") } icon: { Icon(.settings, size: 16) } }
             HotkeysTab()
                 .tabItem { Label { Text("Hotkeys") } icon: { Icon(.hotkeys, size: 16) } }

@@ -17,11 +17,13 @@ import Testing
         let escapeMonitor: FakeEscapeMonitor
         let historyStore: FakeDictationHistoryStore
         let history: DictationHistoryController
+        let encoder: FakeDictationAudioEncoder
     }
 
     private func makeHarness(mode: DictationMode = .hold,
                              insertMethod: InsertMethod = .auto,
                              historyEnabled: Bool = true,
+                             recordingEnabled: Bool = false,
                              transcript: String? = nil) -> Harness {
         let recorder = FakeAudioRecorder()
         let transcriber = FakeTranscriptionProvider()
@@ -41,11 +43,17 @@ import Testing
         settings.value.insertMethod = insertMethod
         settings.value.transcriptionLanguage = "en"
         settings.value.dictationHistoryEnabled = historyEnabled
+        settings.value.saveOriginalRecording = recordingEnabled
         let escapeMonitor = FakeEscapeMonitor()
         let historyStore = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
         let history = DictationHistoryController(store: historyStore,
                                                   pasteboard: pasteboard,
-                                                  isEnabled: { settings.value.dictationHistoryEnabled })
+                                                  isEnabled: { settings.value.dictationHistoryEnabled },
+                                                  encoder: encoder,
+                                                  shouldSaveRecording: {
+                                                      settings.value.saveOriginalRecording
+                                                  })
         if let transcript { transcriber.result = .success(transcript) }
 
         let controller = DictationController(
@@ -62,7 +70,7 @@ import Testing
         return Harness(controller: controller, recorder: recorder, transcriber: transcriber,
                        inserter: inserter, tracker: tracker, permissions: permissions,
                        hud: hud, pasteboard: pasteboard, settings: settings, escapeMonitor: escapeMonitor,
-                       historyStore: historyStore, history: history)
+                       historyStore: historyStore, history: history, encoder: encoder)
     }
 
     private func recordAndFinish(_ h: Harness) async {
@@ -73,6 +81,84 @@ import Testing
     }
 
     // MARK: - Dictation history
+
+    @Test func savedRecordingUsesCapturedSamplesAndAttachesAfterInsertion() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "saved")
+        let gate = AsyncGate()
+        await h.encoder.setGate(gate)
+        h.recorder.samplesToReturn = [0.25, -0.5, 0.75]
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await h.encoder.encodeInvoked.wait()
+
+        #expect(h.inserter.inserted.map(\.text) == ["saved"])
+        #expect(await h.encoder.requests.map(\.pcm) == [[0.25, -0.5, 0.75]])
+        gate.open()
+        await h.controller.activeTask?.value
+        #expect(await h.historyStore.attachRequests == [.init(filename: "1.m4a", entryID: 1)])
+    }
+
+    @Test func aNewDictationDuringRecordingEncodeStartsInsteadOfBeingCancelled() async {
+        // Once the paste has landed, the controller must return to `.idle` immediately —
+        // it must not still read as `.inserting` for the whole duration of the recording
+        // encode, or a hotkey press in that window is misread as "cancel the in-flight
+        // session" instead of "begin a new one".
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "saved")
+        let gate = AsyncGate()
+        await h.encoder.setGate(gate)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await h.encoder.encodeInvoked.wait()
+
+        #expect(h.controller.state == .idle)
+
+        h.controller.handle(.keyDown(.dictate))
+        await waitFor("new recording to start") { h.controller.state == .recording }
+
+        #expect(h.hud.state != .toast("Cancelled"))
+
+        gate.open()
+        await h.controller.activeTask?.value
+    }
+
+    @Test func cancellationDuringEncodingAttachesNothing() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "inserted")
+        let gate = AsyncGate()
+        await h.encoder.setGate(gate)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await h.encoder.encodeInvoked.wait()
+
+        let pending = h.controller.activeTask
+        h.controller.cancel()
+        gate.open()
+        await pending?.value
+
+        #expect(await h.historyStore.attachRequests.isEmpty)
+    }
+
+    @Test func recordingSettingOffSkipsEncoding() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: false, transcript: "text only")
+        await recordAndFinish(h)
+        #expect(await h.encoder.requests.isEmpty)
+    }
+
+    @Test func encoderFailureKeepsInsertedTranscriptAndShowsTheError() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "still inserted")
+        await h.encoder.setError(MacomprendoError.audioEncoding("disk full"))
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["still inserted"])
+        #expect(await h.historyStore.attachRequests.isEmpty)
+        guard case .error(let message) = h.hud.state else {
+            Issue.record("Expected a user-visible encoding warning")
+            return
+        }
+        #expect(message.contains("Saving the recording failed"))
+    }
 
     /// A regression where the controller bypasses its history commit point would leave
     /// the accepted, trimmed direct dictation absent from history even though it pasted.
@@ -99,10 +185,11 @@ import Testing
 
     /// A disabled setting must reject the history side effect without changing insertion.
     @Test func disabledHistoryDoesNotRecordAnAcceptedTranscript() async {
-        let h = makeHarness(historyEnabled: false, transcript: "not recorded")
+        let h = makeHarness(historyEnabled: false, recordingEnabled: true, transcript: "not recorded")
         await recordAndFinish(h)
 
         #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(await h.encoder.requests.isEmpty)
         #expect(h.inserter.inserted.map(\.text) == ["not recorded"])
     }
 
@@ -436,7 +523,51 @@ import Testing
             h.inserter.inserted.map(\.text) == ["capped"] && h.controller.state == .idle
         }
         #expect(h.controller.state == .idle)
+        #expect(h.hud.state == .success(DictationController.recordingLimitMessage(seconds: 300)))
+    }
+
+    /// Once the cap is a value the user chose, reaching it must be visible: the HUD says the
+    /// recording stopped because it reached the limit instead of reporting a plain insertion.
+    @Test func hittingTheRecordingCapTellsTheUserWhyItStopped() async {
+        let h = makeHarness(mode: .hold)
+        h.settings.value.maximumRecordingSeconds = 600
+        h.transcriber.result = .success("capped")
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.recorder.triggerAutoStop()
+        await waitFor("implicit stop transcribes and inserts") {
+            h.inserter.inserted.map(\.text) == ["capped"] && h.controller.state == .idle
+        }
+
+        #expect(h.hud.state == .success("Stopped at the 10-minute limit"))
+    }
+
+    /// A recording the user ended themselves must not claim it hit the limit, including the
+    /// one right after a capped recording.
+    @Test func aNormalStopAfterACappedOneReportsPlainInsertion() async {
+        let h = makeHarness(mode: .hold)
+        h.transcriber.result = .success("capped")
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.recorder.triggerAutoStop()
+        await waitFor("capped cycle finishes") {
+            h.inserter.inserted.count == 1 && h.controller.state == .idle
+        }
+
+        await recordAndFinish(h)
+
         #expect(h.hud.state == .success("Inserted"))
+    }
+
+    @Test func theRecordingLimitMessageNamesTheConfiguredMinutes() {
+        #expect(DictationController.recordingLimitMessage(seconds: 60)
+            == "Stopped at the 1-minute limit")
+        #expect(DictationController.recordingLimitMessage(seconds: 300)
+            == "Stopped at the 5-minute limit")
+        #expect(DictationController.recordingLimitMessage(seconds: 90)
+            == "Stopped at the 1.5-minute limit")
     }
 
     /// `AVAudioEngineRecorder`'s `level` stream is created once in `init` and shared by

@@ -404,3 +404,93 @@ import Testing
         #expect(LocalModelIdleTimeout.never.duration == nil)
     }
 }
+
+@Suite struct SavedRecordingSettingsTests {
+    @Test func aDocumentWrittenBeforeTheRecordingKeysDecodesToTheDocumentedDefaults() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+
+        let settings = try Settings.migrate(json)
+
+        #expect(settings.saveOriginalRecording == false)
+        #expect(settings.historyRetention == .ninetyDays)
+        #expect(settings.maximumRecordingSeconds == 300)
+    }
+
+    @Test func aDocumentMissingHistoryRetentionTakesTheNinetyDayDefault() throws {
+        // Every settings document, old or new, lands on the same 90-day default: this app
+        // has no installed base to protect, so a second migration-only meaning for the
+        // absent key would be complexity bought for nobody.
+        let json = Data(#"{"schemaVersion":2,"dictationHistoryEnabled":true}"#.utf8)
+
+        let settings = try Settings.migrate(json)
+
+        #expect(settings.historyRetention == .ninetyDays)
+    }
+
+    @Test func theDefaultsCarryTheRecordingKeys() {
+        let d = Settings.default
+        #expect(d.saveOriginalRecording == false)
+        #expect(d.historyRetention == .ninetyDays)
+        #expect(d.maximumRecordingSeconds == 300)
+    }
+
+    @Test func theRecordingToggleRoundTripsIndependentlyOfHistory() throws {
+        var settings = Settings.default
+        settings.saveOriginalRecording = true
+        settings.dictationHistoryEnabled = false
+
+        let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+
+        #expect(decoded.saveOriginalRecording)
+        #expect(decoded.dictationHistoryEnabled == false)
+    }
+
+    @Test func everyRetentionChoiceSurvivesARoundTrip() throws {
+        for retention in HistoryRetention.allCases {
+            var settings = Settings.default
+            settings.historyRetention = retention
+
+            let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+
+            #expect(decoded.historyRetention == retention)
+        }
+    }
+
+    @Test func theRecordingLengthSurvivesARoundTrip() throws {
+        var settings = Settings.default
+        settings.maximumRecordingSeconds = 1_800
+
+        #expect(try Settings.migrate(JSONEncoder().encode(settings)).maximumRecordingSeconds == 1_800)
+    }
+
+    @Test func retentionChoicesCoverTheDocumentedAgesInOrder() {
+        #expect(HistoryRetention.allCases.map(\.days) == [1, 7, 30, 60, 90, 180, 365, nil])
+        #expect(HistoryRetention.unlimited.days == nil)
+    }
+
+    @Test func everyRetentionChoiceHasANonEmptyDistinctLabel() {
+        let names = HistoryRetention.allCases.map(\.displayName)
+        #expect(names.allSatisfy { !$0.isEmpty })
+        #expect(Set(names).count == HistoryRetention.allCases.count)
+    }
+
+    @Test func anOutOfRangeRecordingLengthClampsInsteadOfThrowing() throws {
+        for (written, expected) in [(0, 60), (-1, 60), (59, 60), (99_999, 3_600), (3_601, 3_600)] {
+            let json = Data(#"{"schemaVersion":2,"maximumRecordingSeconds":\#(written)}"#.utf8)
+
+            #expect(try Settings.migrate(json).maximumRecordingSeconds == expected)
+        }
+    }
+
+    @Test func theAcceptedRecordingLengthBoundsAreOneToSixtyMinutes() throws {
+        for accepted in [60, 300, 3_600] {
+            let json = Data(#"{"schemaVersion":2,"maximumRecordingSeconds":\#(accepted)}"#.utf8)
+
+            #expect(try Settings.migrate(json).maximumRecordingSeconds == accepted)
+        }
+    }
+
+    @Test func addingTheRecordingKeysDoesNotMoveTheSchemaVersion() {
+        #expect(Settings.currentSchemaVersion == 2)
+    }
+}

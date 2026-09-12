@@ -20,6 +20,7 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
     private var _startError: Error?
     private var _stopGate: AsyncGate?
     private var _stopControls: [StopControl] = []
+    private var _maximumDurations: [TimeInterval] = []
 
     init() {
         var continuation: AsyncStream<Float>.Continuation!
@@ -38,6 +39,13 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
     var startError: Error? {
         get { lock.withLock { _startError } }
         set { lock.withLock { _startError = newValue } }
+    }
+
+    /// Every maximum duration handed to the recorder, in call order.
+    var maximumDurations: [TimeInterval] { lock.withLock { _maximumDurations } }
+
+    func setMaximumDuration(_ seconds: TimeInterval) {
+        lock.withLock { _maximumDurations.append(seconds) }
     }
 
     var startCount: Int { lock.withLock { _startCount } }

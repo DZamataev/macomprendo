@@ -65,6 +65,54 @@ import Testing
         #expect(capture.state == .idle)
     }
 
+    @Test func savedRecordingIsEncodedAfterTranscriptDelivery() async {
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let gate = AsyncGate()
+        await encoder.setGate(gate)
+        let history = DictationHistoryController(
+            store: store, pasteboard: ScriptedPasteboard(), isEnabled: { true },
+            encoder: encoder, shouldSaveRecording: { true })
+        let recorder = ScriptedRecorder()
+        recorder.samples = [0.3, -0.4]
+        let capture = DictationCapture(
+            recorder: recorder, transcriberProvider: { ScriptedTranscriber(text: "hello") },
+            permissions: ScriptedPermissions(), mode: { .hold }, language: { "en" },
+            history: history)
+        capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        capture.handle(.keyUp(.dictateAndRefine))
+        await encoder.encodeInvoked.wait()
+
+        #expect(transcripts == ["hello"])
+        #expect(await encoder.requests.map(\.pcm) == [[0.3, -0.4]])
+        gate.open()
+        await capture.drain()
+        #expect(await store.attachRequests == [.init(filename: "1.m4a", entryID: 1)])
+    }
+
+    @Test func disabledHistorySavesNeitherRowNorRecording() async {
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let history = DictationHistoryController(
+            store: store, pasteboard: ScriptedPasteboard(), isEnabled: { false },
+            encoder: encoder, shouldSaveRecording: { true })
+        let capture = DictationCapture(
+            recorder: ScriptedRecorder(), transcriberProvider: { ScriptedTranscriber() },
+            permissions: ScriptedPermissions(), mode: { .hold }, language: { "en" },
+            history: history)
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        capture.handle(.keyUp(.dictateAndRefine))
+        await capture.drain()
+
+        #expect(await store.appendRequests.isEmpty)
+        #expect(await encoder.requests.isEmpty)
+    }
+
     /// The capture commit point must durable-write the accepted transcript before handing it
     /// to refinement; removing that write leaves Dictate & Refine absent from history.
     @Test func acceptedTranscriptIsRecordedBeforeItIsDeliveredForRefinement() async {

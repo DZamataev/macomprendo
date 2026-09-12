@@ -10,6 +10,61 @@ import Testing
         return s
     }
 
+    private func waitForHistoryDeletes(_ count: Int, in store: FakeDictationHistoryStore) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if await store.deleteOlderThanRequests.count == count { return }
+            await Task.yield()
+        }
+        Issue.record("Timed out waiting for history retention")
+    }
+
+    private func waitForReferenceReads(_ count: Int, in store: FakeDictationHistoryStore) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if await store.referencedAudioFilenamesCallCount == count { return }
+            await Task.yield()
+        }
+        Issue.record("Timed out waiting for referenced audio filenames")
+    }
+
+    @Test func theRecorderReceivesTheConfiguredMaximumRecordingLength() async {
+        let recorder = FakeAudioRecorder()
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(recorder: recorder))
+
+        #expect(recorder.maximumDurations == [300])
+
+        model.settings.maximumRecordingSeconds = 900
+
+        #expect(recorder.maximumDurations == [300, 900])
+    }
+
+    @Test func startAppliesRetentionAndPurgesOrphanedAudio() async {
+        let historyStore = FakeDictationHistoryStore()
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(dictationHistory: historyStore))
+        model.settings.dictationHistoryEnabled = true
+
+        model.start()
+        await waitForHistoryDeletes(1, in: historyStore)
+        await waitForReferenceReads(1, in: historyStore)
+
+        #expect(await historyStore.deleteOlderThanRequests.count == 1)
+        #expect(await historyStore.referencedAudioFilenamesCallCount == 1)
+    }
+
+    @Test func changingRetentionAppliesItImmediately() async {
+        let historyStore = FakeDictationHistoryStore()
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(dictationHistory: historyStore))
+
+        model.settings.historyRetention = .sevenDays
+        await waitForHistoryDeletes(1, in: historyStore)
+
+        #expect(await historyStore.deleteOlderThanRequests.count == 1)
+    }
+
     @Test func loadsPersistedSettingsAndSavesChanges() throws {
         let store = InMemorySettingsStore()
         let model = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())

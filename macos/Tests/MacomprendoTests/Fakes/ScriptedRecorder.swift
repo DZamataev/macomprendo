@@ -15,6 +15,12 @@ final class ScriptedRecorder: AudioRecording, @unchecked Sendable {
     // brief was written. It never fires in these tests.
     let autoStopped: AsyncStream<Void> = AsyncStream { _ in }
 
+    private(set) var maximumDurations: [TimeInterval] = []
+
+    func setMaximumDuration(_ seconds: TimeInterval) {
+        lock.withLock { maximumDurations.append(seconds) }
+    }
+
     var startCount: Int { lock.withLock { starts } }
     var stopCount: Int { lock.withLock { stops } }
 

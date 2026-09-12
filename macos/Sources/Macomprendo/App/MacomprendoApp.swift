@@ -71,6 +71,7 @@ struct MacomprendoApp: App {
                 }
                 .onDisappear {
                     model.history.cancelLoading()
+                    model.history.stopPlayback()
                     model.dockIcon.close(.history)
                 }
         }

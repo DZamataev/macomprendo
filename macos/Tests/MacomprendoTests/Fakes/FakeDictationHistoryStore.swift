@@ -13,20 +13,68 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
         let limit: Int
     }
 
+    struct AttachRequest: Sendable, Equatable {
+        let filename: String
+        let entryID: Int64
+    }
+
+    nonisolated let audioDirectoryURL: URL
+
+    init(audioDirectoryURL: URL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("FakeDictationAudio", isDirectory: true)) {
+        self.audioDirectoryURL = audioDirectoryURL
+    }
+
     private(set) var appendRequests: [AppendRequest] = []
     private(set) var fetchRequests: [FetchRequest] = []
+    private(set) var attachRequests: [AttachRequest] = []
+    private(set) var deleteOlderThanRequests: [Date] = []
+    private(set) var audioDirectoryByteCountCallCount = 0
+    private(set) var deleteAudioReferencesCallCount = 0
+    private(set) var referencedAudioFilenamesCallCount = 0
     private(set) var cancelledFetchCount = 0
     private(set) var clearCallCount = 0
 
     private var pages: [DictationHistoryPage] = []
+    private var expiredAudioFilenames: [String] = []
+    private var storedAudioFilenames: [String] = []
+    private var audioFiles: [String: Data] = [:]
+    private var storedAudioByteCount: Int64 = 0
+    private var audioDirectoryError: (any Error)?
     private var appendError: (any Error)?
     private var fetchError: (any Error)?
     private var clearError: (any Error)?
+    private var attachError: (any Error)?
+    private var retentionError: (any Error)?
     private var appendGate: AsyncGate?
     private var fetchGate: AsyncGate?
+    private var removeAudioFilesError: (any Error)?
 
     func setPages(_ pages: [DictationHistoryPage]) {
         self.pages = pages
+    }
+
+    func setExpiredAudioFilenames(_ filenames: [String]) {
+        expiredAudioFilenames = filenames
+    }
+
+    func setStoredAudioFilenames(_ filenames: [String]) {
+        storedAudioFilenames = filenames
+    }
+
+    /// The files that exist in the audio directory, keyed by filename. A filename absent here
+    /// reads as "the file has vanished", which is a normal state for an entry that still
+    /// references it.
+    func setAudioFiles(_ files: [String: Data]) {
+        audioFiles = files
+    }
+
+    func setAudioDirectoryByteCount(_ bytes: Int64) {
+        storedAudioByteCount = bytes
+    }
+
+    func setAudioDirectoryError(_ error: (any Error)?) {
+        audioDirectoryError = error
     }
 
     func setAppendError(_ error: (any Error)?) {
@@ -39,6 +87,18 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
 
     func setClearError(_ error: (any Error)?) {
         clearError = error
+    }
+
+    func setAttachError(_ error: (any Error)?) {
+        attachError = error
+    }
+
+    func setRetentionError(_ error: (any Error)?) {
+        retentionError = error
+    }
+
+    func setRemoveAudioFilesError(_ error: (any Error)?) {
+        removeAudioFilesError = error
     }
 
     /// Suspends an append only after its request has been accepted, so callers can
@@ -80,5 +140,75 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
     func clear() async throws {
         clearCallCount += 1
         if let clearError { throw clearError }
+        storedAudioFilenames = []
     }
+
+    func attachAudioFile(named filename: String, toEntry id: Int64) async throws {
+        attachRequests.append(AttachRequest(filename: filename, entryID: id))
+        if let attachError { throw attachError }
+        storedAudioFilenames.append(filename)
+    }
+
+    @discardableResult
+    func deleteEntries(olderThan cutoff: Date) async throws -> [String] {
+        deleteOlderThanRequests.append(cutoff)
+        if let retentionError { throw retentionError }
+        let expired = expiredAudioFilenames
+        expiredAudioFilenames = []
+        storedAudioFilenames.removeAll { expired.contains($0) }
+        return expired
+    }
+
+    @discardableResult
+    func deleteAudioReferences() async throws -> [String] {
+        deleteAudioReferencesCallCount += 1
+        if let retentionError { throw retentionError }
+        let removed = storedAudioFilenames
+        storedAudioFilenames = []
+        for filename in removed { audioFiles[filename] = nil }
+        storedAudioByteCount = 0
+        return removed
+    }
+
+    func audioDirectoryByteCount() async throws -> Int64 {
+        audioDirectoryByteCountCallCount += 1
+        if let audioDirectoryError { throw audioDirectoryError }
+        return storedAudioByteCount
+    }
+
+    func audioFileData(named filename: String) async throws -> Data? {
+        if let audioDirectoryError { throw audioDirectoryError }
+        return audioFiles[filename]
+    }
+
+    func referencedAudioFilenames() async throws -> [String] {
+        referencedAudioFilenamesCallCount += 1
+        if let retentionError { throw retentionError }
+        return storedAudioFilenames
+    }
+
+    func removeAudioFiles(named filenames: [String]) async throws {
+        if let removeAudioFilesError { throw removeAudioFilesError }
+        if let retentionError { throw retentionError }
+        for filename in filenames {
+            let url = audioDirectoryURL.appendingPathComponent(filename)
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    func purgeUnreferencedAudioFiles(keeping referencedFilenames: Set<String>) async throws {
+        if let retentionError { throw retentionError }
+        guard FileManager.default.fileExists(atPath: audioDirectoryURL.path) else { return }
+        for url in try FileManager.default.contentsOfDirectory(at: audioDirectoryURL,
+                                                               includingPropertiesForKeys: nil)
+            where !referencedFilenames.contains(url.lastPathComponent) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+
+    func beginAudioWrite() {}
+
+    func endAudioWrite() {}
 }

@@ -15,6 +15,15 @@ final class AppModel: ObservableObject {
             if settings.middleMouseAction != oldValue.middleMouseAction {
                 env.middleMouse.setEnabled(settings.middleMouseAction != nil)
             }
+            if settings.maximumRecordingSeconds != oldValue.maximumRecordingSeconds {
+                env.recorder.setMaximumDuration(TimeInterval(settings.maximumRecordingSeconds))
+            }
+            if settings.historyRetention != oldValue.historyRetention {
+                Task { [weak self] in
+                    guard let self, let error = await self.history.applyRetention() else { return }
+                    self.hud.show(.error(ErrorText.describe(error)))
+                }
+            }
             env.localTranscriptionCache.configure(
                 configuration: Self.localTranscriptionConfiguration(for: settings),
                 idleTimeout: settings.localModelIdleTimeout)
@@ -42,6 +51,7 @@ final class AppModel: ObservableObject {
             self.ttsModelsViewModel.rows.reduce(into: [:]) { $0[$1.id] = $1.state }
         })
     lazy var speechSourceModel = SpeechSourceModel(holder: self)
+    lazy var savedAudioModel = SavedAudioModel(history: history, revealer: env.fileRevealer)
     lazy var promptsTabModel = PromptsTabModel(
         holder: self,
         llm: { [unowned self] kind in try self.llmTarget(for: kind) })
@@ -63,6 +73,7 @@ final class AppModel: ObservableObject {
     private let enablement: HotkeyEnablementStore
     private var hotkeyTask: Task<Void, Never>?
     private var middleMouseTask: Task<Void, Never>?
+    private var historyMaintenanceTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
 
     init(store: any SettingsPersisting,
@@ -106,7 +117,11 @@ final class AppModel: ObservableObject {
         history = DictationHistoryController(
             store: env.dictationHistory,
             pasteboard: env.pasteboard,
-            isEnabled: { snapshot.current.dictationHistoryEnabled })
+            isEnabled: { snapshot.current.dictationHistoryEnabled },
+            encoder: env.dictationAudioEncoder,
+            player: env.historyAudioPlayer,
+            shouldSaveRecording: { snapshot.current.saveOriginalRecording },
+            retention: { snapshot.current.historyRetention })
 
         let factory = env.factory
         let models = env.models
@@ -148,6 +163,8 @@ final class AppModel: ObservableObject {
                                         escapeMonitor: env.escapeMonitor,
                                         history: history)
 
+        env.recorder.setMaximumDuration(TimeInterval(loaded.maximumRecordingSeconds))
+
         var seeded = settings
         FactoryPresets.seed(into: &seeded)
         if seeded != settings { settings = seeded }
@@ -176,6 +193,14 @@ final class AppModel: ObservableObject {
 
     /// Called once at launch: applies hotkey enablement and starts routing hotkey events.
     func start() {
+        if historyMaintenanceTask == nil {
+            historyMaintenanceTask = Task { [weak self] in
+                guard let self,
+                      let error = await self.history.performLaunchMaintenance()
+                else { return }
+                self.hud.show(.error(ErrorText.describe(error)))
+            }
+        }
         if textFeatures == nil {
             textFeatures = TextFeatures.live(model: self, env: env, hud: hud,
                                              transcriberProvider: transcriberProvider,

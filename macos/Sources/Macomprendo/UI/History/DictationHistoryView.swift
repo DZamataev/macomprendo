@@ -77,6 +77,18 @@ struct DictationHistoryView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if controller.isPlayable(entry) {
+                    let isPlaying = controller.playingEntryID == entry.id
+                    Button {
+                        Task { await controller.togglePlayback(entry) }
+                    } label: {
+                        Label { Text(isPlaying ? "Stop" : "Play") } icon: {
+                            Icon(isPlaying ? .stop : .play, size: 14)
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .help(isPlaying ? "Stop the saved recording" : "Play the saved recording")
+                }
                 Button { onRefine(entry.text) } label: {
                     Label { Text("Refine") } icon: {
                         Icon(.refine, size: 14)

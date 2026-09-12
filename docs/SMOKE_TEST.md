@@ -150,8 +150,8 @@ Assign a shortcut in Settings ▸ Hotkeys first.
 
 ## Dictation history
 
-Use a recognizable short sentence for each successful recording in this section. The history
-preference controls recording only; it never records audio.
+Use a recognizable short sentence for each successful recording in this section. Unless a check
+says otherwise, “Save the original recording” (Settings ▸ General) is off, so only text is kept.
 
 - [ ] **Default off and persistence.** On a fresh settings document, the menubar’s Dictation
       History section shows “Save dictation history” off while “Dictation History…” remains
@@ -165,7 +165,8 @@ preference controls recording only; it never records audio.
       added until history is enabled again.
 - [ ] **Both microphone actions record.** Enable history, use Dictate for one recognizable
       sentence and Dictate & Refine for another, then open History. Both complete original
-      transcripts appear with the Dictation and Dictation & Refine labels; no audio is present.
+      transcripts appear with the Dictation and Dictation & Refine labels; with “Save the
+      original recording” off, no Play control is offered on either row.
 - [ ] **Excluded flows.** With history enabled, run Refine Selection, cancel a Dictate while
       recording or transcribing, dictate silence/blank text, and force a transcription failure
       (for example by selecting a missing model). None creates an entry.
@@ -192,6 +193,55 @@ preference controls recording only; it never records audio.
 - [ ] **Dock lifecycle.** With no Settings or onboarding window open, opening Dictation History
       makes the Dock icon appear. Closing it removes the icon; if Settings is also open, closing
       History leaves the icon visible until Settings closes.
+
+## Saved recordings
+
+Everything here needs a real microphone, real files on disk and Finder, so none of it is
+reachable from unit tests. Start with dictation history enabled.
+
+- [ ] **A recording appears on disk.** Settings ▸ General: turn on “Save the original
+      recording” — it is selectable only while “Save dictation history” is on. Dictate one
+      recognizable sentence, then click “Show in Finder” next to “Saved audio”:
+      `~/Library/Application Support/Macomprendo/dictation-audio/` opens in Finder and contains
+      one new `.m4a` file. The “Saved audio:” readout in Settings shows a non-zero size.
+- [ ] **Play back from the history window.** Open Dictation History: the new entry has a Play
+      control. Click it — the recording plays and the control becomes Stop; click Stop and it
+      returns to Play. Start one entry, then click Play on a second: the first stops and only
+      the second is heard. Older entries recorded before the setting was on offer no Play
+      control.
+- [ ] **The file plays outside the app.** Double-click the `.m4a` in Finder: it opens in the
+      default player (QuickTime Player, not GarageBand) and is audible.
+- [ ] **A recording deleted behind the app's back reports itself and stays retryable.** With the
+      history window open, delete one entry's `.m4a` from `dictation-audio/` in Finder, then
+      click that entry's Play control: the error names the missing file — "The saved recording
+      is no longer on disk." — and does **not** blame the output device. The Play control stays
+      where it is rather than disappearing, because the entry still records that a recording was
+      made. Put the file back (Undo in Finder) and click Play again: it plays.
+- [ ] **The window and the size readout follow a new dictation live.** Leave Dictation History
+      open, leave Settings ▸ General open beside it, and dictate: the new entry appears at the
+      top of the window without reopening it, and the "Saved audio:" readout grows — neither
+      needs the window closed and opened again.
+- [ ] **The length limit stops the recording and says why.** Settings ▸ Dictation: set
+      “Maximum recording length” to 1 minute. Start a dictation in Toggle mode and keep talking
+      past a minute without pressing the hotkey: recording stops on its own, transcription runs,
+      and the HUD reads “Stopped at the 1-minute limit” rather than “Inserted”. Restore the
+      length you normally use afterwards.
+- [ ] **Turning the setting off preserves existing recordings.** Turn “Save the original
+      recording” off, dictate again, and reopen History: the new entry has no Play control while
+      the earlier ones still play, and the `.m4a` files already in `dictation-audio/` are still
+      there.
+- [ ] **Delete saved audio keeps the transcripts.** Settings ▸ General ▸ “Delete saved audio…”,
+      dismiss the confirmation: the files remain. Confirm it: `dictation-audio/` is empty, the
+      “Saved audio:” readout shows zero, and Dictation History still lists every transcript,
+      now with no Play controls.
+- [ ] **Clear History empties the directory.** Turn the recording setting back on, dictate twice
+      so files exist again, then confirm Clear History: the history window shows its empty state
+      and `dictation-audio/` contains no files.
+- [ ] **Age retention deletes entries and recordings together.** With entries and their
+      recordings present, set Settings ▸ General ▸ “Keep history for” to 1 day and — using a
+      disposable database — back-date an entry by more than a day before relaunching (or leave
+      the Mac until the next day). After the next launch that entry is gone from the history
+      window and its `.m4a` is gone from `dictation-audio/`.
 
 ## Summarize selection (hotkey #4, ⌥M)
 

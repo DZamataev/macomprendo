@@ -32,6 +32,46 @@ enum LocalModelIdleTimeout: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// The maximum age of a dictation history entry. One value covers transcripts and their
+/// recordings alike.
+enum HistoryRetention: String, Codable, Sendable, CaseIterable {
+    case oneDay
+    case sevenDays
+    case thirtyDays
+    case sixtyDays
+    case ninetyDays
+    case oneHundredEightyDays
+    case threeHundredSixtyFiveDays
+    case unlimited
+
+    var displayName: String {
+        switch self {
+        case .oneDay: "1 day"
+        case .sevenDays: "7 days"
+        case .thirtyDays: "30 days"
+        case .sixtyDays: "60 days"
+        case .ninetyDays: "90 days"
+        case .oneHundredEightyDays: "180 days"
+        case .threeHundredSixtyFiveDays: "365 days"
+        case .unlimited: "Unlimited"
+        }
+    }
+
+    /// `nil` imposes no age limit; the entry-count ceiling still applies.
+    var days: Int? {
+        switch self {
+        case .oneDay: 1
+        case .sevenDays: 7
+        case .thirtyDays: 30
+        case .sixtyDays: 60
+        case .ninetyDays: 90
+        case .oneHundredEightyDays: 180
+        case .threeHundredSixtyFiveDays: 365
+        case .unlimited: nil
+        }
+    }
+}
+
 /// `Hashable` so the active-model selector can tag its `Picker` rows with the source itself
 /// rather than with a stringly-typed stand-in.
 enum TranscriptionSource: Codable, Sendable, Equatable, Hashable {
@@ -206,12 +246,23 @@ enum SettingsMigrationError: Error, Equatable {
 /// The whole persisted document. Stored as JSON in `UserDefaults` under "settings.v1".
 struct Settings: Codable, Sendable, Equatable {
     static let currentSchemaVersion = 2
+    /// 1 to 60 minutes. A decoded value outside this range is clamped, not rejected.
+    static let recordingSecondsRange = 60...3_600
 
     var schemaVersion: Int
     var dictationMode: DictationMode
     var insertMethod: InsertMethod
     var launchAtLogin: Bool
     var dictationHistoryEnabled: Bool
+    /// Whether the microphone recording behind a history entry is kept on disk. Meaningful
+    /// only while `dictationHistoryEnabled` is true; the pairing is enforced by the UI.
+    var saveOriginalRecording: Bool
+    /// The maximum age of a history entry and its recording.
+    var historyRetention: HistoryRetention
+    /// The hard cap on one recording, in seconds. Clamped into
+    /// `Settings.recordingSecondsRange` on decode so a hand-edited document cannot brick
+    /// the app.
+    var maximumRecordingSeconds: Int
     /// Replaces direct Dictate recordings shorter than half a second with "OK" without loading ASR.
     var shortDictationInsertsOK: Bool
     /// Adds one separating space after direct Dictate insertion; history keeps the raw transcript.
@@ -264,6 +315,9 @@ struct Settings: Codable, Sendable, Equatable {
             insertMethod: .auto,
             launchAtLogin: false,
             dictationHistoryEnabled: false,
+            saveOriginalRecording: false,
+            historyRetention: .ninetyDays,
+            maximumRecordingSeconds: 300,
             shortDictationInsertsOK: false,
             appendSpaceAfterDictation: false,
             middleMouseAction: nil,
@@ -321,6 +375,14 @@ extension Settings {
         dictationHistoryEnabled = try c.decodeIfPresent(Bool.self,
                                                          forKey: .dictationHistoryEnabled)
             ?? d.dictationHistoryEnabled
+        saveOriginalRecording = try c.decodeIfPresent(Bool.self, forKey: .saveOriginalRecording)
+            ?? d.saveOriginalRecording
+        historyRetention = try c.decodeIfPresent(HistoryRetention.self, forKey: .historyRetention)
+            ?? d.historyRetention
+        let seconds = try c.decodeIfPresent(Int.self, forKey: .maximumRecordingSeconds)
+            ?? d.maximumRecordingSeconds
+        maximumRecordingSeconds = min(max(seconds, Settings.recordingSecondsRange.lowerBound),
+                                      Settings.recordingSecondsRange.upperBound)
         shortDictationInsertsOK = try c.decodeIfPresent(Bool.self, forKey: .shortDictationInsertsOK)
             ?? d.shortDictationInsertsOK
         appendSpaceAfterDictation = try c.decodeIfPresent(Bool.self, forKey: .appendSpaceAfterDictation)

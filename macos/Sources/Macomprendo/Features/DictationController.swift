@@ -43,6 +43,11 @@ final class DictationController: ObservableObject {
     // is still finishing in the background.
     private var isInserting = false
 
+    // Whether the recording now being transcribed ended because it reached its maximum
+    // length. Cleared at the start of every cycle so one capped recording cannot make the
+    // next one claim it was capped too.
+    private var stoppedAtLimit = false
+
     // The recorder `stop()` that `cancel()` kicks off is deliberately unawaited there
     // (cancel() must return synchronously), but a `start()` from a fast restart must
     // not race it — `AVAudioEngineRecorder.start()` traps/fails if a tap is already
@@ -89,7 +94,7 @@ final class DictationController: ObservableObject {
         // ended through the normal hotkey path.
         autoStopTask = Task { [weak self, recorder] in
             for await _ in recorder.autoStopped {
-                self?.finish()
+                self?.finish(reachedLimit: true)
             }
         }
     }
@@ -156,6 +161,7 @@ final class DictationController: ObservableObject {
         guard !Task.isCancelled else { return }
         pendingStopTask = nil
         target = tracker.capture()
+        stoppedAtLimit = false
         do {
             try await recorder.start()
         } catch {
@@ -170,8 +176,20 @@ final class DictationController: ObservableObject {
         hud.show(.recording(level: 0, elapsed: 0))
     }
 
-    private func finish() {
+    /// The success message shown when a recording ended because it reached its limit, rather
+    /// than because the user released the hotkey. Pure, so the wording is unit-tested.
+    nonisolated static func recordingLimitMessage(seconds: Int) -> String {
+        let minutes = Double(seconds) / 60
+        let rounded = minutes.rounded()
+        let text = abs(minutes - rounded) < 0.05
+            ? String(Int(rounded))
+            : String(format: "%.1f", minutes)
+        return "Stopped at the \(text)-minute limit"
+    }
+
+    private func finish(reachedLimit: Bool = false) {
         guard state == .recording else { return }
+        stoppedAtLimit = reachedLimit
         state = .transcribing
         hud.show(.transcribing)
         activeTask = Task { [weak self] in await self?.transcribeAndInsert() }
@@ -203,10 +221,10 @@ final class DictationController: ObservableObject {
                 return
             }
 
-            let historyError: MacomprendoError? = if let history {
-                await history.record(text: text, kind: .dictation)
+            let historyResult: DictationHistoryController.AppendResult = if let history {
+                await history.append(text: text, kind: .dictation)
             } else {
-                nil
+                .init(entry: nil, error: nil)
             }
             try Task.checkCancellation()
 
@@ -233,13 +251,23 @@ final class DictationController: ObservableObject {
 
             switch insertOutcome {
             case .success:
+                guard !Task.isCancelled else { return }
                 state = .idle
                 target = nil
                 escapeMonitor.stop()
-                if let historyError {
-                    hud.show(.error(ErrorText.describe(historyError)))
-                } else {
+                if stoppedAtLimit {
+                    hud.show(.success(Self.recordingLimitMessage(
+                        seconds: settings().maximumRecordingSeconds)))
+                } else if historyResult.error == nil {
                     hud.show(.success("Inserted"))
+                }
+                let recordingError: MacomprendoError? = if let history {
+                    await history.saveRecording(pcm, for: historyResult.entry)
+                } else {
+                    nil
+                }
+                if let warning = historyResult.error ?? recordingError {
+                    hud.show(.error(ErrorText.describe(warning)))
                 }
             case .failure(MacomprendoError.insertFailed):
                 // `PasteTextInserter` throws `insertFailed` before it ever writes to the

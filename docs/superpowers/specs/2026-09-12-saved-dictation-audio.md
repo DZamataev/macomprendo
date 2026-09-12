@@ -107,5 +107,3 @@ every `.m4a` with a ~22 KB `free` atom, which is why `AVAssetWriter` writes the 
   the directory in Finder, and the length-limit toast.
 - `PRIVACY.md`, `README.md`, the settings caption, and `CHANGELOG.md` no longer claim
   audio is never saved, and describe what is stored, where, and for how long.
-- `CHANGELOG.md` states plainly that the 90-day default deletes existing history older
-  than 90 days on first launch after the upgrade.

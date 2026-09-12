@@ -14,6 +14,9 @@ protocol AudioRecording: AnyObject, Sendable {
     /// the only signal a caller gets that a session ended without an explicit `stop()`
     /// call. Separate from `level` so reaching the cap never has to finish that stream.
     var autoStopped: AsyncStream<Void> { get }
+    /// The cap on one recording, in seconds. Applies from the next `start()`; a recording
+    /// already running keeps the cap it began with.
+    func setMaximumDuration(_ seconds: TimeInterval)
     func start() async throws
     /// Returns everything captured since `start()`, as 16 kHz mono Float32 PCM.
     func stop() async -> [Float]
@@ -34,10 +37,13 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     private let levelContinuation: AsyncStream<Float>.Continuation
     private let autoStopContinuation: AsyncStream<Void>.Continuation
     private let engine = AVAudioEngine()
-    private let maxSamples: Int
     private let lock = NSLock()
 
     private var samples: [Float] = []
+    private var maxSamples: Int
+    /// The cap the running recording began with. Changing the setting mid-recording must not
+    /// retroactively truncate audio already captured.
+    private var activeMaxSamples: Int
     private var recording = false
     private var converter: AVAudioConverter?
     private var targetFormat: AVAudioFormat?
@@ -46,6 +52,7 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
 
     init(maxDuration: TimeInterval = 300) {
         maxSamples = Int(maxDuration * AVAudioEngineRecorder.targetSampleRate)
+        activeMaxSamples = maxSamples
         var continuation: AsyncStream<Float>.Continuation!
         level = AsyncStream(bufferingPolicy: .bufferingNewest(4)) { continuation = $0 }
         levelContinuation = continuation
@@ -55,6 +62,12 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     }
 
     var isRecording: Bool { lock.withLock { recording } }
+
+    func setMaximumDuration(_ seconds: TimeInterval) {
+        lock.withLock {
+            maxSamples = max(1, Int(seconds * AVAudioEngineRecorder.targetSampleRate))
+        }
+    }
 
     func start() throws {
         // Guard against a second start() while already recording: AVAudioEngine's
@@ -80,6 +93,7 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
 
         lock.withLock {
             samples.removeAll(keepingCapacity: true)
+            activeMaxSamples = maxSamples
             recording = true
             targetFormat = target
             converter = AVAudioConverter(from: inputFormat, to: target)
@@ -121,14 +135,14 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
             guard recording else { return [] }
             let mono = convertLocked(buffer)
             guard !mono.isEmpty else { return [] }
-            let room = maxSamples - samples.count
+            let room = activeMaxSamples - samples.count
             guard room > 0 else {
                 recording = false
                 reachedCap = true
                 return []
             }
             samples.append(contentsOf: mono.prefix(room))
-            if samples.count >= maxSamples {
+            if samples.count >= activeMaxSamples {
                 recording = false
                 reachedCap = true
             }
