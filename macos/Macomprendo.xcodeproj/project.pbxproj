@@ -156,6 +156,7 @@
 		9732BE623DD4CEDBB422F178 /* SherpaTTSService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85DA6BBB9B30C922D136C961 /* SherpaTTSService.swift */; };
 		97760FCE0DBC9DB4D21CBCEB /* FakeFileRevealer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B7BA665469EF79988BCDBA1 /* FakeFileRevealer.swift */; };
 		978DEDD441A92623194FA1C3 /* DockIconCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB415A484AE4E79834E2A4D /* DockIconCoordinatorTests.swift */; };
+		986CB08BC906769CC4B733EF /* DictationHistoryLiveUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04B1EEF928D263101B9DFFE5 /* DictationHistoryLiveUpdateTests.swift */; };
 		9995097DC91DB7D8C89115C7 /* Toasting.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1BC772198BEE9912D3BF36 /* Toasting.swift */; };
 		99ED0336BBA11B1B25123EF2 /* FakeFrontmostAppTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EFE08D188CD0550AA5E231 /* FakeFrontmostAppTracker.swift */; };
 		99F3C9C621B27A2CEFC2CDF8 /* StubLLMProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC007343CC55A6DDA491EA0D /* StubLLMProvider.swift */; };
@@ -281,6 +282,7 @@
 		03CE35B02D8849148F47C480 /* LineSplitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineSplitter.swift; sourceTree = "<group>"; };
 		03EC46E92FAE17E86290C061 /* ScriptedLanguageDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedLanguageDetector.swift; sourceTree = "<group>"; };
 		04155AAA422FE60355DB2936 /* LocalSpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSpeechService.swift; sourceTree = "<group>"; };
+		04B1EEF928D263101B9DFFE5 /* DictationHistoryLiveUpdateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryLiveUpdateTests.swift; sourceTree = "<group>"; };
 		056341C7FF68C9F5B87CE44D /* PromptPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptPreset.swift; sourceTree = "<group>"; };
 		056C0098514D425D6D5A19BC /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		0611254EEF99E75F3D4442B6 /* QuickPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickPanelController.swift; sourceTree = "<group>"; };
@@ -714,6 +716,7 @@
 				650FCCB0948E2103F70EA502 /* DictationCaptureTests.swift */,
 				9A937CA0585D957D3FC7B1FF /* DictationControllerTests.swift */,
 				A5516103D0EDC5FEEAF0AD5B /* DictationHistoryControllerTests.swift */,
+				04B1EEF928D263101B9DFFE5 /* DictationHistoryLiveUpdateTests.swift */,
 				FFDFCE9E0E85C8D3D8B50306 /* DictationHistoryPlaybackTests.swift */,
 				EDB415A484AE4E79834E2A4D /* DockIconCoordinatorTests.swift */,
 				F605F008515E190C89C9D925 /* FactoryPresetsTests.swift */,
@@ -1204,6 +1207,7 @@
 				227DF3FBDD75DA79FC75CABB /* DictationControllerTests.swift in Sources */,
 				CAC4E1DB6CB827123E0AB1B9 /* DictationHistoryControllerTests.swift in Sources */,
 				3935C0B9FC5E25CCF44B76BC /* DictationHistoryEntryTests.swift in Sources */,
+				986CB08BC906769CC4B733EF /* DictationHistoryLiveUpdateTests.swift in Sources */,
 				A830581914A6DE0E37FC740B /* DictationHistoryPlaybackTests.swift in Sources */,
 				DF736E431CD3B76BD70A3FA9 /* DictationHistoryStoreTests.swift in Sources */,
 				B1D47E7D250B9D6988A98DB3 /* DictationTabModelTests.swift in Sources */,

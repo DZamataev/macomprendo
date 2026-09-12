@@ -3,6 +3,9 @@ import SwiftUI
 struct GeneralTab: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var savedAudio: SavedAudioModel
+    /// Observed so a recording saved while this screen is open redraws the size readout.
+    /// `AppModel` republishes only the dictation controller, so watching it is not enough.
+    @ObservedObject var history: DictationHistoryController
     @State private var viewModel: GeneralTabModel?
     @State private var launchAtLoginError: String?
     @State private var isDeleteAudioConfirmationPresented = false
@@ -99,9 +102,12 @@ struct GeneralTab: View {
         } message: {
             Text("This permanently removes every saved recording. Transcripts are kept.")
         }
-        .task {
+        // A dictation saved while this screen is open changes the directory behind the size
+        // readout. `.task(id:)` re-runs whenever the revision moves, and the model skips the
+        // directory walk when it has not.
+        .task(id: history.savedAudioRevision) {
             reconcileLaunchAtLogin()
-            await savedAudio.refreshSize()
+            await savedAudio.refreshIfSavedAudioChanged()
         }
     }
 

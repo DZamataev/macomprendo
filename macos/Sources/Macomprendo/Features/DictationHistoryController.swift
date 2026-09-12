@@ -15,6 +15,10 @@ final class DictationHistoryController: ObservableObject {
     @Published private(set) var copiedEntryID: Int64?
     /// The entry whose recording is playing, or `nil` when nothing is.
     @Published private(set) var playingEntryID: Int64?
+    /// Bumped whenever the set of files on disk changes — a recording saved or removed, or a
+    /// retention pass that deleted some. The Settings screen watches this instead of polling,
+    /// so its size readout follows a dictation that lands while it is open.
+    @Published private(set) var savedAudioRevision = 0
 
     private let store: any DictationHistoryStoring
     private let pasteboard: any PasteboardProtocol
@@ -72,6 +76,10 @@ final class DictationHistoryController: ObservableObject {
 
         do {
             let entry = try await store.append(text: acceptedText, kind: kind, at: now())
+            // The window may be open on an already-loaded page. Pages are newest-first, so the
+            // new entry belongs at the front; without this the row only appears after the
+            // window is closed and reopened.
+            entries.insert(entry, at: 0)
             try await applyRetentionThrowing()
             errorMessage = nil
             return AppendResult(entry: entry, error: nil)
@@ -99,6 +107,7 @@ final class DictationHistoryController: ObservableObject {
             try Task.checkCancellation()
             try await store.attachAudioFile(named: filename, toEntry: entry.id)
             existingAudioFilenames.insert(filename)
+            savedAudioRevision += 1
             let withAudio = DictationHistoryEntry(
                 id: entry.id, createdAt: entry.createdAt, kind: entry.kind,
                 text: entry.text, audioFileName: filename)
@@ -162,6 +171,10 @@ final class DictationHistoryController: ObservableObject {
         let cutoff = now().addingTimeInterval(-Double(days) * 86_400)
         let filenames = try await store.deleteEntries(olderThan: cutoff)
         try await store.removeAudioFiles(named: filenames)
+        guard !filenames.isEmpty else { return }
+        for filename in filenames { existingAudioFilenames.remove(filename) }
+        entries.removeAll { $0.createdAt < cutoff }
+        savedAudioRevision += 1
     }
 
     func loadInitial() async {
@@ -189,6 +202,7 @@ final class DictationHistoryController: ObservableObject {
             hasMore = true
             copiedEntryID = nil
             existingAudioFilenames = []
+            savedAudioRevision += 1
             errorMessage = nil
         } catch {
             guard generation == loadGeneration else { return }
@@ -264,6 +278,7 @@ final class DictationHistoryController: ObservableObject {
             try await store.removeAudioFiles(named: filenames)
             existingAudioFilenames = try await store.existingAudioFilenames()
             entries = entries.map(Self.withoutAudio)
+            savedAudioRevision += 1
             errorMessage = nil
             return nil
         } catch {
