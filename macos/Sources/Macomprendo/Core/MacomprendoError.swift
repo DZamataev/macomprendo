@@ -16,6 +16,7 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case providerStreamMalformed
     case audio(String)
     case audioPlayback(String)
+    case audioEncoding(String)
     case speechKeyMissing
     case noSelection
     case insertFailed
@@ -42,6 +43,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Recording failed: \(reason)"
         case .audioPlayback(let reason):
             return "Playing the speech audio failed: \(reason)"
+        case .audioEncoding(let reason):
+            return "Saving the recording failed: \(reason)"
         case .speechKeyMissing:
             return "No speech API key."
         case .noSelection:
@@ -75,6 +78,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Check that an input device is connected and try again."
         case .audioPlayback:
             return "Check that an output device is connected and try again."
+        case .audioEncoding:
+            return "Check that the disk has free space and that Macomprendo can write to Application Support."
         case .speechKeyMissing:
             return "Add one in Settings ▸ Speech."
         case .noSelection:

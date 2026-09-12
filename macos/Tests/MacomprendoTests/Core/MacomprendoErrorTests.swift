@@ -11,6 +11,7 @@ import Testing
     .providerStreamMalformed,
     .audio("no input device"),
     .audioPlayback("format not supported"),
+    .audioEncoding("disk full"),
     .speechKeyMissing,
     .noSelection,
     .insertFailed,
