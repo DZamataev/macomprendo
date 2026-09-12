@@ -247,6 +247,15 @@ worker's next tool result. The log is read-only.
 
 ## Failure modes to expect
 
+**The review card needs its range, and nobody gives it one automatically.** A
+reviewer card that names `START_HEAD`/`END_HEAD` has no way to learn them unless
+the coordinator comments them on the card, because card bodies are written before
+the implementation exists. In the first run on this board the reviewer found only
+the previous slice's handoff range, inferred the full branch range itself, and
+said so on the card — which worked, but only because it was told to record what it
+reviewed. Either comment the range when the last code card completes, or write the
+card body to say "review `main..<branch>`" and skip the handshake.
+
 **A card with no `--parent` dispatches immediately.** Dependencies are the only
 thing holding a card back. Create the chain parent-first, or block the card in the
 same breath as creating it.
@@ -309,4 +318,34 @@ The coordinator's own jobs, which no worker can do:
 - verify external side effects independently;
 - apply the edits workers are forbidden to make (`AGENTS.md`);
 - decide when a surprise finding deserves a new card instead of being absorbed
-  silently into an existing slice.
+  silently into an existing slice;
+- **carry an operator decision back through every artefact it touches.** A review
+  finding can be technically right and still contradict a decision the operator
+  already made. On the first run here, the reviewer judged the 90-day retention
+  default unsafe for existing installs and the remediation card changed it — a
+  sound call in general, and the wrong one for a product whose only user is the
+  operator. Reverting it meant touching the source, its tests, the changelog, the
+  spec, *and* a guard test that asserted the now-cancelled warning existed. Miss
+  one and the repository disagrees with itself. When a finding overturns a
+  decision rather than fixing a defect, put it to the operator instead of letting
+  a card settle it.
+
+## Results from the first run
+
+One feature, six implementation slices, one review, one remediation, one human
+gate. Recorded so a later effort can calibrate.
+
+| | |
+|---|---|
+| Wall-clock, slice 1 start to remediation done | about 90 minutes |
+| Fastest slice | 3 minutes (settings model) |
+| Review | 12 findings in 17 minutes |
+| Tests | 982 → 1051 Swift, 333 → 339 Node |
+| Coordinator interventions | one decision reversal, one changelog fix |
+
+The review paid for itself on the first run: it caught that `0700` was applied
+only to directories the app actually created, so every upgraded install kept its
+transcript database at `0755` — and the test that claimed to cover it passed,
+because it built a fresh path under a new UUID. That class of defect (a test that
+cannot see the case it names) is exactly what an implementer cannot catch in its
+own work.
