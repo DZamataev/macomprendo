@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-12
+
 ### Added
 - Dictation history can now keep the microphone recording behind each entry. **Save the
   original recording** (Settings ▸ General) is off by default and applies only while dictation
