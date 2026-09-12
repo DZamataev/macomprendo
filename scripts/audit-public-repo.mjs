@@ -79,6 +79,25 @@ export function shouldScanContent(relativePath) {
 const HOME_PATH = /\/Users\/([A-Za-z0-9._-]+)/g;
 const DEFAULT_ALLOWED_HOMES = ['test', 'example', 'shared'];
 
+// Telegram chat and thread ids identify a private group the operator owns. They are not
+// credentials, so Gitleaks ignores them, but publishing one invites strangers into that
+// group — and unlike a key it cannot be rotated without moving everyone. They belong in
+// .env.local; this catches the copy-paste that would otherwise put one in a runbook.
+// Telegram supergroup ids are -100 followed by ten or more digits.
+const TELEGRAM_CHAT_ID = /-100\d{10,}/g;
+
+export function findTelegramChatIds(text, { file }) {
+  const hits = [];
+  for (const [index, line] of text.split('\n').entries()) {
+    TELEGRAM_CHAT_ID.lastIndex = 0;
+    let match;
+    while ((match = TELEGRAM_CHAT_ID.exec(line)) !== null) {
+      hits.push({ file, line: index + 1, column: match.index + 1, match: match[0] });
+    }
+  }
+  return hits;
+}
+
 export function findHomePaths(text, { file, allow = DEFAULT_ALLOWED_HOMES }) {
   const allowed = new Set(allow);
   const hits = [];
@@ -174,8 +193,9 @@ export async function main(argv, deps = {}) {
       return 1;
     }
 
-    log.step('Checking for machine-specific home paths');
+    log.step('Checking for machine-specific home paths and private chat ids');
     const homeHits = [];
+    const chatIdHits = [];
     const unreadableHits = [];
     for (const file of files) {
       if (!shouldScanContent(file)) continue;
@@ -201,6 +221,7 @@ export async function main(argv, deps = {}) {
         continue;
       }
       homeHits.push(...findHomePaths(text, { file }));
+      chatIdHits.push(...findTelegramChatIds(text, { file }));
     }
     if (unreadableHits.length > 0) {
       log.error('Refusing publication because these tracked files could not be read and scanned:');
@@ -212,6 +233,12 @@ export async function main(argv, deps = {}) {
       log.error('Replace or redact these machine-specific paths before publishing:');
       for (const hit of homeHits) log.error(`  ${hit.file}:${hit.line}:${hit.column}  ${hit.match}`);
       log.error('Use ~/, <repo>, or /Users/test instead.');
+      return 1;
+    }
+    if (chatIdHits.length > 0) {
+      log.error('Refusing publication because these private chat ids are in tracked files:');
+      for (const hit of chatIdHits) log.error(`  ${hit.file}:${hit.line}:${hit.column}  ${hit.match}`);
+      log.error('Move the value to .env.local and read it from there; document the shape in .env.example.');
       return 1;
     }
 

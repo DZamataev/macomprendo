@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  findUnsafePaths, shouldScanContent, findHomePaths, main,
+  findUnsafePaths, shouldScanContent, findHomePaths, findTelegramChatIds, main,
 } from '../audit-public-repo.mjs';
 import { makeFakeRun, makeFakeIO, makeFakeLog } from './helpers/fake-run.mjs';
 
@@ -100,6 +100,23 @@ test('findHomePaths reports machine-specific home directories with line and colu
   assert.deepEqual(findHomePaths(text, { file: 'docs/x.md' }), [
     { file: 'docs/x.md', line: 2, column: 6, match: '/Users/alice' },
   ]);
+});
+
+test('findTelegramChatIds reports a private group id with line and column', () => {
+  const text = 'intro\nhermes kanban notify-subscribe --chat-id -1001234567890 --chat-type thread\n';
+  assert.deepEqual(findTelegramChatIds(text, { file: 'docs/runbook.md' }), [
+    { file: 'docs/runbook.md', line: 2, column: 42, match: '-1001234567890' },
+  ]);
+});
+
+test('findTelegramChatIds leaves placeholders and ordinary numbers alone', () => {
+  const text = [
+    '--chat-id "$KANBAN_NOTIFY_CHAT_ID"',
+    '--chat-id <id>',
+    'KANBAN_NOTIFY_CHAT_ID=',
+    'a build took -100 seconds and the file was 1003835305632 bytes',
+  ].join('\n');
+  assert.deepEqual(findTelegramChatIds(text, { file: 'docs/x.md' }), []);
 });
 
 test('findHomePaths allows the sanctioned placeholder homes', () => {

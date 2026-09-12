@@ -247,10 +247,23 @@ carrying the whole procedure, then re-link the chain.
 
 ## Telegram notifications
 
+The destination is operator-specific, so it lives in `.env.local` (gitignored;
+`.env.example` documents the shape) rather than in this file:
+
 ```bash
+set -a && . ./.env.local && set +a
+
 hermes kanban --board <board> notify-subscribe <task> \
-  --platform telegram --chat-id <id> --user-id <id> --chat-type dm --delivery-mode notify
+  --platform telegram \
+  --chat-id "$KANBAN_NOTIFY_CHAT_ID" \
+  --thread-id "$KANBAN_NOTIFY_THREAD_ID" \
+  --user-id "$KANBAN_NOTIFY_CHAT_ID" \
+  --chat-type thread --delivery-mode notify
 ```
+
+Drop `--thread-id` and use `--chat-type dm` for a direct message instead of a
+forum topic. Subscribe every card at creation time: a board with no
+subscriptions is one you have to poll.
 
 Notification text is hard-truncated in Hermes source, not configurable:
 
