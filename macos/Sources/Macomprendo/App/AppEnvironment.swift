@@ -33,6 +33,7 @@ struct AppEnvironment {
     var ollamaDetector: any OllamaDetecting
     var pasteboard: any PasteboardProtocol
     var dictationHistory: any DictationHistoryStoring
+    var dictationAudioEncoder: any DictationAudioEncoding
     var launchAtLogin: any LaunchAtLoginManaging
     var escapeMonitor: any EscapeMonitoring
     var keySimulator: any KeySimulating
@@ -77,6 +78,7 @@ struct AppEnvironment {
             ollamaDetector: HTTPOllamaDetector(http: http),
             pasteboard: pasteboard,
             dictationHistory: dictationHistory,
+            dictationAudioEncoder: AACDictationAudioEncoder(),
             launchAtLogin: SMAppServiceLaunchAtLogin(),
             escapeMonitor: GlobalEscapeMonitor(),
             keySimulator: keySimulator,

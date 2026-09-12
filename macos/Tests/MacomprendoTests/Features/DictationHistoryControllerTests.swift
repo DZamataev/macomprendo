@@ -85,6 +85,90 @@ import Testing
         Issue.record("Timed out waiting for \(count) completed copy-feedback sleeps")
     }
 
+    @Test func recordingIsEncodedAndAttachedToTheAppendedEntry() async {
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { true },
+            encoder: encoder, shouldSaveRecording: { true }, retention: { .ninetyDays },
+            now: { date })
+
+        let result = await controller.append(text: "hello", kind: .dictation)
+        let error = await controller.saveRecording([0.1, 0.2], for: result.entry)
+
+        #expect(result.error == nil)
+        #expect(error == nil)
+        #expect(await encoder.requests.map(\.pcm) == [[0.1, 0.2]])
+        #expect(await encoder.requests.map(\.sampleRate) == [16_000])
+        #expect(await store.attachRequests == [.init(filename: "1.m4a", entryID: 1)])
+    }
+
+    @Test func recordingPreferenceOffDoesNotCallEncoder() async {
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { true },
+            encoder: encoder, shouldSaveRecording: { false }, retention: { .ninetyDays },
+            now: { date })
+
+        let result = await controller.append(text: "hello", kind: .dictation)
+        #expect(await controller.saveRecording([0.1], for: result.entry) == nil)
+        #expect(await encoder.requests.isEmpty)
+        #expect(await store.attachRequests.isEmpty)
+    }
+
+    @Test func encoderFailureLeavesEntryUnattachedAndReturnsTheEncodingError() async {
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let failure = MacomprendoError.audioEncoding("disk full")
+        await encoder.setError(failure)
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { true },
+            encoder: encoder, shouldSaveRecording: { true }, retention: { .ninetyDays },
+            now: { date })
+
+        let result = await controller.append(text: "hello", kind: .dictation)
+        #expect(await controller.saveRecording([0.1], for: result.entry) == failure)
+        #expect(await store.attachRequests.isEmpty)
+    }
+
+    @Test func appendAppliesAgeRetentionAndDeletesExpiredAudio() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("old".utf8).write(to: directory.appendingPathComponent("old.m4a"))
+        let store = FakeDictationHistoryStore(audioDirectoryURL: directory)
+        await store.setExpiredAudioFilenames(["old.m4a"])
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { true },
+            retention: { .sevenDays }, now: { date })
+
+        _ = await controller.append(text: "hello", kind: .dictation)
+
+        #expect(await store.deleteOlderThanRequests == [date.addingTimeInterval(-7 * 86_400)])
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("old.m4a").path))
+    }
+
+    @Test func launchMaintenancePurgesOrphansAndKeepsReferencedFiles() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for name in ["kept.m4a", "orphan.m4a"] {
+            try Data(name.utf8).write(to: directory.appendingPathComponent(name))
+        }
+        let store = FakeDictationHistoryStore(audioDirectoryURL: directory)
+        await store.setStoredAudioFilenames(["kept.m4a"])
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { true },
+            retention: { .unlimited }, now: { date })
+
+        #expect(await controller.performLaunchMaintenance() == nil)
+        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("kept.m4a").path))
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("orphan.m4a").path))
+    }
+
     @Test func disabledRecordingDoesNotTouchTheStore() async {
         let store = FakeDictationHistoryStore()
         let controller = makeController(store: store, enabled: false)

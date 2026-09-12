@@ -149,4 +149,24 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
         if let retentionError { throw retentionError }
         return storedAudioFilenames
     }
+
+    func removeAudioFiles(named filenames: [String]) async throws {
+        if let retentionError { throw retentionError }
+        for filename in filenames {
+            let url = audioDirectoryURL.appendingPathComponent(filename)
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    func purgeUnreferencedAudioFiles(keeping referencedFilenames: Set<String>) async throws {
+        if let retentionError { throw retentionError }
+        guard FileManager.default.fileExists(atPath: audioDirectoryURL.path) else { return }
+        for url in try FileManager.default.contentsOfDirectory(at: audioDirectoryURL,
+                                                               includingPropertiesForKeys: nil)
+            where !referencedFilenames.contains(url.lastPathComponent) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
 }

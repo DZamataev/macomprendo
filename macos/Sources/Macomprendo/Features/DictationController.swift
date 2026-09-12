@@ -203,10 +203,10 @@ final class DictationController: ObservableObject {
                 return
             }
 
-            let historyError: MacomprendoError? = if let history {
-                await history.record(text: text, kind: .dictation)
+            let historyResult: DictationHistoryController.AppendResult = if let history {
+                await history.append(text: text, kind: .dictation)
             } else {
-                nil
+                .init(entry: nil, error: nil)
             }
             try Task.checkCancellation()
 
@@ -233,11 +233,17 @@ final class DictationController: ObservableObject {
 
             switch insertOutcome {
             case .success:
+                let recordingError: MacomprendoError? = if let history {
+                    await history.saveRecording(pcm, for: historyResult.entry)
+                } else {
+                    nil
+                }
+                guard !Task.isCancelled else { return }
                 state = .idle
                 target = nil
                 escapeMonitor.stop()
-                if let historyError {
-                    hud.show(.error(ErrorText.describe(historyError)))
+                if let warning = historyResult.error ?? recordingError {
+                    hud.show(.error(ErrorText.describe(warning)))
                 } else {
                     hud.show(.success("Inserted"))
                 }

@@ -15,6 +15,12 @@ final class AppModel: ObservableObject {
             if settings.middleMouseAction != oldValue.middleMouseAction {
                 env.middleMouse.setEnabled(settings.middleMouseAction != nil)
             }
+            if settings.historyRetention != oldValue.historyRetention {
+                Task { [weak self] in
+                    guard let self, let error = await self.history.applyRetention() else { return }
+                    self.hud.show(.error(ErrorText.describe(error)))
+                }
+            }
             env.localTranscriptionCache.configure(
                 configuration: Self.localTranscriptionConfiguration(for: settings),
                 idleTimeout: settings.localModelIdleTimeout)
@@ -63,6 +69,7 @@ final class AppModel: ObservableObject {
     private let enablement: HotkeyEnablementStore
     private var hotkeyTask: Task<Void, Never>?
     private var middleMouseTask: Task<Void, Never>?
+    private var historyMaintenanceTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
 
     init(store: any SettingsPersisting,
@@ -106,7 +113,10 @@ final class AppModel: ObservableObject {
         history = DictationHistoryController(
             store: env.dictationHistory,
             pasteboard: env.pasteboard,
-            isEnabled: { snapshot.current.dictationHistoryEnabled })
+            isEnabled: { snapshot.current.dictationHistoryEnabled },
+            encoder: env.dictationAudioEncoder,
+            shouldSaveRecording: { snapshot.current.saveOriginalRecording },
+            retention: { snapshot.current.historyRetention })
 
         let factory = env.factory
         let models = env.models
@@ -176,6 +186,14 @@ final class AppModel: ObservableObject {
 
     /// Called once at launch: applies hotkey enablement and starts routing hotkey events.
     func start() {
+        if historyMaintenanceTask == nil {
+            historyMaintenanceTask = Task { [weak self] in
+                guard let self,
+                      let error = await self.history.performLaunchMaintenance()
+                else { return }
+                self.hud.show(.error(ErrorText.describe(error)))
+            }
+        }
         if textFeatures == nil {
             textFeatures = TextFeatures.live(model: self, env: env, hud: hud,
                                              transcriberProvider: transcriberProvider,

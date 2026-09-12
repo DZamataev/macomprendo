@@ -106,7 +106,7 @@ struct AACDictationAudioEncoderTests {
         try await fake.encode([0, 0, 0], sampleRate: 16_000, to: url)
 
         let requests = await fake.requests
-        #expect(requests == [.init(frameCount: 3, sampleRate: 16_000, url: url)])
+        #expect(requests == [.init(pcm: [0, 0, 0], sampleRate: 16_000, url: url)])
     }
 
     @Test func theAudioEncodingErrorDescribesFailureAndRecovery() {

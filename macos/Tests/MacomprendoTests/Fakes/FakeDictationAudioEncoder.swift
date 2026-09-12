@@ -3,7 +3,7 @@ import Foundation
 
 actor FakeDictationAudioEncoder: DictationAudioEncoding {
     struct Request: Sendable, Equatable {
-        let frameCount: Int
+        let pcm: [Float]
         let sampleRate: Int
         let url: URL
     }
@@ -12,6 +12,12 @@ actor FakeDictationAudioEncoder: DictationAudioEncoding {
 
     private var error: (any Error)?
     private var bytesToWrite: Data?
+    private var gate: AsyncGate?
+    nonisolated let encodeInvoked = AsyncGate()
+
+    func setGate(_ gate: AsyncGate?) {
+        self.gate = gate
+    }
 
     func setError(_ error: (any Error)?) {
         self.error = error
@@ -23,7 +29,9 @@ actor FakeDictationAudioEncoder: DictationAudioEncoding {
     }
 
     func encode(_ pcm: [Float], sampleRate: Int, to url: URL) async throws {
-        requests.append(Request(frameCount: pcm.count, sampleRate: sampleRate, url: url))
+        requests.append(Request(pcm: pcm, sampleRate: sampleRate, url: url))
+        encodeInvoked.open()
+        if let gate { await gate.wait() }
         if let error { throw error }
         if let bytesToWrite {
             try FileManager.default.createDirectory(

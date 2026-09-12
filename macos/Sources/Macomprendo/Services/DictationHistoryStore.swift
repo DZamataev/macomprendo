@@ -30,6 +30,12 @@ protocol DictationHistoryStoring: Sendable {
 
     /// Every audio filename currently referenced by an entry, so unreferenced files can be found.
     func referencedAudioFilenames() async throws -> [String]
+
+    /// Removes the named files if present. Missing files are tolerated.
+    func removeAudioFiles(named filenames: [String]) async throws
+
+    /// Removes every file in the audio directory not present in `referencedFilenames`.
+    func purgeUnreferencedAudioFiles(keeping referencedFilenames: Set<String>) async throws
 }
 
 actor SQLiteDictationHistoryStore: DictationHistoryStoring {
@@ -251,6 +257,36 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             on: database,
             operation: "list referenced audio filenames"
         )
+    }
+
+    func removeAudioFiles(named filenames: [String]) throws {
+        for filename in filenames {
+            let url = audioDirectoryURL.appendingPathComponent(filename)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                throw MacomprendoError.dictationHistory(
+                    "remove saved recording: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    func purgeUnreferencedAudioFiles(keeping referencedFilenames: Set<String>) throws {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: audioDirectoryURL.path) else { return }
+        do {
+            for url in try manager.contentsOfDirectory(at: audioDirectoryURL,
+                                                       includingPropertiesForKeys: nil)
+                where !referencedFilenames.contains(url.lastPathComponent) {
+                try manager.removeItem(at: url)
+            }
+        } catch {
+            throw MacomprendoError.dictationHistory(
+                "purge unreferenced recordings: \(error.localizedDescription)"
+            )
+        }
     }
 
     private func audioFilenames(_ sql: String, on database: OpaquePointer, operation: String,

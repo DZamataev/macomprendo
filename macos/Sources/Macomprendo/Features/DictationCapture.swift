@@ -138,14 +138,19 @@ import Foundation
                 guard self.generation == generation else { return }
                 let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { throw MacomprendoError.audio("Nothing heard.") }
-                let historyError = await history.record(text: text, kind: .dictationAndRefine)
+                let historyResult = await history.append(text: text, kind: .dictationAndRefine)
                 try Task.checkCancellation()
                 guard self.generation == generation else { return }
                 self.setState(.idle)
-                if let historyError {
+                if let historyError = historyResult.error {
                     onHistoryError?(historyError)
                 }
                 self.onTranscript?(text)
+                let recordingError = await history.saveRecording(samples, for: historyResult.entry)
+                guard self.generation == generation, !Task.isCancelled else { return }
+                if historyResult.error == nil, let recordingError {
+                    onHistoryError?(recordingError)
+                }
             } catch {
                 guard self.generation == generation else { return }
                 self.setState(.idle)
