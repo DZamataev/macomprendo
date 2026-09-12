@@ -103,6 +103,31 @@ import Testing
         #expect(await store.attachRequests == [.init(filename: "1.m4a", entryID: 1)])
     }
 
+    @Test func aRecordingSavedWhileTheWindowIsOpenBecomesImmediatelyPlayable() async {
+        // A recording saved while the history window is open must not require a reopen (which
+        // re-reads the directory via loadInitial) before its row offers playback — the window
+        // must reflect the recording it just saved.
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { true },
+            encoder: encoder, shouldSaveRecording: { true }, retention: { .ninetyDays },
+            now: { date })
+        await store.setPages([DictationHistoryPage(entries: [], nextCursor: nil)])
+        await controller.loadInitial()
+
+        let result = await controller.append(text: "hello", kind: .dictation)
+        let entry = try! #require(result.entry)
+        let error = await controller.saveRecording([0.1, 0.2], for: entry)
+
+        #expect(error == nil)
+        #expect(controller.isPlayable(DictationHistoryEntry(
+            id: entry.id, createdAt: entry.createdAt, kind: entry.kind, text: entry.text,
+            audioFileName: "\(entry.id).m4a")))
+        #expect(controller.entries.first(where: { $0.id == entry.id })?.audioFileName
+                == "\(entry.id).m4a")
+    }
+
     @Test func recordingPreferenceOffDoesNotCallEncoder() async {
         let store = FakeDictationHistoryStore()
         let encoder = FakeDictationAudioEncoder()

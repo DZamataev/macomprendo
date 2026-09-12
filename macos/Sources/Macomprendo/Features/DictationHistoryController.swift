@@ -98,6 +98,17 @@ final class DictationHistoryController: ObservableObject {
             await store.endAudioWrite()
             try Task.checkCancellation()
             try await store.attachAudioFile(named: filename, toEntry: entry.id)
+            existingAudioFilenames.insert(filename)
+            let withAudio = DictationHistoryEntry(
+                id: entry.id, createdAt: entry.createdAt, kind: entry.kind,
+                text: entry.text, audioFileName: filename)
+            if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+                entries[index] = withAudio
+            } else {
+                // The entry was appended (and this recording captured) while the window was
+                // open, so it was never in `entries` to begin with — pages are newest-first.
+                entries.insert(withAudio, at: 0)
+            }
             return nil
         } catch {
             try? await store.removeAudioFiles(named: [filename])
