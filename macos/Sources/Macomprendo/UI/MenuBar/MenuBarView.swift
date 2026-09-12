@@ -39,7 +39,7 @@ struct MenuBarView: View {
         Toggle("Save dictation history", isOn: $model.settings.dictationHistoryEnabled)
         Button("Dictation History…") {
             NSApp.activate(ignoringOtherApps: true)
-            openWindow(id: "dictation-history")
+            openWindow(id: WindowID.dictationHistory)
         }
 
         Divider()
@@ -75,6 +75,13 @@ struct MenuBarView: View {
 
         Button("Check permissions…") {
             OnboardingWindowController.show(model: model)
+        }
+
+        // Same activation reason as "Settings…" above: without `NSApp.activate` this
+        // window can open behind every other app's windows.
+        Button("About Macomprendo…") {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: WindowID.about)
         }
 
         Divider()

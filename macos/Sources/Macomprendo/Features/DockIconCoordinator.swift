@@ -9,6 +9,7 @@ import Foundation
         case settings
         case onboarding
         case history
+        case about
     }
 
     private(set) var owners: Set<Owner> = []

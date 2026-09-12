@@ -61,7 +61,7 @@ struct MacomprendoApp: App {
                 .onDisappear { model.dockIcon.close(.settings) }
         }
 
-        Window("Dictation History", id: "dictation-history") {
+        Window("Dictation History", id: WindowID.dictationHistory) {
             DictationHistoryView(controller: model.history) { text in
                 model.textFeatures?.refine(text: text)
             }
@@ -76,5 +76,12 @@ struct MacomprendoApp: App {
                 }
         }
         .defaultSize(width: 720, height: 560)
+
+        Window("About Macomprendo", id: WindowID.about) {
+            AboutView(model: model.aboutModel)
+                .onAppear { model.dockIcon.open(.about) }
+                .onDisappear { model.dockIcon.close(.about) }
+        }
+        .defaultSize(width: 820, height: 620)
     }
 }

@@ -453,6 +453,24 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
 > exposes no position, so a scrubber could not behave the same on both speech sources. Pause/resume
 > is the shipped scope — do not treat their absence as a bug.
 
+## About window
+
+| Step | Expected |
+|---|---|
+| Menubar ▸ "About Macomprendo…" | The window opens **in front of** every other app's windows, not behind them. A Dock icon appears while it is up and goes away when it closes (it is another `DockIconCoordinator` owner, alongside Settings and the wizard) |
+| Read the header | The version and build match the build under test — compare against `Macomprendo.app ▸ Get Info`, or `defaults read …/Contents/Info CFBundleShortVersionString` and `CFBundleVersion` |
+| Look at the disclosure block **without scrolling and without resizing the window** | It is fully legible at the window's default size and says all three things: the application as distributed is **GPL-3.0**, Macomprendo's own source is MIT, and the corresponding source is public (this app and sherpa-onnx) |
+| Click "Privacy statement" | The browser opens `https://dzamataev.github.io/macomprendo/privacy/` and the live page loads — not a 404 |
+| Look at the component list on first open | `whisper.cpp` is already selected and its licence text is showing; the pane is never blank |
+| Select `espeak-ng`, `sherpa-onnx`, `onnxruntime` and `Phosphor Icons` in turn | Each shows its own full licence text. Scroll each to the end: the text finishes with its real closing paragraph, with no "…" and nothing cut off |
+| Drag-select a paragraph of a licence and press ⌘C | The text is selectable and copies verbatim |
+| Click a component's homepage link | The browser opens that project's page |
+| Close the window, reopen it from the menubar | The component you last selected is still selected — reopening must not reset it |
+| Narrow the window as far as it goes | It stops shrinking well before the licence text's hard-wrapped lines reflow illegibly |
+
+> The window is a SwiftUI `Window` scene like Dictation History. If the Dock icon lingers
+> after closing it, that is the same `.onDisappear` caveat recorded under **Dock icon**.
+
 ## Release checklist
 
 Run this list on a Mac that has *not* been used to develop the current change, if possible.

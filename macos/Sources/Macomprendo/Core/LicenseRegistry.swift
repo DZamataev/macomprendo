@@ -22,11 +22,24 @@ struct LicenseEntry: Sendable, Equatable {
     /// Shown next to the entry when there is something the reader must not miss.
     let note: String?
 
-    /// The bundled licence text, or nil when the resource is missing.
+    /// The bundled licence text, or nil when the resource is missing from this build.
     func licenseText(in bundle: Bundle = ResourceBundle.current) -> String? {
+        try? readLicenseText(in: bundle)
+    }
+
+    /// Distinguishes "no such resource in this build" from "the resource is there but could
+    /// not be read" — `try?` on its own would collapse both into the same `nil`, which then
+    /// tells the reader a present-but-unreadable file is "missing from this build".
+    func readLicenseText(in bundle: Bundle = ResourceBundle.current) throws -> String {
         guard let url = bundle.url(forResource: resourceName, withExtension: "txt",
-                                   subdirectory: "Licenses") else { return nil }
-        return try? String(contentsOf: url, encoding: .utf8)
+                                   subdirectory: "Licenses") else {
+            throw MacomprendoError.licenseTextMissing(component)
+        }
+        do {
+            return try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            throw MacomprendoError.licenseTextUnreadable(component)
+        }
     }
 }
 
