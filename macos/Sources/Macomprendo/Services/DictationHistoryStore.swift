@@ -34,10 +34,6 @@ protocol DictationHistoryStoring: Sendable {
     /// The total size of the audio directory, in bytes. A missing directory reads as zero.
     func audioDirectoryByteCount() async throws -> Int64
 
-    /// The filenames actually present in the audio directory. An entry may reference a file
-    /// that is gone, which is a normal state rather than corruption.
-    func existingAudioFilenames() async throws -> Set<String>
-
     /// The bytes of one recording, or `nil` when its file is gone.
     func audioFileData(named filename: String) async throws -> Data?
 
@@ -300,20 +296,6 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
         } catch {
             throw MacomprendoError.dictationHistory(
                 "measure saved recordings: \(error.localizedDescription)"
-            )
-        }
-    }
-
-    func existingAudioFilenames() throws -> Set<String> {
-        let manager = FileManager.default
-        guard manager.fileExists(atPath: audioDirectoryURL.path) else { return [] }
-        do {
-            let urls = try manager.contentsOfDirectory(at: audioDirectoryURL,
-                                                       includingPropertiesForKeys: nil)
-            return Set(urls.map(\.lastPathComponent))
-        } catch {
-            throw MacomprendoError.dictationHistory(
-                "list saved recordings: \(error.localizedDescription)"
             )
         }
     }

@@ -20,18 +20,20 @@ import Testing
                                    now: { date })
     }
 
-    @Test func onlyEntriesWithAnExistingFileArePlayable() async {
+    @Test func onlyEntriesThatReferenceARecordingArePlayable() async {
         let store = FakeDictationHistoryStore()
         await store.setPages([DictationHistoryPage(
             entries: [entry(3, audio: "3.m4a"), entry(2, audio: "2.m4a"), entry(1, audio: nil)],
             nextCursor: nil)])
+        // Only entry 3's file is actually on disk. Entry 2 still offers the control: whether
+        // the file survives is discovered when playback is attempted, not by hiding the button.
         await store.setAudioFiles(["3.m4a": Data([0x01, 0x02])])
         let controller = makeController(store: store, player: FakeAudioPlayer())
 
         await controller.loadInitial()
 
         #expect(controller.isPlayable(entry(3, audio: "3.m4a")))
-        #expect(controller.isPlayable(entry(2, audio: "2.m4a")) == false)
+        #expect(controller.isPlayable(entry(2, audio: "2.m4a")))
         #expect(controller.isPlayable(entry(1, audio: nil)) == false)
     }
 
@@ -90,7 +92,7 @@ import Testing
         #expect(controller.playingEntryID == nil)
     }
 
-    @Test func aVanishedFileReportsAnErrorAndStopsOfferingTheControl() async {
+    @Test func aVanishedFileReportsAnErrorAndKeepsOfferingTheControl() async {
         let store = FakeDictationHistoryStore()
         await store.setPages([DictationHistoryPage(entries: [entry(1, audio: "1.m4a")],
                                                    nextCursor: nil)])
@@ -105,8 +107,54 @@ import Testing
 
         #expect(controller.playingEntryID == nil)
         #expect(player.played.isEmpty)
-        #expect(controller.isPlayable(entry(1, audio: "1.m4a")) == false)
+        // The entry still references a recording, so the control stays: hiding it would claim
+        // the dictation never had one, and the user could not retry after restoring the file.
+        #expect(controller.isPlayable(entry(1, audio: "1.m4a")))
         #expect(controller.errorMessage != nil)
+    }
+
+    @Test func aMissingFileIsReportedAsAMissingFileNotAnOutputDeviceProblem() async {
+        let store = FakeDictationHistoryStore()
+        await store.setPages([DictationHistoryPage(entries: [entry(1, audio: "1.m4a")],
+                                                   nextCursor: nil)])
+        await store.setAudioFiles([:])
+        let controller = makeController(store: store, player: FakeAudioPlayer())
+        await controller.loadInitial()
+
+        await controller.togglePlayback(entry(1, audio: "1.m4a"))
+
+        let message = controller.errorMessage ?? ""
+        #expect(message.contains("no longer on disk"))
+        // The old text pointed at the output device, which has nothing to do with a file
+        // somebody deleted.
+        #expect(!message.contains("output device"))
+    }
+
+    @Test func playbackWorksAgainOnceTheFileIsBack() async {
+        let store = FakeDictationHistoryStore()
+        await store.setPages([DictationHistoryPage(entries: [entry(1, audio: "1.m4a")],
+                                                   nextCursor: nil)])
+        await store.setAudioFiles([:])
+        let player = FakeAudioPlayer()
+        player.finishesImmediately = false
+        let controller = makeController(store: store, player: player)
+        await controller.loadInitial()
+        await controller.togglePlayback(entry(1, audio: "1.m4a"))
+        #expect(player.played.isEmpty)
+
+        await store.setAudioFiles(["1.m4a": Data([0x01])])
+        await controller.togglePlayback(entry(1, audio: "1.m4a"))
+
+        #expect(player.played.count == 1)
+        #expect(controller.playingEntryID == 1)
+        #expect(controller.errorMessage == nil)
+    }
+
+    @Test func anEntryWithNoRecordingOffersNoControl() async {
+        let store = FakeDictationHistoryStore()
+        let controller = makeController(store: store, player: FakeAudioPlayer())
+
+        #expect(controller.isPlayable(entry(1, audio: nil)) == false)
     }
 
     @Test func deletingSavedAudioStopsPlaybackAndClearsPlayableEntries() async {
@@ -124,7 +172,10 @@ import Testing
         #expect(await controller.deleteSavedAudio() == nil)
 
         #expect(controller.playingEntryID == nil)
-        #expect(controller.isPlayable(entry(1, audio: "1.m4a")) == false)
+        // Playability follows the entry the controller holds, whose reference the delete
+        // cleared — not a locally built copy that still names a file.
+        #expect(controller.entries.allSatisfy { !controller.isPlayable($0) })
+        #expect(controller.entries.allSatisfy { $0.audioFileName == nil })
         #expect(await store.deleteAudioReferencesCallCount == 1)
     }
 

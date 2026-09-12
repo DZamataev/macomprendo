@@ -35,9 +35,6 @@ final class DictationHistoryController: ObservableObject {
     private var loadGeneration = 0
     private var loadTask: Task<DictationHistoryPage, Error>?
     private var copyGeneration = 0
-    /// The recordings whose files were present the last time the directory was read. An entry
-    /// referencing a filename outside this set has lost its file, which is normal.
-    private var existingAudioFilenames: Set<String> = []
 
     init(store: any DictationHistoryStoring,
          pasteboard: any PasteboardProtocol,
@@ -106,7 +103,6 @@ final class DictationHistoryController: ObservableObject {
             await store.endAudioWrite()
             try Task.checkCancellation()
             try await store.attachAudioFile(named: filename, toEntry: entry.id)
-            existingAudioFilenames.insert(filename)
             savedAudioRevision += 1
             let withAudio = DictationHistoryEntry(
                 id: entry.id, createdAt: entry.createdAt, kind: entry.kind,
@@ -172,7 +168,6 @@ final class DictationHistoryController: ObservableObject {
         let filenames = try await store.deleteEntries(olderThan: cutoff)
         try await store.removeAudioFiles(named: filenames)
         guard !filenames.isEmpty else { return }
-        for filename in filenames { existingAudioFilenames.remove(filename) }
         entries.removeAll { $0.createdAt < cutoff }
         savedAudioRevision += 1
     }
@@ -180,7 +175,6 @@ final class DictationHistoryController: ObservableObject {
     func loadInitial() async {
         guard !isLoading else { return }
         let generation = beginLoading()
-        await refreshExistingAudioFilenames()
         await loadPage(beforeID: nil, replacingEntries: true, generation: generation)
     }
 
@@ -201,7 +195,6 @@ final class DictationHistoryController: ObservableObject {
             nextCursor = nil
             hasMore = true
             copiedEntryID = nil
-            existingAudioFilenames = []
             savedAudioRevision += 1
             errorMessage = nil
         } catch {
@@ -217,12 +210,12 @@ final class DictationHistoryController: ObservableObject {
 
     // MARK: - Playback
 
-    /// True only for an entry that references a recording whose file was present the last time
-    /// the directory was read. A row whose file has vanished offers no control rather than a
-    /// dead button.
+    /// True for any entry that references a recording. Whether the file is still on disk is
+    /// deliberately not consulted: a control that disappears would claim the dictation never
+    /// had a recording, and would give the user no way to retry after restoring the file.
+    /// A missing file is reported when playback is attempted.
     func isPlayable(_ entry: DictationHistoryEntry) -> Bool {
-        guard let filename = entry.audioFileName else { return false }
-        return existingAudioFilenames.contains(filename)
+        entry.audioFileName != nil
     }
 
     /// Starts this entry's recording, or stops it when it is the one already playing. Only one
@@ -238,18 +231,15 @@ final class DictationHistoryController: ObservableObject {
 
         do {
             guard let data = try await store.audioFileData(named: filename) else {
-                // The file is gone — drop it from the playable set so the row stops offering
-                // a control, and say so instead of failing silently.
-                existingAudioFilenames.remove(filename)
+                // The file is gone. Say so and keep the control: the entry still records that
+                // a recording was made, and restoring the file makes playback work again.
                 player.stop()
                 playingEntryID = nil
-                errorMessage = ErrorText.describe(
-                    MacomprendoError.audioPlayback("the saved recording is no longer on disk"))
+                errorMessage = ErrorText.describe(MacomprendoError.audioFileMissing)
                 return
             }
             player.stop()
             try player.play(data)
-            existingAudioFilenames.insert(filename)
             playingEntryID = entry.id
             errorMessage = nil
         } catch {
@@ -276,7 +266,6 @@ final class DictationHistoryController: ObservableObject {
         do {
             let filenames = try await store.deleteAudioReferences()
             try await store.removeAudioFiles(named: filenames)
-            existingAudioFilenames = try await store.existingAudioFilenames()
             entries = entries.map(Self.withoutAudio)
             savedAudioRevision += 1
             errorMessage = nil
@@ -291,10 +280,6 @@ final class DictationHistoryController: ObservableObject {
     private static func withoutAudio(_ entry: DictationHistoryEntry) -> DictationHistoryEntry {
         DictationHistoryEntry(id: entry.id, createdAt: entry.createdAt, kind: entry.kind,
                               text: entry.text, audioFileName: nil)
-    }
-
-    private func refreshExistingAudioFilenames() async {
-        existingAudioFilenames = (try? await store.existingAudioFilenames()) ?? []
     }
 
     func copy(_ entry: DictationHistoryEntry) {

@@ -644,16 +644,6 @@ import Testing
         #expect(try await store.audioDirectoryByteCount() == Int64("audio".utf8.count * 2))
     }
 
-    // Catches listing referenced names instead of the files that are actually on disk.
-    @Test func existingAudioFilenamesListsWhatIsOnDiskNotWhatIsReferenced() async throws {
-        let (store, _) = makeStore()
-        let entry = try await store.append(text: "gone", kind: .dictation, at: .now)
-        try await store.attachAudioFile(named: "\(entry.id).m4a", toEntry: entry.id)
-        try writeAudioFile(named: "orphan.m4a", in: store.audioDirectoryURL)
-
-        #expect(try await store.existingAudioFilenames() == ["orphan.m4a"])
-    }
-
     // Catches reading a vanished recording as an error rather than as "no recording".
     @Test func audioFileDataReturnsTheBytesOrNilWhenTheFileIsGone() async throws {
         let (store, _) = makeStore()

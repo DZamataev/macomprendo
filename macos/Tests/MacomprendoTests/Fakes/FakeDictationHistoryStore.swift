@@ -176,11 +176,6 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
         return storedAudioByteCount
     }
 
-    func existingAudioFilenames() async throws -> Set<String> {
-        if let audioDirectoryError { throw audioDirectoryError }
-        return Set(audioFiles.keys)
-    }
-
     func audioFileData(named filename: String) async throws -> Data? {
         if let audioDirectoryError { throw audioDirectoryError }
         return audioFiles[filename]

@@ -211,6 +211,16 @@ reachable from unit tests. Start with dictation history enabled.
       control.
 - [ ] **The file plays outside the app.** Double-click the `.m4a` in Finder: it opens in the
       default player (QuickTime Player, not GarageBand) and is audible.
+- [ ] **A recording deleted behind the app's back reports itself and stays retryable.** With the
+      history window open, delete one entry's `.m4a` from `dictation-audio/` in Finder, then
+      click that entry's Play control: the error names the missing file — "The saved recording
+      is no longer on disk." — and does **not** blame the output device. The Play control stays
+      where it is rather than disappearing, because the entry still records that a recording was
+      made. Put the file back (Undo in Finder) and click Play again: it plays.
+- [ ] **The window and the size readout follow a new dictation live.** Leave Dictation History
+      open, leave Settings ▸ General open beside it, and dictate: the new entry appears at the
+      top of the window without reopening it, and the "Saved audio:" readout grows — neither
+      needs the window closed and opened again.
 - [ ] **The length limit stops the recording and says why.** Settings ▸ Dictation: set
       “Maximum recording length” to 1 minute. Start a dictation in Toggle mode and keep talking
       past a minute without pressing the hotkey: recording stops on its own, transcription runs,
