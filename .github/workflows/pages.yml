@@ -1,8 +1,14 @@
 name: Pages
 
 # The published download button is version-pinned (the release asset name carries the
-# version), so the site must be rebuilt when a release is published as well as when its
-# sources change on main. `workflow_dispatch` covers a manual re-publish.
+# version), so the site must be rebuilt when the version changes. `npm run release` commits
+# the bumped `macos/project.yml` to main before it publishes, and that push is what rebuilds
+# the site — see the paths filter below.
+#
+# There is deliberately no `release: published` trigger. That event runs on the tag ref, and
+# the `github-pages` environment only permits deployments from `main`, so such a run builds
+# the site and then fails at the deploy step every single time. Use `workflow_dispatch` to
+# republish a release that was published outside the release script.
 on:
   push:
     branches: [main]
@@ -14,8 +20,6 @@ on:
       - "scripts/lib/version.mjs"
       - "macos/project.yml"
       - ".github/workflows/pages.yml"
-  release:
-    types: [published]
   workflow_dispatch:
 
 # Read-only by default; the deploy job raises exactly what Pages needs.
