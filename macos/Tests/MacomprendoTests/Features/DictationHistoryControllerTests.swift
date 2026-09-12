@@ -132,6 +132,28 @@ import Testing
         #expect(await store.attachRequests.isEmpty)
     }
 
+    @Test func cancellationDuringSaveRecordingIsSilent() async {
+        // Esc or a new hotkey press during the encode cancels this task on purpose, exactly
+        // like every other cancellation path in the controller (`mappedHistoryError`,
+        // `DictationCapture`, `DictationController.cancelledInFlight()`) — it must not leave
+        // an "operation couldn't be completed" message sitting in the history window's error
+        // banner for an action the user chose.
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        await encoder.setError(CancellationError())
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { true },
+            encoder: encoder, shouldSaveRecording: { true }, retention: { .ninetyDays },
+            now: { date })
+
+        let result = await controller.append(text: "hello", kind: .dictation)
+        let error = await controller.saveRecording([0.1], for: result.entry)
+
+        #expect(error == nil)
+        #expect(controller.errorMessage == nil)
+        #expect(await store.attachRequests.isEmpty)
+    }
+
     @Test func appendAppliesAgeRetentionAndDeletesExpiredAudio() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

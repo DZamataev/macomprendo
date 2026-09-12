@@ -94,6 +94,7 @@ final class DictationHistoryController: ObservableObject {
             return nil
         } catch {
             try? await store.removeAudioFiles(named: [filename])
+            if error is CancellationError { return nil }
             let mapped = error as? MacomprendoError
                 ?? MacomprendoError.audioEncoding(error.localizedDescription)
             errorMessage = ErrorText.describe(mapped)
