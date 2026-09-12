@@ -41,7 +41,7 @@ macomprendo/
   .claude/agents/{planner,swift-implementer,reviewer}.md
   .claude/settings.json     # allowlisted build/test commands
   .github/workflows/ci.yml  # swift test + unsigned xcodebuild + audits, SHA-pinned actions
-  docs/ARCHITECTURE.md  docs/SMOKE_TEST.md  docs/DECISIONS/ADR-*.md  docs/superpowers/{specs,plans}/
+  docs/ARCHITECTURE.md  docs/SMOKE_TEST.md  docs/adr/NNNN-*.md  docs/superpowers/{specs,plans}/
   package.json              # scripts runner (node >= 20); npm deps allowed when they earn their keep
   scripts/build-app.mjs  notarize-app.mjs  configure-notarization.mjs
           release.mjs  audit-public-repo.mjs  sync-agent-config.mjs  lib/ (shared helpers)
@@ -295,7 +295,7 @@ lightweight alternative.
   invariants (pasteboard restore, no secrets in logs, protocol-injected services,
   TDD), how-to recipes pointing to skills, definition of done, planning convention
   (specs in `docs/superpowers/specs`, plans in `docs/superpowers/plans`, ADRs in
-  `docs/DECISIONS`).
+  `docs/adr`).
 - Skills (single source `.agents/skills/`, symlinked into `.claude/skills/`):
   `macomprendo-architecture`, `macomprendo-build-test`, `macomprendo-add-provider`,
   `macomprendo-add-hotkey-feature`, `macomprendo-release`, `macomprendo-scripts` (Node script conventions).

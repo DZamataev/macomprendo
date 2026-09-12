@@ -411,5 +411,5 @@ Smoke tests added to `docs/SMOKE_TEST.md`:
 - `UI/Settings/DictationTab.swift`, `UI/Settings/ModelsViewModel.swift`
 - `UI/RecordingHUD/{HUDController,HUDView,HUDWindowPresenter}.swift`
 - `scripts/fetch-model-hashes.mjs` and its tests
-- `docs/DECISIONS/ADR-0009-sherpa-onnx-gigaam.md`
+- `docs/adr/0009-sherpa-onnx-gigaam.md`
 - `docs/SMOKE_TEST.md`, `DISTRIBUTING.md`, `CHANGELOG.md`

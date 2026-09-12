@@ -21,7 +21,7 @@ and summarize go through Ollama or an OpenAI-compatible chat endpoint.
 | `macos/Tests/MacomprendoTests` | swift-testing tests mirroring the source tree; `Fakes/` holds protocol doubles |
 | `scripts/` | Node ≥ 20 ESM tooling; `lib/` holds shared helpers; `__tests__/` holds `node:test` tests |
 | `site/` | Public site sources: `content/*.md` with YAML front matter, `templates/`, hand-written `assets/` |
-| `docs/` | `ARCHITECTURE.md`, `SMOKE_TEST.md`, `DECISIONS/ADR-*.md`, `superpowers/{specs,plans}` |
+| `docs/` | `ARCHITECTURE.md`, `SMOKE_TEST.md`, `adr/NNNN-*.md`, `superpowers/{specs,plans}` |
 | `DISTRIBUTING.md` | Signing, notarization, and releasing — the operator-facing counterpart to `scripts/` |
 
 ## Commands
@@ -128,5 +128,19 @@ Skills live in `.agents/skills/macomprendo-*/SKILL.md`.
 
 Specs live in `docs/superpowers/specs/YYYY-MM-DD-<name>.md`, plans in
 `docs/superpowers/plans/YYYY-MM-DD-NN-<name>.md`, architecture decisions in
-`docs/DECISIONS/ADR-000N-<slug>.md`. Write the spec, then the plan, then the code —
+`docs/adr/NNNN-<slug>.md`. Write the spec, then the plan, then the code —
 and update the spec rather than letting the code drift away from it.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in `DZamataev/macomprendo`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label named after its role. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `AGENTS.md` carries the vocabulary, decisions live in `docs/adr/`. See `docs/agents/domain.md`.

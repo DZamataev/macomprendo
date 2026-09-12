@@ -72,7 +72,7 @@ test('findUnsafePaths allows the ordinary repository contents', () => {
     'macos/Macomprendo.xcodeproj/project.pbxproj',
     'macos/Sources/Macomprendo/Core/KeychainStore.swift',
     'scripts/lib/keychain-notes.md',
-    'docs/DECISIONS/ADR-0003-not-sandboxed.md',
+    'docs/adr/0003-not-sandboxed.md',
   ]), []);
 });
 
