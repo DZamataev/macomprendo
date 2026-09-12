@@ -44,6 +44,7 @@ import Testing
         let historyStore = FakeDictationHistoryStore()
         let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
                              env: .fake(dictationHistory: historyStore))
+        model.settings.dictationHistoryEnabled = true
 
         model.start()
         await waitForHistoryDeletes(1, in: historyStore)

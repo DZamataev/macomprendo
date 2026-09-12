@@ -169,6 +169,27 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("orphan.m4a").path))
     }
 
+    @Test func disabledHistoryPerformsNoLaunchMaintenanceWork() async throws {
+        // A user who has turned dictation history off must not have any transcripts deleted
+        // by age retention just because the app launched — the feature performs no destructive
+        // work while disabled.
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("old".utf8).write(to: directory.appendingPathComponent("old.m4a"))
+        let store = FakeDictationHistoryStore(audioDirectoryURL: directory)
+        await store.setExpiredAudioFilenames(["old.m4a"])
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { false },
+            retention: { .oneDay }, now: { date })
+
+        #expect(await controller.performLaunchMaintenance() == nil)
+
+        #expect(await store.deleteOlderThanRequests.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("old.m4a").path))
+    }
+
     @Test func disabledRecordingDoesNotTouchTheStore() async {
         let store = FakeDictationHistoryStore()
         let controller = makeController(store: store, enabled: false)

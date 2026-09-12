@@ -113,6 +113,7 @@ final class DictationHistoryController: ObservableObject {
     }
 
     func performLaunchMaintenance() async -> MacomprendoError? {
+        guard isEnabled() else { return nil }
         if let error = await applyRetention() { return error }
         do {
             let referenced = try await store.referencedAudioFilenames()
