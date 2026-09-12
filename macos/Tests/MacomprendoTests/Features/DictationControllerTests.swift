@@ -99,6 +99,30 @@ import Testing
         #expect(await h.historyStore.attachRequests == [.init(filename: "1.m4a", entryID: 1)])
     }
 
+    @Test func aNewDictationDuringRecordingEncodeStartsInsteadOfBeingCancelled() async {
+        // Once the paste has landed, the controller must return to `.idle` immediately —
+        // it must not still read as `.inserting` for the whole duration of the recording
+        // encode, or a hotkey press in that window is misread as "cancel the in-flight
+        // session" instead of "begin a new one".
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "saved")
+        let gate = AsyncGate()
+        await h.encoder.setGate(gate)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.handle(.keyUp(.dictate))
+        await h.encoder.encodeInvoked.wait()
+
+        #expect(h.controller.state == .idle)
+
+        h.controller.handle(.keyDown(.dictate))
+        await waitFor("new recording to start") { h.controller.state == .recording }
+
+        #expect(h.hud.state != .toast("Cancelled"))
+
+        gate.open()
+        await h.controller.activeTask?.value
+    }
+
     @Test func cancellationDuringEncodingAttachesNothing() async {
         let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "inserted")
         let gate = AsyncGate()

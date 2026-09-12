@@ -251,22 +251,23 @@ final class DictationController: ObservableObject {
 
             switch insertOutcome {
             case .success:
+                guard !Task.isCancelled else { return }
+                state = .idle
+                target = nil
+                escapeMonitor.stop()
+                if stoppedAtLimit {
+                    hud.show(.success(Self.recordingLimitMessage(
+                        seconds: settings().maximumRecordingSeconds)))
+                } else if historyResult.error == nil {
+                    hud.show(.success("Inserted"))
+                }
                 let recordingError: MacomprendoError? = if let history {
                     await history.saveRecording(pcm, for: historyResult.entry)
                 } else {
                     nil
                 }
-                guard !Task.isCancelled else { return }
-                state = .idle
-                target = nil
-                escapeMonitor.stop()
                 if let warning = historyResult.error ?? recordingError {
                     hud.show(.error(ErrorText.describe(warning)))
-                } else if stoppedAtLimit {
-                    hud.show(.success(Self.recordingLimitMessage(
-                        seconds: settings().maximumRecordingSeconds)))
-                } else {
-                    hud.show(.success("Inserted"))
                 }
             case .failure(MacomprendoError.insertFailed):
                 // `PasteTextInserter` throws `insertFailed` before it ever writes to the
