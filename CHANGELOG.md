@@ -30,6 +30,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   statically linked into it, and those terms reach the combined binary. Macomprendo's own
   source stays MIT, all corresponding source is public, and upstream is removing the
   dependency in sherpa-onnx 2.0.0 for the same reason.
+- An **About Macomprendo…** window, opened from the menubar next to Settings. It shows the
+  version and build, states up front that the application as distributed is under GPL-3.0
+  while Macomprendo's own source is MIT and the corresponding source is public, links to the
+  privacy statement, and lists every redistributed component with its SPDX identifier, its
+  origin, a link to its homepage and its full, selectable licence text. The licence terms the
+  app ships under can now be read without opening the repository.
 
 ### Fixed
 - Whisper model downloads are now checksum-verified. All nine entries shipped with an empty

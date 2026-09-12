@@ -76,5 +76,12 @@ struct MacomprendoApp: App {
                 }
         }
         .defaultSize(width: 720, height: 560)
+
+        Window("About Macomprendo", id: "about") {
+            AboutView(model: model.aboutModel)
+                .onAppear { model.dockIcon.open(.about) }
+                .onDisappear { model.dockIcon.close(.about) }
+        }
+        .defaultSize(width: 820, height: 620)
     }
 }

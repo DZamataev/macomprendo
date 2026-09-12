@@ -392,6 +392,18 @@ import Testing
         #expect(try Settings.migrate(data) == defaultWithSeededPresets())
     }
 
+    /// Invariant 1: the About window's link opener comes from the environment rather than
+    /// being constructed by the view.
+    @Test func theAboutModelLinksThroughTheEnvironmentsURLOpener() {
+        let opener = FakeURLOpener()
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(urlOpener: opener))
+
+        model.aboutModel.openPrivacyStatement()
+
+        #expect(opener.opened == [AboutModel.privacyURL])
+    }
+
     @Test func theKeychainPassedInIsTheOneHandedOut() throws {
         let keychain = InMemoryKeychainStore()
         let model = AppModel(store: InMemorySettingsStore(), keychain: keychain, env: .fake())

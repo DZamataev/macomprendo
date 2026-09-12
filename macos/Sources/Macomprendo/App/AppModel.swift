@@ -52,6 +52,9 @@ final class AppModel: ObservableObject {
         })
     lazy var speechSourceModel = SpeechSourceModel(holder: self)
     lazy var savedAudioModel = SavedAudioModel(history: history, revealer: env.fileRevealer)
+    /// The About window's content. Lazy so the licence registry is only read when the window
+    /// is first opened, and owned here so the view never constructs a service (invariant 1).
+    lazy var aboutModel = AboutModel(opener: env.urlOpener)
     lazy var promptsTabModel = PromptsTabModel(
         holder: self,
         llm: { [unowned self] kind in try self.llmTarget(for: kind) })

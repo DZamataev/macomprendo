@@ -96,6 +96,47 @@ import Testing
                 == "https://dzamataev.github.io/macomprendo/privacy/")
     }
 
+    @Test func nothingIsSelectedUntilTheWindowAsksForADefault() {
+        let model = AboutModel(bundle: ResourceBundle.current, opener: FakeURLOpener())
+
+        #expect(model.selected == nil)
+        #expect(model.licenseText == nil)
+    }
+
+    @Test func theDefaultSelectionIsTheFirstRegistryEntry() throws {
+        let model = AboutModel(bundle: ResourceBundle.current, opener: FakeURLOpener())
+
+        model.selectDefaultIfNeeded()
+
+        #expect(model.selected == LicenseRegistry.all.first)
+        #expect(try #require(model.licenseText).isEmpty == false)
+        #expect(model.errorMessage == nil)
+    }
+
+    /// The window reopens with `.onAppear` firing again; a default applied a second time
+    /// would silently throw away whatever the reader had selected.
+    @Test func askingForTheDefaultAgainKeepsTheReadersChoice() throws {
+        let model = AboutModel(bundle: ResourceBundle.current, opener: FakeURLOpener())
+        let espeak = try #require(LicenseRegistry.all.first { $0.component == "espeak-ng" })
+
+        model.selectDefaultIfNeeded()
+        model.select(espeak)
+        model.selectDefaultIfNeeded()
+
+        #expect(model.selected == espeak)
+    }
+
+    @Test func aDefaultSelectionWithoutBundledTextStillReportsTheMissingState() throws {
+        let bundle = try makeBundle(info: [:])
+        let model = AboutModel(bundle: bundle, opener: FakeURLOpener())
+
+        model.selectDefaultIfNeeded()
+
+        #expect(model.selected == LicenseRegistry.all.first)
+        #expect(model.licenseText == nil)
+        #expect(model.errorMessage != nil)
+    }
+
     @Test func openingAComponentHomepageUsesTheRegistryURL() throws {
         let opener = FakeURLOpener()
         let model = AboutModel(bundle: ResourceBundle.current, opener: opener)

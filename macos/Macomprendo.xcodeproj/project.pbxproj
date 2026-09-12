@@ -139,6 +139,7 @@
 		86A60BF976B7A6B630B2137D /* SpeechTextChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0A916B203E65708C12EABE /* SpeechTextChunker.swift */; };
 		8901BAA7643C3A7EF77B41DC /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F92336F9859BC813F5BE0928 /* SettingsStore.swift */; };
 		89FE616858D1DD55AAE2E142 /* ScriptedSettingsHolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40F464FA62BC543FF1E407BD /* ScriptedSettingsHolder.swift */; };
+		8AACABFF0C2D2A3A18BAE8A2 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF14979B7E7CE7B328EF81EB /* AboutView.swift */; };
 		8ABD855E8433827E012E02C6 /* TextFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A08704620D7639D06EAE01 /* TextFeatures.swift */; };
 		8AF1978EC5B3C2F372922B6C /* SummarizeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2E5E5A0B6262EBBB19CC88 /* SummarizeController.swift */; };
 		8D2239C823F9C5B20BD2B116 /* HotkeysTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3916A0007BF8F69C1A92942F /* HotkeysTab.swift */; };
@@ -494,6 +495,7 @@
 		DCFA1D0AE07BC9152037EE2B /* FactoryPresets+English.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FactoryPresets+English.swift"; sourceTree = "<group>"; };
 		DE5CCC6BD7CBF90411100AF7 /* SpeechTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechTab.swift; sourceTree = "<group>"; };
 		DEE78A865D65DC8127E18488 /* RefineLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefineLayout.swift; sourceTree = "<group>"; };
+		DF14979B7E7CE7B328EF81EB /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		DF2EC86AAB0E38E93C240058 /* LanguageSegmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSegmenter.swift; sourceTree = "<group>"; };
 		E08D64BEFB69D7B6765B2D83 /* AudioMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMath.swift; sourceTree = "<group>"; };
 		E0B618B28B094ED002840375 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -874,6 +876,7 @@
 			isa = PBXGroup;
 			children = (
 				96BDBB06FBEEDF7EC9E28012 /* AboutModel.swift */,
+				DF14979B7E7CE7B328EF81EB /* AboutView.swift */,
 			);
 			path = About;
 			sourceTree = "<group>";
@@ -1356,6 +1359,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CE1E14793B1BEF4B30B77B0D /* AboutModel.swift in Sources */,
+				8AACABFF0C2D2A3A18BAE8A2 /* AboutView.swift in Sources */,
 				26E6DBCABF425C6BDB4BF1E9 /* ActivationPolicyService.swift in Sources */,
 				AA4CAFFC1D12F214D5C1EB00 /* AppEnvironment.swift in Sources */,
 				BC3E06089CDDEB56D70D2702 /* AppModel.swift in Sources */,

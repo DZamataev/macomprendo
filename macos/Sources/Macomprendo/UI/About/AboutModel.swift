@@ -67,6 +67,14 @@ final class AboutModel: ObservableObject {
         }
     }
 
+    /// Selects the first entry so the licence pane is never empty on first appearance, and
+    /// does nothing once the reader has chosen: the window's `.onAppear` fires again every
+    /// time it is reopened, and re-applying the default there would discard their choice.
+    func selectDefaultIfNeeded() {
+        guard selected == nil, let first = entries.first else { return }
+        select(first)
+    }
+
     func openPrivacyStatement() {
         opener.open(Self.privacyURL)
     }

@@ -77,6 +77,13 @@ struct MenuBarView: View {
             OnboardingWindowController.show(model: model)
         }
 
+        // Same activation reason as "Settings…" above: without `NSApp.activate` this
+        // window can open behind every other app's windows.
+        Button("About Macomprendo…") {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "about")
+        }
+
         Divider()
 
         Button("Quit Macomprendo") {
