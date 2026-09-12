@@ -13,11 +13,14 @@ final class DictationHistoryController: ObservableObject {
     @Published private(set) var hasMore = true
     @Published private(set) var errorMessage: String?
     @Published private(set) var copiedEntryID: Int64?
+    /// The entry whose recording is playing, or `nil` when nothing is.
+    @Published private(set) var playingEntryID: Int64?
 
     private let store: any DictationHistoryStoring
     private let pasteboard: any PasteboardProtocol
     private let isEnabled: @MainActor () -> Bool
     private let encoder: (any DictationAudioEncoding)?
+    private let player: (any AudioPlaying)?
     private let shouldSaveRecording: @MainActor () -> Bool
     private let retention: @MainActor () -> HistoryRetention
     private let pageSize: Int
@@ -28,11 +31,15 @@ final class DictationHistoryController: ObservableObject {
     private var loadGeneration = 0
     private var loadTask: Task<DictationHistoryPage, Error>?
     private var copyGeneration = 0
+    /// The recordings whose files were present the last time the directory was read. An entry
+    /// referencing a filename outside this set has lost its file, which is normal.
+    private var existingAudioFilenames: Set<String> = []
 
     init(store: any DictationHistoryStoring,
          pasteboard: any PasteboardProtocol,
          isEnabled: @escaping @MainActor () -> Bool,
          encoder: (any DictationAudioEncoding)? = nil,
+         player: (any AudioPlaying)? = nil,
          shouldSaveRecording: @escaping @MainActor () -> Bool = { false },
          retention: @escaping @MainActor () -> HistoryRetention = { .unlimited },
          pageSize: Int = 100,
@@ -44,11 +51,13 @@ final class DictationHistoryController: ObservableObject {
         self.pasteboard = pasteboard
         self.isEnabled = isEnabled
         self.encoder = encoder
+        self.player = player
         self.shouldSaveRecording = shouldSaveRecording
         self.retention = retention
         self.pageSize = max(1, pageSize)
         self.now = now
         self.copyFeedbackSleep = copyFeedbackSleep
+        player?.onFinished = { [weak self] in self?.playingEntryID = nil }
     }
 
     func record(text: String, kind: DictationHistoryKind) async -> MacomprendoError? {
@@ -126,6 +135,7 @@ final class DictationHistoryController: ObservableObject {
     func loadInitial() async {
         guard !isLoading else { return }
         let generation = beginLoading()
+        await refreshExistingAudioFilenames()
         await loadPage(beforeID: nil, replacingEntries: true, generation: generation)
     }
 
@@ -137,6 +147,7 @@ final class DictationHistoryController: ObservableObject {
 
     func clear() async {
         let generation = beginLoading()
+        stopPlayback()
 
         do {
             try await store.clear()
@@ -145,6 +156,7 @@ final class DictationHistoryController: ObservableObject {
             nextCursor = nil
             hasMore = true
             copiedEntryID = nil
+            existingAudioFilenames = []
             errorMessage = nil
         } catch {
             guard generation == loadGeneration else { return }
@@ -152,6 +164,90 @@ final class DictationHistoryController: ObservableObject {
         }
 
         if generation == loadGeneration { isLoading = false }
+    }
+
+    /// Where recordings live, for the settings screen's reveal-in-Finder action.
+    var audioDirectoryURL: URL { store.audioDirectoryURL }
+
+    // MARK: - Playback
+
+    /// True only for an entry that references a recording whose file was present the last time
+    /// the directory was read. A row whose file has vanished offers no control rather than a
+    /// dead button.
+    func isPlayable(_ entry: DictationHistoryEntry) -> Bool {
+        guard let filename = entry.audioFileName else { return false }
+        return existingAudioFilenames.contains(filename)
+    }
+
+    /// Starts this entry's recording, or stops it when it is the one already playing. Only one
+    /// entry plays at a time: starting a second stops the first.
+    func togglePlayback(_ entry: DictationHistoryEntry) async {
+        guard let player else { return }
+        guard playingEntryID != entry.id else {
+            player.stop()
+            playingEntryID = nil
+            return
+        }
+        guard let filename = entry.audioFileName else { return }
+
+        do {
+            guard let data = try await store.audioFileData(named: filename) else {
+                // The file is gone — drop it from the playable set so the row stops offering
+                // a control, and say so instead of failing silently.
+                existingAudioFilenames.remove(filename)
+                player.stop()
+                playingEntryID = nil
+                errorMessage = ErrorText.describe(
+                    MacomprendoError.audioPlayback("the saved recording is no longer on disk"))
+                return
+            }
+            player.stop()
+            try player.play(data)
+            existingAudioFilenames.insert(filename)
+            playingEntryID = entry.id
+            errorMessage = nil
+        } catch {
+            playingEntryID = nil
+            let mapped = error as? MacomprendoError
+                ?? MacomprendoError.audioPlayback(error.localizedDescription)
+            errorMessage = ErrorText.describe(mapped)
+        }
+    }
+
+    func stopPlayback() {
+        player?.stop()
+        playingEntryID = nil
+    }
+
+    /// The size of the audio directory, or the error that prevented reading it.
+    func savedAudioByteCount() async throws -> Int64 {
+        try await store.audioDirectoryByteCount()
+    }
+
+    /// Removes every recording and keeps every transcript.
+    func deleteSavedAudio() async -> MacomprendoError? {
+        stopPlayback()
+        do {
+            let filenames = try await store.deleteAudioReferences()
+            try await store.removeAudioFiles(named: filenames)
+            existingAudioFilenames = try await store.existingAudioFilenames()
+            entries = entries.map(Self.withoutAudio)
+            errorMessage = nil
+            return nil
+        } catch {
+            let historyError = mappedHistoryError(from: error)
+            errorMessage = ErrorText.describe(historyError)
+            return historyError
+        }
+    }
+
+    private static func withoutAudio(_ entry: DictationHistoryEntry) -> DictationHistoryEntry {
+        DictationHistoryEntry(id: entry.id, createdAt: entry.createdAt, kind: entry.kind,
+                              text: entry.text, audioFileName: nil)
+    }
+
+    private func refreshExistingAudioFilenames() async {
+        existingAudioFilenames = (try? await store.existingAudioFilenames()) ?? []
     }
 
     func copy(_ entry: DictationHistoryEntry) {

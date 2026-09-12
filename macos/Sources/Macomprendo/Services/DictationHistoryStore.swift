@@ -31,6 +31,16 @@ protocol DictationHistoryStoring: Sendable {
     /// Every audio filename currently referenced by an entry, so unreferenced files can be found.
     func referencedAudioFilenames() async throws -> [String]
 
+    /// The total size of the audio directory, in bytes. A missing directory reads as zero.
+    func audioDirectoryByteCount() async throws -> Int64
+
+    /// The filenames actually present in the audio directory. An entry may reference a file
+    /// that is gone, which is a normal state rather than corruption.
+    func existingAudioFilenames() async throws -> Set<String>
+
+    /// The bytes of one recording, or `nil` when its file is gone.
+    func audioFileData(named filename: String) async throws -> Data?
+
     /// Removes the named files if present. Missing files are tolerated.
     func removeAudioFiles(named filenames: [String]) async throws
 
@@ -257,6 +267,52 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             on: database,
             operation: "list referenced audio filenames"
         )
+    }
+
+    func audioDirectoryByteCount() throws -> Int64 {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: audioDirectoryURL.path) else { return 0 }
+        do {
+            var total: Int64 = 0
+            for url in try manager.contentsOfDirectory(
+                at: audioDirectoryURL,
+                includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]) {
+                let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+                guard values.isRegularFile == true else { continue }
+                total += Int64(values.fileSize ?? 0)
+            }
+            return total
+        } catch {
+            throw MacomprendoError.dictationHistory(
+                "measure saved recordings: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    func existingAudioFilenames() throws -> Set<String> {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: audioDirectoryURL.path) else { return [] }
+        do {
+            let urls = try manager.contentsOfDirectory(at: audioDirectoryURL,
+                                                       includingPropertiesForKeys: nil)
+            return Set(urls.map(\.lastPathComponent))
+        } catch {
+            throw MacomprendoError.dictationHistory(
+                "list saved recordings: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    func audioFileData(named filename: String) throws -> Data? {
+        let url = audioDirectoryURL.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        do {
+            return try Data(contentsOf: url)
+        } catch {
+            throw MacomprendoError.dictationHistory(
+                "read saved recording: \(error.localizedDescription)"
+            )
+        }
     }
 
     func removeAudioFiles(named filenames: [String]) throws {

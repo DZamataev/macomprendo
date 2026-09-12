@@ -563,4 +563,23 @@ import Testing
 
         #expect(tab.readiness == .ready)
     }
+
+    // MARK: - Maximum recording length
+
+    @Test func theRecordingLengthLabelUsesTheSingularForOneMinute() {
+        #expect(DictationTab.recordingLengthLabel(minutes: 1) == "1 minute")
+        #expect(DictationTab.recordingLengthLabel(minutes: 5) == "5 minutes")
+        #expect(DictationTab.recordingLengthLabel(minutes: 60) == "60 minutes")
+    }
+
+    /// A `Picker` whose selection is missing from its options renders undefined, and a
+    /// hand-edited document may hold any value in `Settings.recordingSecondsRange`.
+    @Test func anOffScaleStoredLengthSnapsToTheNearestOfferedChoice() {
+        #expect(DictationTab.minutesChoice(forSeconds: 300) == 5)
+        #expect(DictationTab.minutesChoice(forSeconds: 260) == 5)
+        #expect(DictationTab.minutesChoice(forSeconds: 3_600) == 60)
+        #expect(DictationTab.minutesChoice(forSeconds: 60) == 1)
+        #expect(DictationTab.recordingMinuteChoices
+            .contains(DictationTab.minutesChoice(forSeconds: 1_234)))
+    }
 }

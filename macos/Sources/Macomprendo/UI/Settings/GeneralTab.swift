@@ -2,8 +2,10 @@ import SwiftUI
 
 struct GeneralTab: View {
     @EnvironmentObject private var model: AppModel
+    @ObservedObject var savedAudio: SavedAudioModel
     @State private var viewModel: GeneralTabModel?
     @State private var launchAtLoginError: String?
+    @State private var isDeleteAudioConfirmationPresented = false
 
     var body: some View {
         Form {
@@ -30,9 +32,36 @@ struct GeneralTab: View {
                     .foregroundStyle(.secondary)
 
                 Toggle("Save dictation history", isOn: $model.settings.dictationHistoryEnabled)
-                Text("Transcripts are stored locally in plaintext. Audio is never saved.")
+                Text("Transcripts are stored locally in plaintext. Recordings are stored only "
+                     + "while “Save the original recording” is on.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Toggle("Save the original recording", isOn: $model.settings.saveOriginalRecording)
+                    .disabled(!SavedAudioModel.recordingToggleIsEnabled(model.settings))
+
+                Picker("Keep history for", selection: $model.settings.historyRetention) {
+                    ForEach(HistoryRetention.allCases, id: \.self) { retention in
+                        Text(retention.displayName).tag(retention)
+                    }
+                }
+
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Saved audio: \(savedAudio.sizeText)")
+                    Spacer(minLength: 8)
+                    Button("Show in Finder") { savedAudio.reveal() }
+                    Button("Delete saved audio…") {
+                        isDeleteAudioConfirmationPresented = true
+                    }
+                }
+
+                if let savedAudioError = savedAudio.errorMessage {
+                    Text(savedAudioError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 Toggle("Insert “OK” for a very short dictation",
                        isOn: $model.settings.shortDictationInsertsOK)
@@ -61,7 +90,19 @@ struct GeneralTab: View {
         }
         .formStyle(.grouped)
         .padding()
-        .task { reconcileLaunchAtLogin() }
+        .confirmationDialog("Delete every saved recording?",
+                            isPresented: $isDeleteAudioConfirmationPresented,
+                            titleVisibility: .visible) {
+            Button("Delete saved audio", role: .destructive) {
+                Task { await savedAudio.deleteSavedAudio() }
+            }
+        } message: {
+            Text("This permanently removes every saved recording. Transcripts are kept.")
+        }
+        .task {
+            reconcileLaunchAtLogin()
+            await savedAudio.refreshSize()
+        }
     }
 
     /// The system is the truth: on appear, pull `settings.launchAtLogin` back in line with

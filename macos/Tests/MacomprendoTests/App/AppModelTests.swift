@@ -28,6 +28,18 @@ import Testing
         Issue.record("Timed out waiting for referenced audio filenames")
     }
 
+    @Test func theRecorderReceivesTheConfiguredMaximumRecordingLength() async {
+        let recorder = FakeAudioRecorder()
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(recorder: recorder))
+
+        #expect(recorder.maximumDurations == [300])
+
+        model.settings.maximumRecordingSeconds = 900
+
+        #expect(recorder.maximumDurations == [300, 900])
+    }
+
     @Test func startAppliesRetentionAndPurgesOrphanedAudio() async {
         let historyStore = FakeDictationHistoryStore()
         let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),

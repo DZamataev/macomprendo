@@ -34,6 +34,10 @@ struct AppEnvironment {
     var pasteboard: any PasteboardProtocol
     var dictationHistory: any DictationHistoryStoring
     var dictationAudioEncoder: any DictationAudioEncoding
+    /// Plays a saved recording back from the history window. Separate from the speech
+    /// services' own players so stopping one never silences the other.
+    var historyAudioPlayer: any AudioPlaying
+    var fileRevealer: any FileRevealing
     var launchAtLogin: any LaunchAtLoginManaging
     var escapeMonitor: any EscapeMonitoring
     var keySimulator: any KeySimulating
@@ -79,6 +83,8 @@ struct AppEnvironment {
             pasteboard: pasteboard,
             dictationHistory: dictationHistory,
             dictationAudioEncoder: AACDictationAudioEncoder(),
+            historyAudioPlayer: AVAudioPlayerPlayer(),
+            fileRevealer: NSWorkspaceFileRevealer(),
             launchAtLogin: SMAppServiceLaunchAtLogin(),
             escapeMonitor: GlobalEscapeMonitor(),
             keySimulator: keySimulator,

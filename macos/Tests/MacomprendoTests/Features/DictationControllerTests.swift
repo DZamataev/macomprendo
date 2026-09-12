@@ -499,7 +499,51 @@ import Testing
             h.inserter.inserted.map(\.text) == ["capped"] && h.controller.state == .idle
         }
         #expect(h.controller.state == .idle)
+        #expect(h.hud.state == .success(DictationController.recordingLimitMessage(seconds: 300)))
+    }
+
+    /// Once the cap is a value the user chose, reaching it must be visible: the HUD says the
+    /// recording stopped because it reached the limit instead of reporting a plain insertion.
+    @Test func hittingTheRecordingCapTellsTheUserWhyItStopped() async {
+        let h = makeHarness(mode: .hold)
+        h.settings.value.maximumRecordingSeconds = 600
+        h.transcriber.result = .success("capped")
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.recorder.triggerAutoStop()
+        await waitFor("implicit stop transcribes and inserts") {
+            h.inserter.inserted.map(\.text) == ["capped"] && h.controller.state == .idle
+        }
+
+        #expect(h.hud.state == .success("Stopped at the 10-minute limit"))
+    }
+
+    /// A recording the user ended themselves must not claim it hit the limit, including the
+    /// one right after a capped recording.
+    @Test func aNormalStopAfterACappedOneReportsPlainInsertion() async {
+        let h = makeHarness(mode: .hold)
+        h.transcriber.result = .success("capped")
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.recorder.triggerAutoStop()
+        await waitFor("capped cycle finishes") {
+            h.inserter.inserted.count == 1 && h.controller.state == .idle
+        }
+
+        await recordAndFinish(h)
+
         #expect(h.hud.state == .success("Inserted"))
+    }
+
+    @Test func theRecordingLimitMessageNamesTheConfiguredMinutes() {
+        #expect(DictationController.recordingLimitMessage(seconds: 60)
+            == "Stopped at the 1-minute limit")
+        #expect(DictationController.recordingLimitMessage(seconds: 300)
+            == "Stopped at the 5-minute limit")
+        #expect(DictationController.recordingLimitMessage(seconds: 90)
+            == "Stopped at the 1.5-minute limit")
     }
 
     /// `AVAudioEngineRecorder`'s `level` stream is created once in `init` and shared by

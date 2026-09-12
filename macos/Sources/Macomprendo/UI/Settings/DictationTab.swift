@@ -55,6 +55,8 @@ struct DictationTab: View {
                 case .endpoint:
                     endpointSection
                 }
+
+                recordingSection
             }
             .formStyle(.grouped)
         }
@@ -302,7 +304,51 @@ struct DictationTab: View {
         }
     }
 
+    // MARK: - Recording
+
+    /// Outside the sub-tab switch: the cap applies to every backend, so it is not the
+    /// business of whichever one happens to be on screen.
+    private var recordingSection: some View {
+        Section("Recording") {
+            Picker("Maximum recording length", selection: maximumRecordingMinutes) {
+                ForEach(DictationTab.recordingMinuteChoices, id: \.self) { minutes in
+                    Text(DictationTab.recordingLengthLabel(minutes: minutes)).tag(minutes)
+                }
+            }
+            Text("Endpoint transcription uploads WAV, and OpenAI-compatible endpoints reject "
+                 + "requests above 25 MiB — about 13 minutes at 16 kHz mono 16-bit. Local "
+                 + "models have no such limit.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Whole minutes covering `Settings.recordingSecondsRange`, coarser as they grow.
+    nonisolated static let recordingMinuteChoices = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60]
+
+    /// Pure, so the wording is unit-tested.
+    nonisolated static func recordingLengthLabel(minutes: Int) -> String {
+        minutes == 1 ? "1 minute" : "\(minutes) minutes"
+    }
+
+    /// The offered choice a stored value maps to. A hand-edited document may hold any number
+    /// of seconds in range, and a `Picker` whose selection is missing from its options renders
+    /// undefined — so snap to the nearest offered minute rather than showing nothing.
+    nonisolated static func minutesChoice(forSeconds seconds: Int) -> Int {
+        let minutes = Double(seconds) / 60
+        return recordingMinuteChoices.min {
+            abs(Double($0) - minutes) < abs(Double($1) - minutes)
+        } ?? 5
+    }
+
     // MARK: - Bindings
+
+    private var maximumRecordingMinutes: Binding<Int> {
+        Binding(
+            get: { DictationTab.minutesChoice(forSeconds: model.settings.maximumRecordingSeconds) },
+            set: { model.settings.maximumRecordingSeconds = $0 * 60 })
+    }
 
     private var activeSource: Binding<TranscriptionSource> {
         Binding(get: { tab.activeSource }, set: { tab.activate($0) })

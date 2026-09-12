@@ -579,6 +579,41 @@ import Testing
         #expect(try await store.referencedAudioFilenames() == ["\(entry.id).m4a"])
     }
 
+    // Catches a size readout that counts nothing, counts the directory entry itself, or throws
+    // on a directory that does not exist yet.
+    @Test func theAudioDirectoryByteCountSumsTheFilesPresent() async throws {
+        let (store, _) = makeStore()
+        _ = try await store.fetchPage(beforeID: nil, limit: 1)
+        let directory = store.audioDirectoryURL
+
+        #expect(try await store.audioDirectoryByteCount() == 0)
+
+        try writeAudioFile(named: "one.m4a", in: directory)
+        try writeAudioFile(named: "two.m4a", in: directory)
+
+        #expect(try await store.audioDirectoryByteCount() == Int64("audio".utf8.count * 2))
+    }
+
+    // Catches listing referenced names instead of the files that are actually on disk.
+    @Test func existingAudioFilenamesListsWhatIsOnDiskNotWhatIsReferenced() async throws {
+        let (store, _) = makeStore()
+        let entry = try await store.append(text: "gone", kind: .dictation, at: .now)
+        try await store.attachAudioFile(named: "\(entry.id).m4a", toEntry: entry.id)
+        try writeAudioFile(named: "orphan.m4a", in: store.audioDirectoryURL)
+
+        #expect(try await store.existingAudioFilenames() == ["orphan.m4a"])
+    }
+
+    // Catches reading a vanished recording as an error rather than as "no recording".
+    @Test func audioFileDataReturnsTheBytesOrNilWhenTheFileIsGone() async throws {
+        let (store, _) = makeStore()
+        _ = try await store.fetchPage(beforeID: nil, limit: 1)
+        try writeAudioFile(named: "present.m4a", in: store.audioDirectoryURL)
+
+        #expect(try await store.audioFileData(named: "present.m4a") == Data("audio".utf8))
+        #expect(try await store.audioFileData(named: "missing.m4a") == nil)
+    }
+
     // Catches allowing a retention configuration that deletes every appended row.
     @Test func appendRejectsANonPositiveMaximumEntryCount() async throws {
         let (store, _) = makeStore(maximumEntryCount: 0)

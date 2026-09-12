@@ -29,6 +29,7 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
     private(set) var fetchRequests: [FetchRequest] = []
     private(set) var attachRequests: [AttachRequest] = []
     private(set) var deleteOlderThanRequests: [Date] = []
+    private(set) var audioDirectoryByteCountCallCount = 0
     private(set) var deleteAudioReferencesCallCount = 0
     private(set) var referencedAudioFilenamesCallCount = 0
     private(set) var cancelledFetchCount = 0
@@ -37,6 +38,9 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
     private var pages: [DictationHistoryPage] = []
     private var expiredAudioFilenames: [String] = []
     private var storedAudioFilenames: [String] = []
+    private var audioFiles: [String: Data] = [:]
+    private var storedAudioByteCount: Int64 = 0
+    private var audioDirectoryError: (any Error)?
     private var appendError: (any Error)?
     private var fetchError: (any Error)?
     private var clearError: (any Error)?
@@ -55,6 +59,21 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
 
     func setStoredAudioFilenames(_ filenames: [String]) {
         storedAudioFilenames = filenames
+    }
+
+    /// The files that exist in the audio directory, keyed by filename. A filename absent here
+    /// reads as "the file has vanished", which is a normal state for an entry that still
+    /// references it.
+    func setAudioFiles(_ files: [String: Data]) {
+        audioFiles = files
+    }
+
+    func setAudioDirectoryByteCount(_ bytes: Int64) {
+        storedAudioByteCount = bytes
+    }
+
+    func setAudioDirectoryError(_ error: (any Error)?) {
+        audioDirectoryError = error
     }
 
     func setAppendError(_ error: (any Error)?) {
@@ -141,7 +160,25 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
         if let retentionError { throw retentionError }
         let removed = storedAudioFilenames
         storedAudioFilenames = []
+        for filename in removed { audioFiles[filename] = nil }
+        storedAudioByteCount = 0
         return removed
+    }
+
+    func audioDirectoryByteCount() async throws -> Int64 {
+        audioDirectoryByteCountCallCount += 1
+        if let audioDirectoryError { throw audioDirectoryError }
+        return storedAudioByteCount
+    }
+
+    func existingAudioFilenames() async throws -> Set<String> {
+        if let audioDirectoryError { throw audioDirectoryError }
+        return Set(audioFiles.keys)
+    }
+
+    func audioFileData(named filename: String) async throws -> Data? {
+        if let audioDirectoryError { throw audioDirectoryError }
+        return audioFiles[filename]
     }
 
     func referencedAudioFilenames() async throws -> [String] {

@@ -15,6 +15,9 @@ final class AppModel: ObservableObject {
             if settings.middleMouseAction != oldValue.middleMouseAction {
                 env.middleMouse.setEnabled(settings.middleMouseAction != nil)
             }
+            if settings.maximumRecordingSeconds != oldValue.maximumRecordingSeconds {
+                env.recorder.setMaximumDuration(TimeInterval(settings.maximumRecordingSeconds))
+            }
             if settings.historyRetention != oldValue.historyRetention {
                 Task { [weak self] in
                     guard let self, let error = await self.history.applyRetention() else { return }
@@ -48,6 +51,7 @@ final class AppModel: ObservableObject {
             self.ttsModelsViewModel.rows.reduce(into: [:]) { $0[$1.id] = $1.state }
         })
     lazy var speechSourceModel = SpeechSourceModel(holder: self)
+    lazy var savedAudioModel = SavedAudioModel(history: history, revealer: env.fileRevealer)
     lazy var promptsTabModel = PromptsTabModel(
         holder: self,
         llm: { [unowned self] kind in try self.llmTarget(for: kind) })
@@ -115,6 +119,7 @@ final class AppModel: ObservableObject {
             pasteboard: env.pasteboard,
             isEnabled: { snapshot.current.dictationHistoryEnabled },
             encoder: env.dictationAudioEncoder,
+            player: env.historyAudioPlayer,
             shouldSaveRecording: { snapshot.current.saveOriginalRecording },
             retention: { snapshot.current.historyRetention })
 
@@ -157,6 +162,8 @@ final class AppModel: ObservableObject {
                                         settings: { snapshot.current },
                                         escapeMonitor: env.escapeMonitor,
                                         history: history)
+
+        env.recorder.setMaximumDuration(TimeInterval(loaded.maximumRecordingSeconds))
 
         var seeded = settings
         FactoryPresets.seed(into: &seeded)
