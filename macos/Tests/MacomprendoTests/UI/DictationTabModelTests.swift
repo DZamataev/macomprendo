@@ -582,4 +582,14 @@ import Testing
         #expect(DictationTab.recordingMinuteChoices
             .contains(DictationTab.minutesChoice(forSeconds: 1_234)))
     }
+
+    // A 45- or 60-minute recording is held whole in memory as [Float] samples (recorder),
+    // then again for the WAV encode and again for the AAC encode — the cost of a long
+    // recording is memory, not upload size, and the caption must say so once it stops
+    // being negligible.
+    @Test func theRecordingLengthCaptionNamesTheMemoryCostOfLongerChoices() {
+        #expect(!DictationTab.recordingLengthCaption(minutes: 5).localizedCaseInsensitiveContains("memory"))
+        #expect(DictationTab.recordingLengthCaption(minutes: 45).localizedCaseInsensitiveContains("memory"))
+        #expect(DictationTab.recordingLengthCaption(minutes: 60).localizedCaseInsensitiveContains("memory"))
+    }
 }
