@@ -452,6 +452,12 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
                     withIntermediateDirectories: true,
                     attributes: [.posixPermissions: 0o700]
                 )
+                // `createDirectory` applies `attributes` only to directories it actually
+                // creates — an install upgraded from before this directory was tightened
+                // already has it at the default 0o755, so an existing directory must be
+                // tightened explicitly here.
+                try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                      ofItemAtPath: directory.path)
             } catch {
                 throw MacomprendoError.dictationHistory(
                     "create database directory: \(error.localizedDescription)"

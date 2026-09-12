@@ -588,6 +588,28 @@ import Testing
         #expect(try permissions(of: audioDirectory) == 0o700)
     }
 
+    // Catches tightening permissions only on directories `createDirectory` actually created:
+    // an upgraded install already has the support directory at the default 0o755, and
+    // `createDirectory` leaves an existing directory's mode untouched, so the fresh-install
+    // test above cannot see this path.
+    @Test func anAlreadyExistingSupportDirectoryIsTightenedOnOpen() async throws {
+        let supportDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Macomprendo", isDirectory: true)
+        try FileManager.default.createDirectory(at: supportDirectory,
+                                                withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o755])
+        #expect(try permissions(of: supportDirectory) == 0o755)
+        let store = SQLiteDictationHistoryStore(
+            databaseURL: supportDirectory.appendingPathComponent("dictation-history.sqlite3")
+        )
+
+        _ = try await store.fetchPage(beforeID: nil, limit: 1)
+
+        #expect(try permissions(of: supportDirectory) == 0o700)
+        #expect(try permissions(of: store.audioDirectoryURL) == 0o700)
+    }
+
     // Catches treating a populated audio_file whose file vanished as corruption: the entry must
     // still be returned, keeping the transcript readable.
     @Test func anEntryWhoseAudioFileIsMissingIsStillReturned() async throws {
