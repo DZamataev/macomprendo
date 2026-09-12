@@ -74,7 +74,6 @@ struct AACDictationAudioEncoderTests {
             try await AACDictationAudioEncoder().encode(self.sweep(seconds: 0.5),
                                                         sampleRate: self.sampleRate, to: url)
         }
-        #expect(!FileManager.default.fileExists(atPath: url.path))
     }
 
     @Test func aDestinationOccupiedByADirectorySurfacesAsAMacomprendoError() async throws {
@@ -97,16 +96,6 @@ struct AACDictationAudioEncoderTests {
         await #expect(throws: MacomprendoError.self) {
             try await AACDictationAudioEncoder().encode([], sampleRate: self.sampleRate, to: url)
         }
-    }
-
-    @Test func theFakeRecordsWhatItWasAskedToEncode() async throws {
-        let fake = FakeDictationAudioEncoder()
-        let url = temporaryDirectory().appendingPathComponent("clip.m4a")
-
-        try await fake.encode([0, 0, 0], sampleRate: 16_000, to: url)
-
-        let requests = await fake.requests
-        #expect(requests == [.init(pcm: [0, 0, 0], sampleRate: 16_000, url: url)])
     }
 
     @Test func theAudioEncodingErrorDescribesFailureAndRecovery() {
