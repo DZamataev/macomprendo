@@ -45,6 +45,74 @@ import Testing
         }
     }
 
+    private func readUserVersion(at databaseURL: URL) throws -> Int32 {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              let database
+        else {
+            throw MacomprendoError.dictationHistory("open history fixture for version read")
+        }
+        defer { sqlite3_close_v2(database) }
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, "PRAGMA user_version", -1, &statement, nil) == SQLITE_OK,
+              let statement
+        else {
+            throw MacomprendoError.dictationHistory("prepare history fixture version read")
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw MacomprendoError.dictationHistory("read history fixture version")
+        }
+        return sqlite3_column_int(statement, 0)
+    }
+
+    private func createVersionOneDatabase(at databaseURL: URL, texts: [String]) throws {
+        try FileManager.default.createDirectory(at: databaseURL.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database,
+                              SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+              let database
+        else {
+            throw MacomprendoError.dictationHistory("create version-1 fixture")
+        }
+        defer { sqlite3_close_v2(database) }
+
+        let inserts = texts.enumerated().map { index, text in
+            "INSERT INTO dictation_history (created_at, kind, text) "
+                + "VALUES (\(index + 1), 'dictation', '\(text)');"
+        }.joined(separator: "\n")
+        let schema = """
+        CREATE TABLE dictation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at REAL NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('dictation', 'dictationAndRefine')),
+            text TEXT NOT NULL CHECK(length(trim(text)) > 0)
+        );
+        \(inserts)
+        PRAGMA user_version = 1;
+        """
+        guard sqlite3_exec(database, schema, nil, nil, nil) == SQLITE_OK else {
+            throw MacomprendoError.dictationHistory("seed version-1 fixture")
+        }
+    }
+
+    private func permissions(of url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let permissions = attributes[.posixPermissions] as? NSNumber else {
+            throw MacomprendoError.dictationHistory("read permissions of \(url.lastPathComponent)")
+        }
+        return permissions.intValue
+    }
+
+    @discardableResult
+    private func writeAudioFile(named filename: String, in directory: URL) throws -> URL {
+        let url = directory.appendingPathComponent(filename)
+        try Data("audio".utf8).write(to: url)
+        return url
+    }
+
     private func createSidecarSentinels(at databaseURL: URL) throws {
         for suffix in ["-wal", "-shm"] {
             let sidecarURL = URL(fileURLWithPath: databaseURL.path + suffix)
@@ -269,7 +337,7 @@ import Testing
     // Catches recovery leaving stale WAL or SHM files beside a replaced future-schema database.
     @Test func clearRecoveryRemovesFutureSchemaSidecars() async throws {
         let (store, url) = makeStore()
-        try setUserVersion(2, at: url)
+        try setUserVersion(3, at: url)
         try createSidecarSentinels(at: url)
         let walURL = URL(fileURLWithPath: url.path + "-wal")
         let shmURL = URL(fileURLWithPath: url.path + "-shm")
@@ -351,6 +419,164 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: walURL.path))
         #expect(FileManager.default.fileExists(atPath: shmURL.path))
         #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.map(\.text) == ["preserve me"])
+    }
+
+    // Catches a migration that recreates the table, drops rows, or leaves the version behind.
+    @Test func versionOneDatabaseMigratesToVersionTwoKeepingEveryRow() async throws {
+        let (store, url) = makeStore()
+        try createVersionOneDatabase(at: url, texts: ["oldest", "middle", "newest"])
+        #expect(try readUserVersion(at: url) == 1)
+
+        let page = try await store.fetchPage(beforeID: nil, limit: 10)
+
+        #expect(page.entries.map(\.text) == ["newest", "middle", "oldest"])
+        #expect(page.entries.allSatisfy { $0.audioFileName == nil })
+        #expect(try readUserVersion(at: url) == 2)
+
+        _ = try await store.append(text: "after migration", kind: .dictation, at: .now)
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.count == 4)
+    }
+
+    // Catches attaching by row order rather than identifier, or dropping the column on read.
+    @Test func attachedAudioFilenameSurvivesAReopenAndReadsBackThroughFetchPage() async throws {
+        let (store, url) = makeStore()
+        let first = try await store.append(text: "with audio", kind: .dictation,
+                                           at: Date(timeIntervalSince1970: 1))
+        _ = try await store.append(text: "without audio", kind: .dictation,
+                                   at: Date(timeIntervalSince1970: 2))
+
+        try await store.attachAudioFile(named: "\(first.id).m4a", toEntry: first.id)
+
+        let reopened = SQLiteDictationHistoryStore(databaseURL: url)
+        let page = try await reopened.fetchPage(beforeID: nil, limit: 10)
+        #expect(page.entries.map(\.text) == ["without audio", "with audio"])
+        #expect(page.entries.map(\.audioFileName) == [nil, "\(first.id).m4a"])
+        #expect(try await reopened.referencedAudioFilenames() == ["\(first.id).m4a"])
+    }
+
+    // Catches attaching to an identifier that no longer exists, which would silently succeed.
+    @Test func attachingToAnUnknownEntryReportsAnError() async throws {
+        let (store, _) = makeStore()
+
+        do {
+            try await store.attachAudioFile(named: "404.m4a", toEntry: 404)
+            Issue.record("expected a dictation history error for an unknown entry")
+        } catch let error as MacomprendoError {
+            guard case .dictationHistory = error else {
+                Issue.record("expected a dictation history error, got \(error)")
+                return
+            }
+        }
+    }
+
+    // Catches an age cutoff that is inclusive on the wrong side, or that forgets to report the
+    // filenames the caller must delete from disk.
+    @Test func deletingEntriesOlderThanACutoffReportsOnlyTheirAudioFilenames() async throws {
+        let (store, _) = makeStore()
+        let old = try await store.append(text: "old", kind: .dictation,
+                                         at: Date(timeIntervalSince1970: 100))
+        let alsoOld = try await store.append(text: "also old", kind: .dictation,
+                                             at: Date(timeIntervalSince1970: 200))
+        let recent = try await store.append(text: "recent", kind: .dictation,
+                                            at: Date(timeIntervalSince1970: 400))
+        try await store.attachAudioFile(named: "old.m4a", toEntry: old.id)
+        try await store.attachAudioFile(named: "recent.m4a", toEntry: recent.id)
+        #expect(alsoOld.id > old.id)
+
+        let orphaned = try await store.deleteEntries(olderThan: Date(timeIntervalSince1970: 300))
+
+        #expect(orphaned == ["old.m4a"])
+        let page = try await store.fetchPage(beforeID: nil, limit: 10)
+        #expect(page.entries.map(\.text) == ["recent"])
+        #expect(page.entries.map(\.audioFileName) == ["recent.m4a"])
+        #expect(try await store.referencedAudioFilenames() == ["recent.m4a"])
+    }
+
+    // Catches an entry exactly on the cutoff being deleted: the cutoff is the oldest age kept.
+    @Test func deletingEntriesOlderThanACutoffKeepsAnEntryExactlyOnIt() async throws {
+        let (store, _) = makeStore()
+        _ = try await store.append(text: "on the cutoff", kind: .dictation,
+                                   at: Date(timeIntervalSince1970: 300))
+
+        let orphaned = try await store.deleteEntries(olderThan: Date(timeIntervalSince1970: 300))
+
+        #expect(orphaned.isEmpty)
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.map(\.text)
+                == ["on the cutoff"])
+    }
+
+    // Catches "Delete saved audio" deleting rows along with the references it clears.
+    @Test func deletingAudioReferencesKeepsEveryTranscript() async throws {
+        let (store, _) = makeStore()
+        let first = try await store.append(text: "first", kind: .dictation,
+                                           at: Date(timeIntervalSince1970: 1))
+        let second = try await store.append(text: "second", kind: .dictationAndRefine,
+                                            at: Date(timeIntervalSince1970: 2))
+        try await store.attachAudioFile(named: "first.m4a", toEntry: first.id)
+        try await store.attachAudioFile(named: "second.m4a", toEntry: second.id)
+
+        let orphaned = try await store.deleteAudioReferences()
+
+        #expect(orphaned.sorted() == ["first.m4a", "second.m4a"])
+        let page = try await store.fetchPage(beforeID: nil, limit: 10)
+        #expect(page.entries.map(\.text) == ["second", "first"])
+        #expect(page.entries.map(\.audioFileName) == [nil, nil])
+        #expect(try await store.referencedAudioFilenames().isEmpty)
+    }
+
+    // Catches Clear History leaving recordings on disk behind the transcripts it removed.
+    @Test func clearRemovesEveryRecordingFromTheAudioDirectory() async throws {
+        let (store, _) = makeStore()
+        let entry = try await store.append(text: "with audio", kind: .dictation, at: .now)
+        let directory = store.audioDirectoryURL
+        try await store.attachAudioFile(named: "\(entry.id).m4a", toEntry: entry.id)
+        try writeAudioFile(named: "\(entry.id).m4a", in: directory)
+        let orphanURL = try writeAudioFile(named: "orphan.m4a", in: directory)
+
+        try await store.clear()
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: orphanURL.path))
+        #expect(FileManager.default.fileExists(atPath: directory.path))
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.isEmpty)
+    }
+
+    // Catches the support and audio directories being created with the default group- and
+    // world-readable mode, which would expose recordings to a second account on the same Mac.
+    @Test func theSupportAndAudioDirectoriesAreOwnerOnly() async throws {
+        let supportDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Macomprendo", isDirectory: true)
+        let store = SQLiteDictationHistoryStore(
+            databaseURL: supportDirectory.appendingPathComponent("dictation-history.sqlite3")
+        )
+
+        _ = try await store.fetchPage(beforeID: nil, limit: 1)
+
+        let audioDirectory = store.audioDirectoryURL
+        #expect(audioDirectory == supportDirectory.appendingPathComponent("dictation-audio",
+                                                                         isDirectory: true))
+        #expect(try permissions(of: supportDirectory) == 0o700)
+        #expect(try permissions(of: audioDirectory) == 0o700)
+    }
+
+    // Catches treating a populated audio_file whose file vanished as corruption: the entry must
+    // still be returned, keeping the transcript readable.
+    @Test func anEntryWhoseAudioFileIsMissingIsStillReturned() async throws {
+        let (store, _) = makeStore()
+        let entry = try await store.append(text: "audio deleted underneath us", kind: .dictation,
+                                           at: .now)
+        try await store.attachAudioFile(named: "\(entry.id).m4a", toEntry: entry.id)
+        let directory = store.audioDirectoryURL
+        #expect(!FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("\(entry.id).m4a").path
+        ))
+
+        let page = try await store.fetchPage(beforeID: nil, limit: 10)
+
+        #expect(page.entries.map(\.text) == ["audio deleted underneath us"])
+        #expect(page.entries.map(\.audioFileName) == ["\(entry.id).m4a"])
+        #expect(try await store.referencedAudioFilenames() == ["\(entry.id).m4a"])
     }
 
     // Catches allowing a retention configuration that deletes every appended row.

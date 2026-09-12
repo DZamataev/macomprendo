@@ -2,10 +2,34 @@ import Foundation
 import SQLite3
 
 protocol DictationHistoryStoring: Sendable {
+    /// The directory holding one recording per entry, named after the entry identifier.
+    var audioDirectoryURL: URL { get }
+
     func append(text: String, kind: DictationHistoryKind, at: Date) async throws
         -> DictationHistoryEntry
     func fetchPage(beforeID: Int64?, limit: Int) async throws -> DictationHistoryPage
+
+    /// Removes every entry and, unlike the operations below, also deletes every file in the
+    /// audio directory — including files no entry references — so a cleared history leaves no
+    /// recording behind. The directory itself stays.
     func clear() async throws
+
+    /// Records `filename` as the recording of an existing entry. Reports an error when no entry
+    /// carries that identifier, so a lost row never leaves a file unreferenced silently.
+    func attachAudioFile(named filename: String, toEntry id: Int64) async throws
+
+    /// Deletes every entry created strictly before `cutoff` and returns the audio filenames
+    /// those entries referenced, which the caller deletes from the audio directory.
+    @discardableResult
+    func deleteEntries(olderThan cutoff: Date) async throws -> [String]
+
+    /// Clears every audio reference and keeps every transcript, returning the filenames that
+    /// were referenced so the caller deletes them from the audio directory.
+    @discardableResult
+    func deleteAudioReferences() async throws -> [String]
+
+    /// Every audio filename currently referenced by an entry, so unreferenced files can be found.
+    func referencedAudioFilenames() async throws -> [String]
 }
 
 actor SQLiteDictationHistoryStore: DictationHistoryStoring {
@@ -16,10 +40,14 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
     private var database: DatabaseHandle?
     private var requiresConfirmedReset = false
 
+    nonisolated let audioDirectoryURL: URL
+
     init(databaseURL: URL,
          maximumEntryCount: Int = SQLiteDictationHistoryStore.defaultMaximumEntryCount) {
         self.databaseURL = databaseURL
         self.maximumEntryCount = maximumEntryCount
+        self.audioDirectoryURL = databaseURL.deletingLastPathComponent()
+            .appendingPathComponent("dictation-audio", isDirectory: true)
     }
 
     func append(text: String, kind: DictationHistoryKind, at: Date) throws
@@ -64,7 +92,7 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
         let database = try connection()
         let statement = try prepare(
             """
-            SELECT id, created_at, kind, text
+            SELECT id, created_at, kind, text, audio_file
             FROM dictation_history
             WHERE (?1 IS NULL OR id < ?1)
             ORDER BY id DESC
@@ -101,7 +129,8 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
                 id: sqlite3_column_int64(statement, 0),
                 createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
                 kind: kind,
-                text: textValue
+                text: textValue,
+                audioFileName: text(from: statement, index: 4)
             ))
         }
 
@@ -121,6 +150,7 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             } catch {
                 guard requiresConfirmedReset else { throw error }
                 try resetDatabase()
+                try removeEveryAudioFile()
                 return
             }
         }
@@ -136,9 +166,129 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             sqlite3_exec(activeDatabase, "ROLLBACK", nil, nil, nil)
             if isCorruption(result) {
                 try resetDatabase()
+                try removeEveryAudioFile()
                 return
             }
             throw error
+        }
+
+        try removeEveryAudioFile()
+    }
+
+    func attachAudioFile(named filename: String, toEntry id: Int64) throws {
+        let database = try connection()
+        let statement = try prepare("UPDATE dictation_history SET audio_file = ?1 WHERE id = ?2",
+                                    on: database, operation: "prepare attach audio file")
+        defer { sqlite3_finalize(statement) }
+
+        try bind(filename, to: statement, index: 1, on: database, operation: "bind audio filename")
+        try check(sqlite3_bind_int64(statement, 2, id), on: database, operation: "bind audio entry id")
+        try check(sqlite3_step(statement), expected: SQLITE_DONE, on: database,
+                  operation: "attach audio file")
+        guard sqlite3_changes(database) == 1 else {
+            throw MacomprendoError.dictationHistory("attach audio file: no entry with id \(id)")
+        }
+    }
+
+    @discardableResult
+    func deleteEntries(olderThan cutoff: Date) throws -> [String] {
+        let database = try connection()
+        try execute("BEGIN IMMEDIATE", on: database, operation: "begin age retention")
+
+        do {
+            let filenames = try audioFilenames(
+                """
+                SELECT audio_file FROM dictation_history
+                WHERE created_at < ?1 AND audio_file IS NOT NULL
+                ORDER BY id ASC
+                """,
+                on: database,
+                operation: "read expiring audio filenames",
+                bindDouble: cutoff.timeIntervalSince1970
+            )
+
+            let statement = try prepare("DELETE FROM dictation_history WHERE created_at < ?1",
+                                        on: database, operation: "prepare age retention")
+            defer { sqlite3_finalize(statement) }
+            try check(sqlite3_bind_double(statement, 1, cutoff.timeIntervalSince1970),
+                      on: database, operation: "bind age retention cutoff")
+            try check(sqlite3_step(statement), expected: SQLITE_DONE, on: database,
+                      operation: "apply age retention")
+
+            try execute("COMMIT", on: database, operation: "commit age retention")
+            return filenames
+        } catch {
+            sqlite3_exec(database, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+    }
+
+    @discardableResult
+    func deleteAudioReferences() throws -> [String] {
+        let database = try connection()
+        try execute("BEGIN IMMEDIATE", on: database, operation: "begin delete audio references")
+
+        do {
+            let filenames = try audioFilenames(
+                "SELECT audio_file FROM dictation_history WHERE audio_file IS NOT NULL ORDER BY id ASC",
+                on: database,
+                operation: "read audio filenames"
+            )
+            try execute("UPDATE dictation_history SET audio_file = NULL WHERE audio_file IS NOT NULL",
+                        on: database, operation: "delete audio references")
+            try execute("COMMIT", on: database, operation: "commit delete audio references")
+            return filenames
+        } catch {
+            sqlite3_exec(database, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+    }
+
+    func referencedAudioFilenames() throws -> [String] {
+        let database = try connection()
+        return try audioFilenames(
+            "SELECT audio_file FROM dictation_history WHERE audio_file IS NOT NULL ORDER BY id ASC",
+            on: database,
+            operation: "list referenced audio filenames"
+        )
+    }
+
+    private func audioFilenames(_ sql: String, on database: OpaquePointer, operation: String,
+                                bindDouble: Double? = nil) throws -> [String] {
+        let statement = try prepare(sql, on: database, operation: "prepare \(operation)")
+        defer { sqlite3_finalize(statement) }
+        if let bindDouble {
+            try check(sqlite3_bind_double(statement, 1, bindDouble),
+                      on: database, operation: "bind \(operation)")
+        }
+
+        var filenames: [String] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            try check(result, expected: SQLITE_ROW, on: database, operation: operation)
+            guard let filename = text(from: statement, index: 0) else {
+                throw MacomprendoError.dictationHistory("\(operation): invalid stored audio filename")
+            }
+            filenames.append(filename)
+        }
+        return filenames
+    }
+
+    /// Empties the audio directory, including files no entry references, so a cleared history
+    /// leaves nothing behind even after a crash orphaned a recording.
+    private func removeEveryAudioFile() throws {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: audioDirectoryURL.path) else { return }
+        do {
+            for url in try manager.contentsOfDirectory(at: audioDirectoryURL,
+                                                       includingPropertiesForKeys: nil) {
+                try manager.removeItem(at: url)
+            }
+        } catch {
+            throw MacomprendoError.dictationHistory(
+                "remove saved recordings: \(error.localizedDescription)"
+            )
         }
     }
 
@@ -162,11 +312,20 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
         requiresConfirmedReset = false
 
         let parentDirectory = databaseURL.deletingLastPathComponent()
-        do {
-            try FileManager.default.createDirectory(at: parentDirectory,
-                                                    withIntermediateDirectories: true)
-        } catch {
-            throw MacomprendoError.dictationHistory("create database directory: \(error.localizedDescription)")
+        // Owner-only: this keeps a second account on the same Mac out. The app is deliberately
+        // unsandboxed (ADR-0003), so any process running as this user still reads these files.
+        for directory in [parentDirectory, audioDirectoryURL] {
+            do {
+                try FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+            } catch {
+                throw MacomprendoError.dictationHistory(
+                    "create database directory: \(error.localizedDescription)"
+                )
+            }
         }
 
         var openedDatabase: OpaquePointer?
@@ -181,7 +340,7 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
         do {
             try execute("PRAGMA foreign_keys = ON", on: openedDatabase, operation: "enable foreign keys")
             let version = try userVersion(on: openedDatabase)
-            guard version == 0 || version == 1 else {
+            guard version >= 0 && version <= 2 else {
                 requiresConfirmedReset = true
                 throw MacomprendoError.dictationHistory("open database: unsupported schema version \(version)")
             }
@@ -192,12 +351,24 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         created_at REAL NOT NULL,
                         kind TEXT NOT NULL CHECK(kind IN ('dictation', 'dictationAndRefine')),
-                        text TEXT NOT NULL CHECK(length(trim(text)) > 0)
+                        text TEXT NOT NULL CHECK(length(trim(text)) > 0),
+                        audio_file TEXT
                     );
-                    PRAGMA user_version = 1;
+                    PRAGMA user_version = 2;
                     """,
                     on: openedDatabase,
                     operation: "create history schema"
+                )
+            } else if version == 1 {
+                // Adds the column in place, leaving every existing row untouched with a NULL
+                // reference, which reads as "no recording was ever saved".
+                try execute(
+                    """
+                    ALTER TABLE dictation_history ADD COLUMN audio_file TEXT;
+                    PRAGMA user_version = 2;
+                    """,
+                    on: openedDatabase,
+                    operation: "migrate history schema to version 2"
                 )
             }
             database = DatabaseHandle(openedDatabase)
