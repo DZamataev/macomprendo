@@ -112,6 +112,10 @@ xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
 
 Skills live in `.agents/skills/macomprendo-*/SKILL.md`.
 
+| Situation | Read |
+|---|---|
+| Running a multi-agent Hermes Kanban effort — the one-writer-per-worktree chain, role profiles, adversarial-review cards, human gates | [`docs/hermes_kanban_development.md`](docs/hermes_kanban_development.md) |
+
 ## Definition of done
 
 - [ ] A failing test existed before the implementation, and now passes.
