@@ -88,7 +88,14 @@ final class DictationHistoryController: ObservableObject {
         let url = store.audioDirectoryURL.appendingPathComponent(filename)
         do {
             try Task.checkCancellation()
-            try await encoder.encode(pcm, sampleRate: 16_000, to: url)
+            await store.beginAudioWrite()
+            do {
+                try await encoder.encode(pcm, sampleRate: 16_000, to: url)
+            } catch {
+                await store.endAudioWrite()
+                throw error
+            }
+            await store.endAudioWrite()
             try Task.checkCancellation()
             try await store.attachAudioFile(named: filename, toEntry: entry.id)
             return nil

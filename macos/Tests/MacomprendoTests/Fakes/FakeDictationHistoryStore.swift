@@ -206,4 +206,8 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
             try FileManager.default.removeItem(at: url)
         }
     }
+
+    func beginAudioWrite() {}
+
+    func endAudioWrite() {}
 }

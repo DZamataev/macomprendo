@@ -541,6 +541,34 @@ import Testing
         #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.isEmpty)
     }
 
+    // Catches Clear History racing an in-flight recording encode: the encoder writes the
+    // file to the audio directory outside the actor, so `clear()` must wait for any write it
+    // was told about before it empties the directory, or the file that lands afterwards
+    // survives a clear that documents "no recording behind".
+    @Test func clearWaitsForAnInFlightAudioWriteBeforeEmptyingTheDirectory() async throws {
+        let (store, _) = makeStore()
+        _ = try await store.fetchPage(beforeID: nil, limit: 1)
+        let directory = store.audioDirectoryURL
+        await store.beginAudioWrite()
+
+        let clearTask = Task { try await store.clear() }
+
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if await store.isWaitingForAudioWrites { break }
+            await Task.yield()
+        }
+        #expect(await store.isWaitingForAudioWrites)
+
+        // Simulate the encoder finishing its write while `clear()` is blocked on it.
+        try writeAudioFile(named: "late.m4a", in: directory)
+        await store.endAudioWrite()
+        try await clearTask.value
+
+        #expect(!FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("late.m4a").path))
+    }
+
     // Catches the support and audio directories being created with the default group- and
     // world-readable mode, which would expose recordings to a second account on the same Mac.
     @Test func theSupportAndAudioDirectoriesAreOwnerOnly() async throws {

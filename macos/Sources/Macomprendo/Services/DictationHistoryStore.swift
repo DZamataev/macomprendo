@@ -46,6 +46,15 @@ protocol DictationHistoryStoring: Sendable {
 
     /// Removes every file in the audio directory not present in `referencedFilenames`.
     func purgeUnreferencedAudioFiles(keeping referencedFilenames: Set<String>) async throws
+
+    /// Registers an in-flight write to the audio directory made outside the actor (the
+    /// encoder writes the `.m4a` file directly), so `clear()` and `deleteAudioReferences()`
+    /// can wait for it before emptying or reading the directory. Call `endAudioWrite()` when
+    /// the write finishes, even on failure.
+    func beginAudioWrite() async
+
+    /// Ends the write registered by a matching `beginAudioWrite()`.
+    func endAudioWrite() async
 }
 
 actor SQLiteDictationHistoryStore: DictationHistoryStoring {
@@ -55,6 +64,8 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
     private let maximumEntryCount: Int
     private var database: DatabaseHandle?
     private var requiresConfirmedReset = false
+    private var inFlightAudioWrites = 0
+    private var audioWriteWaiters: [CheckedContinuation<Void, Never>] = []
 
     nonisolated let audioDirectoryURL: URL
 
@@ -156,7 +167,7 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
                                     nextCursor: hasMore ? pageEntries.last?.id : nil)
     }
 
-    func clear() throws {
+    func clear() async throws {
         let activeDatabase: OpaquePointer
         if let existingDatabase = database {
             activeDatabase = existingDatabase.pointer
@@ -166,6 +177,7 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             } catch {
                 guard requiresConfirmedReset else { throw error }
                 try resetDatabase()
+                await waitForAudioWritesToFinish()
                 try removeEveryAudioFile()
                 return
             }
@@ -182,12 +194,14 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             sqlite3_exec(activeDatabase, "ROLLBACK", nil, nil, nil)
             if isCorruption(result) {
                 try resetDatabase()
+                await waitForAudioWritesToFinish()
                 try removeEveryAudioFile()
                 return
             }
             throw error
         }
 
+        await waitForAudioWritesToFinish()
         try removeEveryAudioFile()
     }
 
@@ -240,7 +254,8 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
     }
 
     @discardableResult
-    func deleteAudioReferences() throws -> [String] {
+    func deleteAudioReferences() async throws -> [String] {
+        await waitForAudioWritesToFinish()
         let database = try connection()
         try execute("BEGIN IMMEDIATE", on: database, operation: "begin delete audio references")
 
@@ -381,6 +396,30 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             throw MacomprendoError.dictationHistory(
                 "remove saved recordings: \(error.localizedDescription)"
             )
+        }
+    }
+
+    func beginAudioWrite() {
+        inFlightAudioWrites += 1
+    }
+
+    func endAudioWrite() {
+        inFlightAudioWrites -= 1
+        guard inFlightAudioWrites <= 0 else { return }
+        inFlightAudioWrites = 0
+        let waiters = audioWriteWaiters
+        audioWriteWaiters = []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    /// True while `clear()`/`deleteAudioReferences()` is blocked on `waitForAudioWritesToFinish()`.
+    /// Exposed for tests only; production callers never poll this.
+    var isWaitingForAudioWrites: Bool { !audioWriteWaiters.isEmpty }
+
+    private func waitForAudioWritesToFinish() async {
+        guard inFlightAudioWrites > 0 else { return }
+        await withCheckedContinuation { continuation in
+            audioWriteWaiters.append(continuation)
         }
     }
 
