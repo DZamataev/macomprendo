@@ -23,6 +23,8 @@
     "site": "node scripts/build-site.mjs",
     "sync-agents": "node scripts/sync-agent-config.mjs",
     "sync-agents:check": "node scripts/sync-agent-config.mjs --check",
+    "sync-graph": "node scripts/sync-graph.mjs",
+    "sync-graph:check": "node scripts/sync-graph.mjs --check",
     "sync-icons": "node scripts/sync-icons.mjs",
     "sync-icons:check": "node scripts/sync-icons.mjs --check",
     "test:scripts": "node --test scripts/__tests__/*.test.mjs",

@@ -35,8 +35,20 @@ Parallelism would mean separate worktrees, which this repo rarely needs.
 git worktree add .worktrees/<effort> -b <branch> HEAD
 cd .worktrees/<effort>
 npm ci                          # Node tooling for scripts/ and the audit
+npm run sync-graph              # copies the knowledge graph in and refreshes it
 swift build --package-path macos   # warms SwiftPM and downloads the binary targets
 ```
+
+`npm run sync-graph` exists because `graphify-out/` is git-ignored: it is generated,
+machine-local and about 17 MB, so a fresh worktree starts without it and any worker
+there is blind to the graph. The tool copies `graph.json`, the cache and the manifest
+from the checkout that owns `.git`, installs the ignore rule into the shared
+`.git/info/exclude` so a branch predating that `.gitignore` rule cannot commit the
+graph either, rewrites the recorded scan root, and runs the free AST-only
+`graphify update` so the graph describes **this branch** rather than the operator's
+tree. Rebuilding from scratch instead would cost over a million tokens.
+Re-run it after pulling or rebasing; `npm run sync-graph:check` exits non-zero when a
+worktree is missing the graph.
 
 Warming the build in the coordinating session matters more here than the
 equivalent step in a JS repo: `macos/Packages/{WhisperBinary,SherpaOnnxBinary}`

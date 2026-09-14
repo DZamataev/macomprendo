@@ -36,3 +36,8 @@ macos/AppBundle/AppIcon.iconset/
 .claude/worktrees/
 .worktrees/
 .superpowers/
+
+# graphify — the generated graph is machine-local and rebuildable; only the
+# wiring (README with the rebuild command) is committed.
+graphify-out/*
+!graphify-out/README.md

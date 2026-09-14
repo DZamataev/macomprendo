@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `npm run sync-graph` carries the git-ignored graphify knowledge graph from the main
+  checkout into a worktree and refreshes it with the free AST-only `graphify update`, so a
+  fresh worktree is not blind to the graph and nobody has to rebuild it. `npm run
+  sync-graph:check` verifies a worktree has it.
+
 ## [0.2.0] - 2026-09-12
 
 ### Added

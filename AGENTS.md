@@ -20,6 +20,7 @@ and summarize go through Ollama or an OpenAI-compatible chat endpoint.
 | `macos/Packages/{WhisperBinary,SherpaOnnxBinary}` | Local SwiftPM wrappers for the deliberately vendored whisper.cpp and sherpa-onnx xcframeworks |
 | `macos/Tests/MacomprendoTests` | swift-testing tests mirroring the source tree; `Fakes/` holds protocol doubles |
 | `scripts/` | Node ≥ 20 ESM tooling; `lib/` holds shared helpers; `__tests__/` holds `node:test` tests |
+| `graphify-out/` | Generated knowledge graph (git-ignored except `README.md`); `npm run sync-graph` carries it into a worktree |
 | `site/` | Public site sources: `content/*.md` with YAML front matter, `templates/`, hand-written `assets/` |
 | `docs/` | `ARCHITECTURE.md`, `SMOKE_TEST.md`, `adr/NNNN-*.md`, `superpowers/{specs,plans}` |
 | `DISTRIBUTING.md` | Signing, notarization, and releasing — the operator-facing counterpart to `scripts/` |
@@ -33,6 +34,7 @@ npm run audit          # repository checks + Gitleaks working-tree/history scans
 npm run site           # build the public site from site/ into build/site
 npm run gen            # xcodegen generate --spec macos/project.yml
 npm run sync-agents    # repair the AGENTS.md / skills symlinks
+npm run sync-graph     # copy the graphify knowledge graph into this checkout, then refresh it
 npm run sync-icons     # vendor the Phosphor SVGs listed in Resources/Icons/icons.json
 npm run icon           # regenerate the placeholder macos/AppBundle/AppIcon.icns
 npm run install-app:signed  # normal local UI/hardware test build; preserves TCC grants
@@ -98,6 +100,15 @@ xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
 17. **A new resource directory must be declared twice**: `resources:` in `macos/Package.swift`
     *and* a `type: folder, buildPhase: resources` entry in `macos/project.yml`. Miss the
     second and `swift test` stays green while the `xcodebuild` bundle ships without the files.
+18. **`graphify-out/` is generated and git-ignored** — only its `README.md` is committed. It
+    is the repository's knowledge graph: ask it questions with `graphify query "…"`,
+    `graphify path "A" "B"`, `graphify explain "X"` instead of grepping blindly. **After
+    `git worktree add`, run `npm run sync-graph` in the new worktree**: it copies the graph
+    from the checkout that owns `.git`, installs the ignore rule into the shared
+    `.git/info/exclude` (so a branch predating the `.gitignore` rule cannot commit it), and
+    runs the free AST-only `graphify update` so the graph matches that branch. Never commit
+    the graph, and never rebuild it from scratch to fix a stale one — `npm run sync-graph`
+    is the cheap path.
 
 ## How to…
 
