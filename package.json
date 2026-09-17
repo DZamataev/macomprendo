@@ -14,7 +14,7 @@
     "configure-notary": "node scripts/configure-notarization.mjs",
     "fetch-model-hashes": "node scripts/fetch-model-hashes.mjs",
     "gen": "xcodegen generate --spec macos/project.yml",
-    "icon": "node scripts/make-placeholder-icon.mjs",
+    "icon": "node scripts/make-app-icon.mjs",
     "install-app": "node scripts/install-app.mjs",
     "install-app:signed": "MACOS_SIGN_IDENTITY=\"Developer ID Application: Denis Zamataev (68QJJA7HK9)\" node scripts/install-app.mjs",
     "notarize": "node scripts/notarize-app.mjs",

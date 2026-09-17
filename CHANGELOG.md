@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- New app icon: a human hand and robotic hand form a heart, expressing mutual
+  understanding. The icon build now uses the approved transparent PNG master.
+
 ### Added
 - `npm run sync-graph` carries the git-ignored graphify knowledge graph from the main
   checkout into a worktree and refreshes it with the free AST-only `graphify update`, so a
