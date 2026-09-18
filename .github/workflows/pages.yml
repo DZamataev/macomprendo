@@ -19,6 +19,7 @@ on:
       - "scripts/lib/markdown.mjs"
       - "scripts/lib/version.mjs"
       - "macos/project.yml"
+      - "macos/AppBundle/AppIcon.png"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 

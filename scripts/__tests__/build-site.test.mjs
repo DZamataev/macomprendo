@@ -20,7 +20,9 @@ async function fixture() {
   await fs.mkdir(path.join(dir, 'site/content'), { recursive: true });
   await fs.mkdir(path.join(dir, 'site/templates'), { recursive: true });
   await fs.mkdir(path.join(dir, 'site/assets'), { recursive: true });
-  await fs.mkdir(path.join(dir, 'macos'), { recursive: true });
+  await fs.mkdir(path.join(dir, 'macos/AppBundle'), { recursive: true });
+  await fs.writeFile(path.join(dir, 'macos/AppBundle/AppIcon.png'), 'canonical-icon');
+  await fs.writeFile(path.join(dir, 'site/templates/home.html'), '<section class="hero"><h1>Speak naturally.</h1><a href="{{downloadURL}}">Download</a></section>{{content}}');
 
   await fs.writeFile(path.join(dir, 'site/templates/page.html'), TEMPLATE);
   await fs.writeFile(path.join(dir, 'site/assets/site.css'), 'body{color:#111}\n');
@@ -164,4 +166,47 @@ test('buildSite refuses a page whose front matter lacks required keys', async ()
   await assert.rejects(
     () => buildSite(dir, { outputDir: path.join(dir, 'build/site'), log: () => {} }),
     /broken\.md.*"output"/s);
+});
+
+
+test('buildSite composes the home layout and keeps legal pages as Markdown', async () => {
+  const dir = await fixture();
+  const source = path.join(dir, 'site/content/index.md');
+  await fs.writeFile(source, (await fs.readFile(source, 'utf8')).replace('output: index.html', 'output: index.html\nlayout: home'));
+  const out = path.join(dir, 'build/site');
+  await buildSite(dir, { outputDir: out, log: () => {} });
+  const home = await fs.readFile(path.join(out, 'index.html'), 'utf8');
+  assert.match(home, /class="hero"/);
+  assert.match(home, /<h1>Macomprendo<\/h1>/);
+  assert.doesNotMatch(home, /\{\{\w+\}\}/);
+  assert.doesNotMatch(await fs.readFile(path.join(out, 'privacy/index.html'), 'utf8'), /class="hero"/);
+});
+
+test('buildSite publishes the canonical app icon without a second maintained copy', async () => {
+  const dir = await fixture();
+  const out = path.join(dir, 'build/site');
+  await buildSite(dir, { outputDir: out, log: () => {} });
+  assert.deepEqual(await fs.readFile(path.join(out, 'assets/app-icon.png')),
+    await fs.readFile(path.join(dir, 'macos/AppBundle/AppIcon.png')));
+});
+
+test('production pages resolve local links and assets under a project subpath', async (t) => {
+  const repo = path.resolve(import.meta.dirname, '../..');
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'macomprendo-pages-'));
+  t.after(() => fs.rm(out, { recursive: true, force: true }));
+  await buildSite(repo, { outputDir: out, log: () => {} });
+  for (const relative of ['index.html', 'support/index.html', 'terms/index.html', 'privacy/index.html']) {
+    const html = await fs.readFile(path.join(out, relative), 'utf8');
+    assert.equal((html.match(/<h1(?:\s|>)/g) ?? []).length, 1, relative);
+    assert.doesNotMatch(html, /\{\{\w+\}\}|(?:href|src)="\/[^/]/);
+    assert.match(html, /rel="icon"[^>]+app-icon\.png/);
+    for (const [, link] of html.matchAll(/(?:href|src)="([^"]+)"/g)) {
+      if (/^(https?:|mailto:)/.test(link)) continue;
+      const [file, fragment] = link.split('#');
+      let destination = file ? path.resolve(out, path.dirname(relative), file) : path.join(out, relative);
+      if ((await fs.stat(destination)).isDirectory()) destination = path.join(destination, 'index.html');
+      await fs.access(destination);
+      if (fragment) assert.ok((await fs.readFile(destination, 'utf8')).includes(`id="${fragment}"`), link);
+    }
+  }
 });

@@ -3,30 +3,39 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{title}} — Macomprendo</title>
+<title>{{title}} | Macomprendo</title>
 <meta name="description" content="{{description}}">
-<meta name="color-scheme" content="light dark">
-<meta property="og:title" content="{{title}} — Macomprendo">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#f5f8ff">
+<meta property="og:title" content="{{title}} | Macomprendo">
 <meta property="og:description" content="{{description}}">
 <meta property="og:type" content="website">
+<link rel="icon" type="image/png" href="{{root}}assets/app-icon.png">
+<link rel="apple-touch-icon" href="{{root}}assets/app-icon.png">
 <link rel="stylesheet" href="{{root}}assets/site.css">
 </head>
 <body>
-<header class="bar">
-  <a class="wordmark" href="{{root}}">Macomprendo</a>
-  <nav>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="bar masthead">
+  <a class="wordmark" href="{{root}}index.html"{{navHome}}><img src="{{root}}assets/app-icon.png" width="40" height="40" alt="">Macomprendo</a>
+  <nav aria-label="Main navigation">
+    <a href="{{root}}index.html#actions">Features</a>
     <a href="{{root}}privacy/"{{navPrivacy}}>Privacy</a>
-    <a href="{{root}}terms/"{{navTerms}}>Terms</a>
     <a href="{{root}}support/"{{navSupport}}>Support</a>
-    <a href="https://github.com/DZamataev/macomprendo">Source</a>
+    <a class="source-link" href="https://github.com/DZamataev/macomprendo">GitHub <span aria-hidden="true">↗</span></a>
   </nav>
 </header>
-<main class="{{layout}}">
+<main id="main" class="{{layout}}" tabindex="-1">
 {{content}}
 </main>
-<footer class="bar">
-  <span>© {{year}} Denis Zamataev · <a href="{{root}}terms/">Licensing</a></span>
-  <span><a href="{{releasesURL}}">All releases</a></span>
+<footer class="bar footer">
+  <div><a class="wordmark" href="{{root}}index.html"><img src="{{root}}assets/app-icon.png" width="32" height="32" alt="">Macomprendo</a><p>Dictation and text tools for macOS.</p><small>© {{year}} Denis Zamataev</small></div>
+  <nav aria-label="Footer navigation">
+    <a href="{{root}}privacy/">Privacy</a>
+    <a href="{{root}}terms/"{{navTerms}}>Terms &amp; licensing</a>
+    <a href="{{root}}support/">Support</a>
+    <a href="{{releasesURL}}">All releases</a>
+  </nav>
 </footer>
 </body>
 </html>

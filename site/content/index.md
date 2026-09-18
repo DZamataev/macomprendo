@@ -1,61 +1,38 @@
 ---
-title: Dictation and text tools that stay on your Mac
-description: A menubar-only macOS app for dictation, speech, refinement and summarization. Runs offline with your own models, or through any endpoint you configure. Free, MIT, no account, no telemetry.
+title: Free offline dictation for every app
+description: Turn your voice into text and listen to selected text on your Mac. Use offline models or your own provider, with optional AI editing. Free and open source.
 output: index.html
 layout: home
 groupSections: true
 ---
 
-# Your models. Your keys. Your machine.
+## Your voice into text
 
-Macomprendo is a menubar-only macOS app that turns speech into text and reshapes the text you
-already have. Transcription runs **on your Mac** with whisper.cpp or GigaAM. Speech synthesis
-runs on your Mac too. Refinement and summarization go to your local Ollama — or to any
-endpoint you choose.
+- Offline models: Whisper.cpp and GigaAM. Parakeet is coming soon.
+- Or your own OpenAI-compatible transcription endpoint, such as OpenAI API.
+- Whisper supports 90+ languages, including English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Turkish, Chinese, Japanese and Korean. Multilingual GigaAM also covers Kazakh, Kyrgyz and Uzbek.
+- Coming soon: custom vocabulary, hotwords and algorithmic correction.
+- AI refinement: use your own prompts to polish dictation before you paste. Connect Ollama, OpenAI API, OpenRouter or another compatible chat provider.
 
-No account. No subscription. No telemetry. No update pinging. Open source, and the code is on
-GitHub.
+## Text into speech
 
-- [**Download for macOS**]({{downloadURL}}) — version {{version}}, universal, Developer ID
-  signed, notarized
-- Verify it first: `shasum -a 256 -c Macomprendo-{{version}}-macos.zip.sha256`
-  ([checksum]({{checksumURL}}))
-
-Requires macOS 14 or newer. Apple silicon and Intel.
-
-## Five hotkeys
-
-- **Dictate** — hold, speak, release. The text lands in whatever you were typing into.
-- **Dictate & Refine** — same capture, then a panel showing the raw transcript beside an
-  LLM-cleaned version. Pick the one you want.
-- **Speak selection** — reads the selected text aloud, switching voices per language when a
-  passage mixes them.
-- **Summarize selection** — a streamed summary you can copy or paste over the original.
-- **Refine selection** — rewrite what you have already written, using your own prompt presets.
-
-All five are rebindable, and the middle mouse button can drive one of them.
-
-## Offline
-
-Whisper models from `tiny` to `large-v3-turbo` run in-process with Metal. GigaAM handles
-Russian. Piper and Kokoro voices synthesise speech locally. Download a model once and the
-audio never leaves the machine again.
+- Offline voices: macOS system voices and local TTS models.
+- Or your own OpenAI-compatible speech endpoint, such as OpenAI API.
+- Mixed-language text: system and local speech switch to your configured voice for each language automatically.
+- Local TTS in English, Chinese and Russian, even in the same passage.
 
 ## Private
 
-Audio and text go only where you send them. API keys live in the login Keychain, never in
-settings, logs or exports. Dictation history is off by default and, when enabled, stays in a
-local database. Transcripts are never written to the system log.
+- Airplane ready: download models once, then dictate and listen without internet.
+- Local AI: connect Ollama to edit and summarize text or refine your dictation on your Mac.
+- API keys stay in Keychain. Optional history stays on your Mac.
+- Remote providers receive audio or text only when you choose to use them. [Privacy details](privacy/).
 
-## Open source
+## Free and open source
 
-Built in the open and released by a GitHub Actions workflow whose runs you can read. The
-published ZIP is checksummed, signed and notarized before it is attached — the maintainer
-never uploads a locally built app. The app's own code is MIT; the distributed build is
-GPL-3.0 because of a bundled framework, and the [licensing notice](terms/) says exactly why.
-
-## Yours to configure
-
-Point it at OpenAI, at a self-hosted OpenAI-compatible server, at a proxy, or at Ollama on
-`localhost`. Add as many providers as you like and pick a different model for each feature.
-Rewrite the prompt presets, or add your own.
+- No account.
+- No subscription.
+- No telemetry or usage data collected.
+- Local models cost nothing to use. Paid APIs are optional.
+- MIT-licensed code. Use it, change it, or vibe-code your own version.
+- The distributed app is GPL-3.0 because of a bundled speech component. Models have their own licences. [Source code](https://github.com/DZamataev/macomprendo) and [licences](terms/).

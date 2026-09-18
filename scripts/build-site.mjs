@@ -117,15 +117,20 @@ export async function buildSite(repoRoot, options = {}) {
     const root = rootPrefix(page.meta.output);
     // Markdown may itself reference the download URLs, so substitute before rendering.
     const substituted = renderPage(page.body, { ...urls, version, root, year });
+    const markdown = renderMarkdown(substituted, { groupSections: page.meta.groupSections === true });
+    // Only the landing page needs a visual composition; policy pages stay plain Markdown.
+    const content = page.meta.layout === 'home'
+      ? renderPage(await fs.readFile(path.join(siteDir, 'templates', 'home.html'), 'utf8'),
+        { content: markdown, ...urls, version, root, year })
+      : markdown;
     const html = renderPage(template, {
       title: page.meta.title,
       description: page.meta.description,
-      // Layout only selects a CSS shape (the home page lays its value props out as a card
-      // grid; text pages read as a single column), so it defaults rather than being required.
+      // Pages without a landing composition use the reading layout.
       layout: typeof page.meta.layout === 'string' && page.meta.layout.trim() !== ''
         ? page.meta.layout.trim()
         : 'page',
-      content: renderMarkdown(substituted, { groupSections: page.meta.groupSections === true }),
+      content,
       root,
       year,
       ...urls,
@@ -139,6 +144,8 @@ export async function buildSite(repoRoot, options = {}) {
   }
 
   await copyDirectory(path.join(siteDir, 'assets'), path.join(outputDir, 'assets'));
+  await fs.copyFile(path.join(repoRoot, 'macos', 'AppBundle', 'AppIcon.png'),
+    path.join(outputDir, 'assets', 'app-icon.png'));
   // Without this, Jekyll processes the output and silently drops underscore-prefixed files.
   await fs.writeFile(path.join(outputDir, '.nojekyll'), '');
   log(`built ${pages.length} pages for ${version} into ${outputDir}`);

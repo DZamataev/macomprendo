@@ -1,0 +1,44 @@
+<section class="hero" aria-labelledby="hero-heading">
+  <div class="hero-copy">
+    <h1 id="hero-heading" class="action-heading"><span>Now You</span><span class="action-slot" aria-hidden="true"><span id="rotating-action" data-word="code">code</span></span><span class="sr-only">code, rephrase, summarize, refine, write, reply, and translate</span><span>Without Typing</span></h1>
+    <button class="motion-toggle" type="button" hidden aria-pressed="false">Pause word animation</button>
+    <p class="intro">Free offline dictation for every app</p>
+    <div class="download-actions"><a class="button" href="{{downloadURL}}">Download for macOS <span aria-hidden="true">↓</span></a></div>
+    <p class="compatibility">macOS 14+ · Apple silicon &amp; Intel</p>
+  </div>
+  <figure class="hero-art"><img src="{{root}}assets/app-icon.png" width="1024" height="1024" fetchpriority="high" alt="A human hand and a robotic hand forming a heart"></figure>
+</section>
+<div id="actions" class="feature-content">
+{{content}}
+</div>
+<section id="demo" class="voice-demo" data-phase="understood" data-running="false" aria-label="Illustrated dictation and refinement demo">
+  <div class="demo-toolbar"><p class="demo-caption" aria-hidden="true">Refine your words before you send them.</p><div><button class="demo-toggle" type="button" hidden aria-pressed="false">Pause</button><button class="demo-replay" type="button" hidden>Replay</button></div></div>
+  <p class="sr-only">An illustrative cartoon. A marble Apollo bust with a cyan and pink stripe over its eyes dictates “Use SQLite to save my notes.” Recognition mistakes turn it into “Use sequel light to save my notes.” A pixel agent gets confused, smokes and ends up with crosses for eyes. The scene is crossed out. On a second attempt, the text is corrected and reviewed before sending. The agent understands, and human and robotic hands form a heart.</p>
+  <div class="demo-stage" aria-hidden="true">
+    <div class="demo-flow">
+      <div class="demo-speaker">
+        <div class="apollo-portrait"><img src="{{root}}assets/apollo-glitch.png" width="1254" height="1254" alt="" loading="lazy"><span class="apollo-distortion"></span></div>
+        <div class="voice-waves"><i></i><i></i><i></i><i></i><i></i></div><span>You</span>
+      </div>
+      <div class="demo-paper"><img class="refining-icon" src="{{root}}assets/app-icon.png" width="52" height="52" alt=""><span class="paper-label">Voice message</span><p class="demo-transcript">Use SQLite to save my notes.</p><p class="demo-correction" hidden>Use <del>sequel light</del> <ins class="correction-word"></ins> to save my notes.</p><span class="refine-stamp">Refined &amp; reviewed <b>✓</b></span><div class="send-trail"><span>→</span></div></div>
+      <div class="demo-computer"><div class="monitor"><div class="terminal-bar"><span></span><span></span><span></span></div><div class="agent-scene">
+        <div class="agent-smoke"><i></i><i></i><i></i></div>
+        <svg class="demo-agent" viewBox="0 0 120 100" shape-rendering="crispEdges"><path fill="#d78b6b" d="M20 20h80v10h10v40h-10v10H90v15H80V80H40v15H30V80H20V70H10V30h10z"/><g class="agent-eyes" fill="#352922"><path d="M36 39h9v15h-9zM75 39h9v15h-9z"/></g><g class="agent-dead-eyes" fill="none" stroke="#352922" stroke-width="5"><path d="m33 37 15 17m0-17L33 54m39-17 15 17m0-17L72 54"/></g><path class="agent-smile" d="m49 61 8 6h6l8-6" fill="none" stroke="#352922" stroke-width="4"/></svg>
+        <span class="agent-question"><svg viewBox="0 0 48 56" width="34" height="40" fill="none"><path d="M15 35C2 20 12 5 24 5s22 15 9 30l-2 7H17z" fill="#fce69b" stroke="#986723" stroke-width="3"/><path d="M17 47h14m-11 5h8M24 15v13" stroke="#986723" stroke-width="3"/></svg><b>?</b></span><span class="agent-check"><svg viewBox="0 0 48 54" width="32" height="36" fill="none" stroke="currentColor" stroke-width="3"><ellipse cx="24" cy="10" rx="17" ry="7"/><path d="M7 10v29c0 10 34 10 34 0V10M7 24c0 10 34 10 34 0"/></svg><b>✓</b></span></div><p class="agent-message">SQLite connected. Notes saved.</p></div><div class="monitor-neck"></div><div class="monitor-foot"></div></div>
+    </div>
+    <svg class="demo-cross" viewBox="0 0 1000 340" preserveAspectRatio="none"><path d="M35 30 965 310M965 30 35 310"/></svg>
+    <div class="demo-finale"><img src="{{root}}assets/understanding-transparent.png" width="1254" height="1254" alt="" loading="lazy"><p class="finale-brand">Macomprendo<span>when your mac understands</span></p></div>
+  </div>
+  <div class="demo-track" aria-hidden="true"><div class="demo-progress"></div></div>
+</section>
+<script type="module" src="{{root}}assets/demo.mjs"></script>
+
+<section class="faq" aria-labelledby="faq-heading"><div><h2 id="faq-heading">Questions</h2><p><a href="{{root}}support/">Contact support</a>.</p></div><div class="questions">
+  <details><summary>Can I use it offline?</summary><p>Yes. Download speech models in the app first. To refine and summarize offline, install Ollama and a local language model, then select them in Settings.</p></details>
+  <details><summary>Does it need Accessibility permission?</summary><p>Accessibility permission lets Macomprendo read selected text and paste results into the focused field. Without it, dictation copies the result for you to paste by hand.</p></details>
+  <details><summary>What does it cost?</summary><p>The app and local processing are free. A paid provider may charge for requests if you configure one.</p></details>
+  <details><summary>Is it open source?</summary><p>Yes. The <a href="https://github.com/DZamataev/macomprendo">app source</a> uses the MIT licence. The distributed build is GPL-3.0 because it includes espeak-ng. The <a href="{{root}}terms/">licensing page</a> explains the bundled components.</p></details>
+</div></section>
+<section class="download-section" aria-labelledby="download-heading"><img src="{{root}}assets/app-icon.png" width="88" height="88" alt="" loading="lazy"><h2 id="download-heading">Get Macomprendo</h2><a class="button" href="{{downloadURL}}">Download for macOS <span aria-hidden="true">↓</span></a><p class="compatibility">Version {{version}} · Universal · Developer ID signed &amp; notarized</p><details class="verify-download"><summary>Verify your download</summary><p>Save the <a href="{{checksumURL}}">SHA-256 checksum</a> in the same folder as the ZIP. Open that folder in Terminal and run:</p><code>shasum -a 256 -c Macomprendo-{{version}}-macos.zip.sha256</code><p><a href="{{releasesURL}}">Release notes and earlier versions</a></p></details></section>
+
+<script type="module" src="{{root}}assets/hero.mjs"></script>

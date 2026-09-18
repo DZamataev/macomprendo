@@ -1,40 +1,17 @@
 ---
 title: Support
-description: How to report a bug, request a feature, or reach the developer of Macomprendo privately.
+description: Report a bug, request a feature or contact the Macomprendo developer privately.
 output: support/index.html
 ---
 
 # Support
 
-## Bugs and feature requests
+[Open a GitHub issue](https://github.com/DZamataev/macomprendo/issues) to report a bug or request a feature. Include your macOS version, the app version from the About window, the action you used and whether you chose a local model or an endpoint.
 
-Open an issue on GitHub:
-[github.com/DZamataev/macomprendo/issues](https://github.com/DZamataev/macomprendo/issues).
-
-Public issues are the better channel for anything that is not private. Other people hit the
-same problems, the discussion stays searchable, and nothing gets lost in a mailbox.
-
-Useful things to include: your macOS version, the app version from the About window, which of
-the five actions misbehaved, and whether transcription was set to a local model or an
-endpoint. **Never paste an API key** — not in an issue, not in a log excerpt.
+Describe what you expected and what happened. Never include API keys in an issue or log excerpt.
 
 ## Private contact
 
-For anything you would not post publicly — a licence question, a security concern, or a
-problem you cannot describe without including your own text — write to
-**dz_app_support** at **icloud.com**.
+Email **dz_app_support** at **icloud.com** for security reports, licence questions or problems that involve private text. Report security issues privately and include the steps needed to reproduce them.
 
-## Reporting a security issue
-
-Macomprendo reads the frontmost application's selected text, synthesises keystrokes, and
-stores API keys in the login Keychain. If you have found a weakness in any of that, please use
-the private address above rather than a public issue, and give the details you would want to
-receive yourself.
-
-## Before you write
-
-- The [privacy statement]({{root}}privacy/) explains exactly what is stored, logged and sent.
-- The [Terms of Use]({{root}}terms/) cover endpoints, downloaded models and the Accessibility
-  permission.
-- The [repository](https://github.com/DZamataev/macomprendo) holds the architecture notes, the
-  changelog, and every release.
+The [privacy statement]({{root}}privacy/) explains what the app stores and sends. The [terms of use]({{root}}terms/) cover licences, providers and permissions. You can find the changelog and architecture notes in the [repository](https://github.com/DZamataev/macomprendo).

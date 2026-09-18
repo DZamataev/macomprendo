@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- Redesigned the GitHub Pages site around the new app icon, with an outcome-led landing
+  page, feature overview, accessible FAQ, and refreshed support and policy pages.
+- Added an animated dictation/refinement example with pause, replay and reduced-motion support.
 - New app icon: a human hand and robotic hand form a heart, expressing mutual
   understanding. The icon build now uses the approved transparent PNG master.
 

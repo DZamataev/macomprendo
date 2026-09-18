@@ -1,85 +1,37 @@
 ---
-title: Terms of Use
-description: The terms under which Macomprendo is provided, and the three things the MIT licence does not cover.
+title: Terms of use
+description: Macomprendo licences, third-party services and models, permissions and warranty terms.
 output: terms/index.html
 ---
 
-# Terms of Use
+# Terms of use
 
-Macomprendo is provided by Denis Zamataev, an individual, free of charge.
+Denis Zamataev provides Macomprendo free of charge as an individual developer.
 
-## The licence
+## Licences
 
-Macomprendo's own source code is licensed under the **MIT License**, whose full text is in the
-[repository](https://github.com/DZamataev/macomprendo/blob/main/LICENSE). That licence grants
-you the right to use, copy, modify, merge, publish, distribute, sublicense and sell copies of
-the software, and it disclaims all warranties and liability.
+Macomprendo's own source code uses the [MIT License](https://github.com/DZamataev/macomprendo/blob/main/LICENSE). It permits use, copying, modification, merging, publication, distribution, sublicensing and sale. It disclaims warranties and liability.
 
-**The application you download is under GPL-3.0, not MIT.** It bundles
-`SherpaOnnxC.framework`, which has **espeak-ng statically linked into it**, and espeak-ng is
-GPL-3.0. Those terms extend to the combined work.
+The distributed application is GPL-3.0. It bundles `SherpaOnnxC.framework`, which statically links espeak-ng, a GPL-3.0 component. The GPL terms apply to the combined work. All offline voices use that framework, so changing voices does not change the licence.
 
-This is disclosure rather than a change of intent, and the corresponding source for the whole
-combined work is public: this app at
-[github.com/DZamataev/macomprendo](https://github.com/DZamataev/macomprendo), the framework at
-[github.com/k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), and espeak-ng at
-[github.com/espeak-ng/espeak-ng](https://github.com/espeak-ng/espeak-ng). espeak-ng is the
-phonemiser behind offline speech; choosing a different voice does not change anything, because
-every offline voice runs through the same framework.
+The corresponding source is public in the [Macomprendo](https://github.com/DZamataev/macomprendo), [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) and [espeak-ng](https://github.com/espeak-ng/espeak-ng) repositories. The app's About window and [NOTICE](https://github.com/DZamataev/macomprendo/blob/main/NOTICE) list the components and their licences.
 
-Upstream is removing that dependency in a future release precisely because it conflicts with
-sherpa-onnx's own Apache-2.0 licence. When that lands and this app adopts it, the distributed
-build returns to MIT terms. The full component list, with every licence and how it reaches
-you, is in
-[NOTICE](https://github.com/DZamataev/macomprendo/blob/main/NOTICE) and in the app's About
-window.
+Upstream plans to remove espeak-ng because its GPL terms conflict with sherpa-onnx's Apache-2.0 licence. Macomprendo's distributed build can return to MIT terms after it adopts a framework without that dependency.
 
-The rest of this page covers three things no licence describes, because they are about how the
-app behaves rather than what you may do with it.
+## Providers and downloaded models
 
-## You own the endpoint relationship
+Macomprendo sends audio and text only to endpoints you configure. These may include OpenAI, a self-hosted server, a proxy or local Ollama. The provider's terms, prices, privacy practices, retention rules and jurisdiction apply to your use. We do not operate a service, manage an account for you or receive your requests. You are responsible for deciding whether a provider is suitable for confidential material.
 
-Macomprendo sends audio and text only to destinations you configure yourself. That may be
-OpenAI, a self-hosted server, a third-party proxy, or Ollama running on your own machine.
+Speech models download only at your request. Their authors publish them under separate licences. Some restrict commercial use, and some do not declare a licence. At least one available voice uses training data licensed for non-commercial use only. Check the licence at each model's linked source before using it. You are responsible for complying with those terms.
 
-Whatever you choose, that service is **your relationship, not ours**. Its terms, its pricing,
-its privacy practices, its retention of what you send it, and its jurisdiction are between you
-and that provider. We do not operate any service, hold any account on your behalf, or see
-anything you send. If you send confidential material to a third-party endpoint, that
-consequence is yours.
+## Permissions
 
-## Downloaded models are third-party
+With your Accessibility permission, Macomprendo reads selected text in the frontmost app and simulates ⌘C and ⌘V to copy selections and paste results. It snapshots and restores the clipboard around those keystrokes. If you copy something else in the meantime, it skips the restore.
 
-The app can download speech-recognition and speech-synthesis models at your request. Those
-models are **not part of Macomprendo** and are not ours. Each one is published by its own
-authors under its own licence, and some of those licences are more restrictive than MIT — at
-least one bundled voice was trained on a dataset licensed for **non-commercial use only**, and
-another has no declared licence at all.
+Without Accessibility permission, you can still dictate and paste the copied result by hand.
 
-You are responsible for observing the licence of any model you download and for deciding
-whether it fits your use. Model licences are linked from the source each entry points at.
+## Warranty and changes
 
-## The app reads your selection and simulates keystrokes
+The app is provided "as is", without warranty of any kind. Its author is not liable for claims, damages or other liability arising from its use, as stated in the MIT licence.
 
-To do what it does, Macomprendo needs macOS Accessibility permission, which you grant
-explicitly. With it, the app:
-
-- reads the **selected text of the frontmost application**, so it can speak, summarize or
-  refine it;
-- **synthesises ⌘C and ⌘V** to copy that selection and to paste results back;
-- **snapshots and restores your clipboard** around those keystrokes, and skips the restore if
-  you copied something else in the meantime.
-
-This is how the features work. If you would rather not grant that permission, dictation still
-functions and results are copied for you to paste by hand.
-
-## No warranty
-
-The app is provided "as is", without warranty of any kind, and its author is not liable for
-any claim, damage or other liability arising from its use — the same disclaimer the MIT
-licence makes, restated here so it is not missed.
-
-## Changes
-
-These terms may change when the app does. The current version is always the one published
-here, and the history of every change is in the repository.
+These terms may change with the app. This page contains the current version, and the repository records previous versions.
