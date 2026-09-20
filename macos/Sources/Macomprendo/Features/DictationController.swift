@@ -201,8 +201,13 @@ final class DictationController: ObservableObject {
         do {
             try Task.checkCancellation()
             let raw: String
+            // nil for the short-dictation branch: it inserts "OK" without running a model, and
+            // a row naming the model that *would* have run attributes text to a model that
+            // never saw the audio.
+            let run: TranscriptionRun?
             if settings().shortDictationInsertsOK, pcm.count < Self.shortDictationMaximumSamples {
                 raw = "OK"
+                run = nil
             } else {
                 let provider = try await transcriberProvider()
                 let language = settings().transcriptionLanguage
@@ -211,6 +216,7 @@ final class DictationController: ObservableObject {
                     sampleRate: Int(AVAudioEngineRecorder.targetSampleRate),
                     language: language)
                 try Task.checkCancellation()
+                run = TranscriptionRun.from(settings().transcriptionSource, language: language)
             }
 
             let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -222,7 +228,9 @@ final class DictationController: ObservableObject {
             }
 
             let historyResult: DictationHistoryController.AppendResult = if let history {
-                await history.append(text: text, kind: .dictation)
+                // `rawText` stays nil: nothing rewrites the text yet. `run` is nil on the
+                // short-dictation path, whose "OK" no model produced.
+                await history.append(text: text, rawText: nil, kind: .dictation, run: run)
             } else {
                 .init(entry: nil, error: nil)
             }

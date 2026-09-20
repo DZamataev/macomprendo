@@ -53,6 +53,9 @@ import Testing
                                                   encoder: encoder,
                                                   shouldSaveRecording: {
                                                       settings.value.saveOriginalRecording
+                                                  },
+                                                  recordingFormat: {
+                                                      settings.value.savedRecordingFormat
                                                   })
         if let transcript { transcriber.result = .success(transcript) }
 
@@ -901,5 +904,73 @@ import Testing
 
         #expect(controller.state
                 == .failed(ErrorText.describe(MacomprendoError.modelMissing("large-v3-turbo"))))
+    }
+
+    // MARK: - What the row records about the run
+
+    // Catches a row that names no model, or names the wrong one: two months from now the
+    // corpus cannot answer "what transcribed this" from anything else.
+    @Test func aDictationRecordsTheModelEngineLanguageAndVersion() async {
+        let h = makeHarness(historyEnabled: true, transcript: "dictated")
+        h.settings.value.transcriptionSource = .local(modelID: "large-v3-turbo")
+        h.settings.value.transcriptionLanguage = "ru"
+
+        await recordAndFinish(h)
+
+        let run = await h.historyStore.appendRequests.first?.run
+        #expect(run?.modelID == "large-v3-turbo")
+        #expect(run?.engine == LocalEngine.whisperCpp.rawValue)
+        #expect(run?.language == "ru")
+        #expect(run?.appVersion == TranscriptionRun.currentAppVersion)
+        // Nothing normalises text yet, so the raw transcript is not a second copy of it.
+        #expect(await h.historyStore.appendRequests.first?.rawText == nil)
+    }
+
+    @Test func anEndpointDictationRecordsTheEndpointEngineAndItsModel() async {
+        let h = makeHarness(historyEnabled: true, transcript: "dictated")
+        h.settings.value.transcriptionSource = .endpoint(id: UUID(), model: "whisper-1")
+        h.settings.value.transcriptionLanguage = nil
+
+        await recordAndFinish(h)
+
+        let run = await h.historyStore.appendRequests.first?.run
+        #expect(run?.engine == "endpoint")
+        #expect(run?.modelID == "whisper-1")
+        #expect(run?.language == nil)
+    }
+
+    // `shortDictationInsertsOK` short-circuits to the literal "OK" without running a model.
+    // Those rows must record no model, or the corpus attributes text to a model that never
+    // saw the audio.
+    @Test func shortDictationRecordsNoModel() async {
+        let h = makeHarness(historyEnabled: true, transcript: "never used")
+        h.settings.value.shortDictationInsertsOK = true
+        h.recorder.samplesToReturn = [0.1, 0.2]
+
+        await recordAndFinish(h)
+
+        #expect(await h.historyStore.appendRequests.map(\.text) == ["OK"])
+        let request = await h.historyStore.appendRequests.first
+        #expect(request?.run == nil)
+        #expect(request?.rawText == nil)
+    }
+
+    // MARK: - The recording format
+
+    @Test func theRecordingIsEncodedInTheFormatCurrentlyInSettings() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "saved")
+        h.settings.value.savedRecordingFormat = .lossless
+
+        await recordAndFinish(h)
+
+        #expect(await h.encoder.requests.map(\.format) == [.lossless])
+    }
+
+    @Test func theDefaultRecordingFormatIsCompressed() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "saved")
+
+        await recordAndFinish(h)
+
+        #expect(await h.encoder.requests.map(\.format) == [.aac])
     }
 }

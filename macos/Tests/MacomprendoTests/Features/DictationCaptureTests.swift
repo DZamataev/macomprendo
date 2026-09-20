@@ -19,13 +19,16 @@ import Testing
                       transcriber: ScriptedTranscriber = ScriptedTranscriber(),
                       permissions: ScriptedPermissions = ScriptedPermissions(),
                       historyStore: FakeDictationHistoryStore = FakeDictationHistoryStore(),
-                      historyEnabled: Bool = true) -> DictationCapture {
+                      historyEnabled: Bool = true,
+                      source: TranscriptionSource = .local(modelID: "large-v3-turbo"))
+        -> DictationCapture {
         let capture = DictationCapture(
             recorder: recorder,
             transcriberProvider: { transcriber },
             permissions: permissions,
             mode: { mode },
             language: { "en" },
+            source: { source },
             history: history(store: historyStore, enabled: historyEnabled))
         capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
         capture.onError = { [weak self] in self?.errors.append($0) }
@@ -78,6 +81,7 @@ import Testing
         let capture = DictationCapture(
             recorder: recorder, transcriberProvider: { ScriptedTranscriber(text: "hello") },
             permissions: ScriptedPermissions(), mode: { .hold }, language: { "en" },
+            source: { .local(modelID: "large-v3-turbo") },
             history: history)
         capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
 
@@ -102,6 +106,7 @@ import Testing
         let capture = DictationCapture(
             recorder: ScriptedRecorder(), transcriberProvider: { ScriptedTranscriber() },
             permissions: ScriptedPermissions(), mode: { .hold }, language: { "en" },
+            source: { .local(modelID: "large-v3-turbo") },
             history: history)
 
         capture.handle(.keyDown(.dictateAndRefine))
@@ -125,6 +130,7 @@ import Testing
             permissions: ScriptedPermissions(),
             mode: { .hold },
             language: { "en" },
+            source: { .local(modelID: "large-v3-turbo") },
             history: history(store: store))
         capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
 
@@ -154,6 +160,7 @@ import Testing
             permissions: ScriptedPermissions(),
             mode: { .hold },
             language: { "en" },
+            source: { .local(modelID: "large-v3-turbo") },
             history: history(store: store))
         capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
         capture.onHistoryError = { warnings.append($0) }
@@ -176,6 +183,7 @@ import Testing
             permissions: ScriptedPermissions(),
             mode: { .hold },
             language: { "en" },
+            source: { .local(modelID: "large-v3-turbo") },
             history: history(store: store, enabled: false))
 
         capture.handle(.keyDown(.dictateAndRefine))
@@ -197,6 +205,7 @@ import Testing
             permissions: ScriptedPermissions(),
             mode: { .hold },
             language: { "en" },
+            source: { .local(modelID: "large-v3-turbo") },
             history: history(store: store, preference: preference))
 
         capture.handle(.keyDown(.dictateAndRefine))
@@ -221,6 +230,7 @@ import Testing
             permissions: ScriptedPermissions(),
             mode: { .hold },
             language: { "en" },
+            source: { .local(modelID: "large-v3-turbo") },
             history: history(store: store, preference: preference))
 
         capture.handle(.keyDown(.dictateAndRefine))
@@ -369,6 +379,7 @@ import Testing
             permissions: ScriptedPermissions(),
             mode: { .hold },
             language: { "en" },
+            source: { .local(modelID: "large-v3-turbo") },
             history: history(store: store))
         capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
         capture.onHistoryError = { warnings.append($0) }
@@ -467,5 +478,28 @@ import Testing
 
         #expect(recorder.startCount == 0)
         #expect(capture.state == .idle)
+    }
+
+    // Dictate & Refine writes its own history row, so it has to record what produced the text
+    // just as the direct path does — a corpus missing half its provenance is not a corpus.
+    @Test func aRefineDictationRecordsTheModelEngineLanguageAndVersion() async {
+        let store = FakeDictationHistoryStore()
+        var transcriber = ScriptedTranscriber()
+        transcriber.text = "refined input"
+        let capture = make(transcriber: transcriber, historyStore: store,
+                           source: .local(modelID: "gigaam-v3-e2e-ctc"))
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        capture.handle(.keyUp(.dictateAndRefine))
+        await capture.drain()
+
+        let request = await store.appendRequests.first
+        #expect(request?.text == "refined input")
+        #expect(request?.run?.modelID == "gigaam-v3-e2e-ctc")
+        #expect(request?.run?.engine == LocalEngine.gigaAM.rawValue)
+        #expect(request?.run?.language == "en")
+        #expect(request?.run?.appVersion == TranscriptionRun.currentAppVersion)
+        #expect(request?.rawText == nil)
     }
 }

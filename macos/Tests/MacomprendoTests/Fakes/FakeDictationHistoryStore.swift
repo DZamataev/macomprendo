@@ -4,7 +4,9 @@ import Foundation
 actor FakeDictationHistoryStore: DictationHistoryStoring {
     struct AppendRequest: Sendable, Equatable {
         let text: String
+        let rawText: String?
         let kind: DictationHistoryKind
+        let run: TranscriptionRun?
         let date: Date
     }
 
@@ -111,13 +113,17 @@ actor FakeDictationHistoryStore: DictationHistoryStoring {
         fetchGate = gate
     }
 
-    func append(text: String, kind: DictationHistoryKind, at date: Date) async throws
+    func append(text: String, rawText: String?, kind: DictationHistoryKind,
+                run: TranscriptionRun?, at date: Date) async throws
         -> DictationHistoryEntry {
-        appendRequests.append(AppendRequest(text: text, kind: kind, date: date))
+        appendRequests.append(AppendRequest(text: text, rawText: rawText, kind: kind,
+                                            run: run, date: date))
         if let appendGate { await appendGate.wait() }
         if let appendError { throw appendError }
         return DictationHistoryEntry(id: Int64(appendRequests.count), createdAt: date,
-                                     kind: kind, text: text)
+                                     kind: kind, text: text, rawText: rawText,
+                                     modelID: run?.modelID, engine: run?.engine,
+                                     language: run?.language, appVersion: run?.appVersion)
     }
 
     func fetchPage(beforeID: Int64?, limit: Int) async throws -> DictationHistoryPage {

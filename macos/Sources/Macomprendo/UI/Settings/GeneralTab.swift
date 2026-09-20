@@ -44,6 +44,13 @@ struct GeneralTab: View {
                 Toggle("Save the original recording", isOn: $model.settings.saveOriginalRecording)
                     .disabled(!SavedAudioModel.recordingToggleIsEnabled(model.settings))
 
+                Picker("Recording quality", selection: $model.settings.savedRecordingFormat) {
+                    ForEach(SavedRecordingFormat.allCases, id: \.self) { format in
+                        Text(format.displayName).tag(format)
+                    }
+                }
+                .disabled(!SavedAudioModel.recordingToggleIsEnabled(model.settings))
+
                 Picker("Keep history for", selection: $model.settings.historyRetention) {
                     ForEach(HistoryRetention.allCases, id: \.self) { retention in
                         Text(retention.displayName).tag(retention)

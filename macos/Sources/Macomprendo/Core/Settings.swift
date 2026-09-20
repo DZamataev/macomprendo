@@ -32,6 +32,27 @@ enum LocalModelIdleTimeout: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// How a saved dictation recording is encoded. Spelled as a format rather than as a
+/// `lossless: Bool` so a third option — Float32 WAV, the only bit-exact one — can be added
+/// without migrating a boolean.
+enum SavedRecordingFormat: String, Codable, Sendable, CaseIterable {
+    /// 48 kbit/s AAC, ~0.35 MB/min. The default (ADR-0011).
+    case aac
+    /// Apple Lossless, 16-bit, ~1.11 MB/min. Lossless compression of quantised integer
+    /// samples: no lossy codec artefacts, but still not bit-exact against the Float32
+    /// buffer the model saw.
+    case lossless
+
+    /// The cost per minute belongs in the option itself rather than in a caption nobody
+    /// reads, so the picker's whole audience sees what it is choosing.
+    var displayName: String {
+        switch self {
+        case .aac: "Compressed (AAC, ~0.35 MB/min)"
+        case .lossless: "Lossless (ALAC, ~1.11 MB/min)"
+        }
+    }
+}
+
 /// The maximum age of a dictation history entry. One value covers transcripts and their
 /// recordings alike.
 enum HistoryRetention: String, Codable, Sendable, CaseIterable {
@@ -257,6 +278,10 @@ struct Settings: Codable, Sendable, Equatable {
     /// Whether the microphone recording behind a history entry is kept on disk. Meaningful
     /// only while `dictationHistoryEnabled` is true; the pairing is enforced by the UI.
     var saveOriginalRecording: Bool
+    /// How a saved recording is encoded. Meaningful only while `saveOriginalRecording` is
+    /// true. The file extension stays `.m4a` either way: the container is the same, and the
+    /// format of an existing file is read from the file, never from a row.
+    var savedRecordingFormat: SavedRecordingFormat
     /// The maximum age of a history entry and its recording.
     var historyRetention: HistoryRetention
     /// The hard cap on one recording, in seconds. Clamped into
@@ -316,6 +341,7 @@ struct Settings: Codable, Sendable, Equatable {
             launchAtLogin: false,
             dictationHistoryEnabled: false,
             saveOriginalRecording: false,
+            savedRecordingFormat: .aac,
             historyRetention: .ninetyDays,
             maximumRecordingSeconds: 300,
             shortDictationInsertsOK: false,
@@ -377,6 +403,11 @@ extension Settings {
             ?? d.dictationHistoryEnabled
         saveOriginalRecording = try c.decodeIfPresent(Bool.self, forKey: .saveOriginalRecording)
             ?? d.saveOriginalRecording
+        // Decoded as a raw String, not as the enum: an unknown value must fall back to AAC
+        // rather than throw away the whole document.
+        savedRecordingFormat = SavedRecordingFormat(
+            rawValue: try c.decodeIfPresent(String.self, forKey: .savedRecordingFormat) ?? "")
+            ?? d.savedRecordingFormat
         historyRetention = try c.decodeIfPresent(HistoryRetention.self, forKey: .historyRetention)
             ?? d.historyRetention
         let seconds = try c.decodeIfPresent(Int.self, forKey: .maximumRecordingSeconds)

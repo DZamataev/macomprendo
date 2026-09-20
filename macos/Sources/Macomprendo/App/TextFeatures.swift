@@ -129,6 +129,7 @@ extension TextFeatures {
             permissions: env.permissions,
             mode: { model.settings.dictationMode },
             language: { model.settings.transcriptionLanguage },
+            source: { model.settings.transcriptionSource },
             history: history)
 
         let refine = RefineController(

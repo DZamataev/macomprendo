@@ -14,6 +14,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   understanding. The icon build now uses the approved transparent PNG master.
 
 ### Added
+- **Recording quality** (Settings ▸ General): saved dictation recordings can now be kept
+  lossless (ALAC, ~1.11 MB/min) instead of compressed (AAC, ~0.35 MB/min). Compressed stays
+  the default, the file extension stays `.m4a` for both, and the choice applies to the next
+  dictation.
 - `npm run sync-graph` carries the git-ignored graphify knowledge graph from the main
   checkout into a worktree and refreshes it with the free AST-only `graphify update`, so a
   fresh worktree is not blind to the graph and nobody has to rebuild it. `npm run

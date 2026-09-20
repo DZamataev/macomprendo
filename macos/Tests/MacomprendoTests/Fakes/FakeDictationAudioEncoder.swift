@@ -5,6 +5,7 @@ actor FakeDictationAudioEncoder: DictationAudioEncoding {
     struct Request: Sendable, Equatable {
         let pcm: [Float]
         let sampleRate: Int
+        let format: SavedRecordingFormat
         let url: URL
     }
 
@@ -28,8 +29,9 @@ actor FakeDictationAudioEncoder: DictationAudioEncoding {
         bytesToWrite = bytes
     }
 
-    func encode(_ pcm: [Float], sampleRate: Int, to url: URL) async throws {
-        requests.append(Request(pcm: pcm, sampleRate: sampleRate, url: url))
+    func encode(_ pcm: [Float], sampleRate: Int, format: SavedRecordingFormat,
+                to url: URL) async throws {
+        requests.append(Request(pcm: pcm, sampleRate: sampleRate, format: format, url: url))
         encodeInvoked.open()
         if let gate { await gate.wait() }
         if let error { throw error }

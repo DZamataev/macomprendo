@@ -26,6 +26,9 @@ final class DictationHistoryController: ObservableObject {
     private let encoder: (any DictationAudioEncoding)?
     private let player: (any AudioPlaying)?
     private let shouldSaveRecording: @MainActor () -> Bool
+    /// The format saved recordings are encoded in, read at save time so a change in Settings
+    /// applies to the next dictation without rebuilding the controller.
+    private let recordingFormat: @MainActor () -> SavedRecordingFormat
     private let retention: @MainActor () -> HistoryRetention
     private let pageSize: Int
     private let now: @Sendable () -> Date
@@ -42,6 +45,7 @@ final class DictationHistoryController: ObservableObject {
          encoder: (any DictationAudioEncoding)? = nil,
          player: (any AudioPlaying)? = nil,
          shouldSaveRecording: @escaping @MainActor () -> Bool = { false },
+         recordingFormat: @escaping @MainActor () -> SavedRecordingFormat = { .aac },
          retention: @escaping @MainActor () -> HistoryRetention = { .unlimited },
          pageSize: Int = 100,
          now: @escaping @Sendable () -> Date = Date.init,
@@ -54,6 +58,7 @@ final class DictationHistoryController: ObservableObject {
         self.encoder = encoder
         self.player = player
         self.shouldSaveRecording = shouldSaveRecording
+        self.recordingFormat = recordingFormat
         self.retention = retention
         self.pageSize = max(1, pageSize)
         self.now = now
@@ -62,17 +67,22 @@ final class DictationHistoryController: ObservableObject {
     }
 
     func record(text: String, kind: DictationHistoryKind) async -> MacomprendoError? {
-        await append(text: text, kind: kind).error
+        await append(text: text, rawText: nil, kind: kind, run: nil).error
     }
 
-    func append(text: String, kind: DictationHistoryKind) async -> AppendResult {
+    /// `rawText` is the model's own output when normalisation rewrote `text`, `nil` when
+    /// nothing did; `run` is `nil` where no model ran. Both are passed through unchanged —
+    /// only `text` is trimmed, because only `text` is what was pasted.
+    func append(text: String, rawText: String? = nil, kind: DictationHistoryKind,
+                run: TranscriptionRun? = nil) async -> AppendResult {
         guard isEnabled() else { return AppendResult(entry: nil, error: nil) }
 
         let acceptedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !acceptedText.isEmpty else { return AppendResult(entry: nil, error: nil) }
 
         do {
-            let entry = try await store.append(text: acceptedText, kind: kind, at: now())
+            let entry = try await store.append(text: acceptedText, rawText: rawText, kind: kind,
+                                               run: run, at: now())
             // The window may be open on an already-loaded page. Pages are newest-first, so the
             // new entry belongs at the front; without this the row only appears after the
             // window is closed and reopened.
@@ -90,12 +100,13 @@ final class DictationHistoryController: ObservableObject {
     func saveRecording(_ pcm: [Float], for entry: DictationHistoryEntry?) async -> MacomprendoError? {
         guard isEnabled(), shouldSaveRecording(), let encoder, let entry else { return nil }
         let filename = "\(entry.id).m4a"
+        let format = recordingFormat()
         let url = store.audioDirectoryURL.appendingPathComponent(filename)
         do {
             try Task.checkCancellation()
             await store.beginAudioWrite()
             do {
-                try await encoder.encode(pcm, sampleRate: 16_000, to: url)
+                try await encoder.encode(pcm, sampleRate: 16_000, format: format, to: url)
             } catch {
                 await store.endAudioWrite()
                 throw error
@@ -106,7 +117,9 @@ final class DictationHistoryController: ObservableObject {
             savedAudioRevision += 1
             let withAudio = DictationHistoryEntry(
                 id: entry.id, createdAt: entry.createdAt, kind: entry.kind,
-                text: entry.text, audioFileName: filename)
+                text: entry.text, audioFileName: filename,
+                rawText: entry.rawText, modelID: entry.modelID, engine: entry.engine,
+                language: entry.language, appVersion: entry.appVersion)
             if let index = entries.firstIndex(where: { $0.id == entry.id }) {
                 entries[index] = withAudio
             } else {
@@ -279,7 +292,10 @@ final class DictationHistoryController: ObservableObject {
 
     private static func withoutAudio(_ entry: DictationHistoryEntry) -> DictationHistoryEntry {
         DictationHistoryEntry(id: entry.id, createdAt: entry.createdAt, kind: entry.kind,
-                              text: entry.text, audioFileName: nil)
+                              text: entry.text, audioFileName: nil,
+                              rawText: entry.rawText, modelID: entry.modelID,
+                              engine: entry.engine, language: entry.language,
+                              appVersion: entry.appVersion)
     }
 
     func copy(_ entry: DictationHistoryEntry) {

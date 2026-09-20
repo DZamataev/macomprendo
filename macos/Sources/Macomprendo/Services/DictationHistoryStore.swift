@@ -5,7 +5,11 @@ protocol DictationHistoryStoring: Sendable {
     /// The directory holding one recording per entry, named after the entry identifier.
     var audioDirectoryURL: URL { get }
 
-    func append(text: String, kind: DictationHistoryKind, at: Date) async throws
+    /// Appends one entry. `rawText` is the model's own output when normalisation rewrote
+    /// `text`, and `nil` when nothing did; `run` records what produced the text, and is `nil`
+    /// where no model ran (the short-dictation "OK" path).
+    func append(text: String, rawText: String?, kind: DictationHistoryKind,
+                run: TranscriptionRun?, at: Date) async throws
         -> DictationHistoryEntry
     func fetchPage(beforeID: Int64?, limit: Int) async throws -> DictationHistoryPage
 
@@ -73,7 +77,8 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
             .appendingPathComponent("dictation-audio", isDirectory: true)
     }
 
-    func append(text: String, kind: DictationHistoryKind, at: Date) throws
+    func append(text: String, rawText: String?, kind: DictationHistoryKind,
+                run: TranscriptionRun?, at: Date) throws
         -> DictationHistoryEntry {
         guard maximumEntryCount > 0 else {
             throw MacomprendoError.dictationHistory("append: maximum entry count must be positive")
@@ -84,7 +89,11 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
 
         do {
             let statement = try prepare(
-                "INSERT INTO dictation_history (created_at, kind, text) VALUES (?1, ?2, ?3)",
+                """
+                INSERT INTO dictation_history
+                    (created_at, kind, text, raw_text, model_id, engine, language, app_version)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                """,
                 on: database,
                 operation: "prepare append"
             )
@@ -94,13 +103,30 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
                       on: database, operation: "bind append date")
             try bind(kind.rawValue, to: statement, index: 2, on: database, operation: "bind append kind")
             try bind(text, to: statement, index: 3, on: database, operation: "bind append text")
+            // Each of these is NULL rather than "" when absent: the corpus has to be able to
+            // tell "the language setting was automatic" from "this row predates the column".
+            try bind(rawText, to: statement, index: 4, on: database,
+                     operation: "bind append raw text")
+            try bind(run?.modelID, to: statement, index: 5, on: database,
+                     operation: "bind append model id")
+            try bind(run?.engine, to: statement, index: 6, on: database,
+                     operation: "bind append engine")
+            try bind(run?.language, to: statement, index: 7, on: database,
+                     operation: "bind append language")
+            try bind(run?.appVersion, to: statement, index: 8, on: database,
+                     operation: "bind append app version")
             try check(sqlite3_step(statement), expected: SQLITE_DONE, on: database, operation: "append entry")
 
             try trimRetention(on: database)
             try execute("COMMIT", on: database, operation: "commit append")
 
             return DictationHistoryEntry(id: sqlite3_last_insert_rowid(database),
-                                         createdAt: at, kind: kind, text: text)
+                                         createdAt: at, kind: kind, text: text,
+                                         rawText: rawText,
+                                         modelID: run?.modelID,
+                                         engine: run?.engine,
+                                         language: run?.language,
+                                         appVersion: run?.appVersion)
         } catch {
             sqlite3_exec(database, "ROLLBACK", nil, nil, nil)
             throw error
@@ -115,7 +141,8 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
         let database = try connection()
         let statement = try prepare(
             """
-            SELECT id, created_at, kind, text, audio_file
+            SELECT id, created_at, kind, text, audio_file,
+                   raw_text, model_id, engine, language, app_version
             FROM dictation_history
             WHERE (?1 IS NULL OR id < ?1)
             ORDER BY id DESC
@@ -153,7 +180,12 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
                 createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
                 kind: kind,
                 text: textValue,
-                audioFileName: text(from: statement, index: 4)
+                audioFileName: text(from: statement, index: 4),
+                rawText: text(from: statement, index: 5),
+                modelID: text(from: statement, index: 6),
+                engine: text(from: statement, index: 7),
+                language: text(from: statement, index: 8),
+                appVersion: text(from: statement, index: 9)
             ))
         }
 
@@ -459,7 +491,7 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
         do {
             try execute("PRAGMA foreign_keys = ON", on: openedDatabase, operation: "enable foreign keys")
             let version = try userVersion(on: openedDatabase)
-            guard version >= 0 && version <= 2 else {
+            guard version >= 0 && version <= 3 else {
                 requiresConfirmedReset = true
                 throw MacomprendoError.dictationHistory("open database: unsupported schema version \(version)")
             }
@@ -471,24 +503,51 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
                         created_at REAL NOT NULL,
                         kind TEXT NOT NULL CHECK(kind IN ('dictation', 'dictationAndRefine')),
                         text TEXT NOT NULL CHECK(length(trim(text)) > 0),
-                        audio_file TEXT
+                        audio_file TEXT,
+                        raw_text TEXT,
+                        model_id TEXT,
+                        engine TEXT,
+                        language TEXT,
+                        app_version TEXT
                     );
-                    PRAGMA user_version = 2;
+                    PRAGMA user_version = 3;
                     """,
                     on: openedDatabase,
                     operation: "create history schema"
                 )
-            } else if version == 1 {
-                // Adds the column in place, leaving every existing row untouched with a NULL
-                // reference, which reads as "no recording was ever saved".
-                try execute(
-                    """
-                    ALTER TABLE dictation_history ADD COLUMN audio_file TEXT;
-                    PRAGMA user_version = 2;
-                    """,
-                    on: openedDatabase,
-                    operation: "migrate history schema to version 2"
-                )
+            } else {
+                // The steps chain rather than branch: a version 1 database (none exists, but
+                // the branch is cheaper to keep than to delete) has to pass through 2 to reach
+                // 3, or `fetchPage` asks it for columns it never got.
+                if version == 1 {
+                    // Adds the column in place, leaving every existing row untouched with a
+                    // NULL reference, which reads as "no recording was ever saved".
+                    try execute(
+                        """
+                        ALTER TABLE dictation_history ADD COLUMN audio_file TEXT;
+                        PRAGMA user_version = 2;
+                        """,
+                        on: openedDatabase,
+                        operation: "migrate history schema to version 2"
+                    )
+                }
+                if version <= 2 {
+                    // Five nullable columns, so every existing row stays valid and no reset is
+                    // needed. `raw_text` gets no non-empty CHECK: a model may legitimately
+                    // return something that trims to empty while the pasted text does not.
+                    try execute(
+                        """
+                        ALTER TABLE dictation_history ADD COLUMN raw_text TEXT;
+                        ALTER TABLE dictation_history ADD COLUMN model_id TEXT;
+                        ALTER TABLE dictation_history ADD COLUMN engine TEXT;
+                        ALTER TABLE dictation_history ADD COLUMN language TEXT;
+                        ALTER TABLE dictation_history ADD COLUMN app_version TEXT;
+                        PRAGMA user_version = 3;
+                        """,
+                        on: openedDatabase,
+                        operation: "migrate history schema to version 3"
+                    )
+                }
             }
             database = DatabaseHandle(openedDatabase)
             return openedDatabase
@@ -548,6 +607,17 @@ actor SQLiteDictationHistoryStore: DictationHistoryStoring {
                                 UInt64(bytes.count - 1), destructor, UInt8(SQLITE_UTF8))
         }
         try check(result, on: database, operation: operation)
+    }
+
+    /// Binds `nil` as SQL NULL rather than as an empty string — the two mean different things
+    /// in every one of the version-3 columns.
+    private func bind(_ value: String?, to statement: OpaquePointer, index: Int32,
+                      on database: OpaquePointer, operation: String) throws {
+        guard let value else {
+            try check(sqlite3_bind_null(statement, index), on: database, operation: operation)
+            return
+        }
+        try bind(value, to: statement, index: index, on: database, operation: operation)
     }
 
     private func text(from statement: OpaquePointer, index: Int32) -> String? {
