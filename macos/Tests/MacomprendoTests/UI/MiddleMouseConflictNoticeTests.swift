@@ -29,6 +29,10 @@ struct MiddleMouseConflictNoticeTests {
         #expect(notice.contains("Settings ▸ Features"))
         #expect(notice.contains("iTerm2"))
         #expect(notice.contains("Pointer"))
+        // tmux binds the button itself, so the fix is a line in a config file rather than a
+        // checkbox — and it applies inside whichever terminal is hosting it.
+        #expect(notice.contains("tmux"))
+        #expect(notice.contains("MouseDown2Pane"))
     }
 
     // The button is global, so the conflict is not about dictation specifically: picking any
@@ -45,8 +49,9 @@ struct MiddleMouseConflictNoticeTests {
     }
 
     // Terminal.app is deliberately absent: macOS has no selection clipboard, and it does not
-    // paste on a middle click at all. Naming it would send the user hunting for a setting
-    // that does not exist.
+    // paste on a middle click at all. Herdr is absent too, for the opposite reason — it
+    // forwards the button into the pane rather than pasting, so the fix belongs to whatever
+    // runs there. Naming either would send the user hunting for a setting that does not exist.
     @Test func theNoticeDoesNotSendTheUserToASettingThatDoesNotExist() throws {
         var settings = Settings.default
         settings.middleMouseAction = .dictate
@@ -54,5 +59,6 @@ struct MiddleMouseConflictNoticeTests {
         let notice = try #require(HotkeysTab.middleMouseConflictNotice(settings))
 
         #expect(notice.contains("Terminal.app") == false)
+        #expect(notice.localizedCaseInsensitiveContains("herdr") == false)
     }
 }

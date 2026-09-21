@@ -62,14 +62,17 @@ struct HotkeysTab: View {
     /// doing so — the monitor observes the event rather than consuming it — so the click does
     /// two things at once and the app looks broken. `nil` while the button is unused.
     ///
-    /// Only apps whose setting was verified are named, and each is named as that app spells
+    /// Only apps whose behaviour was verified are named, and each is named as that app spells
     /// it. Terminal.app is deliberately absent: macOS has no selection clipboard, so it never
-    /// pasted on a middle click, and sending the user to look would waste their time.
+    /// pasted on a middle click, and sending the user to look would waste their time. Herdr
+    /// is absent for the opposite reason: it forwards the button to the pane instead of
+    /// pasting, so whatever is inside that pane — a shell, or tmux — is what to fix.
     nonisolated static func middleMouseConflictNotice(_ settings: Settings) -> String? {
         guard settings.middleMouseAction != nil else { return nil }
         return "Apps that paste on a middle click still will — the click does both. "
             + "In Warp, turn off Settings ▸ Features ▸ Editor ▸ Middle-click paste. "
-            + "In iTerm2, clear the middle-button action in Preferences ▸ Pointer."
+            + "In iTerm2, clear the middle-button action in Preferences ▸ Pointer. "
+            + "Under tmux, add “unbind -n MouseDown2Pane” to your tmux.conf."
     }
 
     private var middleMouseEnabled: Binding<Bool> {
