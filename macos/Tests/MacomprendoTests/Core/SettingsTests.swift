@@ -493,4 +493,48 @@ import Testing
     @Test func addingTheRecordingKeysDoesNotMoveTheSchemaVersion() {
         #expect(Settings.currentSchemaVersion == 2)
     }
+
+    @Test func savedRecordingFormatDefaultsToAAC() {
+        #expect(Settings.default.savedRecordingFormat == .aac)
+    }
+
+    @Test func settingsWithoutFormatKeyDecodeToAAC() throws {
+        // a document written before this feature
+        let json = Data(#"{"schemaVersion":2}"#.utf8)
+        let settings = try JSONDecoder().decode(Settings.self, from: json)
+        #expect(settings.savedRecordingFormat == .aac)
+    }
+
+    // An unrecognised value is a hand-edited or downgraded document, not a reason to lose
+    // every other setting: it falls back rather than throwing, the pattern `SpeechSettings`
+    // already uses.
+    @Test func unknownFormatStringDecodesToAACRatherThanThrowing() throws {
+        let json = Data(#"{"schemaVersion":2,"savedRecordingFormat":"flac"}"#.utf8)
+        let settings = try JSONDecoder().decode(Settings.self, from: json)
+        #expect(settings.savedRecordingFormat == .aac)
+    }
+
+    @Test func everySavedRecordingFormatSurvivesARoundTrip() throws {
+        for format in SavedRecordingFormat.allCases {
+            var settings = Settings.default
+            settings.savedRecordingFormat = format
+
+            let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+
+            #expect(decoded.savedRecordingFormat == format)
+        }
+    }
+
+    @Test func addingTheRecordingFormatDoesNotMoveTheSchemaVersion() {
+        #expect(Settings.currentSchemaVersion == 2)
+    }
+
+    // The cost per minute lives in the option labels rather than in a caption nobody reads,
+    // so the numbers are asserted here alongside the wording.
+    @Test func recordingFormatChoicesNameTheirCostPerMinute() {
+        #expect(SavedRecordingFormat.allCases.map(\.displayName) == [
+            "Compressed (AAC, ~0.35 MB/min)",
+            "Lossless (ALAC, ~1.11 MB/min)",
+        ])
+    }
 }

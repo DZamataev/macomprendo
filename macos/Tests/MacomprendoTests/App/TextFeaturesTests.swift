@@ -36,6 +36,7 @@ import Testing
             permissions: ScriptedPermissions(),
             mode: { .hold },
             language: { nil },
+            source: { .local(modelID: "large-v3-turbo") },
             history: history)
 
         let refine = RefineController(

@@ -23,6 +23,9 @@ import Foundation
     private let history: DictationHistoryController
     private let mode: @MainActor () -> DictationMode
     private let language: @MainActor () -> String?
+    /// The transcription source in effect, read when the transcript arrives so the row records
+    /// the model that actually ran rather than the one selected afterwards.
+    private let source: @MainActor () -> TranscriptionSource
     private var task: Task<Void, Never>?
     private var pendingStopTask: Task<Void, Never>?
     private var generation = 0
@@ -32,6 +35,7 @@ import Foundation
          permissions: any PermissionsChecking,
          mode: @escaping @MainActor () -> DictationMode,
          language: @escaping @MainActor () -> String?,
+         source: @escaping @MainActor () -> TranscriptionSource,
          history: DictationHistoryController) {
         self.recorder = recorder
         self.transcriberProvider = transcriberProvider
@@ -39,6 +43,7 @@ import Foundation
         self.history = history
         self.mode = mode
         self.language = language
+        self.source = source
     }
 
     func handle(_ event: HotkeyEvent, mode: DictationMode? = nil) {
@@ -132,13 +137,17 @@ import Foundation
                 guard !samples.isEmpty else { throw MacomprendoError.audio("Nothing heard.") }
                 let transcriber = try await self.transcriberProvider()
                 guard self.generation == generation else { return }
+                let language = self.language()
                 let raw = try await transcriber.transcribe(samples, sampleRate: 16_000,
-                                                           language: self.language())
+                                                           language: language)
                 try Task.checkCancellation()
                 guard self.generation == generation else { return }
                 let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { throw MacomprendoError.audio("Nothing heard.") }
-                let historyResult = await history.append(text: text, kind: .dictationAndRefine)
+                // `rawText` stays nil: nothing rewrites the text yet.
+                let run = TranscriptionRun.from(self.source(), language: language)
+                let historyResult = await history.append(text: text, rawText: nil,
+                                                         kind: .dictationAndRefine, run: run)
                 try Task.checkCancellation()
                 guard self.generation == generation else { return }
                 self.setState(.idle)

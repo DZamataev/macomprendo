@@ -3,21 +3,23 @@ import Foundation
 
 /// Encodes the 16 kHz mono Float32 PCM the recorder keeps into an audio file on disk.
 protocol DictationAudioEncoding: Sendable {
-    /// Encodes `pcm` to `url`, creating intermediate directories.
+    /// Encodes `pcm` to `url` in `format`, creating intermediate directories.
     /// Throws `MacomprendoError.audioEncoding` on any failure.
-    func encode(_ pcm: [Float], sampleRate: Int, to url: URL) async throws
+    func encode(_ pcm: [Float], sampleRate: Int, format: SavedRecordingFormat,
+                to url: URL) async throws
 }
 
-/// AAC at 48 kbit/s into `.m4a`, written with `AVAssetWriter` rather than
-/// `AVAudioFile`: the latter reserves a ~22 KB `free` atom in every file, nine times
-/// the payload of a three-second dictation (ADR-0011).
-struct AACDictationAudioEncoder: DictationAudioEncoding {
+/// AAC at 48 kbit/s or Apple Lossless, both into `.m4a`, written with `AVAssetWriter` rather
+/// than `AVAudioFile`: the latter reserves a ~22 KB `free` atom in every file, nine times
+/// the payload of a three-second dictation (ADR-0011, amended for the format choice).
+struct DictationAudioEncoder: DictationAudioEncoding {
 
     /// Frames handed to the writer input at a time.
     private static let chunkFrames = 8_192
     private static let bitRate = 48_000
 
-    func encode(_ pcm: [Float], sampleRate: Int, to url: URL) async throws {
+    func encode(_ pcm: [Float], sampleRate: Int, format: SavedRecordingFormat,
+                to url: URL) async throws {
         guard !pcm.isEmpty else {
             throw MacomprendoError.audioEncoding("there was nothing to encode")
         }
@@ -47,15 +49,13 @@ struct AACDictationAudioEncoder: DictationAudioEncoding {
             throw MacomprendoError.audioEncoding(error.localizedDescription)
         }
 
-        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: Double(sampleRate),
-            AVNumberOfChannelsKey: 1,
-            AVEncoderBitRateKey: Self.bitRate
-        ])
+        let input = AVAssetWriterInput(mediaType: .audio,
+                                       outputSettings: Self.outputSettings(for: format,
+                                                                           sampleRate: sampleRate))
         input.expectsMediaDataInRealTime = false
         guard writer.canAdd(input) else {
-            throw MacomprendoError.audioEncoding("the AAC encoder rejected 16 kHz mono audio")
+            throw MacomprendoError.audioEncoding(
+                "the \(Self.codecName(format)) encoder rejected 16 kHz mono audio")
         }
         writer.add(input)
 
@@ -80,6 +80,34 @@ struct AACDictationAudioEncoder: DictationAudioEncoding {
         guard writer.status == .completed else {
             try? FileManager.default.removeItem(at: url)
             throw Self.failure(writer, fallback: "the file could not be written")
+        }
+    }
+
+    /// ALAC takes no bit rate: passing `AVEncoderBitRateKey` makes the writer reject the input
+    /// outright, so the key is present only for AAC.
+    private static func outputSettings(for format: SavedRecordingFormat,
+                                       sampleRate: Int) -> [String: Any] {
+        var settings: [String: Any] = [
+            AVSampleRateKey: Double(sampleRate),
+            AVNumberOfChannelsKey: 1
+        ]
+        switch format {
+        case .aac:
+            settings[AVFormatIDKey] = kAudioFormatMPEG4AAC
+            settings[AVEncoderBitRateKey] = bitRate
+        case .lossless:
+            settings[AVFormatIDKey] = kAudioFormatAppleLossless
+            // 16-bit: the recorder's Float32 is quantised, which is ALAC's own limit, not ours.
+            settings[AVEncoderBitDepthHintKey] = 16
+        }
+        return settings
+    }
+
+    /// Only ever reaches error text, never a transcript, so it is safe at default log level.
+    private static func codecName(_ format: SavedRecordingFormat) -> String {
+        switch format {
+        case .aac: "AAC"
+        case .lossless: "Apple Lossless"
         }
     }
 

@@ -98,6 +98,40 @@ import Testing
         }
     }
 
+    /// The shape the developer's own database is in: schema 2, `audio_file` present, none of
+    /// the version-3 columns. The only database in the world this migration has to survive.
+    private func createVersionTwoDatabase(at databaseURL: URL, texts: [String]) throws {
+        try FileManager.default.createDirectory(at: databaseURL.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database,
+                              SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+              let database
+        else {
+            throw MacomprendoError.dictationHistory("create version-2 fixture")
+        }
+        defer { sqlite3_close_v2(database) }
+
+        let inserts = texts.enumerated().map { index, text in
+            "INSERT INTO dictation_history (created_at, kind, text, audio_file) "
+                + "VALUES (\(index + 1), 'dictation', '\(text)', '\(index + 1).m4a');"
+        }.joined(separator: "\n")
+        let schema = """
+        CREATE TABLE dictation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at REAL NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('dictation', 'dictationAndRefine')),
+            text TEXT NOT NULL CHECK(length(trim(text)) > 0),
+            audio_file TEXT
+        );
+        \(inserts)
+        PRAGMA user_version = 2;
+        """
+        guard sqlite3_exec(database, schema, nil, nil, nil) == SQLITE_OK else {
+            throw MacomprendoError.dictationHistory("seed version-2 fixture")
+        }
+    }
+
     private func permissions(of url: URL) throws -> Int {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         guard let permissions = attributes[.posixPermissions] as? NSNumber else {
@@ -337,7 +371,7 @@ import Testing
     // Catches recovery leaving stale WAL or SHM files beside a replaced future-schema database.
     @Test func clearRecoveryRemovesFutureSchemaSidecars() async throws {
         let (store, url) = makeStore()
-        try setUserVersion(3, at: url)
+        try setUserVersion(4, at: url)
         try createSidecarSentinels(at: url)
         let walURL = URL(fileURLWithPath: url.path + "-wal")
         let shmURL = URL(fileURLWithPath: url.path + "-shm")
@@ -422,7 +456,9 @@ import Testing
     }
 
     // Catches a migration that recreates the table, drops rows, or leaves the version behind.
-    @Test func versionOneDatabaseMigratesToVersionTwoKeepingEveryRow() async throws {
+    // A version 1 database must chain all the way to 3, not stop at 2: `fetchPage` would then
+    // ask it for columns it never got.
+    @Test func versionOneDatabaseMigratesToVersionThreeKeepingEveryRow() async throws {
         let (store, url) = makeStore()
         try createVersionOneDatabase(at: url, texts: ["oldest", "middle", "newest"])
         #expect(try readUserVersion(at: url) == 1)
@@ -431,7 +467,8 @@ import Testing
 
         #expect(page.entries.map(\.text) == ["newest", "middle", "oldest"])
         #expect(page.entries.allSatisfy { $0.audioFileName == nil })
-        #expect(try readUserVersion(at: url) == 2)
+        #expect(page.entries.allSatisfy { $0.rawText == nil })
+        #expect(try readUserVersion(at: url) == 3)
 
         _ = try await store.append(text: "after migration", kind: .dictation, at: .now)
         #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.count == 4)
@@ -667,5 +704,135 @@ import Testing
                 return
             }
         }
+    }
+
+    // MARK: - Schema version 3
+
+    // The developer's own database is the only version-2 one in existence, and it holds the
+    // control dictation ADR-0013 rests on: every row, and its recording reference, must survive.
+    @Test func migratesVersionTwoDatabaseToThree() async throws {
+        let (store, url) = makeStore()
+        try createVersionTwoDatabase(at: url, texts: ["oldest", "middle", "newest"])
+        #expect(try readUserVersion(at: url) == 2)
+
+        let page = try await store.fetchPage(beforeID: nil, limit: 10)
+
+        #expect(page.entries.map(\.text) == ["newest", "middle", "oldest"])
+        #expect(page.entries.map(\.audioFileName) == ["3.m4a", "2.m4a", "1.m4a"])
+        // Nothing normalised these rows and nothing recorded what produced them.
+        #expect(page.entries.allSatisfy { $0.rawText == nil })
+        #expect(page.entries.allSatisfy { $0.modelID == nil })
+        #expect(page.entries.allSatisfy { $0.engine == nil })
+        #expect(page.entries.allSatisfy { $0.language == nil })
+        #expect(page.entries.allSatisfy { $0.appVersion == nil })
+        #expect(try readUserVersion(at: url) == 3)
+
+        _ = try await store.append(text: "after migration", kind: .dictation, at: .now)
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.count == 4)
+    }
+
+    // Catches a fresh install landing on 2 and then needing the migration it should never see.
+    @Test func createsVersionThreeFromEmpty() async throws {
+        let (store, url) = makeStore()
+
+        _ = try await store.fetchPage(beforeID: nil, limit: 1)
+
+        #expect(try readUserVersion(at: url) == 3)
+    }
+
+    // Catches widening the guard past the schema this build understands.
+    @Test func versionFourStillRequiresConfirmedReset() async throws {
+        let (store, url) = makeStore()
+        try setUserVersion(4, at: url)
+
+        do {
+            _ = try await store.fetchPage(beforeID: nil, limit: 10)
+            Issue.record("expected a history error for an unsupported schema")
+        } catch let error as MacomprendoError {
+            guard case .dictationHistory = error else {
+                Issue.record("expected a dictation history error, got \(error)")
+                return
+            }
+        }
+
+        // The confirmed reset is what makes a future-schema database usable again.
+        try await store.clear()
+        _ = try await store.append(text: "after reset", kind: .dictation, at: .now)
+        #expect(try await store.fetchPage(beforeID: nil, limit: 10).entries.map(\.text)
+                == ["after reset"])
+    }
+
+    // Catches binding the run fields in the wrong order, or dropping them on read — the corpus
+    // would then attribute a transcript to a model that never produced it.
+    @Test func appendPersistsBothTextsAndTheRun() async throws {
+        let (store, _) = makeStore()
+        let run = TranscriptionRun(modelID: "ggml-large-v3-turbo", engine: "whisperCpp",
+                                   language: "ru", appVersion: "0.2.0")
+
+        let entry = try await store.append(text: "npm run build", rawText: "NPM run build",
+                                           kind: .dictation, run: run,
+                                           at: Date(timeIntervalSince1970: 1))
+
+        #expect(entry.rawText == "NPM run build")
+        #expect(entry.modelID == "ggml-large-v3-turbo")
+
+        let page = try await store.fetchPage(beforeID: nil, limit: 10)
+        let stored = try #require(page.entries.first)
+        #expect(stored.text == "npm run build")
+        #expect(stored.rawText == "NPM run build")
+        #expect(stored.modelID == "ggml-large-v3-turbo")
+        #expect(stored.engine == "whisperCpp")
+        #expect(stored.language == "ru")
+        #expect(stored.appVersion == "0.2.0")
+    }
+
+    // `nil` language means "detect automatically" and must not be written as an empty string:
+    // a corpus that cannot tell "auto" from "unset" cannot group by requested language.
+    @Test func anAutomaticLanguageRoundTripsAsNullRatherThanEmpty() async throws {
+        let (store, _) = makeStore()
+        let run = TranscriptionRun(modelID: "whisper-1", engine: "endpoint",
+                                   language: nil, appVersion: "0.2.0")
+
+        _ = try await store.append(text: "hello", rawText: nil, kind: .dictation, run: run,
+                                   at: Date(timeIntervalSince1970: 1))
+
+        let stored = try #require(try await store.fetchPage(beforeID: nil, limit: 10).entries.first)
+        #expect(stored.language == nil)
+        #expect(stored.appVersion == "0.2.0")
+    }
+
+    @Test func nilRawTextRoundTripsAsNull() async throws {
+        let (store, _) = makeStore()
+
+        _ = try await store.append(text: "pasted", rawText: nil, kind: .dictation, run: nil,
+                                   at: Date(timeIntervalSince1970: 1))
+
+        let stored = try #require(try await store.fetchPage(beforeID: nil, limit: 10).entries.first)
+        #expect(stored.rawText == nil)
+        #expect(stored.modelID == nil)
+        #expect(stored.engine == nil)
+        #expect(stored.language == nil)
+        #expect(stored.appVersion == nil)
+    }
+
+    // `text` keeps its non-empty CHECK; `raw_text` deliberately has none, because a model may
+    // return something that trims to empty while the pasted text does not.
+    @Test func anEmptyRawTextIsStoredRatherThanRejected() async throws {
+        let (store, _) = makeStore()
+
+        _ = try await store.append(text: "OK", rawText: "  ", kind: .dictation, run: nil,
+                                   at: Date(timeIntervalSince1970: 1))
+
+        let stored = try #require(try await store.fetchPage(beforeID: nil, limit: 10).entries.first)
+        #expect(stored.rawText == "  ")
+    }
+}
+
+/// The three-argument form every test that does not care about provenance keeps using. Kept in
+/// the test target on purpose: production call sites must decide explicitly what a row records.
+extension DictationHistoryStoring {
+    func append(text: String, kind: DictationHistoryKind, at date: Date) async throws
+        -> DictationHistoryEntry {
+        try await append(text: text, rawText: nil, kind: kind, run: nil, at: date)
     }
 }

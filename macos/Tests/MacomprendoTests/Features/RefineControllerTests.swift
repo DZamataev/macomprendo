@@ -49,6 +49,7 @@ import Testing
             permissions: ScriptedPermissions(),
             mode: { holder.settings.dictationMode },
             language: { "en" },
+            source: { .local(modelID: "large-v3-turbo") },
             history: history)
 
         let controller = RefineController(

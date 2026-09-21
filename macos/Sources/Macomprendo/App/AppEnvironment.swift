@@ -84,7 +84,7 @@ struct AppEnvironment {
             ollamaDetector: HTTPOllamaDetector(http: http),
             pasteboard: pasteboard,
             dictationHistory: dictationHistory,
-            dictationAudioEncoder: AACDictationAudioEncoder(),
+            dictationAudioEncoder: DictationAudioEncoder(),
             historyAudioPlayer: AVAudioPlayerPlayer(),
             fileRevealer: NSWorkspaceFileRevealer(),
             urlOpener: NSWorkspaceURLOpener(),

@@ -591,5 +591,8 @@ import Testing
         #expect(!DictationTab.recordingLengthCaption(minutes: 5).localizedCaseInsensitiveContains("memory"))
         #expect(DictationTab.recordingLengthCaption(minutes: 45).localizedCaseInsensitiveContains("memory"))
         #expect(DictationTab.recordingLengthCaption(minutes: 60).localizedCaseInsensitiveContains("memory"))
+        // The encoded copy is AAC or ALAC depending on the recording-quality setting, so the
+        // caption must not name one format as if it were the only one.
+        #expect(!DictationTab.recordingLengthCaption(minutes: 60).localizedCaseInsensitiveContains("AAC"))
     }
 }

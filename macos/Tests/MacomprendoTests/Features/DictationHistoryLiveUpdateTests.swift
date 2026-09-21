@@ -55,6 +55,47 @@ import Testing
         #expect(controller.entries.first?.audioFileName != nil)
     }
 
+    // Attaching a recording and deleting saved audio both rebuild the entry by hand. Either
+    // one forgetting a field silently drops the provenance the corpus exists to keep.
+    @Test func attachingARecordingKeepsTheRawTextAndTheRun() async {
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let controller = makeController(store: store, encoder: encoder, savesRecording: true)
+        let run = TranscriptionRun(modelID: "large-v3-turbo", engine: "whisperCpp",
+                                   language: "ru", appVersion: "0.2.0")
+
+        let appended = await controller.append(text: "npm run build", rawText: "NPM run build",
+                                               kind: .dictation, run: run)
+        _ = await controller.saveRecording([0.1], for: appended.entry)
+
+        let stored = controller.entries.first
+        #expect(stored?.audioFileName != nil)
+        #expect(stored?.rawText == "NPM run build")
+        #expect(stored?.modelID == "large-v3-turbo")
+        #expect(stored?.engine == "whisperCpp")
+        #expect(stored?.language == "ru")
+        #expect(stored?.appVersion == "0.2.0")
+    }
+
+    @Test func deletingSavedAudioKeepsTheRawTextAndTheRun() async {
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let controller = makeController(store: store, encoder: encoder, savesRecording: true)
+        let run = TranscriptionRun(modelID: "large-v3-turbo", engine: "whisperCpp",
+                                   language: "ru", appVersion: "0.2.0")
+        let appended = await controller.append(text: "npm run build", rawText: "NPM run build",
+                                               kind: .dictation, run: run)
+        _ = await controller.saveRecording([0.1], for: appended.entry)
+
+        _ = await controller.deleteSavedAudio()
+
+        let stored = controller.entries.first
+        #expect(stored?.audioFileName == nil)
+        #expect(stored?.rawText == "NPM run build")
+        #expect(stored?.modelID == "large-v3-turbo")
+        #expect(stored?.appVersion == "0.2.0")
+    }
+
     @Test func anAppendWhileHistoryIsOffChangesNothing() async {
         let store = FakeDictationHistoryStore()
         let controller = DictationHistoryController(store: store,

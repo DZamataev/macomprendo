@@ -129,6 +129,7 @@ final class AppModel: ObservableObject {
             encoder: env.dictationAudioEncoder,
             player: env.historyAudioPlayer,
             shouldSaveRecording: { snapshot.current.saveOriginalRecording },
+            recordingFormat: { snapshot.current.savedRecordingFormat },
             retention: { snapshot.current.historyRetention })
 
         let factory = env.factory

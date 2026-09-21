@@ -211,6 +211,19 @@ reachable from unit tests. Start with dictation history enabled.
       control.
 - [ ] **The file plays outside the app.** Double-click the `.m4a` in Finder: it opens in the
       default player (QuickTime Player, not GarageBand) and is audible.
+- [ ] **Lossless recording really is lossless.** Settings ▸ General: set “Recording quality” to
+      “Lossless (ALAC, ~1.11 MB/min)” — the picker is selectable only while “Save the original
+      recording” is on. Dictate one recognizable sentence, then run
+      `afinfo ~/Library/Application\ Support/Macomprendo/dictation-audio/<id>.m4a`: the data
+      format reads `alac`, not `aac`, and the file is roughly three times the size of a
+      compressed recording of the same length. Play it from the history window: it plays.
+- [ ] **Switching format between two dictations leaves both playable.** Set the quality back to
+      “Compressed (AAC, ~0.35 MB/min)” and dictate again. `afinfo` reports `aac` for the new
+      file and still `alac` for the previous one, both entries play from the history window, and
+      both are `.m4a`.
+- [ ] **The size readout tracks the larger files.** Note the “Saved audio:” figure, dictate one
+      sentence of roughly the same length in each quality, and compare how much the figure grows
+      each time: the lossless dictation adds several times more than the compressed one.
 - [ ] **A recording deleted behind the app's back reports itself and stays retryable.** With the
       history window open, delete one entry's `.m4a` from `dictation-audio/` in Finder, then
       click that entry's Play control: the error names the missing file — "The saved recording

@@ -337,15 +337,17 @@ struct DictationTab: View {
     }
 
     /// The caption below the picker. A recording accumulates as `[Float]` in memory —
-    /// captured PCM, then again for the WAV encode and again for the AAC encode — so past a
-    /// defensible length the limiting resource is memory, not the endpoint's upload cap, and
-    /// the caption must name that cost rather than only the 25 MiB upload limit.
+    /// captured PCM, then again for the WAV encode and again for the saved-recording encode —
+    /// so past a defensible length the limiting resource is memory, not the endpoint's upload
+    /// cap, and the caption must name that cost rather than only the 25 MiB upload limit. The
+    /// encoded copy is AAC or ALAC depending on the recording-quality setting, so neither is
+    /// named here as if it were the only one.
     nonisolated static func recordingLengthCaption(minutes: Int) -> String {
         let base = "Endpoint transcription uploads WAV, and OpenAI-compatible endpoints reject "
             + "requests above 25 MiB — about 13 minutes at 16 kHz mono 16-bit. Local "
             + "models have no such limit."
         guard minutes >= 45 else { return base }
-        return base + " At \(minutes) minutes the recording, its WAV copy and its AAC copy "
+        return base + " At \(minutes) minutes the recording, its WAV copy and its encoded copy "
             + "together use several hundred MB of memory while dictating."
     }
 
