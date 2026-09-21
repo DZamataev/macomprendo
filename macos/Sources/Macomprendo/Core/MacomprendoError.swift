@@ -22,6 +22,9 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case noSelection
     case insertFailed
     case dictationHistory(String)
+    case glossary(String)
+    case glossaryPackNameInvalid(String)
+    case glossaryPackNameTaken(String)
     case licenseTextMissing(String)
     case licenseTextUnreadable(String)
     case cancelled
@@ -58,6 +61,12 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Macomprendo could not insert the text."
         case .dictationHistory(let reason):
             return "Dictation history is unavailable: \(reason)"
+        case .glossary(let reason):
+            return "The glossary folder could not be changed: \(reason)"
+        case .glossaryPackNameInvalid(let name):
+            return "\"\(name)\" is not a usable pack name."
+        case .glossaryPackNameTaken(let name):
+            return "A pack called \"\(name)\" already exists."
         case .licenseTextMissing(let component):
             return "The licence text for \"\(component)\" is missing from this build."
         case .licenseTextUnreadable(let component):
@@ -99,6 +108,12 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "The text is on the clipboard — paste it manually with ⌘V."
         case .dictationHistory:
             return "Open Dictation History and clear it, or check that Macomprendo can write to Application Support."
+        case .glossary:
+            return "Check that the disk has free space and that Macomprendo can write to Application Support, then use Reload."
+        case .glossaryPackNameInvalid:
+            return "Give the pack a name that is not empty and contains no “/” or “:”."
+        case .glossaryPackNameTaken:
+            return "Pick another name, or edit the existing pack instead."
         case .licenseTextMissing:
             return "Read it at the component's homepage, or in macos/Sources/Macomprendo/Resources/Licenses in the project source."
         case .licenseTextUnreadable:

@@ -505,8 +505,8 @@ struct ControlDictationRegressionPinTests {
     /// Task 3 built this glossary by hand from the dictation's failure table; Task 4 repointed
     /// it. The hand-built list is gone deliberately: left in place it would have kept passing
     /// while the packs changed underneath it.
-    static let factoryPacks: [GlossaryPack] = FactoryPackFixture.names.compactMap {
-        FactoryPackFixture.pack($0)
+    static let factoryPacks: [GlossaryPack] = FactoryGlossaryPacks.names.compactMap {
+        FactoryGlossaryPacks.pack($0)
     }
 
     /// The dictation's project-specific terms, which cannot be factory terms: they name the
