@@ -475,6 +475,28 @@ import Testing
                 == "xcodebuild")
     }
 
+    @Test func aFailedGlossaryLoadIsReportedAndStillReadsWhatIsThere() async {
+        let store = FakeGlossaryStore()
+        await store.setPack("xcodebuild", named: "tools")
+        await store.setEnabledNames(["tools"])
+        await store.setNextError(MacomprendoError.glossary("create the Vocabulary folder: denied"))
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store))
+
+        await model.refreshGlossary()
+
+        // Seeding failed, so the user is told — nothing fails silently (invariant 8) …
+        guard case .error(let message) = model.hud.state else {
+            Issue.record("expected an error HUD, got \(model.hud.state)")
+            return
+        }
+        #expect(message.contains(MacomprendoError.glossary("create the Vocabulary folder: denied")
+            .errorDescription ?? "!"))
+        // … and the directory is still read, so an existing folder keeps working.
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "Xcode build"))?.canonical
+                == "xcodebuild")
+    }
+
     @Test func theGlossarySectionRevealsTheStoresOwnDirectory() {
         let store = FakeGlossaryStore()
         let revealer = FakeFileRevealer()

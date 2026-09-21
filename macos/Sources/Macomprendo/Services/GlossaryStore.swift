@@ -59,11 +59,17 @@ struct GlossaryState: Sendable {
     /// is the state a fresh install seeds.
     var message: String?
 
-    /// The enabled packs, in `packs.json` order, skipping names with no file on disk. This is
-    /// the list `Glossary` is built from, so its order decides a key collision.
+    /// The enabled packs, in `packs.json` order, skipping names with no file on disk and
+    /// applying a name repeated in the config only once — a pack applied twice would collide
+    /// every one of its own terms with itself and report them as inert. This is the list
+    /// `Glossary` is built from, so its order decides a key collision.
     var enabledPacks: [GlossaryPack] {
         let byName = Dictionary(packs.map { ($0.name, $0.pack) }, uniquingKeysWith: { first, _ in first })
-        return enabled.compactMap { byName[$0] }
+        var seen: Set<String> = []
+        return enabled.compactMap { name in
+            guard seen.insert(name).inserted else { return nil }
+            return byName[name]
+        }
     }
 }
 
@@ -135,32 +141,72 @@ actor DirectoryGlossaryStore: GlossaryStoring {
     }
 
     private func read() -> GlossaryState {
-        let outcome = GlossaryPackConfig.decode(from: configData())
-        var state = GlossaryState(enabled: outcome.config.enabled, message: outcome.message)
+        let bytes = configBytes()
+        let outcome = GlossaryPackConfig.decode(from: bytes.data)
+        var state = GlossaryState(enabled: outcome.config.enabled)
         let enabledNames = Set(outcome.config.enabled)
+        var messages = [outcome.message].compactMap { $0 }
+        if bytes.unreadable {
+            messages.append("packs.json is there but could not be read, so no glossary packs "
+                + "are enabled. Check the file, then use Reload.")
+        }
 
-        for name in packNamesOnDisk() {
-            guard let text = try? String(contentsOf: packURL(name), encoding: .utf8) else { continue }
+        let listing = packNamesOnDisk()
+        if listing.failed {
+            messages.append("The \(directoryURL.lastPathComponent) folder could not be read, so "
+                + "no packs are listed. Check the folder, then use Reload.")
+        }
+
+        var unreadable: [String] = []
+        for name in listing.names {
+            guard let text = try? String(contentsOf: packURL(name), encoding: .utf8) else {
+                // The file exists but its bytes are not text. Skipping it silently would show a
+                // glossary that is quietly smaller than the folder says it is.
+                unreadable.append(name)
+                continue
+            }
             state.packs.append(GlossaryPackState(
                 pack: GlossaryPack.parse(text, name: name),
                 isFactory: FactoryGlossaryPacks.text(name) != nil,
                 isEnabled: enabledNames.contains(name)
             ))
         }
+        if !unreadable.isEmpty {
+            // Only the file names, which the user chose; a pack's contents never enter a message.
+            messages.append(
+                (unreadable.count == 1
+                    ? "\(unreadable[0]).txt could not be read, so that pack is not listed."
+                    : "These packs could not be read and are not listed: "
+                        + unreadable.joined(separator: ", ") + ".")
+                    + " Fix or remove the file, then use Reload."
+            )
+        }
+
+        state.message = messages.isEmpty ? nil : messages.joined(separator: " ")
         return state
     }
 
     /// Every `.txt` file in the directory: the bundled names first in their fixed order, then
     /// the user's own by name. A file removed behind the app's back simply does not appear.
-    private func packNamesOnDisk() -> [String] {
-        let urls = (try? FileManager.default.contentsOfDirectory(
-            at: directoryURL, includingPropertiesForKeys: nil
-        )) ?? []
+    ///
+    /// `failed` separates "the folder is not there yet", which is the state a fresh install is
+    /// in and reports nothing, from "the folder is there and could not be enumerated", which is
+    /// a failure the user has to hear about.
+    private func packNamesOnDisk() -> (names: [String], failed: Bool) {
+        let urls: [URL]
+        do {
+            urls = try FileManager.default.contentsOfDirectory(
+                at: directoryURL, includingPropertiesForKeys: nil
+            )
+        } catch {
+            let exists = FileManager.default.fileExists(atPath: directoryURL.path)
+            return ([], exists)
+        }
         let found = Set(urls.filter { $0.pathExtension == "txt" }
             .map { $0.deletingPathExtension().lastPathComponent })
         let factory = FactoryGlossaryPacks.names.filter(found.contains)
         let user = found.subtracting(factory).sorted()
-        return factory + user
+        return (factory + user, false)
     }
 
     // MARK: - Seeding
@@ -279,6 +325,15 @@ actor DirectoryGlossaryStore: GlossaryStoring {
 
     private func configData() -> Data? {
         try? Data(contentsOf: configURL)
+    }
+
+    /// `packs.json`'s bytes, or `nil` when there is no such file. `unreadable` separates the two
+    /// cases `nil` data would otherwise merge: a file that was never written, which is the
+    /// seeded state and reports nothing, and a file that is there and cannot be read, which is
+    /// a failure the user has to hear about.
+    private func configBytes() -> (data: Data?, unreadable: Bool) {
+        if let data = configData() { return (data, false) }
+        return (nil, FileManager.default.fileExists(atPath: configURL.path))
     }
 
     private func writeConfig(_ config: GlossaryPackConfig) throws {

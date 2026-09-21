@@ -228,6 +228,88 @@ struct GlossaryStoreTests {
         #expect(state.message?.contains("not json") == false)
     }
 
+    @Test func aDuplicateNameInTheConfigAppliesThePackOnce() async throws {
+        let (store, directory) = makeStore()
+        try await store.seed()
+        let name = FactoryGlossaryPacks.names[0]
+        try GlossaryPackConfig(enabled: [name, name])
+            .encoded()
+            .write(to: directory.appendingPathComponent("packs.json"))
+
+        let state = await store.reload()
+        // The config is kept verbatim — it makes no semantic judgements (ADR-0012) …
+        #expect(state.enabled == [name, name])
+        // … but applying the same pack twice would collide every one of its terms with itself.
+        #expect(state.enabledPacks.map(\.name) == [name])
+        #expect(Glossary(packs: state.enabledPacks).collisionCount == 0)
+    }
+
+    // MARK: - Unreadable files
+
+    @Test func anUnreadablePackFileIsReportedAsAMessage() async throws {
+        let (store, directory) = makeStore()
+        try await store.seed()
+        // Not valid UTF-8, so the text cannot be read back at all.
+        try Data([0xFF, 0xFE, 0xFF]).write(to: directory.appendingPathComponent("broken.txt"))
+
+        let state = await store.reload()
+        #expect(!state.packs.contains { $0.name == "broken" })
+        #expect(state.packs.count == FactoryGlossaryPacks.names.count)
+        let message = try #require(state.message)
+        #expect(message.contains("broken"))
+        #expect(message.contains("Reload"))
+    }
+
+    @Test func anUnreadablePackAndAnUnreadableConfigAreBothReported() async throws {
+        let (store, directory) = makeStore()
+        try await store.seed()
+        try Data([0xFF, 0xFE, 0xFF]).write(to: directory.appendingPathComponent("broken.txt"))
+        try Data("not json".utf8).write(to: directory.appendingPathComponent("packs.json"))
+
+        let message = try #require(await store.reload().message)
+        #expect(message.contains("packs.json"))
+        #expect(message.contains("broken"))
+        // Pack contents are user content and never enter a message (invariant 6).
+        #expect(!message.contains("not json"))
+    }
+
+    @Test func anUnreadableDirectoryIsReportedAsAMessage() async throws {
+        let (store, directory) = makeStore()
+        try await store.seed()
+        // A file where the directory should be: enumeration fails rather than returning nothing.
+        try FileManager.default.removeItem(at: directory)
+        try Data("x".utf8).write(to: directory)
+
+        let state = await store.reload()
+        #expect(state.packs.isEmpty)
+        let message = try #require(state.message)
+        #expect(message.contains("Vocabulary"))
+    }
+
+    @Test func aDirectoryThatDoesNotExistYetIsNotAFailure() async throws {
+        let (store, _) = makeStore()
+        let state = await store.reload()
+        #expect(state.packs.isEmpty)
+        // The state a fresh install is in before seeding; not something to warn about.
+        #expect(state.message == nil)
+    }
+
+    @Test func aConfigFileThatExistsButCannotBeReadIsAMessageNotSilence() async throws {
+        let (store, directory) = makeStore()
+        try await store.seed()
+        let config = directory.appendingPathComponent("packs.json")
+        try Data(#"{"enabled":[]}"#.utf8).write(to: config)
+        // Readable by nobody: `Data(contentsOf:)` fails, which must not read as "no file".
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: config.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                       ofItemAtPath: config.path) }
+
+        let state = await store.reload()
+        #expect(state.enabled.isEmpty)
+        let message = try #require(state.message)
+        #expect(message.contains("packs.json"))
+    }
+
     // MARK: - Delete, reset, write
 
     @Test func deletedPackFileDisappearsWithoutError() async throws {

@@ -307,14 +307,16 @@ final class AppModel: ObservableObject {
 
     /// Reads the Vocabulary directory and rebuilds the glossary from the enabled packs.
     ///
-    /// A read failure is not surfaced: it leaves the previously built glossary in place and
-    /// dictation keeps working un-normalised, which is the spec's rule for `packs.json`
-    /// applied to the directory as a whole.
+    /// A failure to seed is surfaced rather than swallowed (invariant 8) and the directory is
+    /// still read afterwards, so a folder that exists but could not be written to keeps
+    /// working. Whatever the read reports as a message reaches the user through the Glossary
+    /// section, which shows `GlossaryState.message`.
     func refreshGlossary() async {
         let state: GlossaryState
-        if let loaded = try? await env.glossary.load() {
-            state = loaded
-        } else {
+        do {
+            state = try await env.glossary.load()
+        } catch {
+            hud.show(.error(ErrorText.describe(error)))
             state = await env.glossary.reload()
         }
         glossaryBox.packs = state.enabledPacks

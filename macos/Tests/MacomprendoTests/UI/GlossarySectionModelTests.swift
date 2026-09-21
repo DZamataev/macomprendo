@@ -171,6 +171,18 @@ import Testing
         #expect(model.rows.first { $0.name == "loser" }?.inertTermCount == 1)
     }
 
+    @Test func aPackNamedTwiceInTheConfigDoesNotWarnAboutItself() async {
+        let store = FakeGlossaryStore()
+        await store.setPack("react-native\nMatchHUD\n", named: "tools")
+        await store.setEnabledNames(["tools", "tools"])
+        let model = makeModel(store: store)
+
+        await model.refresh()
+
+        #expect(model.rows.first { $0.name == "tools" }?.inertTermCount == 0)
+        #expect(model.collisionCount == 0)
+    }
+
     @Test func anUnreadableConfigIsSurfacedAsAMessage() async {
         let store = FakeGlossaryStore()
         await store.setMessage("packs.json could not be read.")
