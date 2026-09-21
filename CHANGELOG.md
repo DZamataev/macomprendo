@@ -14,6 +14,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   understanding. The icon build now uses the approved transparent PNG master.
 
 ### Added
+- **Glossary** (Settings ▸ Dictation): switchable packs of terms in
+  `~/Library/Application Support/Macomprendo/Vocabulary/`, rewriting recognised jargon to
+  the spelling it is listed in. Six packs ship (TypeScript, React Native, Python, Go, Ruby,
+  Godot) and are off until enabled. A pack file, the folder or `packs.json` that cannot be
+  read is named in the section rather than silently leaving the list short, and a pack
+  named twice in `packs.json` is applied once instead of warning about itself.
 - **Recording quality** (Settings ▸ General): saved dictation recordings can now be kept
   lossless (ALAC, ~1.11 MB/min) instead of compressed (AAC, ~0.35 MB/min). Compressed stays
   the default, the file extension stays `.m4a` for both, and the choice applies to the next
