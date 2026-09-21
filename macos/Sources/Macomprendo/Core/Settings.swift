@@ -338,6 +338,9 @@ struct Settings: Codable, Sendable, Equatable {
     /// Terms the user typed straight into Settings rather than into a pack file. They
     /// outrank every pack in a key collision.
     var glossaryManualTerms: [String]
+    /// Whether the recommended packs have already been offered. Set the first time the master
+    /// switch goes on, whichever way the user answered, so the offer is made exactly once.
+    var glossaryRecommendedPacksOffered: Bool
 
     static var `default`: Settings {
         Settings(
@@ -373,7 +376,8 @@ struct Settings: Codable, Sendable, Equatable {
             whisperTranslate: false,
             localModelIdleTimeout: .tenMinutes,
             glossaryEnabled: false,
-            glossaryManualTerms: []
+            glossaryManualTerms: [],
+            glossaryRecommendedPacksOffered: false
         )
     }
 
@@ -458,5 +462,8 @@ extension Settings {
             ?? d.glossaryEnabled
         glossaryManualTerms = try c.decodeIfPresent([String].self, forKey: .glossaryManualTerms)
             ?? d.glossaryManualTerms
+        glossaryRecommendedPacksOffered = try c.decodeIfPresent(
+            Bool.self, forKey: .glossaryRecommendedPacksOffered)
+            ?? d.glossaryRecommendedPacksOffered
     }
 }

@@ -458,4 +458,31 @@ import Testing
         }
         #expect(await store.loadCallCount == 1)
     }
+
+    // The section is the only screen that changes which packs are on, so its rebuild callback
+    // is what keeps the set the dictation controllers read in step with the folder.
+    @Test func theGlossarySectionRebuildsTheGlossaryAfterAnEdit() async {
+        let store = FakeGlossaryStore()
+        await store.setPack("xcodebuild", named: "tools")
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store))
+        let section = model.glossarySectionModel
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "Xcode build")) == nil)
+
+        await section.setEnabled(true, forPackNamed: "tools")
+
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "Xcode build"))?.canonical
+                == "xcodebuild")
+    }
+
+    @Test func theGlossarySectionRevealsTheStoresOwnDirectory() {
+        let store = FakeGlossaryStore()
+        let revealer = FakeFileRevealer()
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store, fileRevealer: revealer))
+
+        model.glossarySectionModel.reveal()
+
+        #expect(revealer.revealed == [store.directoryURL])
+    }
 }

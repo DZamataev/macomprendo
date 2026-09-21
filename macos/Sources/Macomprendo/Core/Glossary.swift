@@ -19,9 +19,21 @@ struct Glossary: Sendable {
 
     private let entriesByKey: [String: Entry]
 
+    /// How many terms each pack lost to a higher source, by pack name. A term counted here is
+    /// inert: it is in an enabled pack and still never rewrites anything, which is the failure
+    /// this feature is most likely to produce, so the Glossary section names the pack rather
+    /// than only the total.
+    let inertTermCountsByPack: [String: Int]
+
+    /// How many manual terms lost a collision — only ever to another manual term, the manual
+    /// list being the highest source.
+    let manualInertTermCount: Int
+
     /// How many terms lost a key collision. Surfaced in the Glossary section so a pack that is
     /// not doing what the user thinks is visible.
-    let collisionCount: Int
+    var collisionCount: Int {
+        manualInertTermCount + inertTermCountsByPack.values.reduce(0, +)
+    }
 
     /// How many distinct keys the glossary matches on.
     var termCount: Int { entriesByKey.count }
@@ -35,13 +47,18 @@ struct Glossary: Sendable {
     /// a collision: nothing about it is ambiguous.
     init(packs: [GlossaryPack] = [], manualTerms: [String] = []) {
         var entries: [String: Entry] = [:]
-        var collisions = 0
+        var packLosses: [String: Int] = [:]
+        var manualLosses = 0
 
         func insert(_ canonical: String, packName: String?) {
             let key = Self.key(for: canonical)
             guard !key.isEmpty else { return }
             guard entries[key] == nil else {
-                collisions += 1
+                if let packName {
+                    packLosses[packName, default: 0] += 1
+                } else {
+                    manualLosses += 1
+                }
                 return
             }
             entries[key] = Entry(canonical: canonical, packName: packName)
@@ -53,7 +70,8 @@ struct Glossary: Sendable {
         }
 
         self.entriesByKey = entries
-        self.collisionCount = collisions
+        self.inertTermCountsByPack = packLosses
+        self.manualInertTermCount = manualLosses
     }
 
     /// The term matching `key`, or `nil`.

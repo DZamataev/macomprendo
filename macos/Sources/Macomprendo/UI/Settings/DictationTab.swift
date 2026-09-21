@@ -28,6 +28,7 @@ struct DictationTab: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var tab: DictationTabModel
     @ObservedObject var models: ModelsViewModel
+    @ObservedObject var glossary: GlossarySectionModel
     @FocusState private var endpointModelFocused: Bool
 
     var body: some View {
@@ -57,6 +58,9 @@ struct DictationTab: View {
                 }
 
                 recordingSection
+                // Outside the sub-tab switch for the same reason as Recording: normalisation
+                // runs under every backend.
+                GlossarySection(model: glossary)
             }
             .formStyle(.grouped)
         }

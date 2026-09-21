@@ -59,6 +59,13 @@ final class AppModel: ObservableObject {
     lazy var ttsModelsViewModel = ModelsViewModel(models: env.models,
                                                   catalog: ModelCatalog.all(kind: .tts))
     lazy var dictationTabModel = DictationTabModel(holder: self)
+    /// The Dictation tab's Glossary section. Constructed here so the view never builds a
+    /// service, and handed the rebuild callback so an edit reaches dictation immediately.
+    lazy var glossarySectionModel = GlossarySectionModel(
+        holder: self,
+        store: env.glossary,
+        revealer: env.fileRevealer,
+        glossaryChanged: { [weak self] in await self?.refreshGlossary() })
     lazy var speechTabModel = SpeechTabModel(
         speech: env.speech, holder: self, keychain: keychain, toaster: hud,
         modelStates: { [unowned self] in
