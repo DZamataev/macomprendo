@@ -181,6 +181,46 @@ import Testing
                 || message.localizedCaseInsensitiveContains("could not be removed"))
     }
 
+    // Nothing to save is not a failure. A very short dictation — the `shortDictationInsertsOK`
+    // branch above all — stops the recorder with an empty buffer, and the encoder rightly
+    // rejects that, but there is nothing to tell the user: no recording was lost.
+    @Test func anEmptyRecordingIsSkippedSilentlyRatherThanReportedAsAFailure() async {
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { true },
+            encoder: encoder, shouldSaveRecording: { true }, retention: { .ninetyDays },
+            now: { date })
+
+        let result = await controller.append(text: "OK", kind: .dictation)
+        let error = await controller.saveRecording([], for: result.entry)
+
+        #expect(error == nil)
+        #expect(controller.errorMessage == nil)
+        // The encoder is never even called: an empty buffer has nothing to encode, and its
+        // refusal is exactly the message that was surfacing in the HUD.
+        #expect(await encoder.requests.isEmpty)
+        #expect(await store.attachRequests.isEmpty)
+    }
+
+    // A silent skip must stay a skip: a buffer with real audio in it still has to be encoded,
+    // or "nothing to save" quietly becomes "never saves anything".
+    @Test func aNonEmptyRecordingIsStillEncodedAndAttached() async {
+        let store = FakeDictationHistoryStore()
+        let encoder = FakeDictationAudioEncoder()
+        let controller = DictationHistoryController(
+            store: store, pasteboard: FakePasteboard(), isEnabled: { true },
+            encoder: encoder, shouldSaveRecording: { true }, retention: { .ninetyDays },
+            now: { date })
+
+        let result = await controller.append(text: "hello", kind: .dictation)
+        let error = await controller.saveRecording([0.1], for: result.entry)
+
+        #expect(error == nil)
+        #expect(await encoder.requests.count == 1)
+        #expect(await store.attachRequests.count == 1)
+    }
+
     @Test func cancellationDuringSaveRecordingIsSilent() async {
         // Esc or a new hotkey press during the encode cancels this task on purpose, exactly
         // like every other cancellation path in the controller (`mappedHistoryError`,

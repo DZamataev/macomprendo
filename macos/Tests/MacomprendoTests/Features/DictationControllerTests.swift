@@ -955,6 +955,22 @@ import Testing
         #expect(request?.rawText == nil)
     }
 
+    // A dictation too short to hold audio has nothing to save, and saying so reads as a
+    // failure the user has to act on. It inserted "OK" and lost nothing — the HUD must show
+    // the success, not "Saving the recording failed: there was nothing to encode".
+    @Test func aShortDictationWithNothingToSaveShowsNoError() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "never used")
+        h.settings.value.shortDictationInsertsOK = true
+        h.recorder.samplesToReturn = []
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["OK"])
+        #expect(h.hud.state == .success("Inserted"))
+        #expect(await h.encoder.requests.isEmpty)
+        #expect(h.history.errorMessage == nil)
+    }
+
     // MARK: - The recording format
 
     @Test func theRecordingIsEncodedInTheFormatCurrentlyInSettings() async {
