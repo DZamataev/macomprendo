@@ -410,4 +410,52 @@ import Testing
         try model.keychain.set("sk-test", account: "work-key")
         #expect(try keychain.get(account: "work-key") == "sk-test")
     }
+
+    // MARK: - The glossary
+
+    @Test func theGlossaryIsBuiltFromTheEnabledPacksTheStoreReports() async {
+        let store = FakeGlossaryStore()
+        await store.setPack("xcodebuild", named: "tools")
+        await store.setPack("SafeAreaView", named: "off-pack")
+        await store.setEnabledNames(["tools"])
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store))
+
+        await model.refreshGlossary()
+
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "Xcode build"))?.canonical
+                == "xcodebuild")
+        // A pack on disk but absent from `packs.json` contributes nothing.
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "Safe Area View")) == nil)
+    }
+
+    // The manual list outranks the packs, so a change to it has to reach the built set
+    // without waiting for another directory read.
+    @Test func editingTheManualTermsRebuildsTheGlossary() async {
+        let store = FakeGlossaryStore()
+        await store.setPack("MatchHud", named: "tools")
+        await store.setEnabledNames(["tools"])
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store))
+        await model.refreshGlossary()
+
+        model.settings.glossaryManualTerms = ["MatchHUD"]
+
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "match hud"))?.canonical
+                == "MatchHUD")
+    }
+
+    @Test func turningTheGlossaryOnReadsTheDirectory() async {
+        let store = FakeGlossaryStore()
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store))
+        #expect(await store.loadCallCount == 0)
+
+        model.settings.glossaryEnabled = true
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline, await store.loadCallCount == 0 {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await store.loadCallCount == 1)
+    }
 }

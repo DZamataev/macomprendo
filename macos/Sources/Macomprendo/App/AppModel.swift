@@ -5,6 +5,12 @@ import SwiftUI
 /// Owns the settings, the services and the feature controllers, and routes hotkeys to them.
 @MainActor
 final class AppModel: ObservableObject {
+    /// The built glossary, in a reference box so the dictation controllers can be handed a
+    /// closure reading it before `init` has finished constructing `self`.
+    @MainActor private final class GlossaryBox {
+        var packs: [GlossaryPack] = []
+        var glossary = Glossary()
+    }
     @Published var settings: Settings {
         didSet {
             guard settings != oldValue else { return }
@@ -27,6 +33,14 @@ final class AppModel: ObservableObject {
             env.localTranscriptionCache.configure(
                 configuration: Self.localTranscriptionConfiguration(for: settings),
                 idleTimeout: settings.localModelIdleTimeout)
+            // Turning the switch on is the first moment the directory is worth reading:
+            // a user who never enables the glossary never touches the filesystem for it.
+            if settings.glossaryEnabled, !oldValue.glossaryEnabled {
+                Task { [weak self] in await self?.refreshGlossary() }
+            }
+            if settings.glossaryManualTerms != oldValue.glossaryManualTerms {
+                rebuildGlossary()
+            }
             persist()
         }
     }
@@ -78,6 +92,7 @@ final class AppModel: ObservableObject {
 
     private let store: any SettingsPersisting
     private let snapshot: SettingsSnapshot
+    private let glossaryBox = GlossaryBox()
     private let enablement: HotkeyEnablementStore
     private var hotkeyTask: Task<Void, Never>?
     private var middleMouseTask: Task<Void, Never>?
@@ -170,7 +185,8 @@ final class AppModel: ObservableObject {
                                         pasteboard: env.pasteboard,
                                         settings: { snapshot.current },
                                         escapeMonitor: env.escapeMonitor,
-                                        history: history)
+                                        history: history,
+                                        glossary: { [glossaryBox] in glossaryBox.glossary })
 
         env.recorder.setMaximumDuration(TimeInterval(loaded.maximumRecordingSeconds))
 
@@ -202,6 +218,9 @@ final class AppModel: ObservableObject {
 
     /// Called once at launch: applies hotkey enablement and starts routing hotkey events.
     func start() {
+        if settings.glossaryEnabled {
+            Task { [weak self] in await self?.refreshGlossary() }
+        }
         if historyMaintenanceTask == nil {
             historyMaintenanceTask = Task { [weak self] in
                 guard let self,
@@ -272,6 +291,34 @@ final class AppModel: ObservableObject {
     /// Releases native local-ASR contexts before application termination is allowed to finish.
     func shutdown() async {
         env.localTranscriptionCache.removeAll()
+    }
+
+    // MARK: - The glossary
+
+    /// The keyed set the dictation controllers normalise against.
+    var glossary: Glossary { glossaryBox.glossary }
+
+    /// Reads the Vocabulary directory and rebuilds the glossary from the enabled packs.
+    ///
+    /// A read failure is not surfaced: it leaves the previously built glossary in place and
+    /// dictation keeps working un-normalised, which is the spec's rule for `packs.json`
+    /// applied to the directory as a whole.
+    func refreshGlossary() async {
+        let state: GlossaryState
+        if let loaded = try? await env.glossary.load() {
+            state = loaded
+        } else {
+            state = await env.glossary.reload()
+        }
+        glossaryBox.packs = state.enabledPacks
+        rebuildGlossary()
+    }
+
+    /// Rebuilds from the packs already read, for a change that cannot have altered the files —
+    /// editing the manual list.
+    private func rebuildGlossary() {
+        glossaryBox.glossary = Glossary(packs: glossaryBox.packs,
+                                        manualTerms: settings.glossaryManualTerms)
     }
 
     var statusText: String {

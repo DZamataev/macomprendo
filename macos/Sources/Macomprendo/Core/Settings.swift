@@ -332,6 +332,12 @@ struct Settings: Codable, Sendable, Equatable {
     var whisperTranslate: Bool
     /// How long an idle local ASR provider keeps its native model context resident.
     var localModelIdleTimeout: LocalModelIdleTimeout
+    /// The one switch over normalisation. Off by default: the packs seed disabled, so a
+    /// fresh install rewrites nothing until the user asks for it.
+    var glossaryEnabled: Bool
+    /// Terms the user typed straight into Settings rather than into a pack file. They
+    /// outrank every pack in a key collision.
+    var glossaryManualTerms: [String]
 
     static var `default`: Settings {
         Settings(
@@ -365,7 +371,9 @@ struct Settings: Codable, Sendable, Equatable {
             lastTranscriptionEndpointModel: nil,
             whisperThreads: nil,
             whisperTranslate: false,
-            localModelIdleTimeout: .tenMinutes
+            localModelIdleTimeout: .tenMinutes,
+            glossaryEnabled: false,
+            glossaryManualTerms: []
         )
     }
 
@@ -446,5 +454,9 @@ extension Settings {
         localModelIdleTimeout = try c.decodeIfPresent(LocalModelIdleTimeout.self,
                                                        forKey: .localModelIdleTimeout)
             ?? d.localModelIdleTimeout
+        glossaryEnabled = try c.decodeIfPresent(Bool.self, forKey: .glossaryEnabled)
+            ?? d.glossaryEnabled
+        glossaryManualTerms = try c.decodeIfPresent([String].self, forKey: .glossaryManualTerms)
+            ?? d.glossaryManualTerms
     }
 }

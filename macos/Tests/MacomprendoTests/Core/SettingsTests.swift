@@ -538,3 +538,54 @@ import Testing
         ])
     }
 }
+
+@Suite struct GlossarySettingsTests {
+    @Test func theGlossaryIsOffWithAnEmptyManualListByDefault() {
+        let d = Settings.default
+        #expect(d.glossaryEnabled == false)
+        #expect(d.glossaryManualTerms.isEmpty)
+    }
+
+    @Test func aDocumentWrittenBeforeTheGlossaryDecodesToTheDefaults() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+
+        let settings = try Settings.migrate(json)
+
+        #expect(settings.glossaryEnabled == false)
+        #expect(settings.glossaryManualTerms.isEmpty)
+    }
+
+    // The keys removed one at a time as well as together: a `decodeIfPresent` forgotten on
+    // either one throws on exactly the document this test feeds it.
+    @Test func eachGlossaryKeyIsOptionalOnItsOwn() throws {
+        for removed in ["glossaryEnabled", "glossaryManualTerms"] {
+            var settings = Settings.default
+            settings.glossaryEnabled = true
+            settings.glossaryManualTerms = ["MainMenu.tscn"]
+            var object = try #require(JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(settings)) as? [String: Any])
+            object.removeValue(forKey: removed)
+
+            let decoded = try Settings.migrate(JSONSerialization.data(withJSONObject: object))
+
+            #expect(decoded.glossaryEnabled == (removed == "glossaryEnabled" ? false : true))
+            #expect(decoded.glossaryManualTerms
+                    == (removed == "glossaryManualTerms" ? [] : ["MainMenu.tscn"]))
+        }
+    }
+
+    @Test func theGlossaryKeysSurviveARoundTrip() throws {
+        var settings = Settings.default
+        settings.glossaryEnabled = true
+        settings.glossaryManualTerms = ["auto-till-dry", "MatchHUD"]
+
+        let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+
+        #expect(decoded.glossaryEnabled)
+        #expect(decoded.glossaryManualTerms == ["auto-till-dry", "MatchHUD"])
+    }
+
+    @Test func addingTheGlossaryKeysDoesNotMoveTheSchemaVersion() {
+        #expect(Settings.currentSchemaVersion == 2)
+    }
+}
