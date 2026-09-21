@@ -1,0 +1,29 @@
+# pack: go
+# Go tooling the recogniser gets wrong.
+#
+# Lowercase tool names come back capitalised (`gofmt` -> `Gofmt`), hyphenated names come
+# back title-cased (`golangci-lint` -> `Golangci-Lint`), environment variables come back
+# as words, and dotted file names come back split (`go.mod` -> `go mod`). `Go` itself is
+# absent, and so are import paths like `golang.org/x/crypto`: nobody dictates those.
+
+go mod tidy
+go.mod
+go.sum
+gofmt
+goimports
+golangci-lint
+go vet
+go generate
+go test
+goroutine
+gopls
+dlv
+staticcheck
+sqlc
+GOPATH
+GOPROXY
+CGO_ENABLED
+errgroup
+gorm
+cobra
+zerolog

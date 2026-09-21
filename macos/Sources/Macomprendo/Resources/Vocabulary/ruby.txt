@@ -1,0 +1,30 @@
+# pack: ruby
+# Ruby tooling the recogniser gets wrong.
+#
+# Short commands come back capitalised (`irb` -> `IRB`, `erb` -> `ERB`), gem names come
+# back title-cased (`rubocop` -> `RuboCop`, `rspec` -> `RSpec`), and `Gemfile.lock` comes
+# back split. Bare `rails` is deliberately absent: when the model writes `Rails` it is
+# usually right — the framework, not the command — and a pack cannot tell the two apart.
+
+rbenv
+rvm
+bundle exec
+bundle install
+Gemfile
+Gemfile.lock
+gemspec
+rubocop
+rspec
+rake
+irb
+pry
+sidekiq
+puma
+erb
+ActiveRecord
+minitest
+rails console
+rails generate
+standardrb
+sorbet
+capybara

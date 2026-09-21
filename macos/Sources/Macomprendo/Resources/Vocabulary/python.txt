@@ -1,0 +1,33 @@
+# pack: python
+# Python tooling the recogniser gets wrong.
+#
+# Two-letter and short commands come back capitalised (`uv` -> `UV`), package names
+# come back title-cased, and dotted config names come back split (`pyproject.toml` ->
+# `pyproject toml`). `Python` itself is absent — the model writes it correctly.
+#
+# `ruff` is listed although normalisation cannot repair it: the recogniser hears a
+# different word entirely (`RAV`), which is a biasing problem, not a spelling one. It
+# belongs in the pack so the later spec has it.
+
+uv
+uv run
+ruff
+ruff format
+pytest
+mypy
+pyenv
+pipx
+.venv
+pyproject.toml
+requirements.txt
+flake8
+poetry
+conda
+numpy
+pandas
+uvicorn
+gunicorn
+FastAPI
+pydantic
+ipython
+tox

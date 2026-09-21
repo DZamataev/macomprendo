@@ -499,39 +499,25 @@ struct NormalisationProvenanceTests {
 /// are asserted to survive unchanged.
 @Suite("Normalisation — control-dictation regression pin")
 struct ControlDictationRegressionPinTests {
-    /// The spoken terms the recogniser broke, which is the criterion the factory packs use: a
-    /// term earns its place only if the recogniser plausibly breaks it. Terms that came out
-    /// correct (`SwiftUI`, `UIKit`, `TurboModules`, `git rebase`, `npm run build`) are excluded
-    /// for that reason, and so are the rows that are not terms at all.
+    /// The six factory packs, read out of the bundle — the text that actually ships, so this
+    /// pin fails when a shipped pack drifts away from the behaviour it records.
     ///
-    /// Task 4 writes the real factory packs; this list is the same criterion applied by hand, so
-    /// that Task 3 can be pinned without them.
-    static let pack = GlossaryPack.parse("""
-    jq
-    adb devices
-    idb
-    nvm
-    yarn
-    pnpm
-    tsc
-    oxlint
-    oxfmt
-    uv
-    ruff
-    gh
-    rg
-    Metro
-    xcodebuild
-    pod install
-    yarn ios
-    watchman
-    xcodegen generate
-    project.yml
+    /// Task 3 built this glossary by hand from the dictation's failure table; Task 4 repointed
+    /// it. The hand-built list is gone deliberately: left in place it would have kept passing
+    /// while the packs changed underneath it.
+    static let factoryPacks: [GlossaryPack] = FactoryPackFixture.names.compactMap {
+        FactoryPackFixture.pack($0)
+    }
+
+    /// The dictation's project-specific terms, which cannot be factory terms: they name the
+    /// speaker's own projects, modules and models. The spec's factory set is per-stack plus
+    /// "one per active project the user chooses to add" — this stands in for that pack.
+    ///
+    /// `TextEditor` and `MainMenu.tscn` are here for the same reason: the first is a SwiftUI
+    /// type with no factory pack to live in, the second is a scene file name, and the `godot`
+    /// pack says scene names belong in a pack of your own.
+    static let personalPack = GlossaryPack.parse("""
     TextEditor
-    ScrollView
-    SafeAreaView
-    Codegen
-    Autoload
     MainMenu.tscn
     auto-till-dry
     look-box
@@ -540,9 +526,9 @@ struct ControlDictationRegressionPinTests {
     MatchHUD
     SherpaOnnx
     large-v3-turbo
-    """, name: "control")
+    """, name: "personal")
 
-    static var glossary: Glossary { Glossary(packs: [pack]) }
+    static var glossary: Glossary { Glossary(packs: factoryPacks + [personalPack]) }
 
     private func pin(_ transcript: String, _ expected: String) {
         #expect(Normalizer.normalise(transcript, with: Self.glossary).text == expected)
@@ -647,7 +633,19 @@ struct ControlDictationRegressionPinTests {
         // appears twice in transcript 268 while the dictation's table lists it once.
         #expect(rewrites.count == 24)
         #expect(results.map(\.rewrites.count) == [11, 4, 4, 3, 2])
-        #expect(rewrites.allSatisfy { $0.packName == "control" })
+        // Every rewrite names the pack it came from, and every one of those packs is real.
+        let sources = Set(Self.factoryPacks.map(\.name) + [Self.personalPack.name])
+        #expect(rewrites.allSatisfy { $0.packName.map(sources.contains) == true })
+        // The provenance is specific, not merely non-nil: a term moved between factory packs
+        // must show up here rather than pass silently.
+        let packByTerm = Dictionary(
+            rewrites.map { ($0.term, $0.packName) }, uniquingKeysWith: { first, _ in first }
+        )
+        #expect(packByTerm["nvm"] == "typescript")
+        #expect(packByTerm["xcodebuild"] == "react-native")
+        #expect(packByTerm["uv"] == "python")
+        #expect(packByTerm["Autoload"] == "godot")
+        #expect(packByTerm["auto-till-dry"] == "personal")
         // Every range indexes the final string it belongs to.
         for result in results {
             for rewrite in result.rewrites {

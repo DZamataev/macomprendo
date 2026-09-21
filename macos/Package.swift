@@ -21,7 +21,11 @@ let package = Package(
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts")
             ],
             path: "Sources/Macomprendo",
-            resources: [.copy("Resources/Icons"), .copy("Resources/Licenses")],
+            resources: [
+                .copy("Resources/Icons"),
+                .copy("Resources/Licenses"),
+                .copy("Resources/Vocabulary")
+            ],
             swiftSettings: [.swiftLanguageMode(.v6)],
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),

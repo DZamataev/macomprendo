@@ -1,0 +1,36 @@
+# pack: react-native
+# React Native and the mobile build tooling around it.
+#
+# Two failure shapes dominate here. Compound component names come back split
+# (`SafeAreaView` -> `Safe Area View`), and build commands come back split and
+# capitalised (`xcodebuild` -> `Xcode build`, `xcodegen generate` ->
+# `Xcode gen generate`). `SwiftUI`, `UIKit` and `TurboModules` are absent because the
+# model writes them correctly already.
+#
+# `Metro` and `Codegen` are listed even though normalisation cannot repair them: the
+# recogniser renders them in Cyrillic (`метро`, `код ген`), which is a later spec's
+# problem, and the term has to exist before that spec can reach it.
+#
+# `react-native` itself is NOT listed. The dictation wrote `React Native` correctly, and
+# a term here would rewrite that correct prose into the package spelling.
+
+Metro
+metro.config.js
+watchman
+xcodebuild
+xcodegen generate
+pod install
+Podfile
+Podfile.lock
+project.yml
+yarn ios
+yarn android
+gradlew
+adb devices
+adb logcat
+adb reverse
+idb
+SafeAreaView
+ScrollView
+FlatList
+Codegen

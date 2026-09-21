@@ -1,0 +1,34 @@
+# pack: typescript
+# Node and TypeScript tooling the recogniser gets wrong.
+#
+# A term is here only because dictation plausibly breaks it: short commands come back
+# capitalised (`tsc` -> `TSC`, `nvm` -> `NVM`), and dotted file names come back split
+# (`tsconfig.json` -> `tsconfig json`). Words the model already writes correctly —
+# `TypeScript`, `React`, `npm run build`, `git rebase` — are deliberately absent: they
+# would only spend the prompt budget a later spec has to ration.
+#
+# The cross-stack shell tools `jq`, `rg` and `gh` live here because the factory set has
+# no shell pack; enable this pack even on a non-Node project if you dictate them.
+
+tsc
+nvm
+npx
+pnpm
+yarn
+npm ci
+node_modules
+package.json
+tsconfig.json
+pnpm-lock.yaml
+ts-node
+oxlint
+oxfmt
+eslint
+prettier
+vitest
+esbuild
+tsup
+vite
+jq
+rg
+gh

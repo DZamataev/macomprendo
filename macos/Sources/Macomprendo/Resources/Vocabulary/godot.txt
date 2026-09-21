@@ -1,0 +1,35 @@
+# pack: godot
+# Godot engine vocabulary the recogniser gets wrong.
+#
+# Node class names are compound and come back split (`CharacterBody2D` ->
+# `Character Body 2D`), engine concepts come back mis-cased (`Autoload` -> `AutoLoad`),
+# and snake_case methods come back as two words (`queue_free` -> `queue free`). `Godot`
+# itself is absent because the model writes it correctly, and so are API calls nobody
+# dictates, such as `Input.parse_input_event`.
+#
+# Scene file names are project-specific: keep `MainMenu.tscn` and friends in a pack of
+# your own, not here.
+
+Autoload
+GDScript
+GDExtension
+godot-cpp
+project.godot
+SceneTree
+PackedScene
+Node2D
+Area2D
+RigidBody2D
+StaticBody2D
+CharacterBody2D
+CollisionShape2D
+AnimationPlayer
+AnimatedSprite2D
+TileMapLayer
+CanvasLayer
+VBoxContainer
+HBoxContainer
+Marker2D
+SubViewport
+queue_free
+call_deferred
