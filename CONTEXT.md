@@ -48,7 +48,7 @@ _Avoid_: correct form, proper case
 
 **Pack**:
 A named, switchable file of terms. Factory packs ship in the bundle and seed the user's
-directory; a pack is enabled by a line inside its own file.
+directory; a pack is enabled by listing its name in `packs.json`, beside the pack files.
 _Avoid_: group, category, preset, collection
 
 **Replacement rule**:

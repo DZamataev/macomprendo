@@ -110,6 +110,70 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
 - [ ] Settings ▸ General: toggle "Launch at login" on, check System Settings ▸ General ▸ Login
       Items — Macomprendo is listed; toggling it off removes it.
 
+## Glossary (Settings ▸ Dictation)
+
+Everything here needs the real Application Support directory, Finder and a microphone, so none
+of it is reachable from unit tests. `~/Library/Application Support/Macomprendo/Vocabulary/` is
+referred to below as **the Vocabulary folder**.
+
+- [ ] **A fresh install seeds six packs and enables none of them.** Quit the app, move the
+      Vocabulary folder aside (`mv ~/Library/Application\ Support/Macomprendo/Vocabulary
+      /tmp/vocab-backup`), and launch again. The folder is back and holds exactly
+      `typescript.txt`, `react-native.txt`, `python.txt`, `go.txt`, `ruby.txt`, `godot.txt` and
+      `README.md`. There is no `packs.json`, or an empty one. Open Settings ▸ Dictation ▸
+      Glossary, turn **Correct recognised terms** on and decline the offer with **Not now**:
+      every pack in the list is present with its term count and **every checkbox is off**.
+- [ ] **The first-run offer is made once.** With the master switch off and
+      `glossaryRecommendedPacksOffered` not yet set (the fresh state above), turn the switch on:
+      the "Turn on the recommended packs?" dialog names the six packs. Choose **Not now**, turn
+      the switch off and on again — the dialog does not reappear and `packs.json` is still
+      empty. Repeat from the fresh state and choose **Turn them on**: all six checkboxes are on
+      and `packs.json` lists the six names in that order.
+- [ ] **A pack dropped in by hand appears after Reload and stays off.** With Settings open,
+      write a file `smoke.txt` into the Vocabulary folder containing a comment line, a blank
+      line and the single term `auto-till-dry`. Nothing changes in Settings until you click
+      **Reload**; then `smoke` appears in the list reading "1 term", **unchecked**, with
+      **Delete** offered (it is a user pack, not a factory one). Confirm the file's name is
+      *not* in `packs.json`. Tick its checkbox and confirm `packs.json` now names `smoke` and
+      that every `.txt` file in the folder is byte-identical to what it was before the tick
+      (`shasum` the folder before and after).
+- [ ] **An enabled pack corrects a dictated term.** Enable only the `typescript` pack, click
+      into TextEdit and dictate a sentence containing *tsconfig json* and *NVM* — for example
+      «Открой tsconfig json и поставь nvm». The pasted text reads `tsconfig.json` and `nvm`
+      (dotted, lower-case), which is how they are spelled in `typescript.txt`. Turn the master
+      switch off, dictate the same sentence: the transcript is pasted as the recogniser wrote
+      it, uncorrected.
+- [ ] **The original transcript is kept beside the corrected one.** With dictation history on
+      and a correction made as above, the History window shows the corrected text (nothing in
+      the UI renders the raw form today). Verify the raw text was stored by querying the
+      database directly:
+      `sqlite3 ~/Library/Application\ Support/Macomprendo/dictation-history.sqlite3
+      "select text, raw_text from dictation_history order by id desc limit 1;"` — `text` holds
+      the corrected spelling, `raw_text` holds what the recogniser produced. Dictate a sentence
+      with no glossary term in it and confirm `raw_text` is empty for that entry.
+- [ ] **Editing a pack keeps its comments.** Click **Edit** on `typescript`: the sheet shows the
+      file's own text — the `# pack: typescript` header and its comment block are visible, not a
+      rendered term list. Add a line `smoke-edit-term`, click **Save**, close Settings, reopen it
+      and click **Edit** again: the new line is there **and every original comment, blank line
+      and term order is unchanged**. `diff` the file against `/tmp/vocab-backup/typescript.txt`
+      to confirm the only difference is the line you added.
+- [ ] **Reset restores a factory pack, Delete is offered only for user packs.** With the edit
+      above still in place, click **Reset** on `typescript`: the file returns to the shipped
+      text and the added line is gone. `typescript` offers no **Delete** button; `smoke` does,
+      and deleting it removes the file without an error.
+- [ ] **A malformed line is counted, not fatal.** Edit `smoke` to add a line that is only `=`.
+      After saving, the row reads "1 line could not be read" next to its term count, and
+      dictation still corrects the pack's remaining term.
+- [ ] **An unreadable pack is named, not hidden.** `chmod 000` one `.txt` file in the folder and
+      click **Reload**: the section shows an orange message naming that file, and the other
+      packs still appear and still work. `chmod 644` it again and Reload: the message clears.
+- [ ] **A malformed `packs.json` says so and dictation keeps working.** Write `not json` into
+      `packs.json` and click **Reload**: an orange message says the config could not be read,
+      every pack shows unchecked, and dictating still inserts text (uncorrected). Tick a pack to
+      rewrite the file and confirm the message clears.
+- [ ] **Show in Finder opens the folder.** Click **Show in Finder**: the Vocabulary folder opens
+      with the packs and `README.md` in it.
+
 ## Refine selection (hotkey #5, unassigned by default)
 
 Assign a shortcut in Settings ▸ Hotkeys first.
