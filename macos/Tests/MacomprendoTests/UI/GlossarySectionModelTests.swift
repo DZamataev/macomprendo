@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import Macomprendo
@@ -97,6 +98,60 @@ import Testing
 
         #expect(model.isRecommendedOfferPresented == false)
         #expect(holder.settings.glossaryEnabled == false)
+    }
+
+    // The switch's value lives in `Settings`, which is another object's `@Published`. The
+    // section observes only this model, so without an explicit change of its own the toggle
+    // draws the value it had before the click and looks stuck — the next click flips the
+    // setting back, which is exactly the "will not switch off" report.
+    @Test func flippingTheSwitchPublishesSoTheSectionRedraws() {
+        let holder = ScriptedSettingsHolder()
+        // Already offered, so the only thing that can publish here is the switch itself.
+        holder.settings.glossaryRecommendedPacksOffered = true
+        let model = makeModel(holder: holder)
+        var changes = 0
+        let token = model.objectWillChange.sink { _ in changes += 1 }
+
+        model.setGlossaryEnabled(true)
+        #expect(changes == 1)
+        #expect(model.isGlossaryEnabled)
+
+        model.setGlossaryEnabled(false)
+        #expect(changes == 2)
+        #expect(model.isGlossaryEnabled == false)
+
+        token.cancel()
+    }
+
+    // A value the switch already holds is not a change, and publishing one would redraw the
+    // section for nothing.
+    @Test func settingTheSwitchToTheValueItAlreadyHoldsPublishesNothing() {
+        let holder = ScriptedSettingsHolder()
+        holder.settings.glossaryRecommendedPacksOffered = true
+        let model = makeModel(holder: holder)
+        var changes = 0
+        let token = model.objectWillChange.sink { _ in changes += 1 }
+
+        model.setGlossaryEnabled(false)
+
+        #expect(changes == 0)
+        token.cancel()
+    }
+
+    // Nothing in the Vocabulary folder is read or written while the switch is merely turned
+    // off: a user switching the feature off pays for no filesystem work.
+    @Test func turningTheSwitchOffReadsNothingFromTheFolder() async {
+        let store = FakeGlossaryStore()
+        let holder = ScriptedSettingsHolder()
+        holder.settings.glossaryEnabled = true
+        holder.settings.glossaryRecommendedPacksOffered = true
+        let model = makeModel(store: store, holder: holder)
+
+        model.setGlossaryEnabled(false)
+
+        #expect(await store.loadCallCount == 0)
+        #expect(await store.reloadCallCount == 0)
+        #expect(await store.mutations.isEmpty)
     }
 
     // MARK: - What the list shows

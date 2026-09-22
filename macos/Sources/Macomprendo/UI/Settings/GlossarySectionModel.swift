@@ -110,7 +110,14 @@ final class GlossarySectionModel: ObservableObject {
 
     /// Turning the switch on for the first time offers the recommended packs, because the
     /// packs seed disabled: without the offer the feature ships inert.
+    ///
+    /// The value itself lives in `Settings`, which belongs to `AppModel` — a different
+    /// `ObservableObject`. The section observes only this model, so the change has to be
+    /// published here or the toggle keeps drawing the value it had before the click and looks
+    /// stuck; the user's next click then flips the setting straight back.
     func setGlossaryEnabled(_ enabled: Bool) {
+        guard enabled != holder.settings.glossaryEnabled else { return }
+        objectWillChange.send()
         holder.settings.glossaryEnabled = enabled
         guard enabled, !holder.settings.glossaryRecommendedPacksOffered else { return }
         isRecommendedOfferPresented = true
