@@ -130,7 +130,9 @@ extension TextFeatures {
             mode: { model.settings.dictationMode },
             language: { model.settings.transcriptionLanguage },
             source: { model.settings.transcriptionSource },
-            history: history)
+            history: history,
+            isGlossaryEnabled: { model.settings.glossaryEnabled },
+            glossary: { [unowned model] in model.glossary })
 
         let refine = RefineController(
             capture: capture,

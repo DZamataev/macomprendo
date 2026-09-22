@@ -20,7 +20,10 @@ import Testing
                       permissions: ScriptedPermissions = ScriptedPermissions(),
                       historyStore: FakeDictationHistoryStore = FakeDictationHistoryStore(),
                       historyEnabled: Bool = true,
-                      source: TranscriptionSource = .local(modelID: "large-v3-turbo"))
+                      source: TranscriptionSource = .local(modelID: "large-v3-turbo"),
+                      glossaryEnabled: Bool = false,
+                      glossary: Glossary = Glossary(),
+                      glossaryRequests: Box<Int>? = nil)
         -> DictationCapture {
         let capture = DictationCapture(
             recorder: recorder,
@@ -29,7 +32,12 @@ import Testing
             mode: { mode },
             language: { "en" },
             source: { source },
-            history: history(store: historyStore, enabled: historyEnabled))
+            history: history(store: historyStore, enabled: historyEnabled),
+            isGlossaryEnabled: { glossaryEnabled },
+            glossary: {
+                if let glossaryRequests { glossaryRequests.value += 1 }
+                return glossary
+            })
         capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
         capture.onError = { [weak self] in self?.errors.append($0) }
         return capture
@@ -500,6 +508,72 @@ import Testing
         #expect(request?.run?.engine == LocalEngine.gigaAM.rawValue)
         #expect(request?.run?.language == "en")
         #expect(request?.run?.appVersion == TranscriptionRun.currentAppVersion)
+        #expect(request?.rawText == nil)
+    }
+
+    // MARK: - The glossary
+
+    private static func glossary(_ terms: String...) -> Glossary {
+        Glossary(packs: [GlossaryPack.parse(terms.joined(separator: "\n"), name: "test")])
+    }
+
+    private func transcribe(_ capture: DictationCapture) async {
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        capture.handle(.keyUp(.dictateAndRefine))
+        await capture.drain()
+    }
+
+    @Test func glossaryOffDeliversAndRecordsTheModelsTextAndNeverAsksForTheGlossary() async {
+        let store = FakeDictationHistoryStore()
+        let requests = Box(0)
+        var transcriber = ScriptedTranscriber()
+        transcriber.text = "Открыл Xcode build"
+        let capture = make(transcriber: transcriber, historyStore: store,
+                           glossaryEnabled: false,
+                           glossary: Self.glossary("xcodebuild"),
+                           glossaryRequests: requests)
+
+        await transcribe(capture)
+
+        #expect(transcripts == ["Открыл Xcode build"])
+        let request = await store.appendRequests.first
+        #expect(request?.text == "Открыл Xcode build")
+        #expect(request?.rawText == nil)
+        #expect(requests.value == 0)
+    }
+
+    @Test func glossaryOnWithAHitDeliversTheCorrectionAndRecordsTheModelsOwnText() async {
+        let store = FakeDictationHistoryStore()
+        var transcriber = ScriptedTranscriber()
+        transcriber.text = "Открыл Xcode build"
+        let capture = make(transcriber: transcriber, historyStore: store,
+                           glossaryEnabled: true,
+                           glossary: Self.glossary("xcodebuild"))
+
+        await transcribe(capture)
+
+        #expect(transcripts == ["Открыл xcodebuild"])
+        let request = await store.appendRequests.first
+        #expect(request?.text == "Открыл xcodebuild")
+        #expect(request?.rawText == "Открыл Xcode build")
+    }
+
+    // `rawText` records what the model wrote *instead of* the correction. With nothing
+    // corrected there is no second version, and a copy of `text` would claim there was one.
+    @Test func glossaryOnWithoutAHitRecordsNoRawText() async {
+        let store = FakeDictationHistoryStore()
+        var transcriber = ScriptedTranscriber()
+        transcriber.text = "Открыл терминал"
+        let capture = make(transcriber: transcriber, historyStore: store,
+                           glossaryEnabled: true,
+                           glossary: Self.glossary("xcodebuild"))
+
+        await transcribe(capture)
+
+        #expect(transcripts == ["Открыл терминал"])
+        let request = await store.appendRequests.first
+        #expect(request?.text == "Открыл терминал")
         #expect(request?.rawText == nil)
     }
 }

@@ -34,6 +34,8 @@ struct AppEnvironment {
     var pasteboard: any PasteboardProtocol
     var dictationHistory: any DictationHistoryStoring
     var dictationAudioEncoder: any DictationAudioEncoding
+    /// Owns the Vocabulary directory the glossary is read from.
+    var glossary: any GlossaryStoring
     /// Plays a saved recording back from the history window. Separate from the speech
     /// services' own players so stopping one never silences the other.
     var historyAudioPlayer: any AudioPlaying
@@ -85,6 +87,9 @@ struct AppEnvironment {
             pasteboard: pasteboard,
             dictationHistory: dictationHistory,
             dictationAudioEncoder: DictationAudioEncoder(),
+            glossary: DirectoryGlossaryStore(
+                directoryURL: applicationSupportDirectory
+                    .appendingPathComponent("Vocabulary", isDirectory: true)),
             historyAudioPlayer: AVAudioPlayerPlayer(),
             fileRevealer: NSWorkspaceFileRevealer(),
             urlOpener: NSWorkspaceURLOpener(),

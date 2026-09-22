@@ -332,6 +332,15 @@ struct Settings: Codable, Sendable, Equatable {
     var whisperTranslate: Bool
     /// How long an idle local ASR provider keeps its native model context resident.
     var localModelIdleTimeout: LocalModelIdleTimeout
+    /// The one switch over normalisation. Off by default: the packs seed disabled, so a
+    /// fresh install rewrites nothing until the user asks for it.
+    var glossaryEnabled: Bool
+    /// Terms the user typed straight into Settings rather than into a pack file. They
+    /// outrank every pack in a key collision.
+    var glossaryManualTerms: [String]
+    /// Whether the recommended packs have already been offered. Set the first time the master
+    /// switch goes on, whichever way the user answered, so the offer is made exactly once.
+    var glossaryRecommendedPacksOffered: Bool
 
     static var `default`: Settings {
         Settings(
@@ -365,7 +374,10 @@ struct Settings: Codable, Sendable, Equatable {
             lastTranscriptionEndpointModel: nil,
             whisperThreads: nil,
             whisperTranslate: false,
-            localModelIdleTimeout: .tenMinutes
+            localModelIdleTimeout: .tenMinutes,
+            glossaryEnabled: false,
+            glossaryManualTerms: [],
+            glossaryRecommendedPacksOffered: false
         )
     }
 
@@ -446,5 +458,12 @@ extension Settings {
         localModelIdleTimeout = try c.decodeIfPresent(LocalModelIdleTimeout.self,
                                                        forKey: .localModelIdleTimeout)
             ?? d.localModelIdleTimeout
+        glossaryEnabled = try c.decodeIfPresent(Bool.self, forKey: .glossaryEnabled)
+            ?? d.glossaryEnabled
+        glossaryManualTerms = try c.decodeIfPresent([String].self, forKey: .glossaryManualTerms)
+            ?? d.glossaryManualTerms
+        glossaryRecommendedPacksOffered = try c.decodeIfPresent(
+            Bool.self, forKey: .glossaryRecommendedPacksOffered)
+            ?? d.glossaryRecommendedPacksOffered
     }
 }

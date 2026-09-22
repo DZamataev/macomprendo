@@ -17,6 +17,9 @@ import Testing
     .noSelection,
     .insertFailed,
     .dictationHistory("database is read-only"),
+    .glossary("the folder is read-only"),
+    .glossaryPackNameInvalid("a/b"),
+    .glossaryPackNameTaken("typescript"),
     .licenseTextMissing("espeak-ng"),
     .licenseTextUnreadable("espeak-ng")
 ])

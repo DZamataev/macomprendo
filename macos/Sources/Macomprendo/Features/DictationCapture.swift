@@ -26,6 +26,12 @@ import Foundation
     /// The transcription source in effect, read when the transcript arrives so the row records
     /// the model that actually ran rather than the one selected afterwards.
     private let source: @MainActor () -> TranscriptionSource
+    /// The master switch, read when the transcript arrives. While it is off the glossary is
+    /// never asked for at all.
+    private let isGlossaryEnabled: @MainActor () -> Bool
+    /// The glossary in force, read at the same moment, so a pack enabled mid-recording
+    /// applies to the transcript that recording produced.
+    private let glossary: @MainActor () -> Glossary
     private var task: Task<Void, Never>?
     private var pendingStopTask: Task<Void, Never>?
     private var generation = 0
@@ -36,7 +42,9 @@ import Foundation
          mode: @escaping @MainActor () -> DictationMode,
          language: @escaping @MainActor () -> String?,
          source: @escaping @MainActor () -> TranscriptionSource,
-         history: DictationHistoryController) {
+         history: DictationHistoryController,
+         isGlossaryEnabled: @escaping @MainActor () -> Bool = { false },
+         glossary: @escaping @MainActor () -> Glossary = { Glossary() }) {
         self.recorder = recorder
         self.transcriberProvider = transcriberProvider
         self.permissions = permissions
@@ -44,6 +52,8 @@ import Foundation
         self.mode = mode
         self.language = language
         self.source = source
+        self.isGlossaryEnabled = isGlossaryEnabled
+        self.glossary = glossary
     }
 
     func handle(_ event: HotkeyEvent, mode: DictationMode? = nil) {
@@ -144,17 +154,27 @@ import Foundation
                 guard self.generation == generation else { return }
                 let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { throw MacomprendoError.audio("Nothing heard.") }
-                // `rawText` stays nil: nothing rewrites the text yet.
+                // The whole result rather than just its text: the rewrites carry the ranges
+                // and owning pack a later review panel reads.
+                let normalisation = self.isGlossaryEnabled()
+                    ? Normalizer.normalise(text, with: self.glossary())
+                    : NormalisationResult(text: text, rewrites: [])
+                let corrected = normalisation.text
+                // `rawText` holds the model's own words only when they differ from what the
+                // user gets: the column measures the model against our corrections, and a
+                // copy of `text` would claim a correction that never happened.
                 let run = TranscriptionRun.from(self.source(), language: language)
-                let historyResult = await history.append(text: text, rawText: nil,
-                                                         kind: .dictationAndRefine, run: run)
+                let historyResult = await history.append(
+                    text: corrected,
+                    rawText: normalisation.rewrites.isEmpty ? nil : text,
+                    kind: .dictationAndRefine, run: run)
                 try Task.checkCancellation()
                 guard self.generation == generation else { return }
                 self.setState(.idle)
                 if let historyError = historyResult.error {
                     onHistoryError?(historyError)
                 }
-                self.onTranscript?(text)
+                self.onTranscript?(corrected)
                 let recordingError = await history.saveRecording(samples, for: historyResult.entry)
                 guard self.generation == generation, !Task.isCancelled else { return }
                 if historyResult.error == nil, let recordingError {

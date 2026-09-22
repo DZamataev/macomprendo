@@ -28,6 +28,10 @@ final class DictationController: ObservableObject {
     private let settings: @MainActor () -> Settings
     private let escapeMonitor: any EscapeMonitoring
     private let history: DictationHistoryController?
+    /// The glossary in force, read at the moment a transcript is accepted so a pack enabled
+    /// mid-recording applies to it. Asked for only while `glossaryEnabled` is on, so a user
+    /// who never turned the glossary on never pays for building one.
+    private let glossary: @MainActor () -> Glossary
 
     private var target: FrontmostApp?
     private var startedAt: Date?
@@ -63,7 +67,8 @@ final class DictationController: ObservableObject {
          pasteboard: any PasteboardProtocol,
          settings: @escaping @MainActor () -> Settings,
          escapeMonitor: any EscapeMonitoring,
-         history: DictationHistoryController? = nil) {
+         history: DictationHistoryController? = nil,
+         glossary: @escaping @MainActor () -> Glossary = { Glossary() }) {
         self.recorder = recorder
         self.transcriberProvider = transcriberProvider
         self.inserter = inserter
@@ -74,6 +79,7 @@ final class DictationController: ObservableObject {
         self.settings = settings
         self.escapeMonitor = escapeMonitor
         self.history = history
+        self.glossary = glossary
         escapeMonitor.onEscape = { [weak self] in self?.cancel() }
 
         // One long-lived consumer each: an `AsyncStream` can only be iterated once, so
@@ -227,10 +233,22 @@ final class DictationController: ObservableObject {
                 return
             }
 
+            // The whole result, not just its text: the rewrites carry the ranges and the
+            // owning pack a review panel reads, and discarding them here would mean
+            // recomputing what was already known.
+            let normalisation = settings().glossaryEnabled
+                ? Normalizer.normalise(text, with: glossary())
+                : NormalisationResult(text: text, rewrites: [])
+            let corrected = normalisation.text
+
             let historyResult: DictationHistoryController.AppendResult = if let history {
-                // `rawText` stays nil: nothing rewrites the text yet. `run` is nil on the
-                // short-dictation path, whose "OK" no model produced.
-                await history.append(text: text, rawText: nil, kind: .dictation, run: run)
+                // `rawText` holds the model's own words only when they differ from what was
+                // inserted: the column exists to measure the model against our corrections,
+                // and a copy of `text` would claim a correction that never happened. `run`
+                // is nil on the short-dictation path, whose "OK" no model produced.
+                await history.append(text: corrected,
+                                     rawText: normalisation.rewrites.isEmpty ? nil : text,
+                                     kind: .dictation, run: run)
             } else {
                 .init(entry: nil, error: nil)
             }
@@ -238,7 +256,7 @@ final class DictationController: ObservableObject {
 
             state = .inserting
             isInserting = true
-            let insertionText = settings().appendSpaceAfterDictation ? "\(text) " : text
+            let insertionText = settings().appendSpaceAfterDictation ? "\(corrected) " : corrected
             let insertOutcome: Result<Void, Error>
             do {
                 try await inserter.insert(insertionText, into: target, method: settings().insertMethod)
@@ -282,7 +300,7 @@ final class DictationController: ObservableObject {
                 // pasteboard when it cannot re-activate the target app, but its recovery
                 // text promises "the text is on the clipboard" — make that true here so
                 // the fallback is a genuine copy, not just a claim.
-                copyFallback(text)
+                copyFallback(corrected)
             case .failure(let error):
                 fail(error)
             }

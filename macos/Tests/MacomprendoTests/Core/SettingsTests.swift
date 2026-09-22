@@ -538,3 +538,62 @@ import Testing
         ])
     }
 }
+
+@Suite struct GlossarySettingsTests {
+    @Test func theGlossaryIsOffWithAnEmptyManualListByDefault() {
+        let d = Settings.default
+        #expect(d.glossaryEnabled == false)
+        #expect(d.glossaryManualTerms.isEmpty)
+        #expect(d.glossaryRecommendedPacksOffered == false)
+    }
+
+    @Test func aDocumentWrittenBeforeTheGlossaryDecodesToTheDefaults() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+
+        let settings = try Settings.migrate(json)
+
+        #expect(settings.glossaryEnabled == false)
+        #expect(settings.glossaryManualTerms.isEmpty)
+        #expect(settings.glossaryRecommendedPacksOffered == false)
+    }
+
+    // The keys removed one at a time as well as together: a `decodeIfPresent` forgotten on
+    // either one throws on exactly the document this test feeds it.
+    @Test func eachGlossaryKeyIsOptionalOnItsOwn() throws {
+        for removed in ["glossaryEnabled", "glossaryManualTerms",
+                        "glossaryRecommendedPacksOffered"] {
+            var settings = Settings.default
+            settings.glossaryEnabled = true
+            settings.glossaryManualTerms = ["MainMenu.tscn"]
+            settings.glossaryRecommendedPacksOffered = true
+            var object = try #require(JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(settings)) as? [String: Any])
+            object.removeValue(forKey: removed)
+
+            let decoded = try Settings.migrate(JSONSerialization.data(withJSONObject: object))
+
+            #expect(decoded.glossaryEnabled == (removed == "glossaryEnabled" ? false : true))
+            #expect(decoded.glossaryManualTerms
+                    == (removed == "glossaryManualTerms" ? [] : ["MainMenu.tscn"]))
+            #expect(decoded.glossaryRecommendedPacksOffered
+                    == (removed == "glossaryRecommendedPacksOffered" ? false : true))
+        }
+    }
+
+    @Test func theGlossaryKeysSurviveARoundTrip() throws {
+        var settings = Settings.default
+        settings.glossaryEnabled = true
+        settings.glossaryManualTerms = ["auto-till-dry", "MatchHUD"]
+        settings.glossaryRecommendedPacksOffered = true
+
+        let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+
+        #expect(decoded.glossaryEnabled)
+        #expect(decoded.glossaryManualTerms == ["auto-till-dry", "MatchHUD"])
+        #expect(decoded.glossaryRecommendedPacksOffered)
+    }
+
+    @Test func addingTheGlossaryKeysDoesNotMoveTheSchemaVersion() {
+        #expect(Settings.currentSchemaVersion == 2)
+    }
+}

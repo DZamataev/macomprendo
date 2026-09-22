@@ -18,13 +18,18 @@ import Testing
         let historyStore: FakeDictationHistoryStore
         let history: DictationHistoryController
         let encoder: FakeDictationAudioEncoder
+        /// How many times the controller asked for the glossary. Zero proves the master
+        /// switch is read before anything is built or matched.
+        let glossaryRequests: Box<Int>
     }
 
     private func makeHarness(mode: DictationMode = .hold,
                              insertMethod: InsertMethod = .auto,
                              historyEnabled: Bool = true,
                              recordingEnabled: Bool = false,
-                             transcript: String? = nil) -> Harness {
+                             transcript: String? = nil,
+                             glossaryEnabled: Bool = false,
+                             glossary: Glossary = Glossary()) -> Harness {
         let recorder = FakeAudioRecorder()
         let transcriber = FakeTranscriptionProvider()
         let inserter = FakeTextInserter()
@@ -44,6 +49,8 @@ import Testing
         settings.value.transcriptionLanguage = "en"
         settings.value.dictationHistoryEnabled = historyEnabled
         settings.value.saveOriginalRecording = recordingEnabled
+        settings.value.glossaryEnabled = glossaryEnabled
+        let glossaryRequests = Box(0)
         let escapeMonitor = FakeEscapeMonitor()
         let historyStore = FakeDictationHistoryStore()
         let encoder = FakeDictationAudioEncoder()
@@ -69,11 +76,16 @@ import Testing
             pasteboard: pasteboard,
             settings: { settings.value },
             escapeMonitor: escapeMonitor,
-            history: history)
+            history: history,
+            glossary: {
+                glossaryRequests.value += 1
+                return glossary
+            })
         return Harness(controller: controller, recorder: recorder, transcriber: transcriber,
                        inserter: inserter, tracker: tracker, permissions: permissions,
                        hud: hud, pasteboard: pasteboard, settings: settings, escapeMonitor: escapeMonitor,
-                       historyStore: historyStore, history: history, encoder: encoder)
+                       historyStore: historyStore, history: history, encoder: encoder,
+                       glossaryRequests: glossaryRequests)
     }
 
     private func recordAndFinish(_ h: Harness) async {
@@ -988,5 +1000,56 @@ import Testing
         await recordAndFinish(h)
 
         #expect(await h.encoder.requests.map(\.format) == [.aac])
+    }
+
+    // MARK: - The glossary
+
+    private static func glossary(_ terms: String...) -> Glossary {
+        Glossary(packs: [GlossaryPack.parse(terms.joined(separator: "\n"), name: "test")])
+    }
+
+    @Test func glossaryOffInsertsAndRecordsTheModelsTextAndNeverAsksForTheGlossary() async {
+        let h = makeHarness(historyEnabled: true,
+                            transcript: "Открыл Xcode build",
+                            glossaryEnabled: false,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["Открыл Xcode build"])
+        let request = await h.historyStore.appendRequests.first
+        #expect(request?.text == "Открыл Xcode build")
+        #expect(request?.rawText == nil)
+        #expect(h.glossaryRequests.value == 0)
+    }
+
+    @Test func glossaryOnWithAHitInsertsTheCorrectionAndRecordsTheModelsOwnText() async {
+        let h = makeHarness(historyEnabled: true,
+                            transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["Открыл xcodebuild"])
+        let request = await h.historyStore.appendRequests.first
+        #expect(request?.text == "Открыл xcodebuild")
+        #expect(request?.rawText == "Открыл Xcode build")
+    }
+
+    // The column exists so a corpus can measure the model rather than our corrections:
+    // a duplicate of `text` destroys exactly that distinction.
+    @Test func glossaryOnWithoutAHitRecordsNoRawText() async {
+        let h = makeHarness(historyEnabled: true,
+                            transcript: "Открыл терминал",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["Открыл терминал"])
+        let request = await h.historyStore.appendRequests.first
+        #expect(request?.text == "Открыл терминал")
+        #expect(request?.rawText == nil)
     }
 }

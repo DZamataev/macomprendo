@@ -410,4 +410,101 @@ import Testing
         try model.keychain.set("sk-test", account: "work-key")
         #expect(try keychain.get(account: "work-key") == "sk-test")
     }
+
+    // MARK: - The glossary
+
+    @Test func theGlossaryIsBuiltFromTheEnabledPacksTheStoreReports() async {
+        let store = FakeGlossaryStore()
+        await store.setPack("xcodebuild", named: "tools")
+        await store.setPack("SafeAreaView", named: "off-pack")
+        await store.setEnabledNames(["tools"])
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store))
+
+        await model.refreshGlossary()
+
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "Xcode build"))?.canonical
+                == "xcodebuild")
+        // A pack on disk but absent from `packs.json` contributes nothing.
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "Safe Area View")) == nil)
+    }
+
+    // The manual list outranks the packs, so a change to it has to reach the built set
+    // without waiting for another directory read.
+    @Test func editingTheManualTermsRebuildsTheGlossary() async {
+        let store = FakeGlossaryStore()
+        await store.setPack("MatchHud", named: "tools")
+        await store.setEnabledNames(["tools"])
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store))
+        await model.refreshGlossary()
+
+        model.settings.glossaryManualTerms = ["MatchHUD"]
+
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "match hud"))?.canonical
+                == "MatchHUD")
+    }
+
+    @Test func turningTheGlossaryOnReadsTheDirectory() async {
+        let store = FakeGlossaryStore()
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store))
+        #expect(await store.loadCallCount == 0)
+
+        model.settings.glossaryEnabled = true
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline, await store.loadCallCount == 0 {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await store.loadCallCount == 1)
+    }
+
+    // The section is the only screen that changes which packs are on, so its rebuild callback
+    // is what keeps the set the dictation controllers read in step with the folder.
+    @Test func theGlossarySectionRebuildsTheGlossaryAfterAnEdit() async {
+        let store = FakeGlossaryStore()
+        await store.setPack("xcodebuild", named: "tools")
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store))
+        let section = model.glossarySectionModel
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "Xcode build")) == nil)
+
+        await section.setEnabled(true, forPackNamed: "tools")
+
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "Xcode build"))?.canonical
+                == "xcodebuild")
+    }
+
+    @Test func aFailedGlossaryLoadIsReportedAndStillReadsWhatIsThere() async {
+        let store = FakeGlossaryStore()
+        await store.setPack("xcodebuild", named: "tools")
+        await store.setEnabledNames(["tools"])
+        await store.setNextError(MacomprendoError.glossary("create the Vocabulary folder: denied"))
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store))
+
+        await model.refreshGlossary()
+
+        // Seeding failed, so the user is told — nothing fails silently (invariant 8) …
+        guard case .error(let message) = model.hud.state else {
+            Issue.record("expected an error HUD, got \(model.hud.state)")
+            return
+        }
+        #expect(message.contains(MacomprendoError.glossary("create the Vocabulary folder: denied")
+            .errorDescription ?? "!"))
+        // … and the directory is still read, so an existing folder keeps working.
+        #expect(model.glossary.entry(forKey: Glossary.key(for: "Xcode build"))?.canonical
+                == "xcodebuild")
+    }
+
+    @Test func theGlossarySectionRevealsTheStoresOwnDirectory() {
+        let store = FakeGlossaryStore()
+        let revealer = FakeFileRevealer()
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(glossary: store, fileRevealer: revealer))
+
+        model.glossarySectionModel.reveal()
+
+        #expect(revealer.revealed == [store.directoryURL])
+    }
 }
