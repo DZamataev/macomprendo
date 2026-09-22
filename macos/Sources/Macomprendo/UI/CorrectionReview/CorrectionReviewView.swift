@@ -1,13 +1,21 @@
 import AppKit
 import SwiftUI
 
-/// Where the review panel sits and how big it is. Top-centre of the screen the mouse is on,
-/// the placement the recording HUD already uses because it keeps the panel off the line the
-/// user is dictating into — this one takes mouse events, so covering the caret would be worse
-/// than cosmetic.
+/// Where the review panel sits and how big it is. Top region of the screen the mouse is on,
+/// below the recording HUD's own band — the HUD is ordered front after an insertion, so a
+/// shared placement would put it straight over this panel's text. Both stay clear of the line
+/// the user is dictating into, which matters more here because this one takes mouse events.
 enum CorrectionReviewLayout {
     /// Wider than the HUD: this panel carries a sentence, not a status word.
     static let size = CGSize(width: 420, height: 132)
+
+    /// The gap left between the recording HUD's band and this one.
+    static let gap: CGFloat = 12
+
+    /// Below the HUD rather than at its inset: an insertion ends by ordering the success HUD
+    /// front, and at a shared inset the smaller HUD lands on top of the text this panel exists
+    /// to show. Still in the top region, so it stays off the line being dictated into.
+    static let topInset: CGFloat = HUDLayout.topInset + HUDLayout.size.height + gap
 
     static func origin(panelSize: CGSize,
                        screenFrame: CGRect,
@@ -15,7 +23,7 @@ enum CorrectionReviewLayout {
         HUDLayout.origin(panelSize: panelSize,
                          screenFrame: screenFrame,
                          visibleFrame: visibleFrame,
-                         topInset: HUDLayout.topInset)
+                         topInset: topInset)
     }
 }
 

@@ -200,11 +200,15 @@ unit tests. Enable the `typescript` pack and turn **Correct recognised terms** o
 - [ ] **The panel appears and the caret never moves.** Click into a TextEdit document so the
       caret is blinking, then dictate a sentence containing a glossary term — for example
       «Открой tsconfig json». The corrected text lands in TextEdit, the panel appears
-      top-centre of the screen the mouse is on, and **the TextEdit caret is still blinking in
+      top-centre of the screen the mouse is on, **below the recording HUD's band**, and
+      **the TextEdit caret is still blinking in
       the document**, with TextEdit still the active app (its title bar keeps its colour).
       This is the step that proves focus never moved; do not skip it and do not accept
       "the text arrived" as a substitute — a panel that took focus would have swallowed the
       paste.
+- [ ] **The success HUD does not cover the panel.** In the same run, the green **Inserted**
+      HUD appears above the panel and fades on its own; the marked sentence stays readable
+      the whole time.
 - [ ] **The panel marks what changed and names the source.** `tsconfig.json` carries a green
       underline in the same weight and colour as the rest of the sentence — it is not
       recoloured — and the line beneath reads `typescript · 1 correction`.
@@ -221,6 +225,10 @@ unit tests. Enable the `typescript` pack and turn **Correct recognised terms** o
 - [ ] **No panel when nothing was corrected.** Dictate a sentence with no glossary term, and
       with the master switch off dictate one that does contain a term: nothing appears either
       time.
+- [ ] **A panel never outlives its dictation.** While a panel is visible, start another
+      dictation and cancel it with Esc (or let it fail — unplug the network with an endpoint
+      backend): the earlier panel disappears the moment the new recording starts, rather than
+      staying on screen describing text the user has moved past.
 
 ## Refine selection (hotkey #5, unassigned by default)
 

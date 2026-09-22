@@ -74,19 +74,38 @@ struct CorrectionReviewViewTests {
 
 @Suite("Correction review placement")
 struct CorrectionReviewLayoutTests {
-    @Test func sitsWhereTheRecordingHUDSitsSoItNeverCoversTheCaret() {
-        // Top-centre of the screen the mouse is on — the placement the HUD already uses to
-        // stay off the text the user is dictating into.
-        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let visible = CGRect(x: 0, y: 0, width: 1440, height: 875)
-        let origin = CorrectionReviewLayout.origin(panelSize: CorrectionReviewLayout.size,
-                                                   screenFrame: screen,
-                                                   visibleFrame: visible)
+    private static let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+    private static let visible = CGRect(x: 0, y: 0, width: 1440, height: 875)
 
-        #expect(origin == HUDLayout.origin(panelSize: CorrectionReviewLayout.size,
-                                           screenFrame: screen,
-                                           visibleFrame: visible,
-                                           topInset: HUDLayout.topInset))
+    private static var reviewOrigin: CGPoint {
+        CorrectionReviewLayout.origin(panelSize: CorrectionReviewLayout.size,
+                                      screenFrame: screen,
+                                      visibleFrame: visible)
+    }
+
+    private static var hudOrigin: CGPoint {
+        HUDLayout.origin(panelSize: HUDLayout.size,
+                         screenFrame: screen,
+                         visibleFrame: visible)
+    }
+
+    @Test func staysInTheTopRegionSoItNeverCoversTheCaret() {
+        // Top-centre of the screen the mouse is on — the region the HUD already uses to stay
+        // off the text the user is dictating into.
+        let origin = Self.reviewOrigin
+
+        #expect(origin.x == Self.screen.midX - CorrectionReviewLayout.size.width / 2)
+        #expect(origin.y + CorrectionReviewLayout.size.height > Self.visible.midY)
+        #expect(origin.y + CorrectionReviewLayout.size.height <= Self.visible.maxY)
+    }
+
+    /// Both panels are ordered front at once after an insertion — the HUD last, and the HUD is
+    /// the smaller of the two. Sharing the HUD's top inset put the HUD directly over the text
+    /// this panel exists to show, so the bands must not intersect at all.
+    @Test func clearsTheRecordingHUDsBandVertically() {
+        let origin = Self.reviewOrigin
+
+        #expect(origin.y + CorrectionReviewLayout.size.height <= Self.hudOrigin.y)
     }
 
     @Test func isWiderThanTheHUDBecauseItCarriesASentence() {

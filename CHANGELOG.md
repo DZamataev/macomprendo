@@ -10,7 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - After a dictation the glossary corrected, a floating panel shows the inserted text with each
   rewritten term underlined in green; hovering one reveals what the recogniser originally
   produced, and a caption names the packs that fired. It never takes focus from the app the
-  text went into, hovering holds it open, and it fades four seconds after the pointer leaves.
+  text went into, sits clear of the status HUD, hovering holds it open, and it fades four
+  seconds after the pointer leaves or the moment the next dictation begins.
 
 ### Fixed
 - Dictation no longer transcribes a recording that contains no sound. When the microphone

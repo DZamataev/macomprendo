@@ -42,9 +42,12 @@ a feature into something the user can judge and tune.
 glossary off, or with no term hit, nothing is shown — so on a quiet day the feature is invisible,
 and its appearance is itself information.
 
-**Where.** Same placement as the recording HUD, reusing `FloatingPanel`
+**Where.** Top of the screen the mouse is on, in the band immediately below the recording HUD's
+own, reusing `FloatingPanel`
 (`UI/Components/FloatingPanel.swift`): borderless, `.nonactivatingPanel`, `canBecomeKey` false,
-`level = .floating`, `collectionBehavior` spanning spaces. This is not a preference — the
+`level = .floating`, `collectionBehavior` spanning spaces. It cannot share the HUD's placement:
+a successful insertion ends by showing the `Inserted` HUD, which is ordered front last and would
+sit on top of the text this panel exists to show. The panel flags are not a preference — the
 insertion path simulates ⌘V into the frontmost application, so a panel that becomes key would
 redirect the paste into itself. The existing panel already guarantees it cannot.
 
@@ -65,8 +68,14 @@ immediately: the previous correction is no longer interesting.
 
 **Mouse.** `FloatingPanel` defaults to `ignoresMouse: true`; this panel passes `false`, because
 hovering is how the original text is read. That is the one behavioural difference from the HUD,
-and it means the panel must not sit under the text caret — same placement rule the HUD already
-follows.
+and it means the panel must not sit under the text caret — same top-of-screen rule the HUD
+already follows, one band lower.
+
+**When it goes.** Besides the timer, the start of the next dictation takes it down. Every exit
+from a cycle other than a successful insert with at least one rewrite — nothing heard, a
+cancellation, a failed transcription, a failed insert, a dictation the glossary did not change —
+presents nothing of its own, so without a dismissal at the recording boundary the previous
+dictation's corrections would keep describing text the user has moved past.
 
 ## Wiring
 
@@ -104,6 +113,8 @@ Unit, with a fake presenter:
 - several ranges in one transcript → all present, in document order
 - presentation happens after insertion, not before: a failed insert presents nothing
 - a second dictation replaces rather than stacks
+- starting a dictation dismisses a panel still on screen, including when that dictation never
+  presents one of its own (transcription failure, nothing heard, no rewrite)
 - the review value carries the original substring for each range, so hover has data without
   re-reading the database
 - the caption lists each contributing pack once, in first-occurrence order, and counts every
