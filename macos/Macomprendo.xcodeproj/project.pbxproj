@@ -30,6 +30,7 @@
 		1632817A6BF427D8BE428715 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BB279AEB39CC0D0CF3FF45 /* AudioRecorder.swift */; };
 		171E850E6A4E1F35540D4CC9 /* AsyncGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11775DFD9E6A5F205599A168 /* AsyncGate.swift */; };
 		17EDACC0EA94DB3466FF03D7 /* PromptLanguageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 067416DAF73689D88C3ECA38 /* PromptLanguageTests.swift */; };
+		1837906D100CF3A2D68ADA07 /* CorrectionReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A064F91612B34F406E226D93 /* CorrectionReviewTests.swift */; };
 		187EF932F76FE32D9B06A57A /* KeySimulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B30F01A3AA09FE260151620 /* KeySimulator.swift */; };
 		18C3A6E07AF8663F84950CE1 /* SavedAudioModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F96F4E6A05B52FECF8B58C /* SavedAudioModel.swift */; };
 		1961CBDA25DF60B7FD85DE27 /* HUDLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3EF62925B17EC8A1C924F01 /* HUDLayoutTests.swift */; };
@@ -289,6 +290,7 @@
 		FA7B659D16422CC89AC40051 /* MacomprendoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA56F84CBF24BBD363CC8C3F /* MacomprendoApp.swift */; };
 		FCE920FB677D79F43779AAC4 /* FakeActivationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8389AD97CA73DF68A36FEE6F /* FakeActivationPolicy.swift */; };
 		FDC1BB7495BCD57CB8691DB7 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A32D6B6DB5A25505D79ABFB /* KeychainStore.swift */; };
+		FE017B381A3BD70689D1DD21 /* CorrectionReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9BF794E907153578B48FD5 /* CorrectionReview.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -467,6 +469,7 @@
 		9E0A7441DC03BAA16C45F06F /* LogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogTests.swift; sourceTree = "<group>"; };
 		9E66FC371D06E3037723CFFE /* SummaryLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryLayout.swift; sourceTree = "<group>"; };
 		9E786AF130059D7044240A9D /* ProvidersTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersTab.swift; sourceTree = "<group>"; };
+		A064F91612B34F406E226D93 /* CorrectionReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionReviewTests.swift; sourceTree = "<group>"; };
 		A1791443C0991D4FA4555C2F /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
 		A17D58C08B4CB5582BEECAF0 /* ProvidersViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModel.swift; sourceTree = "<group>"; };
 		A2F29E976DB9263934D1A729 /* EndpointURLTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndpointURLTests.swift; sourceTree = "<group>"; };
@@ -482,6 +485,7 @@
 		A9D1CC8EB21EA135FE19EF69 /* WhisperCppTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperCppTranscriber.swift; sourceTree = "<group>"; };
 		AA56F84CBF24BBD363CC8C3F /* MacomprendoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacomprendoApp.swift; sourceTree = "<group>"; };
 		AA9850A37B9716A335AE8B09 /* MenuBarLabelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarLabelTests.swift; sourceTree = "<group>"; };
+		AC9BF794E907153578B48FD5 /* CorrectionReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionReview.swift; sourceTree = "<group>"; };
 		AE2074FDA69DBF3132E51B94 /* OpenAICompatibleLLMProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAICompatibleLLMProviderTests.swift; sourceTree = "<group>"; };
 		AE2F666821A0B8AF1E85021A /* SummarizeControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummarizeControllerTests.swift; sourceTree = "<group>"; };
 		AFDE67B051AFA0254940A87B /* ResourceBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceBundle.swift; sourceTree = "<group>"; };
@@ -1005,6 +1009,7 @@
 		B480BB7CF0EC309FB3FB3A38 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				A064F91612B34F406E226D93 /* CorrectionReviewTests.swift */,
 				18EFAB154FEEFB2C3749ADA2 /* DictationHistoryEntryTests.swift */,
 				70E431E2494736FD9AD176BB /* EndpointTests.swift */,
 				5D0FD0B0DD423749CF24D2FF /* ErrorTextTests.swift */,
@@ -1158,6 +1163,7 @@
 		F413B387A94D2387139389C3 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				AC9BF794E907153578B48FD5 /* CorrectionReview.swift */,
 				D36E6028E36579892409BB6E /* DictationHistoryEntry.swift */,
 				C071926D0B0BF1A2C044ED84 /* Endpoint.swift */,
 				33A9346E06AFE9E8C869032A /* ErrorText.swift */,
@@ -1295,6 +1301,7 @@
 				B5DAF52AAC3B1DA4D5C9C17E /* AudioRecorderTests.swift in Sources */,
 				754B158BE531AACA30BCE783 /* BackendReadinessTests.swift in Sources */,
 				A77B983617925F567C292F38 /* Box.swift in Sources */,
+				1837906D100CF3A2D68ADA07 /* CorrectionReviewTests.swift in Sources */,
 				1C2D84392468AAF47F77361B /* DictationAudioEncoderTests.swift in Sources */,
 				843A57DD48E005D6AFF78E03 /* DictationCaptureTests.swift in Sources */,
 				227DF3FBDD75DA79FC75CABB /* DictationControllerTests.swift in Sources */,
@@ -1447,6 +1454,7 @@
 				A0A86F454CB2D0240FC37940 /* AudioPlayer.swift in Sources */,
 				1632817A6BF427D8BE428715 /* AudioRecorder.swift in Sources */,
 				4015FDA000AADC3E375463D1 /* BackendReadiness.swift in Sources */,
+				FE017B381A3BD70689D1DD21 /* CorrectionReview.swift in Sources */,
 				0EA4E8E71C6A71930D63576A /* DictationAudioEncoder.swift in Sources */,
 				400FE5C73D68E65F4EEF0207 /* DictationCapture.swift in Sources */,
 				C1A758D89AE8BAA695C1633F /* DictationController.swift in Sources */,
