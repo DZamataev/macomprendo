@@ -145,6 +145,10 @@ import Foundation
                 try Task.checkCancellation()
                 guard self.generation == generation else { return }
                 guard !samples.isEmpty else { throw MacomprendoError.audio("Nothing heard.") }
+                // Emptiness and silence are two conditions: these buffers are non-empty and
+                // every sample is zero, which a model turns into an invented word rather
+                // than into nothing. Stop before the model call.
+                guard !AudioMath.isSilent(samples) else { throw MacomprendoError.silentCapture }
                 let transcriber = try await self.transcriberProvider()
                 guard self.generation == generation else { return }
                 let language = self.language()

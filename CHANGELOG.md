@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Dictation no longer transcribes a recording that contains no sound. When the microphone
+  produces silence for the whole recording — a muted or hijacked input device — nothing is
+  sent to the speech model, nothing is pasted, no history row is written, and the HUD says
+  **No sound was captured** and points at the input device. Previously such a recording went
+  to the model, which invented a word and pasted it. A deliberate very short tap still
+  inserts “OK”.
+- The recording HUD now warns after three seconds of no input — **Not hearing anything.
+  Check your input device.** — while the recording continues, and clears the moment sound
+  arrives.
+
 ### Changed
 - Redesigned the GitHub Pages site around the new app icon, with an outcome-led landing
   page, feature overview, accessible FAQ, and refreshed support and policy pages.

@@ -31,4 +31,13 @@ import Testing
         #expect(HUDView.elapsedText(65) == "1:05")
         #expect(HUDView.elapsedText(600) == "10:00")
     }
+
+    /// The no-input warning is still a recording state: it names the model and never
+    /// auto-hides, because the recording it warns about is still running.
+    @MainActor
+    @Test func theNoInputWarningKeepsTheModelCaptionAndNeverAutoHides() {
+        let state = HUDState.recordingNoInput(elapsed: 3)
+        #expect(HUDView.captionText(for: state, caption: "Large v3 Turbo") == "Large v3 Turbo")
+        #expect(HUDController.autoHideDuration(for: state) == nil)
+    }
 }

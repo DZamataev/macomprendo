@@ -576,4 +576,54 @@ import Testing
         #expect(request?.text == "Открыл терминал")
         #expect(request?.rawText == nil)
     }
+
+    // MARK: - The silence gate
+
+    @Test func anAllZeroRecordingNeverReachesTheModel() async {
+        let store = FakeDictationHistoryStore()
+        let recorder = ScriptedRecorder()
+        recorder.samples = Array(repeating: 0, count: 16_000 * 2)
+        var transcriber = ScriptedTranscriber()
+        transcriber.text = "you"
+        let capture = make(recorder: recorder, transcriber: transcriber, historyStore: store)
+
+        await transcribe(capture)
+
+        #expect(transcripts.isEmpty)
+        #expect(await store.appendRequests.isEmpty)
+        #expect(errors.count == 1)
+        #expect((errors.first as? MacomprendoError) == .silentCapture)
+    }
+
+    /// The measured failure: 4.2 s of digital silence went to the model, which returned
+    /// `you`.
+    @Test func fourPointTwoSecondsOfZerosProducesNoModelCall() async {
+        let store = FakeDictationHistoryStore()
+        let recorder = ScriptedRecorder()
+        recorder.samples = Array(repeating: 0, count: Int(16_000 * 4.2))
+        var transcriber = ScriptedTranscriber()
+        transcriber.text = "you"
+        let capture = make(recorder: recorder, transcriber: transcriber, historyStore: store)
+
+        await transcribe(capture)
+
+        #expect(transcripts.isEmpty)
+        #expect(await store.appendRequests.isEmpty)
+    }
+
+    /// The boundary is inclusive upward, so a borderline-quiet real recording is kept.
+    @Test func aRecordingAtTheSilenceThresholdStillReachesTheModel() async {
+        let recorder = ScriptedRecorder()
+        var samples = [Float](repeating: 0, count: 16_000)
+        samples[10] = AudioMath.silenceThreshold
+        recorder.samples = samples
+        var transcriber = ScriptedTranscriber()
+        transcriber.text = "barely audible"
+        let capture = make(recorder: recorder, transcriber: transcriber)
+
+        await transcribe(capture)
+
+        #expect(transcripts == ["barely audible"])
+        #expect(errors.isEmpty)
+    }
 }

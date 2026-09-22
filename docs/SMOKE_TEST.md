@@ -110,6 +110,24 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
 - [ ] Settings ▸ General: toggle "Launch at login" on, check System Settings ▸ General ▸ Login
       Items — Macomprendo is listed; toggling it off removes it.
 
+## Silent capture (hotkey #1)
+
+A dead or hijacked input device delivers buffers of digital zeros while recording carries on;
+only real hardware can produce that, so none of this is reachable from unit tests.
+
+- [ ] **A muted microphone warns during the recording and inserts nothing after it.** Select a
+      microphone in System Settings ▸ Sound ▸ Input, mute it there, then hold the dictation
+      hotkey for five seconds. After about three seconds the HUD switches to **Not hearing
+      anything — Check your input device.** while the recording keeps running and the elapsed
+      time keeps climbing; Esc still cancels. On release nothing is pasted, the HUD shows **No
+      sound was captured.** with the advice to check the input device and whether another app
+      has taken it, and Dictation History gains no new row.
+- [ ] **Unmute and dictate again** — the warning never appears, the transcript is inserted, and
+      history records it as usual.
+- [ ] **A deliberate short tap is unaffected.** With Settings ▸ General ▸ "Insert “OK” for a
+      very short dictation" on and the microphone still muted, tap the hotkey for well under half
+      a second — `OK` is inserted and the HUD shows the success, not the silence error.
+
 ## Glossary (Settings ▸ Dictation)
 
 Everything here needs the real Application Support directory, Finder and a microphone, so none

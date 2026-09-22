@@ -4,6 +4,9 @@ import SwiftUI
 enum HUDState: Equatable, Sendable {
     case hidden
     case recording(level: Float, elapsed: TimeInterval)
+    /// Still recording, but the input has produced nothing for long enough that the
+    /// microphone is the likely cause. Never stops the recording.
+    case recordingNoInput(elapsed: TimeInterval)
     /// Recording without a live meter, with a mode-specific instruction.
     case recordingPrompt(hint: String)
     case transcribing
@@ -44,7 +47,7 @@ final class HUDController: ObservableObject {
         switch state {
         case .success, .toast: 1.2
         case .error: 4
-        case .hidden, .recording, .recordingPrompt, .transcribing, .speaking: nil
+        case .hidden, .recording, .recordingNoInput, .recordingPrompt, .transcribing, .speaking: nil
         }
     }
 

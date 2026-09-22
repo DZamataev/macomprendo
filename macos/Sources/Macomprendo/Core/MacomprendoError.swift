@@ -27,6 +27,7 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case glossaryPackNameTaken(String)
     case licenseTextMissing(String)
     case licenseTextUnreadable(String)
+    case silentCapture
     case cancelled
 
     var errorDescription: String? {
@@ -71,6 +72,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "The licence text for \"\(component)\" is missing from this build."
         case .licenseTextUnreadable(let component):
             return "The licence text for \"\(component)\" is bundled but could not be read."
+        case .silentCapture:
+            return "No sound was captured."
         case .cancelled:
             return "Cancelled."
         }
@@ -118,6 +121,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Read it at the component's homepage, or in macos/Sources/Macomprendo/Resources/Licenses in the project source."
         case .licenseTextUnreadable:
             return "Read it at the component's homepage, or in macos/Sources/Macomprendo/Resources/Licenses in the project source."
+        case .silentCapture:
+            return "The microphone produced silence for the whole recording. Check that the right input device is selected and that no other app has taken it."
         case .cancelled:
             return nil
         }

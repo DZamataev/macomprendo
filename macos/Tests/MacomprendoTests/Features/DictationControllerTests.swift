@@ -21,6 +21,8 @@ import Testing
         /// How many times the controller asked for the glossary. Zero proves the master
         /// switch is read before anything is built or matched.
         let glossaryRequests: Box<Int>
+        /// The controller's clock, so elapsed-time behaviour is asserted without sleeping.
+        let clock: Box<Date>
     }
 
     private func makeHarness(mode: DictationMode = .hold,
@@ -51,6 +53,7 @@ import Testing
         settings.value.saveOriginalRecording = recordingEnabled
         settings.value.glossaryEnabled = glossaryEnabled
         let glossaryRequests = Box(0)
+        let clock = Box(Date(timeIntervalSince1970: 1_000))
         let escapeMonitor = FakeEscapeMonitor()
         let historyStore = FakeDictationHistoryStore()
         let encoder = FakeDictationAudioEncoder()
@@ -80,12 +83,13 @@ import Testing
             glossary: {
                 glossaryRequests.value += 1
                 return glossary
-            })
+            },
+            now: { clock.value })
         return Harness(controller: controller, recorder: recorder, transcriber: transcriber,
                        inserter: inserter, tracker: tracker, permissions: permissions,
                        hud: hud, pasteboard: pasteboard, settings: settings, escapeMonitor: escapeMonitor,
                        historyStore: historyStore, history: history, encoder: encoder,
-                       glossaryRequests: glossaryRequests)
+                       glossaryRequests: glossaryRequests, clock: clock)
     }
 
     private func recordAndFinish(_ h: Harness) async {
@@ -1051,5 +1055,188 @@ import Testing
         let request = await h.historyStore.appendRequests.first
         #expect(request?.text == "Открыл терминал")
         #expect(request?.rawText == nil)
+    }
+
+    // MARK: - The silence gate
+
+    /// Longer than `shortDictationMaximumSamples` (half a second at 16 kHz).
+    private static func zeros(seconds: Double) -> [Float] {
+        Array(repeating: 0, count: Int(16_000 * seconds))
+    }
+
+    @Test func anAllZeroRecordingNeverReachesTheModel() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "you")
+        h.recorder.samplesToReturn = Self.zeros(seconds: 2)
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(await h.encoder.requests.isEmpty)
+        guard case .error(let message) = h.hud.state else {
+            Issue.record("Expected the silent-capture error, got \(h.hud.state)")
+            return
+        }
+        #expect(message.contains("No sound was captured"))
+        #expect(message.contains("input device"))
+    }
+
+    /// The boundary is inclusive upward: a borderline-quiet real recording is kept.
+    @Test func aRecordingAtTheSilenceThresholdStillReachesTheModel() async {
+        let h = makeHarness(transcript: "barely audible")
+        var samples = Self.zeros(seconds: 2)
+        samples[100] = AudioMath.silenceThreshold
+
+        h.recorder.samplesToReturn = samples
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.count == 1)
+        #expect(h.inserter.inserted.map(\.text) == ["barely audible"])
+    }
+
+    @Test func aNormalRecordingIsUnaffectedByTheGate() async {
+        let h = makeHarness(transcript: "hello world")
+        h.recorder.samplesToReturn = [0.1, -0.4, 0.9, 0.2]
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.count == 1)
+        #expect(h.inserter.inserted.map(\.text) == ["hello world"])
+    }
+
+    /// Sixteen of the twenty-five measured silent files took the short-dictation path and
+    /// behaved correctly: the gate sits after it, so a deliberate short tap still works.
+    @Test func aShortSilentTapStillInsertsOK() async {
+        let h = makeHarness(historyEnabled: true, transcript: "never used")
+        h.settings.value.shortDictationInsertsOK = true
+        h.recorder.samplesToReturn = Array(repeating: 0, count: 100)
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.isEmpty)
+        #expect(h.inserter.inserted.map(\.text) == ["OK"])
+        #expect(await h.historyStore.appendRequests.map(\.text) == ["OK"])
+    }
+
+    /// With the short-tap feature off, a buffer shorter than the cutoff is still silence.
+    @Test func aShortSilentRecordingIsGatedWhenTheShortTapFeatureIsOff() async {
+        let h = makeHarness(transcript: "you")
+        h.settings.value.shortDictationInsertsOK = false
+        h.recorder.samplesToReturn = Array(repeating: 0, count: 100)
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+    }
+
+    /// The measured failure: 4.2 s of digital silence — the length of history row 308 —
+    /// went to the model, which returned `you`, and it was pasted into a document.
+    @Test func fourPointTwoSecondsOfZerosProducesNoModelCall() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "you")
+        h.recorder.samplesToReturn = Self.zeros(seconds: 4.2)
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+        #expect(await h.historyStore.appendRequests.isEmpty)
+    }
+
+    // MARK: - The live no-input warning
+
+    /// Emits one level and waits for the HUD to act on it, so the levels a test scripts are
+    /// consumed one at a time: the recorder's stream is buffered, and two levels yielded
+    /// back to back can both be read after a later clock change.
+    private func emit(_ level: Float, elapsed: TimeInterval, into h: Harness) async {
+        h.recorder.emitLevel(level)
+        await waitFor("the HUD to consume level \(level) at \(elapsed)s") {
+            switch h.hud.state {
+            case .recording(let shown, let shownElapsed):
+                return shown == level && shownElapsed == elapsed
+            case .recordingNoInput(let shownElapsed):
+                return shownElapsed == elapsed
+            default:
+                return false
+            }
+        }
+    }
+
+    private func advance(_ seconds: TimeInterval, _ h: Harness) {
+        h.clock.value = h.clock.value.addingTimeInterval(seconds)
+    }
+
+    @Test func threeSecondsOfZeroLevelWarnsWhileRecordingContinues() async {
+        let h = makeHarness(mode: .hold)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        advance(1, h)
+        await emit(0, elapsed: 1, into: h)
+        advance(3, h)
+        await emit(0, elapsed: 4, into: h)
+
+        #expect(h.hud.state == .recordingNoInput(elapsed: 4))
+        #expect(h.controller.state == .recording)
+        #expect(h.recorder.stopCount == 0)
+    }
+
+    @Test func aNonZeroLevelBeforeThreeSecondsDoesNotWarn() async {
+        let h = makeHarness(mode: .hold)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        advance(1, h)
+        await emit(0, elapsed: 1, into: h)
+        advance(2, h)
+        await emit(0, elapsed: 3, into: h)
+
+        // Two seconds of silence, one short of the warning.
+        #expect(h.hud.state == .recording(level: 0, elapsed: 3))
+    }
+
+    @Test func aNonZeroLevelClearsTheWarning() async {
+        let h = makeHarness(mode: .hold)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        advance(1, h)
+        await emit(0, elapsed: 1, into: h)
+        advance(3, h)
+        await emit(0, elapsed: 4, into: h)
+        #expect(h.hud.state == .recordingNoInput(elapsed: 4))
+
+        advance(1, h)
+        await emit(0.7, elapsed: 5, into: h)
+        #expect(h.hud.state == .recording(level: 0.7, elapsed: 5))
+
+        // And the silent run restarts from here rather than resuming the old one.
+        advance(2, h)
+        await emit(0, elapsed: 7, into: h)
+        #expect(h.hud.state == .recording(level: 0, elapsed: 7))
+        #expect(h.controller.state == .recording)
+    }
+
+    /// A new recording must not inherit the previous one's silent stretch.
+    @Test func theWarningStateDoesNotCarryIntoTheNextRecording() async {
+        let h = makeHarness(mode: .hold, transcript: "spoken")
+        h.recorder.samplesToReturn = [0.5, -0.5]
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        advance(1, h)
+        await emit(0, elapsed: 1, into: h)
+        advance(3, h)
+        await emit(0, elapsed: 4, into: h)
+        #expect(h.hud.state == .recordingNoInput(elapsed: 4))
+        h.controller.handle(.keyUp(.dictate))
+        await h.controller.activeTask?.value
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        advance(2, h)
+        await emit(0, elapsed: 2, into: h)
+
+        #expect(h.hud.state == .recording(level: 0, elapsed: 2))
     }
 }

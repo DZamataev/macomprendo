@@ -32,9 +32,19 @@ final class DictationController: ObservableObject {
     /// mid-recording applies to it. Asked for only while `glossaryEnabled` is on, so a user
     /// who never turned the glossary on never pays for building one.
     private let glossary: @MainActor () -> Glossary
+    /// Wall clock, injected so the live no-input warning is unit-tested without sleeping.
+    private let now: @MainActor () -> Date
+
+    /// How long the input may produce nothing before the HUD says so. Long enough that a
+    /// user who presses the hotkey and thinks before speaking is not scolded.
+    private static let noInputWarningSeconds: TimeInterval = 3
 
     private var target: FrontmostApp?
     private var startedAt: Date?
+    /// When the current run of zero levels began, or nil while the input is producing
+    /// something. Cleared at the start of every recording so one silent session cannot
+    /// make the next one warn immediately.
+    private var silentSince: Date?
     private var levelTask: Task<Void, Never>?
     private var autoStopTask: Task<Void, Never>?
     private(set) var activeTask: Task<Void, Never>?
@@ -68,7 +78,8 @@ final class DictationController: ObservableObject {
          settings: @escaping @MainActor () -> Settings,
          escapeMonitor: any EscapeMonitoring,
          history: DictationHistoryController? = nil,
-         glossary: @escaping @MainActor () -> Glossary = { Glossary() }) {
+         glossary: @escaping @MainActor () -> Glossary = { Glossary() },
+         now: @escaping @MainActor () -> Date = Date.init) {
         self.recorder = recorder
         self.transcriberProvider = transcriberProvider
         self.inserter = inserter
@@ -80,6 +91,7 @@ final class DictationController: ObservableObject {
         self.escapeMonitor = escapeMonitor
         self.history = history
         self.glossary = glossary
+        self.now = now
         escapeMonitor.onEscape = { [weak self] in self?.cancel() }
 
         // One long-lived consumer each: an `AsyncStream` can only be iterated once, so
@@ -174,7 +186,8 @@ final class DictationController: ObservableObject {
             fail(error)
             return
         }
-        startedAt = Date()
+        startedAt = now()
+        silentSince = nil
         state = .recording
         // Leaving `.idle`: the HUD's cancel hint needs Esc to actually do something.
         // Stopped again wherever the cycle reaches a terminal `.idle`/`.failed` state below.
@@ -215,6 +228,14 @@ final class DictationController: ObservableObject {
                 raw = "OK"
                 run = nil
             } else {
+                // A buffer of digital silence is not speech, and a model handed one invents
+                // a word rather than returning nothing. Stop before the model call — and so
+                // before any insertion or history row. Deliberately after the short-dictation
+                // branch above, whose "OK" is the feature working as designed.
+                guard !AudioMath.isSilent(pcm) else {
+                    fail(MacomprendoError.silentCapture)
+                    return
+                }
                 let provider = try await transcriberProvider()
                 let language = settings().transcriptionLanguage
                 raw = try await provider.transcribe(
@@ -359,8 +380,23 @@ final class DictationController: ObservableObject {
 
     private func onLevel(_ level: Float) {
         guard state == .recording else { return }
-        let elapsed = startedAt.map { Date().timeIntervalSince($0) } ?? 0
-        hud.show(.recording(level: level, elapsed: elapsed))
+        let instant = now()
+        let elapsed = startedAt.map { instant.timeIntervalSince($0) } ?? 0
+        // A dead capture device delivers zeros forever while the recording goes on, and the
+        // meter alone reads as "you are too quiet". Say so instead — but never stop the
+        // recording: that decision stays the user's.
+        guard level == 0 else {
+            silentSince = nil
+            hud.show(.recording(level: level, elapsed: elapsed))
+            return
+        }
+        let since = silentSince ?? instant
+        silentSince = since
+        if instant.timeIntervalSince(since) >= Self.noInputWarningSeconds {
+            hud.show(.recordingNoInput(elapsed: elapsed))
+        } else {
+            hud.show(.recording(level: level, elapsed: elapsed))
+        }
     }
 
     private func fail(_ error: Error) {
