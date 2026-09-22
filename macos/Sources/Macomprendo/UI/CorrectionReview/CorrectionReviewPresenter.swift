@@ -60,10 +60,17 @@ final class CorrectionReviewWindowPresenter: CorrectionReviewPresenting {
     }
 
     private func makePanel() -> FloatingPanel {
+        Self.makePanel(contentView: NSHostingView(rootView: CorrectionReviewView(controller: controller)))
+    }
+
+    /// Split from `present` so the window's configuration — the flags that decide whether the
+    /// user's paste reaches their document — is assertable without an event loop. `nil`
+    /// content makes it callable from a test with no view to host.
+    static func makePanel(contentView: NSView?) -> FloatingPanel {
         let panel = FloatingPanel(
             contentRect: NSRect(origin: .zero, size: CorrectionReviewLayout.size),
             ignoresMouse: false)
-        panel.contentView = NSHostingView(rootView: CorrectionReviewView(controller: controller))
+        if let contentView { panel.contentView = contentView }
         return panel
     }
 
