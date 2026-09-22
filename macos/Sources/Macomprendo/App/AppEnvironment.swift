@@ -30,6 +30,8 @@ struct AppEnvironment {
     var factory: ProviderFactory
     var localTranscriptionCache: LocalTranscriptionProviderCache
     var hudPresenter: (any HUDPresenting)?
+    /// nil in tests: no NSPanel is created and the post-dictation review stays headless.
+    var reviewPresenter: (any CorrectionReviewPresenting)?
     var ollamaDetector: any OllamaDetecting
     var pasteboard: any PasteboardProtocol
     var dictationHistory: any DictationHistoryStoring
@@ -83,6 +85,7 @@ struct AppEnvironment {
             factory: ProviderFactory(http: http, keychain: keychain),
             localTranscriptionCache: LocalTranscriptionProviderCache(),
             hudPresenter: HUDWindowPresenter(),
+            reviewPresenter: CorrectionReviewWindowPresenter(),
             ollamaDetector: HTTPOllamaDetector(http: http),
             pasteboard: pasteboard,
             dictationHistory: dictationHistory,

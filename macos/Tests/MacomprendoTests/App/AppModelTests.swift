@@ -165,6 +165,35 @@ import Testing
         #expect(await historyStore.appendRequests.map(\.text) == ["spoken", "spoken"])
     }
 
+    /// The graph must hand the dictation controller the environment's review presenter;
+    /// constructed but unwired, the panel would never appear however well Task 2's decision
+    /// logic works.
+    @Test func aDictationWithAGlossaryHitReachesTheEnvironmentsReviewPresenter() async {
+        let recorder = FakeAudioRecorder()
+        let http = FakeHTTPClient()
+        http.response = HTTPResponse(status: 200, headers: [:], body: Data(#"{"text":"открыл match hud"}"#.utf8))
+        let presenter = FakeCorrectionReviewPresenter()
+        let endpoint = Endpoint(name: "Test", kind: .openAICompatible,
+                                baseURL: URL(string: "https://example.test")!)
+        let model = AppModel(
+            store: InMemorySettingsStore(),
+            keychain: InMemoryKeychainStore(),
+            env: .fake(recorder: recorder, http: http, reviewPresenter: presenter))
+        model.settings.endpoints = [endpoint]
+        model.settings.transcriptionSource = .endpoint(id: endpoint.id, model: "whisper")
+        model.settings.glossaryEnabled = true
+        model.settings.glossaryManualTerms = ["MatchHUD"]
+        model.start()
+
+        model.route(.keyDown(.dictate))
+        await model.dictation.activeTask?.value
+        model.route(.keyUp(.dictate))
+        await model.dictation.activeTask?.value
+
+        #expect(presenter.presented.map(\.text) == ["открыл MatchHUD"])
+        #expect(presenter.presented.first?.rewrites.map(\.original) == ["match hud"])
+    }
+
     @Test func directDictationAndDictateAndRefineUseTheSameRetainedLocalProvider() async throws {
         let recorder = FakeAudioRecorder()
         let models = StubModelManager()

@@ -192,6 +192,36 @@ referred to below as **the Vocabulary folder**.
 - [ ] **Show in Finder opens the folder.** Click **Show in Finder**: the Vocabulary folder opens
       with the packs and `README.md` in it.
 
+## Post-dictation review panel (hotkey #1, with the glossary on)
+
+The panel is an `NSPanel` over a real frontmost application; nothing below is reachable from
+unit tests. Enable the `typescript` pack and turn **Correct recognised terms** on first.
+
+- [ ] **The panel appears and the caret never moves.** Click into a TextEdit document so the
+      caret is blinking, then dictate a sentence containing a glossary term — for example
+      «Открой tsconfig json». The corrected text lands in TextEdit, the panel appears
+      top-centre of the screen the mouse is on, and **the TextEdit caret is still blinking in
+      the document**, with TextEdit still the active app (its title bar keeps its colour).
+      This is the step that proves focus never moved; do not skip it and do not accept
+      "the text arrived" as a substitute — a panel that took focus would have swallowed the
+      paste.
+- [ ] **The panel marks what changed and names the source.** `tsconfig.json` carries a green
+      underline in the same weight and colour as the rest of the sentence — it is not
+      recoloured — and the line beneath reads `typescript · 1 correction`.
+- [ ] **Hovering a marked span shows what the recogniser produced.** Rest the pointer on the
+      underlined term: a tooltip shows the original spelling (`tsconfig json`).
+- [ ] **Hovering holds the panel open; leaving lets it go.** Move the pointer into the panel
+      before four seconds are up and keep it there for ten — the panel stays. Move the pointer
+      away and the panel disappears about four seconds later.
+- [ ] **A second dictation replaces the content rather than stacking.** While the panel is
+      visible, dictate another sentence with a glossary term: one panel remains, showing the
+      new text and the new caption, and its four seconds start again.
+- [ ] **The panel is visible above a full-screen application.** Put TextEdit into full screen,
+      dictate a sentence with a glossary term, and the panel appears over it.
+- [ ] **No panel when nothing was corrected.** Dictate a sentence with no glossary term, and
+      with the master switch off dictate one that does contain a term: nothing appears either
+      time.
+
 ## Refine selection (hotkey #5, unassigned by default)
 
 Assign a shortcut in Settings ▸ Hotkeys first.

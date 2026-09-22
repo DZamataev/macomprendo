@@ -193,6 +193,7 @@ final class AppModel: ObservableObject {
                                         settings: { snapshot.current },
                                         escapeMonitor: env.escapeMonitor,
                                         history: history,
+                                        reviewPresenter: env.reviewPresenter,
                                         glossary: { [glossaryBox] in glossaryBox.glossary })
 
         env.recorder.setMaximumDuration(TimeInterval(loaded.maximumRecordingSeconds))

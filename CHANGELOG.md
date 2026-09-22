@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- After a dictation the glossary corrected, a floating panel shows the inserted text with each
+  rewritten term underlined in green; hovering one reveals what the recogniser originally
+  produced, and a caption names the packs that fired. It never takes focus from the app the
+  text went into, hovering holds it open, and it fades four seconds after the pointer leaves.
+
 ### Fixed
 - Dictation no longer transcribes a recording that contains no sound. When the microphone
   produces silence for the whole recording — a muted or hijacked input device — nothing is
