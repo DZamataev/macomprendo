@@ -1165,6 +1165,40 @@ import Testing
             == [["Xcode build"], ["TS Config JSON"]])
     }
 
+    /// A review describes the dictation that produced it. The moment the next recording
+    /// starts, whatever is still on screen describes text the user has moved past.
+    @Test func aNewDictationTakesTheEarlierReviewDown() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+        #expect(h.reviewPresenter.presented.count == 1)
+        #expect(h.reviewPresenter.dismissCount == 0)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        #expect(h.reviewPresenter.dismissCount == 1)
+    }
+
+    /// The same boundary, on a cycle that never reaches a review of its own: the stale panel
+    /// must not outlive the dictation it belonged to just because the next one failed.
+    @Test func aDictationThatFailsStillTakesTheEarlierReviewDown() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+        #expect(h.reviewPresenter.presented.count == 1)
+
+        h.transcriber.result = .failure(MacomprendoError.providerUnreachable(endpointName: "Test"))
+        await recordAndFinish(h)
+
+        #expect(h.reviewPresenter.dismissCount == 1)
+        #expect(h.reviewPresenter.presented.count == 1)
+    }
+
     /// The trailing space is an insertion detail, not part of what was corrected, so the
     /// review shows the corrected text the ranges were computed against.
     @Test func theReviewShowsTheCorrectedTextWithoutTheAppendedSpace() async {

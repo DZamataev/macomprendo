@@ -65,6 +65,10 @@ final class DictationController: ObservableObject {
     // next one claim it was capped too.
     private var stoppedAtLimit = false
 
+    // Whether a review panel was presented and has not been dismissed from here. See
+    // `dismissReview()`.
+    private var hasPresentedReview = false
+
     // The recorder `stop()` that `cancel()` kicks off is deliberately unawaited there
     // (cancel() must return synchronously), but a `start()` from a fast restart must
     // not race it — `AVAudioEngineRecorder.start()` traps/fails if a tap is already
@@ -165,8 +169,22 @@ final class DictationController: ObservableObject {
         // Never start a new recording — and so never reach a new `insert()` call —
         // while a previous cycle's insert is still running in the background.
         guard !isInserting else { return }
+        // A review describes the dictation that produced it. Every path out of the next cycle
+        // — no rewrite, nothing heard, a failed transcription, a failed insert — reaches no
+        // `present()` of its own, so the boundary is the only place that can guarantee the
+        // panel never outlives its dictation.
+        dismissReview()
         activeTask?.cancel()
         activeTask = Task { [weak self] in await self?.startRecording() }
+    }
+
+    /// Takes the review panel down if this controller put one up. Tracked rather than asked,
+    /// because the presenter owns an auto-hide timer this controller cannot see; the flag only
+    /// stops a dismissal being sent when nothing was ever presented.
+    private func dismissReview() {
+        guard hasPresentedReview else { return }
+        hasPresentedReview = false
+        reviewPresenter?.dismiss()
     }
 
     private func startRecording() async {
@@ -313,6 +331,7 @@ final class DictationController: ObservableObject {
                 // off produces an empty `rewrites` and so falls through silently.
                 if !normalisation.rewrites.isEmpty {
                     reviewPresenter?.present(CorrectionReview(normalisation))
+                    hasPresentedReview = true
                 }
                 if stoppedAtLimit {
                     hud.show(.success(Self.recordingLimitMessage(
