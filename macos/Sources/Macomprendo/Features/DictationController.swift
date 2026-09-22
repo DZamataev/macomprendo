@@ -28,6 +28,9 @@ final class DictationController: ObservableObject {
     private let settings: @MainActor () -> Settings
     private let escapeMonitor: any EscapeMonitoring
     private let history: DictationHistoryController?
+    /// Shows what normalisation changed, after the corrected text reached the user's document.
+    /// Optional, as `HUDController`'s presenter is, so tests that do not care omit it.
+    private let reviewPresenter: (any CorrectionReviewPresenting)?
     /// The glossary in force, read at the moment a transcript is accepted so a pack enabled
     /// mid-recording applies to it. Asked for only while `glossaryEnabled` is on, so a user
     /// who never turned the glossary on never pays for building one.
@@ -78,6 +81,7 @@ final class DictationController: ObservableObject {
          settings: @escaping @MainActor () -> Settings,
          escapeMonitor: any EscapeMonitoring,
          history: DictationHistoryController? = nil,
+         reviewPresenter: (any CorrectionReviewPresenting)? = nil,
          glossary: @escaping @MainActor () -> Glossary = { Glossary() },
          now: @escaping @MainActor () -> Date = Date.init) {
         self.recorder = recorder
@@ -90,6 +94,7 @@ final class DictationController: ObservableObject {
         self.settings = settings
         self.escapeMonitor = escapeMonitor
         self.history = history
+        self.reviewPresenter = reviewPresenter
         self.glossary = glossary
         self.now = now
         escapeMonitor.onEscape = { [weak self] in self?.cancel() }
@@ -302,6 +307,13 @@ final class DictationController: ObservableObject {
                 state = .idle
                 target = nil
                 escapeMonitor.stop()
+                // Only here, in the success branch: the panel describes text that reached the
+                // user's document, and presenting it on any other path would claim a delivery
+                // that did not happen. Nothing is shown when nothing was rewritten — glossary
+                // off produces an empty `rewrites` and so falls through silently.
+                if !normalisation.rewrites.isEmpty {
+                    reviewPresenter?.present(CorrectionReview(normalisation))
+                }
                 if stoppedAtLimit {
                     hud.show(.success(Self.recordingLimitMessage(
                         seconds: settings().maximumRecordingSeconds)))

@@ -18,6 +18,7 @@ import Testing
         let historyStore: FakeDictationHistoryStore
         let history: DictationHistoryController
         let encoder: FakeDictationAudioEncoder
+        let reviewPresenter: FakeCorrectionReviewPresenter
         /// How many times the controller asked for the glossary. Zero proves the master
         /// switch is read before anything is built or matched.
         let glossaryRequests: Box<Int>
@@ -68,6 +69,7 @@ import Testing
                                                       settings.value.savedRecordingFormat
                                                   })
         if let transcript { transcriber.result = .success(transcript) }
+        let reviewPresenter = FakeCorrectionReviewPresenter()
 
         let controller = DictationController(
             recorder: recorder,
@@ -80,6 +82,7 @@ import Testing
             settings: { settings.value },
             escapeMonitor: escapeMonitor,
             history: history,
+            reviewPresenter: reviewPresenter,
             glossary: {
                 glossaryRequests.value += 1
                 return glossary
@@ -89,6 +92,7 @@ import Testing
                        inserter: inserter, tracker: tracker, permissions: permissions,
                        hud: hud, pasteboard: pasteboard, settings: settings, escapeMonitor: escapeMonitor,
                        historyStore: historyStore, history: history, encoder: encoder,
+                       reviewPresenter: reviewPresenter,
                        glossaryRequests: glossaryRequests, clock: clock)
     }
 
@@ -1055,6 +1059,124 @@ import Testing
         let request = await h.historyStore.appendRequests.first
         #expect(request?.text == "Открыл терминал")
         #expect(request?.rawText == nil)
+    }
+
+    // MARK: - The correction review
+
+    @Test func noRewritesPresentsNothing() async {
+        let h = makeHarness(transcript: "Открыл терминал",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["Открыл терминал"])
+        #expect(h.reviewPresenter.presented.isEmpty)
+    }
+
+    @Test func glossaryOffPresentsNothing() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: false,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["Открыл Xcode build"])
+        #expect(h.reviewPresenter.presented.isEmpty)
+    }
+
+    @Test func oneRewritePresentsItWithItsOriginal() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+
+        #expect(h.reviewPresenter.presented.count == 1)
+        guard let review = h.reviewPresenter.presented.first else { return }
+        #expect(review.text == "Открыл xcodebuild")
+        #expect(review.rewrites.map(\.original) == ["Xcode build"])
+        #expect(review.rewrites.map(\.term) == ["xcodebuild"])
+        // The range must index the presented text, not the transcript: the view underlines
+        // with it, and a range computed against the model's words points at the wrong span.
+        #expect(review.rewrites.map { String(review.text[$0.range]) } == ["xcodebuild"])
+    }
+
+    @Test func severalRewritesArePresentedInDocumentOrder() async {
+        let h = makeHarness(transcript: "Открыл Xcode build и TS Config JSON",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild", "tsconfig.json"))
+
+        await recordAndFinish(h)
+
+        #expect(h.reviewPresenter.presented.count == 1)
+        guard let review = h.reviewPresenter.presented.first else { return }
+        #expect(review.text == "Открыл xcodebuild и tsconfig.json")
+        #expect(review.rewrites.map(\.original) == ["Xcode build", "TS Config JSON"])
+        #expect(review.rewrites.map { String(review.text[$0.range]) }
+            == ["xcodebuild", "tsconfig.json"])
+        // Document order is the order of the ranges, not merely the order the matcher
+        // happened to append them in.
+        let starts = review.rewrites.map(\.range.lowerBound)
+        #expect(starts == starts.sorted())
+    }
+
+    /// Presentation follows insertion. A panel describing text that never reached the user's
+    /// document is worse than no panel: it claims a correction was delivered when it was not.
+    @Test func aFailedInsertPresentsNothing() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+        h.inserter.error = MacomprendoError.insertFailed
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.isEmpty)
+        #expect(h.reviewPresenter.presented.isEmpty)
+    }
+
+    /// Any other insertion failure is equally not an insertion.
+    @Test func anInsertThatFailsWithoutTheClipboardFallbackPresentsNothing() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+        h.inserter.error = MacomprendoError.permissionDenied(.accessibility)
+
+        await recordAndFinish(h)
+
+        #expect(h.reviewPresenter.presented.isEmpty)
+    }
+
+    @Test func aSecondDictationReplacesRatherThanStacks() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild", "tsconfig.json"))
+
+        await recordAndFinish(h)
+        h.transcriber.result = .success("Правил TS Config JSON")
+        await recordAndFinish(h)
+
+        #expect(h.reviewPresenter.presented.count == 2)
+        // The second review carries only the second dictation's rewrite: a panel that
+        // accumulated would describe text the user has already moved past.
+        #expect(h.reviewPresenter.presented.map(\.text)
+            == ["Открыл xcodebuild", "Правил tsconfig.json"])
+        #expect(h.reviewPresenter.presented.map { $0.rewrites.map(\.original) }
+            == [["Xcode build"], ["TS Config JSON"]])
+    }
+
+    /// The trailing space is an insertion detail, not part of what was corrected, so the
+    /// review shows the corrected text the ranges were computed against.
+    @Test func theReviewShowsTheCorrectedTextWithoutTheAppendedSpace() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+        h.settings.value.appendSpaceAfterDictation = true
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["Открыл xcodebuild "])
+        #expect(h.reviewPresenter.presented.map(\.text) == ["Открыл xcodebuild"])
     }
 
     // MARK: - The silence gate
