@@ -243,9 +243,10 @@ final class DictationController: ObservableObject {
         do {
             try Task.checkCancellation()
             let raw: String
-            // nil for the short-dictation branch: it inserts "OK" without running a model, and
-            // a row naming the model that *would* have run attributes text to a model that
-            // never saw the audio.
+            // nil for the short-dictation branch, and only there: it inserts "OK" without
+            // running a model. Everything downstream that describes a model's output — the
+            // history row and the correction review — reads this one fact rather than
+            // re-testing the branch's condition.
             let run: TranscriptionRun?
             if settings().shortDictationInsertsOK, pcm.count < Self.shortDictationMaximumSamples {
                 raw = "OK"
@@ -285,11 +286,12 @@ final class DictationController: ObservableObject {
                 : NormalisationResult(text: text, rewrites: [])
             let corrected = normalisation.text
 
-            let historyResult: DictationHistoryController.AppendResult = if let history {
+            // No row without a run: the short-dictation "OK" is the app typing a constant,
+            // and a row holding it has neither model nor input for the corpus to measure.
+            let historyResult: DictationHistoryController.AppendResult = if let history, let run {
                 // `rawText` holds the model's own words only when they differ from what was
                 // inserted: the column exists to measure the model against our corrections,
-                // and a copy of `text` would claim a correction that never happened. `run`
-                // is nil on the short-dictation path, whose "OK" no model produced.
+                // and a copy of `text` would claim a correction that never happened.
                 await history.append(text: corrected,
                                      rawText: normalisation.rewrites.isEmpty ? nil : text,
                                      kind: .dictation, run: run)
@@ -328,8 +330,10 @@ final class DictationController: ObservableObject {
                 // Only here, in the success branch: the panel describes text that reached the
                 // user's document, and presenting it on any other path would claim a delivery
                 // that did not happen. Nothing is shown when nothing was rewritten — glossary
-                // off produces an empty `rewrites` and so falls through silently.
-                if !normalisation.rewrites.isEmpty {
+                // off produces an empty `rewrites` and so falls through silently. Nor without a
+                // run: a pack listing `ok` rewrites the short-dictation "OK", but there is no
+                // model output whose correction the panel could explain.
+                if run != nil, !normalisation.rewrites.isEmpty {
                     reviewPresenter?.present(CorrectionReview(normalisation))
                     hasPresentedReview = true
                 }

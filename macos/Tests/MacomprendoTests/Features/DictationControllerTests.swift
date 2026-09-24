@@ -960,19 +960,64 @@ import Testing
     }
 
     // `shortDictationInsertsOK` short-circuits to the literal "OK" without running a model.
-    // Those rows must record no model, or the corpus attributes text to a model that never
-    // saw the audio.
-    @Test func shortDictationRecordsNoModel() async {
-        let h = makeHarness(historyEnabled: true, transcript: "never used")
+    // No model produced that text and there is no audio worth keeping, so it writes no row.
+    @Test func shortDictationWritesNoHistoryRow() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "never used")
         h.settings.value.shortDictationInsertsOK = true
         h.recorder.samplesToReturn = [0.1, 0.2]
 
         await recordAndFinish(h)
 
-        #expect(await h.historyStore.appendRequests.map(\.text) == ["OK"])
-        let request = await h.historyStore.appendRequests.first
-        #expect(request?.run == nil)
-        #expect(request?.rawText == nil)
+        #expect(h.inserter.inserted.map(\.text) == ["OK"])
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(await h.encoder.requests.isEmpty)
+        #expect(h.hud.state == .success("Inserted"))
+        #expect(h.history.errorMessage == nil)
+    }
+
+    // The same short buffer with the feature off goes to the model: that is a real
+    // transcription, however short, and keeps its row and its model attribution.
+    @Test func aShortSpokenDictationWithTheShortTapFeatureOffStillWritesItsRow() async {
+        let h = makeHarness(historyEnabled: true, transcript: "да")
+        h.settings.value.shortDictationInsertsOK = false
+        h.recorder.samplesToReturn = [0.1, 0.2]
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.count == 1)
+        #expect(h.inserter.inserted.map(\.text) == ["да"])
+        let requests = await h.historyStore.appendRequests
+        #expect(requests.map(\.text) == ["да"])
+        #expect(requests.first?.run != nil)
+    }
+
+    // A pack may list `ok` as a term. The short tap's "OK" is then rewritten, but no model
+    // produced it and there is no correction of a model to explain: no review is shown.
+    @Test func shortDictationPresentsNoReviewEvenWhenTheGlossaryContainsOK() async {
+        let h = makeHarness(historyEnabled: true, transcript: "never used",
+                            glossaryEnabled: true, glossary: Self.glossary("ok"))
+        h.settings.value.shortDictationInsertsOK = true
+        h.recorder.samplesToReturn = [0.1, 0.2]
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.isEmpty)
+        #expect(h.inserter.inserted.count == 1)
+        #expect(h.reviewPresenter.presented.isEmpty)
+        #expect(await h.historyStore.appendRequests.isEmpty)
+    }
+
+    // Control for the test above: the same pack does fire a review when a model produced
+    // the "OK", so the absence above is not the glossary failing to match.
+    @Test func aTranscribedOKMatchingTheGlossaryStillPresentsAReview() async {
+        let h = makeHarness(transcript: "OK", glossaryEnabled: true, glossary: Self.glossary("ok"))
+        h.settings.value.shortDictationInsertsOK = false
+        h.recorder.samplesToReturn = [0.1, 0.2]
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.count == 1)
+        #expect(h.reviewPresenter.presented.count == 1)
     }
 
     // A dictation too short to hold audio has nothing to save, and saying so reads as a
@@ -1272,7 +1317,7 @@ import Testing
 
         #expect(h.transcriber.received.isEmpty)
         #expect(h.inserter.inserted.map(\.text) == ["OK"])
-        #expect(await h.historyStore.appendRequests.map(\.text) == ["OK"])
+        #expect(await h.historyStore.appendRequests.isEmpty)
     }
 
     /// With the short-tap feature off, a buffer shorter than the cutoff is still silence.

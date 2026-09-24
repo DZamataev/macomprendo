@@ -23,6 +23,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The recording HUD now warns after three seconds of no input — **Not hearing anything.
   Check your input device.** — while the recording continues, and clears the moment sound
   arrives.
+- A very short tap that inserts “OK” (**Insert “OK” for a very short dictation**) no longer
+  adds an “OK” row to dictation history, and never opens the correction panel — even when a
+  glossary pack lists “ok” as a term. A short dictation that was actually transcribed is
+  still saved as before.
 
 ### Changed
 - Redesigned the GitHub Pages site around the new app icon, with an outcome-led landing
