@@ -43,6 +43,21 @@ struct HUDView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(12)
+        case .recordingNoInput(let elapsed):
+            VStack(spacing: 6) {
+                Icon(.warning, size: 20).foregroundStyle(Color.orange)
+                HStack(spacing: 6) {
+                    Text("Not hearing anything")
+                    Text(Self.elapsedText(elapsed)).monospacedDigit()
+                }
+                .font(.caption)
+                Text("Check your input device.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .padding(12)
         case .recordingPrompt(let hint):
             VStack(spacing: 6) {
                 Icon(.microphoneFill, size: 20).foregroundStyle(Color.red)
@@ -106,7 +121,7 @@ struct HUDView: View {
     nonisolated static func captionText(for state: HUDState, caption: String?) -> String? {
         guard let caption, !caption.isEmpty else { return nil }
         switch state {
-        case .recording, .recordingPrompt, .transcribing: return caption
+        case .recording, .recordingNoInput, .recordingPrompt, .transcribing: return caption
         case .hidden, .speaking, .success, .error, .toast: return nil
         }
     }

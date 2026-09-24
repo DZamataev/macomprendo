@@ -29,6 +29,36 @@ import Testing
     @Test func levelIsHalfwayAtMinus30dB() {
         #expect(abs(AudioMath.level(fromRMS: 0.0316228) - 0.5) < 0.01)
     }
+
+    @Test func peakOfEmptyBufferIsZero() {
+        #expect(AudioMath.peak([]) == 0)
+    }
+
+    @Test func peakOfDigitalSilenceIsZero() {
+        #expect(AudioMath.peak([0, 0, 0, 0]) == 0)
+    }
+
+    /// Peak, not RMS: one loud sample in a mostly quiet buffer must dominate, and a
+    /// negative sample counts as loudly as a positive one.
+    @Test func peakIsTheLargestAbsoluteValueIncludingNegatives() {
+        #expect(AudioMath.peak([0, 0.1, -0.8, 0.2]) == 0.8)
+        #expect(AudioMath.peak([-1, 0.5]) == 1)
+    }
+
+    @Test func theSilenceThresholdIsMinus60dBFS() {
+        #expect(AudioMath.silenceThresholdDB == -60)
+        #expect(abs(AudioMath.silenceThreshold - pow(10, AudioMath.silenceThresholdDB / 20)) < 1e-9)
+        #expect(abs(AudioMath.silenceThreshold - 0.001) < 1e-9)
+    }
+
+    /// The boundary is inclusive upward, so a borderline-quiet real recording is kept.
+    @Test func isSilentIsTrueOnlyBelowTheThreshold() {
+        #expect(AudioMath.isSilent([]))
+        #expect(AudioMath.isSilent([0, 0, 0]))
+        #expect(AudioMath.isSilent([0.0009, -0.0009]))
+        #expect(!AudioMath.isSilent([0, 0.001, 0]))
+        #expect(!AudioMath.isSilent([0.5]))
+    }
 }
 
 @Suite struct PCMResamplerTests {

@@ -28,13 +28,26 @@ final class DictationController: ObservableObject {
     private let settings: @MainActor () -> Settings
     private let escapeMonitor: any EscapeMonitoring
     private let history: DictationHistoryController?
+    /// Shows what normalisation changed, after the corrected text reached the user's document.
+    /// Optional, as `HUDController`'s presenter is, so tests that do not care omit it.
+    private let reviewPresenter: (any CorrectionReviewPresenting)?
     /// The glossary in force, read at the moment a transcript is accepted so a pack enabled
     /// mid-recording applies to it. Asked for only while `glossaryEnabled` is on, so a user
     /// who never turned the glossary on never pays for building one.
     private let glossary: @MainActor () -> Glossary
+    /// Wall clock, injected so the live no-input warning is unit-tested without sleeping.
+    private let now: @MainActor () -> Date
+
+    /// How long the input may produce nothing before the HUD says so. Long enough that a
+    /// user who presses the hotkey and thinks before speaking is not scolded.
+    private static let noInputWarningSeconds: TimeInterval = 3
 
     private var target: FrontmostApp?
     private var startedAt: Date?
+    /// When the current run of zero levels began, or nil while the input is producing
+    /// something. Cleared at the start of every recording so one silent session cannot
+    /// make the next one warn immediately.
+    private var silentSince: Date?
     private var levelTask: Task<Void, Never>?
     private var autoStopTask: Task<Void, Never>?
     private(set) var activeTask: Task<Void, Never>?
@@ -52,6 +65,10 @@ final class DictationController: ObservableObject {
     // next one claim it was capped too.
     private var stoppedAtLimit = false
 
+    // Whether a review panel was presented and has not been dismissed from here. See
+    // `dismissReview()`.
+    private var hasPresentedReview = false
+
     // The recorder `stop()` that `cancel()` kicks off is deliberately unawaited there
     // (cancel() must return synchronously), but a `start()` from a fast restart must
     // not race it — `AVAudioEngineRecorder.start()` traps/fails if a tap is already
@@ -68,7 +85,9 @@ final class DictationController: ObservableObject {
          settings: @escaping @MainActor () -> Settings,
          escapeMonitor: any EscapeMonitoring,
          history: DictationHistoryController? = nil,
-         glossary: @escaping @MainActor () -> Glossary = { Glossary() }) {
+         reviewPresenter: (any CorrectionReviewPresenting)? = nil,
+         glossary: @escaping @MainActor () -> Glossary = { Glossary() },
+         now: @escaping @MainActor () -> Date = Date.init) {
         self.recorder = recorder
         self.transcriberProvider = transcriberProvider
         self.inserter = inserter
@@ -79,7 +98,9 @@ final class DictationController: ObservableObject {
         self.settings = settings
         self.escapeMonitor = escapeMonitor
         self.history = history
+        self.reviewPresenter = reviewPresenter
         self.glossary = glossary
+        self.now = now
         escapeMonitor.onEscape = { [weak self] in self?.cancel() }
 
         // One long-lived consumer each: an `AsyncStream` can only be iterated once, so
@@ -148,8 +169,22 @@ final class DictationController: ObservableObject {
         // Never start a new recording — and so never reach a new `insert()` call —
         // while a previous cycle's insert is still running in the background.
         guard !isInserting else { return }
+        // A review describes the dictation that produced it. Every path out of the next cycle
+        // — no rewrite, nothing heard, a failed transcription, a failed insert — reaches no
+        // `present()` of its own, so the boundary is the only place that can guarantee the
+        // panel never outlives its dictation.
+        dismissReview()
         activeTask?.cancel()
         activeTask = Task { [weak self] in await self?.startRecording() }
+    }
+
+    /// Takes the review panel down if this controller put one up. Tracked rather than asked,
+    /// because the presenter owns an auto-hide timer this controller cannot see; the flag only
+    /// stops a dismissal being sent when nothing was ever presented.
+    private func dismissReview() {
+        guard hasPresentedReview else { return }
+        hasPresentedReview = false
+        reviewPresenter?.dismiss()
     }
 
     private func startRecording() async {
@@ -174,7 +209,8 @@ final class DictationController: ObservableObject {
             fail(error)
             return
         }
-        startedAt = Date()
+        startedAt = now()
+        silentSince = nil
         state = .recording
         // Leaving `.idle`: the HUD's cancel hint needs Esc to actually do something.
         // Stopped again wherever the cycle reaches a terminal `.idle`/`.failed` state below.
@@ -207,14 +243,23 @@ final class DictationController: ObservableObject {
         do {
             try Task.checkCancellation()
             let raw: String
-            // nil for the short-dictation branch: it inserts "OK" without running a model, and
-            // a row naming the model that *would* have run attributes text to a model that
-            // never saw the audio.
+            // nil for the short-dictation branch, and only there: it inserts "OK" without
+            // running a model. Everything downstream that describes a model's output — the
+            // history row and the correction review — reads this one fact rather than
+            // re-testing the branch's condition.
             let run: TranscriptionRun?
             if settings().shortDictationInsertsOK, pcm.count < Self.shortDictationMaximumSamples {
                 raw = "OK"
                 run = nil
             } else {
+                // A buffer of digital silence is not speech, and a model handed one invents
+                // a word rather than returning nothing. Stop before the model call — and so
+                // before any insertion or history row. Deliberately after the short-dictation
+                // branch above, whose "OK" is the feature working as designed.
+                guard !AudioMath.isSilent(pcm) else {
+                    fail(MacomprendoError.silentCapture)
+                    return
+                }
                 let provider = try await transcriberProvider()
                 let language = settings().transcriptionLanguage
                 raw = try await provider.transcribe(
@@ -241,11 +286,12 @@ final class DictationController: ObservableObject {
                 : NormalisationResult(text: text, rewrites: [])
             let corrected = normalisation.text
 
-            let historyResult: DictationHistoryController.AppendResult = if let history {
+            // No row without a run: the short-dictation "OK" is the app typing a constant,
+            // and a row holding it has neither model nor input for the corpus to measure.
+            let historyResult: DictationHistoryController.AppendResult = if let history, let run {
                 // `rawText` holds the model's own words only when they differ from what was
                 // inserted: the column exists to measure the model against our corrections,
-                // and a copy of `text` would claim a correction that never happened. `run`
-                // is nil on the short-dictation path, whose "OK" no model produced.
+                // and a copy of `text` would claim a correction that never happened.
                 await history.append(text: corrected,
                                      rawText: normalisation.rewrites.isEmpty ? nil : text,
                                      kind: .dictation, run: run)
@@ -281,6 +327,16 @@ final class DictationController: ObservableObject {
                 state = .idle
                 target = nil
                 escapeMonitor.stop()
+                // Only here, in the success branch: the panel describes text that reached the
+                // user's document, and presenting it on any other path would claim a delivery
+                // that did not happen. Nothing is shown when nothing was rewritten — glossary
+                // off produces an empty `rewrites` and so falls through silently. Nor without a
+                // run: a pack listing `ok` rewrites the short-dictation "OK", but there is no
+                // model output whose correction the panel could explain.
+                if run != nil, !normalisation.rewrites.isEmpty {
+                    reviewPresenter?.present(CorrectionReview(normalisation))
+                    hasPresentedReview = true
+                }
                 if stoppedAtLimit {
                     hud.show(.success(Self.recordingLimitMessage(
                         seconds: settings().maximumRecordingSeconds)))
@@ -359,8 +415,23 @@ final class DictationController: ObservableObject {
 
     private func onLevel(_ level: Float) {
         guard state == .recording else { return }
-        let elapsed = startedAt.map { Date().timeIntervalSince($0) } ?? 0
-        hud.show(.recording(level: level, elapsed: elapsed))
+        let instant = now()
+        let elapsed = startedAt.map { instant.timeIntervalSince($0) } ?? 0
+        // A dead capture device delivers zeros forever while the recording goes on, and the
+        // meter alone reads as "you are too quiet". Say so instead — but never stop the
+        // recording: that decision stays the user's.
+        guard level == 0 else {
+            silentSince = nil
+            hud.show(.recording(level: level, elapsed: elapsed))
+            return
+        }
+        let since = silentSince ?? instant
+        silentSince = since
+        if instant.timeIntervalSince(since) >= Self.noInputWarningSeconds {
+            hud.show(.recordingNoInput(elapsed: elapsed))
+        } else {
+            hud.show(.recording(level: level, elapsed: elapsed))
+        }
     }
 
     private func fail(_ error: Error) {

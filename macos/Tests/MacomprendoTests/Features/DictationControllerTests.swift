@@ -18,9 +18,12 @@ import Testing
         let historyStore: FakeDictationHistoryStore
         let history: DictationHistoryController
         let encoder: FakeDictationAudioEncoder
+        let reviewPresenter: FakeCorrectionReviewPresenter
         /// How many times the controller asked for the glossary. Zero proves the master
         /// switch is read before anything is built or matched.
         let glossaryRequests: Box<Int>
+        /// The controller's clock, so elapsed-time behaviour is asserted without sleeping.
+        let clock: Box<Date>
     }
 
     private func makeHarness(mode: DictationMode = .hold,
@@ -51,6 +54,7 @@ import Testing
         settings.value.saveOriginalRecording = recordingEnabled
         settings.value.glossaryEnabled = glossaryEnabled
         let glossaryRequests = Box(0)
+        let clock = Box(Date(timeIntervalSince1970: 1_000))
         let escapeMonitor = FakeEscapeMonitor()
         let historyStore = FakeDictationHistoryStore()
         let encoder = FakeDictationAudioEncoder()
@@ -65,6 +69,7 @@ import Testing
                                                       settings.value.savedRecordingFormat
                                                   })
         if let transcript { transcriber.result = .success(transcript) }
+        let reviewPresenter = FakeCorrectionReviewPresenter()
 
         let controller = DictationController(
             recorder: recorder,
@@ -77,15 +82,18 @@ import Testing
             settings: { settings.value },
             escapeMonitor: escapeMonitor,
             history: history,
+            reviewPresenter: reviewPresenter,
             glossary: {
                 glossaryRequests.value += 1
                 return glossary
-            })
+            },
+            now: { clock.value })
         return Harness(controller: controller, recorder: recorder, transcriber: transcriber,
                        inserter: inserter, tracker: tracker, permissions: permissions,
                        hud: hud, pasteboard: pasteboard, settings: settings, escapeMonitor: escapeMonitor,
                        historyStore: historyStore, history: history, encoder: encoder,
-                       glossaryRequests: glossaryRequests)
+                       reviewPresenter: reviewPresenter,
+                       glossaryRequests: glossaryRequests, clock: clock)
     }
 
     private func recordAndFinish(_ h: Harness) async {
@@ -952,19 +960,64 @@ import Testing
     }
 
     // `shortDictationInsertsOK` short-circuits to the literal "OK" without running a model.
-    // Those rows must record no model, or the corpus attributes text to a model that never
-    // saw the audio.
-    @Test func shortDictationRecordsNoModel() async {
-        let h = makeHarness(historyEnabled: true, transcript: "never used")
+    // No model produced that text and there is no audio worth keeping, so it writes no row.
+    @Test func shortDictationWritesNoHistoryRow() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "never used")
         h.settings.value.shortDictationInsertsOK = true
         h.recorder.samplesToReturn = [0.1, 0.2]
 
         await recordAndFinish(h)
 
-        #expect(await h.historyStore.appendRequests.map(\.text) == ["OK"])
-        let request = await h.historyStore.appendRequests.first
-        #expect(request?.run == nil)
-        #expect(request?.rawText == nil)
+        #expect(h.inserter.inserted.map(\.text) == ["OK"])
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(await h.encoder.requests.isEmpty)
+        #expect(h.hud.state == .success("Inserted"))
+        #expect(h.history.errorMessage == nil)
+    }
+
+    // The same short buffer with the feature off goes to the model: that is a real
+    // transcription, however short, and keeps its row and its model attribution.
+    @Test func aShortSpokenDictationWithTheShortTapFeatureOffStillWritesItsRow() async {
+        let h = makeHarness(historyEnabled: true, transcript: "да")
+        h.settings.value.shortDictationInsertsOK = false
+        h.recorder.samplesToReturn = [0.1, 0.2]
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.count == 1)
+        #expect(h.inserter.inserted.map(\.text) == ["да"])
+        let requests = await h.historyStore.appendRequests
+        #expect(requests.map(\.text) == ["да"])
+        #expect(requests.first?.run != nil)
+    }
+
+    // A pack may list `ok` as a term. The short tap's "OK" is then rewritten, but no model
+    // produced it and there is no correction of a model to explain: no review is shown.
+    @Test func shortDictationPresentsNoReviewEvenWhenTheGlossaryContainsOK() async {
+        let h = makeHarness(historyEnabled: true, transcript: "never used",
+                            glossaryEnabled: true, glossary: Self.glossary("ok"))
+        h.settings.value.shortDictationInsertsOK = true
+        h.recorder.samplesToReturn = [0.1, 0.2]
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.isEmpty)
+        #expect(h.inserter.inserted.count == 1)
+        #expect(h.reviewPresenter.presented.isEmpty)
+        #expect(await h.historyStore.appendRequests.isEmpty)
+    }
+
+    // Control for the test above: the same pack does fire a review when a model produced
+    // the "OK", so the absence above is not the glossary failing to match.
+    @Test func aTranscribedOKMatchingTheGlossaryStillPresentsAReview() async {
+        let h = makeHarness(transcript: "OK", glossaryEnabled: true, glossary: Self.glossary("ok"))
+        h.settings.value.shortDictationInsertsOK = false
+        h.recorder.samplesToReturn = [0.1, 0.2]
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.count == 1)
+        #expect(h.reviewPresenter.presented.count == 1)
     }
 
     // A dictation too short to hold audio has nothing to save, and saying so reads as a
@@ -1051,5 +1104,340 @@ import Testing
         let request = await h.historyStore.appendRequests.first
         #expect(request?.text == "Открыл терминал")
         #expect(request?.rawText == nil)
+    }
+
+    // MARK: - The correction review
+
+    @Test func noRewritesPresentsNothing() async {
+        let h = makeHarness(transcript: "Открыл терминал",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["Открыл терминал"])
+        #expect(h.reviewPresenter.presented.isEmpty)
+    }
+
+    @Test func glossaryOffPresentsNothing() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: false,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["Открыл Xcode build"])
+        #expect(h.reviewPresenter.presented.isEmpty)
+    }
+
+    @Test func oneRewritePresentsItWithItsOriginal() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+
+        #expect(h.reviewPresenter.presented.count == 1)
+        guard let review = h.reviewPresenter.presented.first else { return }
+        #expect(review.text == "Открыл xcodebuild")
+        #expect(review.rewrites.map(\.original) == ["Xcode build"])
+        #expect(review.rewrites.map(\.term) == ["xcodebuild"])
+        // The range must index the presented text, not the transcript: the view underlines
+        // with it, and a range computed against the model's words points at the wrong span.
+        #expect(review.rewrites.map { String(review.text[$0.range]) } == ["xcodebuild"])
+    }
+
+    @Test func severalRewritesArePresentedInDocumentOrder() async {
+        let h = makeHarness(transcript: "Открыл Xcode build и TS Config JSON",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild", "tsconfig.json"))
+
+        await recordAndFinish(h)
+
+        #expect(h.reviewPresenter.presented.count == 1)
+        guard let review = h.reviewPresenter.presented.first else { return }
+        #expect(review.text == "Открыл xcodebuild и tsconfig.json")
+        #expect(review.rewrites.map(\.original) == ["Xcode build", "TS Config JSON"])
+        #expect(review.rewrites.map { String(review.text[$0.range]) }
+            == ["xcodebuild", "tsconfig.json"])
+        // Document order is the order of the ranges, not merely the order the matcher
+        // happened to append them in.
+        let starts = review.rewrites.map(\.range.lowerBound)
+        #expect(starts == starts.sorted())
+    }
+
+    /// Presentation follows insertion. A panel describing text that never reached the user's
+    /// document is worse than no panel: it claims a correction was delivered when it was not.
+    @Test func aFailedInsertPresentsNothing() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+        h.inserter.error = MacomprendoError.insertFailed
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.isEmpty)
+        #expect(h.reviewPresenter.presented.isEmpty)
+    }
+
+    /// Any other insertion failure is equally not an insertion.
+    @Test func anInsertThatFailsWithoutTheClipboardFallbackPresentsNothing() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+        h.inserter.error = MacomprendoError.permissionDenied(.accessibility)
+
+        await recordAndFinish(h)
+
+        #expect(h.reviewPresenter.presented.isEmpty)
+    }
+
+    @Test func aSecondDictationReplacesRatherThanStacks() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild", "tsconfig.json"))
+
+        await recordAndFinish(h)
+        h.transcriber.result = .success("Правил TS Config JSON")
+        await recordAndFinish(h)
+
+        #expect(h.reviewPresenter.presented.count == 2)
+        // The second review carries only the second dictation's rewrite: a panel that
+        // accumulated would describe text the user has already moved past.
+        #expect(h.reviewPresenter.presented.map(\.text)
+            == ["Открыл xcodebuild", "Правил tsconfig.json"])
+        #expect(h.reviewPresenter.presented.map { $0.rewrites.map(\.original) }
+            == [["Xcode build"], ["TS Config JSON"]])
+    }
+
+    /// A review describes the dictation that produced it. The moment the next recording
+    /// starts, whatever is still on screen describes text the user has moved past.
+    @Test func aNewDictationTakesTheEarlierReviewDown() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+        #expect(h.reviewPresenter.presented.count == 1)
+        #expect(h.reviewPresenter.dismissCount == 0)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        #expect(h.reviewPresenter.dismissCount == 1)
+    }
+
+    /// The same boundary, on a cycle that never reaches a review of its own: the stale panel
+    /// must not outlive the dictation it belonged to just because the next one failed.
+    @Test func aDictationThatFailsStillTakesTheEarlierReviewDown() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+
+        await recordAndFinish(h)
+        #expect(h.reviewPresenter.presented.count == 1)
+
+        h.transcriber.result = .failure(MacomprendoError.providerUnreachable(endpointName: "Test"))
+        await recordAndFinish(h)
+
+        #expect(h.reviewPresenter.dismissCount == 1)
+        #expect(h.reviewPresenter.presented.count == 1)
+    }
+
+    /// The trailing space is an insertion detail, not part of what was corrected, so the
+    /// review shows the corrected text the ranges were computed against.
+    @Test func theReviewShowsTheCorrectedTextWithoutTheAppendedSpace() async {
+        let h = makeHarness(transcript: "Открыл Xcode build",
+                            glossaryEnabled: true,
+                            glossary: Self.glossary("xcodebuild"))
+        h.settings.value.appendSpaceAfterDictation = true
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["Открыл xcodebuild "])
+        #expect(h.reviewPresenter.presented.map(\.text) == ["Открыл xcodebuild"])
+    }
+
+    // MARK: - The silence gate
+
+    /// Longer than `shortDictationMaximumSamples` (half a second at 16 kHz).
+    private static func zeros(seconds: Double) -> [Float] {
+        Array(repeating: 0, count: Int(16_000 * seconds))
+    }
+
+    @Test func anAllZeroRecordingNeverReachesTheModel() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "you")
+        h.recorder.samplesToReturn = Self.zeros(seconds: 2)
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+        #expect(await h.historyStore.appendRequests.isEmpty)
+        #expect(await h.encoder.requests.isEmpty)
+        guard case .error(let message) = h.hud.state else {
+            Issue.record("Expected the silent-capture error, got \(h.hud.state)")
+            return
+        }
+        #expect(message.contains("No sound was captured"))
+        #expect(message.contains("input device"))
+    }
+
+    /// The boundary is inclusive upward: a borderline-quiet real recording is kept.
+    @Test func aRecordingAtTheSilenceThresholdStillReachesTheModel() async {
+        let h = makeHarness(transcript: "barely audible")
+        var samples = Self.zeros(seconds: 2)
+        samples[100] = AudioMath.silenceThreshold
+
+        h.recorder.samplesToReturn = samples
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.count == 1)
+        #expect(h.inserter.inserted.map(\.text) == ["barely audible"])
+    }
+
+    @Test func aNormalRecordingIsUnaffectedByTheGate() async {
+        let h = makeHarness(transcript: "hello world")
+        h.recorder.samplesToReturn = [0.1, -0.4, 0.9, 0.2]
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.count == 1)
+        #expect(h.inserter.inserted.map(\.text) == ["hello world"])
+    }
+
+    /// Sixteen of the twenty-five measured silent files took the short-dictation path and
+    /// behaved correctly: the gate sits after it, so a deliberate short tap still works.
+    @Test func aShortSilentTapStillInsertsOK() async {
+        let h = makeHarness(historyEnabled: true, transcript: "never used")
+        h.settings.value.shortDictationInsertsOK = true
+        h.recorder.samplesToReturn = Array(repeating: 0, count: 100)
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.isEmpty)
+        #expect(h.inserter.inserted.map(\.text) == ["OK"])
+        #expect(await h.historyStore.appendRequests.isEmpty)
+    }
+
+    /// With the short-tap feature off, a buffer shorter than the cutoff is still silence.
+    @Test func aShortSilentRecordingIsGatedWhenTheShortTapFeatureIsOff() async {
+        let h = makeHarness(transcript: "you")
+        h.settings.value.shortDictationInsertsOK = false
+        h.recorder.samplesToReturn = Array(repeating: 0, count: 100)
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+    }
+
+    /// The measured failure: 4.2 s of digital silence — the length of history row 308 —
+    /// went to the model, which returned `you`, and it was pasted into a document.
+    @Test func fourPointTwoSecondsOfZerosProducesNoModelCall() async {
+        let h = makeHarness(historyEnabled: true, recordingEnabled: true, transcript: "you")
+        h.recorder.samplesToReturn = Self.zeros(seconds: 4.2)
+
+        await recordAndFinish(h)
+
+        #expect(h.transcriber.received.isEmpty)
+        #expect(h.inserter.inserted.isEmpty)
+        #expect(await h.historyStore.appendRequests.isEmpty)
+    }
+
+    // MARK: - The live no-input warning
+
+    /// Emits one level and waits for the HUD to act on it, so the levels a test scripts are
+    /// consumed one at a time: the recorder's stream is buffered, and two levels yielded
+    /// back to back can both be read after a later clock change.
+    private func emit(_ level: Float, elapsed: TimeInterval, into h: Harness) async {
+        h.recorder.emitLevel(level)
+        await waitFor("the HUD to consume level \(level) at \(elapsed)s") {
+            switch h.hud.state {
+            case .recording(let shown, let shownElapsed):
+                return shown == level && shownElapsed == elapsed
+            case .recordingNoInput(let shownElapsed):
+                return shownElapsed == elapsed
+            default:
+                return false
+            }
+        }
+    }
+
+    private func advance(_ seconds: TimeInterval, _ h: Harness) {
+        h.clock.value = h.clock.value.addingTimeInterval(seconds)
+    }
+
+    @Test func threeSecondsOfZeroLevelWarnsWhileRecordingContinues() async {
+        let h = makeHarness(mode: .hold)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        advance(1, h)
+        await emit(0, elapsed: 1, into: h)
+        advance(3, h)
+        await emit(0, elapsed: 4, into: h)
+
+        #expect(h.hud.state == .recordingNoInput(elapsed: 4))
+        #expect(h.controller.state == .recording)
+        #expect(h.recorder.stopCount == 0)
+    }
+
+    @Test func aNonZeroLevelBeforeThreeSecondsDoesNotWarn() async {
+        let h = makeHarness(mode: .hold)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        advance(1, h)
+        await emit(0, elapsed: 1, into: h)
+        advance(2, h)
+        await emit(0, elapsed: 3, into: h)
+
+        // Two seconds of silence, one short of the warning.
+        #expect(h.hud.state == .recording(level: 0, elapsed: 3))
+    }
+
+    @Test func aNonZeroLevelClearsTheWarning() async {
+        let h = makeHarness(mode: .hold)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        advance(1, h)
+        await emit(0, elapsed: 1, into: h)
+        advance(3, h)
+        await emit(0, elapsed: 4, into: h)
+        #expect(h.hud.state == .recordingNoInput(elapsed: 4))
+
+        advance(1, h)
+        await emit(0.7, elapsed: 5, into: h)
+        #expect(h.hud.state == .recording(level: 0.7, elapsed: 5))
+
+        // And the silent run restarts from here rather than resuming the old one.
+        advance(2, h)
+        await emit(0, elapsed: 7, into: h)
+        #expect(h.hud.state == .recording(level: 0, elapsed: 7))
+        #expect(h.controller.state == .recording)
+    }
+
+    /// A new recording must not inherit the previous one's silent stretch.
+    @Test func theWarningStateDoesNotCarryIntoTheNextRecording() async {
+        let h = makeHarness(mode: .hold, transcript: "spoken")
+        h.recorder.samplesToReturn = [0.5, -0.5]
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        advance(1, h)
+        await emit(0, elapsed: 1, into: h)
+        advance(3, h)
+        await emit(0, elapsed: 4, into: h)
+        #expect(h.hud.state == .recordingNoInput(elapsed: 4))
+        h.controller.handle(.keyUp(.dictate))
+        await h.controller.activeTask?.value
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        advance(2, h)
+        await emit(0, elapsed: 2, into: h)
+
+        #expect(h.hud.state == .recording(level: 0, elapsed: 2))
     }
 }

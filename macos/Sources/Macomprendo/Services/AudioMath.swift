@@ -2,12 +2,39 @@ import Foundation
 
 /// Pure helpers shared by the recorder and the HUD level meter.
 enum AudioMath {
+    /// The amplitude below which a recording is treated as containing no speech at all,
+    /// in dBFS. Far below the quietest real speech measured in the archive (−26 dBFS) and
+    /// far above a working microphone's noise floor (−66 dBFS between words), so this is a
+    /// test for "nothing at all", not a judgement about "too quiet".
+    static let silenceThresholdDB: Float = -60
+
+    /// `silenceThresholdDB` as a Float32 amplitude (0.001).
+    static let silenceThreshold: Float = pow(10, silenceThresholdDB / 20)
+
     /// Root-mean-square amplitude of a Float32 PCM buffer (0…1 for normalised audio).
     static func rms(_ samples: [Float]) -> Float {
         guard !samples.isEmpty else { return 0 }
         var sum: Float = 0
         for sample in samples { sum += sample * sample }
         return (sum / Float(samples.count)).squareRoot()
+    }
+
+    /// Largest absolute sample value in a Float32 PCM buffer; 0 for an empty buffer.
+    ///
+    /// Peak rather than RMS because the question is "did the microphone ever produce
+    /// anything?": an RMS over a mostly-silent recording holding one loud word sits under
+    /// any sensible threshold, and a gate built on it would discard real speech.
+    static func peak(_ samples: [Float]) -> Float {
+        var maximum: Float = 0
+        for sample in samples { maximum = max(maximum, abs(sample)) }
+        return maximum
+    }
+
+    /// Whether a buffer holds no speech: its peak is below `silenceThreshold`. The
+    /// boundary is inclusive upward, so a recording peaking at exactly the threshold is
+    /// kept rather than discarded.
+    static func isSilent(_ samples: [Float]) -> Bool {
+        peak(samples) < silenceThreshold
     }
 
     /// Maps an RMS amplitude to a 0…1 meter value on a dBFS scale.

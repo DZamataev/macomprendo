@@ -21,7 +21,8 @@ import Testing
     .glossaryPackNameInvalid("a/b"),
     .glossaryPackNameTaken("typescript"),
     .licenseTextMissing("espeak-ng"),
-    .licenseTextUnreadable("espeak-ng")
+    .licenseTextUnreadable("espeak-ng"),
+    .silentCapture
 ])
 func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
     #expect(error.errorDescription?.isEmpty == false)
@@ -71,4 +72,11 @@ func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
     #expect(text.contains("Dictation history is unavailable: database is read-only"))
     #expect(text.contains("Open Dictation History and clear it"))
     #expect(!text.contains(transcript))
+}
+
+@Test func silentCaptureNamesTheInputDeviceAsTheLikelyCause() {
+    let error = MacomprendoError.silentCapture
+    #expect(error.errorDescription == "No sound was captured.")
+    #expect(error.recoverySuggestion?.contains("input device") == true)
+    #expect(error.recoverySuggestion?.contains("other app") == true)
 }
