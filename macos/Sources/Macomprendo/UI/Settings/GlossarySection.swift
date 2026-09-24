@@ -74,18 +74,15 @@ struct GlossarySection: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {
-            // Scrolls rather than growing: this tab already carries the model list, the
-            // parameters and the recording cap, and the section must not push them out of a
-            // default-sized window.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(model.rows) { row in
-                        packRow(row)
-                    }
+            // Grows with its contents rather than scrolling. A scroll view nested inside the
+            // tab's own scroll view traps the wheel: the pointer over the list scrolls the
+            // list, and the page underneath refuses to move. The tab scrolls; this does not.
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(model.rows) { row in
+                    packRow(row)
                 }
-                .padding(.vertical, 2)
             }
-            .frame(maxHeight: 180)
+            .padding(.vertical, 2)
         }
     }
 
