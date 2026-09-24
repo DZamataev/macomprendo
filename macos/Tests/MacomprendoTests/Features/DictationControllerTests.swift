@@ -24,6 +24,8 @@ import Testing
         let glossaryRequests: Box<Int>
         /// The controller's clock, so elapsed-time behaviour is asserted without sleeping.
         let clock: Box<Date>
+        /// The controller's sleep. Nothing it is asked to wait for ends until a test releases it.
+        let sleeper: GatedSleeper
     }
 
     private func makeHarness(mode: DictationMode = .hold,
@@ -72,6 +74,7 @@ import Testing
                                                   })
         if let transcript { transcriber.result = .success(transcript) }
         let reviewPresenter = FakeCorrectionReviewPresenter()
+        let sleeper = GatedSleeper()
 
         let controller = DictationController(
             recorder: recorder,
@@ -89,13 +92,14 @@ import Testing
                 glossaryRequests.value += 1
                 return glossary
             },
-            now: { clock.value })
+            now: { clock.value },
+            sleep: { await sleeper.sleep($0) })
         return Harness(controller: controller, recorder: recorder, transcriber: transcriber,
                        inserter: inserter, tracker: tracker, permissions: permissions,
                        hud: hud, pasteboard: pasteboard, settings: settings, escapeMonitor: escapeMonitor,
                        historyStore: historyStore, history: history, encoder: encoder,
                        reviewPresenter: reviewPresenter,
-                       glossaryRequests: glossaryRequests, clock: clock)
+                       glossaryRequests: glossaryRequests, clock: clock, sleeper: sleeper)
     }
 
     private func recordAndFinish(_ h: Harness) async {
@@ -1457,5 +1461,215 @@ import Testing
         await emit(0, elapsed: 2, into: h)
 
         #expect(h.hud.state == .recording(level: 0, elapsed: 2))
+    }
+
+    // MARK: - The short-tap window
+
+    /// Gives queued MainActor work — a level from the recorder's stream, a released sleep —
+    /// the chance to run, where there is no visible state change to wait on.
+    private func settle() async {
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+
+    /// Waits until the controller has asked to wait out `count` short-tap windows, so a test
+    /// never releases a window that has not been requested yet.
+    private func windowsRequested(_ count: Int, _ h: Harness) async {
+        await waitFor("\(count) short-tap window(s) to be requested") {
+            h.sleeper.requests.count >= count
+        }
+    }
+
+    private func makeShortTapHarness(transcript: String? = nil,
+                                     presenter: FakeHUDPresenter) -> Harness {
+        let h = makeHarness(mode: .hold, historyEnabled: false, transcript: transcript,
+                            hudPresenter: presenter)
+        h.settings.value.shortDictationInsertsOK = true
+        return h
+    }
+
+    /// The window is the short-tap threshold itself — 8 000 samples at 16 kHz — read as
+    /// time. Stated in seconds here, independently of how the controller derives it, so a
+    /// delay of zero, or one that drifts from the threshold, fails.
+    @Test func theRecordingHUDWaitsHalfASecondWhenTheShortTapFeatureIsOn() async {
+        let presenter = FakeHUDPresenter()
+        let h = makeShortTapHarness(presenter: presenter)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        await windowsRequested(1, h)
+
+        #expect(h.controller.state == .recording)
+        #expect(h.sleeper.requests == [0.5])
+        #expect(DictationController.shortTapWindow
+            == Double(DictationController.shortDictationMaximumSamples)
+                / AVAudioEngineRecorder.targetSampleRate)
+        #expect(h.hud.state == .hidden)
+        #expect(presenter.presentCount == 0)
+    }
+
+    @Test func aTapReleasedInsideTheWindowShowsNoHUDAtAll() async {
+        let presenter = FakeHUDPresenter()
+        let h = makeShortTapHarness(transcript: "never used", presenter: presenter)
+        h.recorder.samplesToReturn = [0.1, 0.2]
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        await windowsRequested(1, h)
+        h.recorder.emitLevel(0.6)
+        await settle()
+        h.controller.handle(.keyUp(.dictate))
+        await h.controller.activeTask?.value
+        // The window ending after the release must not bring the HUD up either.
+        h.sleeper.release(0)
+        await settle()
+
+        #expect(h.inserter.inserted.map(\.text) == ["OK"])
+        #expect(h.hud.state == .hidden)
+        #expect(presenter.presentCount == 0)
+    }
+
+    @Test func aPressHeldPastTheWindowShowsTheHUDOnceWithItsRealElapsedTime() async {
+        let presenter = FakeHUDPresenter()
+        let h = makeShortTapHarness(presenter: presenter)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        await windowsRequested(1, h)
+        advance(0.25, h)
+        h.recorder.emitLevel(0.6)
+        await settle()
+        #expect(h.hud.state == .hidden)
+
+        advance(0.5, h)
+        h.sleeper.release(0)
+        await waitFor("the HUD to appear after the window") { h.hud.state != .hidden }
+
+        #expect(h.hud.state == .recording(level: 0.6, elapsed: 0.75))
+        #expect(presenter.presentCount == 1)
+        #expect(h.controller.state == .recording)
+
+        // And from here the meter behaves as it always has.
+        advance(0.25, h)
+        await emit(0.3, elapsed: 1.0, into: h)
+    }
+
+    @Test func withTheShortTapFeatureOffTheHUDAppearsImmediately() async {
+        let presenter = FakeHUDPresenter()
+        let h = makeHarness(mode: .hold, hudPresenter: presenter)
+        h.settings.value.shortDictationInsertsOK = false
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+
+        #expect(h.hud.state == .recording(level: 0, elapsed: 0))
+        #expect(presenter.presentCount == 1)
+        #expect(h.sleeper.requests.isEmpty)
+    }
+
+    @Test func aPendingHUDDoesNotFireAfterItsCycleWasCancelled() async {
+        let presenter = FakeHUDPresenter()
+        let h = makeShortTapHarness(presenter: presenter)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        await windowsRequested(1, h)
+        h.controller.cancel()
+        #expect(h.hud.state == .toast("Cancelled"))
+
+        h.sleeper.release(0)
+        await settle()
+
+        #expect(h.hud.state == .toast("Cancelled"))
+        #expect(h.controller.state == .idle)
+    }
+
+    /// A new press starts a new window. The previous press's window ending must not reveal
+    /// the HUD over the new recording before its own window is over.
+    @Test func aPendingHUDDoesNotFireOverTheNextRecording() async {
+        let presenter = FakeHUDPresenter()
+        let h = makeShortTapHarness(presenter: presenter)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        await windowsRequested(1, h)
+        h.controller.cancel()
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        await windowsRequested(2, h)
+        #expect(h.controller.state == .recording)
+        #expect(h.sleeper.requests.count == 2)
+
+        h.sleeper.release(0)
+        await settle()
+        #expect(h.hud.state == .toast("Cancelled"))
+
+        h.sleeper.release(1)
+        await waitFor("the second recording's HUD") {
+            if case .recording = h.hud.state { return true }
+            return false
+        }
+    }
+
+    /// Released inside the window, but the buffer turns out long enough to transcribe: the
+    /// model runs, and the user must see that it is working.
+    @Test func aReleaseInsideTheWindowThatStillTranscribesShowsTranscribing() async {
+        let presenter = FakeHUDPresenter()
+        let h = makeShortTapHarness(transcript: "spoken", presenter: presenter)
+        h.recorder.samplesToReturn = Array(repeating: 0.3, count: 16_000)
+        let gate = AsyncGate()
+        h.transcriber.gate = gate
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        await windowsRequested(1, h)
+        h.controller.handle(.keyUp(.dictate))
+        await waitFor("the transcribing HUD") { h.hud.state == .transcribing }
+
+        gate.open()
+        await h.controller.activeTask?.value
+        #expect(h.inserter.inserted.map(\.text) == ["spoken"])
+        #expect(h.hud.state == .success("Inserted"))
+    }
+
+    /// The warning counts from the first silent level, which arrives before the HUD does.
+    /// Counting from the reveal instead would hold it back by the length of the window.
+    @Test func theNoInputWarningCountsFromTheRecordingNotFromTheHUD() async {
+        let presenter = FakeHUDPresenter()
+        let h = makeShortTapHarness(presenter: presenter)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        await windowsRequested(1, h)
+        advance(0.125, h)
+        h.recorder.emitLevel(0)
+        await settle()
+        #expect(h.hud.state == .hidden)
+
+        advance(0.5, h)
+        h.sleeper.release(0)
+        await waitFor("the HUD to appear after the window") { h.hud.state != .hidden }
+        #expect(h.hud.state == .recording(level: 0, elapsed: 0.625))
+
+        advance(2.5, h)
+        await emit(0, elapsed: 3.125, into: h)
+        #expect(h.hud.state == .recordingNoInput(elapsed: 3.125))
+    }
+
+    @Test func theCapStillEndsARecordingHeldPastTheWindow() async {
+        let presenter = FakeHUDPresenter()
+        let h = makeShortTapHarness(transcript: "capped", presenter: presenter)
+        h.recorder.samplesToReturn = Array(repeating: 0.3, count: 16_000)
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        await windowsRequested(1, h)
+        h.sleeper.release(0)
+        await waitFor("the HUD to appear after the window") { h.hud.state != .hidden }
+        h.recorder.triggerAutoStop()
+        await waitFor("the capped recording to insert") {
+            h.inserter.inserted.map(\.text) == ["capped"] && h.controller.state == .idle
+        }
+
+        #expect(h.hud.state == .success(DictationController.recordingLimitMessage(seconds: 300)))
     }
 }

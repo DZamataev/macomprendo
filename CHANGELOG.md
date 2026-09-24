@@ -54,7 +54,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   adds an “OK” row to dictation history, never opens the correction panel — even when a
   glossary pack lists “ok” as a term — and ends without an **Inserted** message: the “OK”
   in your document is the confirmation. A short dictation that was actually transcribed is
-  still saved and confirmed as before.
+  still saved and confirmed as before. With the option on, the recording HUD also waits
+  half a second before appearing, so a quick tap shows nothing at all; hold longer and it
+  appears with the time you have already been recording, and the no-input warning still
+  counts from the moment you pressed.
 
 ### Changed
 - Redesigned the GitHub Pages site around the new app icon, with an outcome-led landing

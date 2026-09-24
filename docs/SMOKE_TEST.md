@@ -64,8 +64,11 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
       on restores it.
 - [ ] **Very short dictation.** In Settings ▸ General, enable **Insert “OK” for a very short
       dictation**, then press and release the Dictate hotkey in under half a second — `OK` is
-      inserted without waiting for speech recognition. Disable it and verify the same short
-      recording follows the normal transcription path.
+      inserted without waiting for speech recognition, and **no HUD appears at any point** —
+      not even a flash. Hold the key (and, separately, the middle mouse button in hold mode) for
+      about two seconds: the recording HUD appears roughly half a second after the press, its
+      timer already past 0:00. Disable it and verify the same short recording follows the
+      normal transcription path, with the recording HUD appearing immediately.
 - [ ] **Trailing space.** In Settings ▸ General, enable “Add a space after dictated text”,
       dictate `hello` into TextEdit, and verify the insertion is `hello ` (with one trailing
       space). In Dictate & Refine, insert the Original text and verify it also ends in one space;

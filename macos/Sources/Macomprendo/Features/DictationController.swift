@@ -16,7 +16,12 @@ final class DictationController: ObservableObject {
     @Published private(set) var state: DictationState = .idle
 
     /// At the recorder's 16 kHz mono output, this is half a second of captured audio.
-    private static let shortDictationMaximumSamples = Int(AVAudioEngineRecorder.targetSampleRate * 0.5)
+    static let shortDictationMaximumSamples = Int(AVAudioEngineRecorder.targetSampleRate * 0.5)
+
+    /// `shortDictationMaximumSamples` as time: how long a press may last and still be a short
+    /// tap. Derived rather than restated, so the HUD's delay and the "OK" threshold cannot
+    /// drift apart.
+    static let shortTapWindow = Double(shortDictationMaximumSamples) / AVAudioEngineRecorder.targetSampleRate
 
     private let recorder: any AudioRecording
     private let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
@@ -37,6 +42,9 @@ final class DictationController: ObservableObject {
     private let glossary: @MainActor () -> Glossary
     /// Wall clock, injected so the live no-input warning is unit-tested without sleeping.
     private let now: @MainActor () -> Date
+    /// Waits out the short-tap window before the recording HUD appears. Injected so tests
+    /// decide when the window ends.
+    private let sleep: @Sendable (TimeInterval) async -> Void
 
     /// How long the input may produce nothing before the HUD says so. Long enough that a
     /// user who presses the hotkey and thinks before speaking is not scolded.
@@ -48,6 +56,15 @@ final class DictationController: ObservableObject {
     /// something. Cleared at the start of every recording so one silent session cannot
     /// make the next one warn immediately.
     private var silentSince: Date?
+    /// Whether this cycle's HUD may show recording and transcribing states. False while a
+    /// press is still inside the short-tap window, so a tap that ends as "OK" shows nothing.
+    private var hudRevealed = false
+    /// The most recent input level, so a HUD revealed after the window opens on the meter
+    /// the user would have been seeing rather than on zero.
+    private var lastLevel: Float = 0
+    /// Ends the short-tap window. Owned by the cycle: every path that ends or replaces a
+    /// recording cancels it.
+    private var revealTask: Task<Void, Never>?
     private var levelTask: Task<Void, Never>?
     private var autoStopTask: Task<Void, Never>?
     private(set) var activeTask: Task<Void, Never>?
@@ -87,7 +104,10 @@ final class DictationController: ObservableObject {
          history: DictationHistoryController? = nil,
          reviewPresenter: (any CorrectionReviewPresenting)? = nil,
          glossary: @escaping @MainActor () -> Glossary = { Glossary() },
-         now: @escaping @MainActor () -> Date = Date.init) {
+         now: @escaping @MainActor () -> Date = Date.init,
+         sleep: @escaping @Sendable (TimeInterval) async -> Void = { seconds in
+             try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+         }) {
         self.recorder = recorder
         self.transcriberProvider = transcriberProvider
         self.inserter = inserter
@@ -101,6 +121,7 @@ final class DictationController: ObservableObject {
         self.reviewPresenter = reviewPresenter
         self.glossary = glossary
         self.now = now
+        self.sleep = sleep
         escapeMonitor.onEscape = { [weak self] in self?.cancel() }
 
         // One long-lived consumer each: an `AsyncStream` can only be iterated once, so
@@ -152,6 +173,8 @@ final class DictationController: ObservableObject {
         let wasRecording = state == .recording
         activeTask?.cancel()
         activeTask = nil
+        revealTask?.cancel()
+        revealTask = nil
         state = .idle
         startedAt = nil
         target = nil
@@ -174,6 +197,8 @@ final class DictationController: ObservableObject {
         // `present()` of its own, so the boundary is the only place that can guarantee the
         // panel never outlives its dictation.
         dismissReview()
+        revealTask?.cancel()
+        revealTask = nil
         activeTask?.cancel()
         activeTask = Task { [weak self] in await self?.startRecording() }
     }
@@ -211,11 +236,28 @@ final class DictationController: ObservableObject {
         }
         startedAt = now()
         silentSince = nil
+        lastLevel = 0
         state = .recording
         // Leaving `.idle`: the HUD's cancel hint needs Esc to actually do something.
         // Stopped again wherever the cycle reaches a terminal `.idle`/`.failed` state below.
         escapeMonitor.start()
-        hud.show(.recording(level: 0, elapsed: 0))
+        guard settings().shortDictationInsertsOK else {
+            hudRevealed = true
+            hud.show(.recording(level: 0, elapsed: 0))
+            return
+        }
+        // A release inside the window inserts "OK" and nothing else, so the HUD stays down
+        // until the press can no longer be a short tap. Levels are still read meanwhile: the
+        // no-input warning counts from the recording, not from the HUD.
+        hudRevealed = false
+        let sleep = self.sleep
+        revealTask = Task { [weak self] in
+            await sleep(Self.shortTapWindow)
+            guard !Task.isCancelled, let self, self.state == .recording else { return }
+            self.revealTask = nil
+            self.hudRevealed = true
+            self.hud.show(self.recordingHUDState(at: self.now()))
+        }
     }
 
     /// The success message shown when a recording ended because it reached its limit, rather
@@ -233,7 +275,11 @@ final class DictationController: ObservableObject {
         guard state == .recording else { return }
         stoppedAtLimit = reachedLimit
         state = .transcribing
-        hud.show(.transcribing)
+        revealTask?.cancel()
+        revealTask = nil
+        // Still inside the short-tap window, the release may yet insert "OK": "Transcribing"
+        // waits until the buffer shows a model will actually run.
+        if hudRevealed { hud.show(.transcribing) }
         activeTask = Task { [weak self] in await self?.transcribeAndInsert() }
     }
 
@@ -259,6 +305,10 @@ final class DictationController: ObservableObject {
                 guard !AudioMath.isSilent(pcm) else {
                     fail(MacomprendoError.silentCapture)
                     return
+                }
+                if !hudRevealed {
+                    hudRevealed = true
+                    hud.show(.transcribing)
                 }
                 let provider = try await transcriberProvider()
                 let language = settings().transcriptionLanguage
@@ -421,22 +471,26 @@ final class DictationController: ObservableObject {
     private func onLevel(_ level: Float) {
         guard state == .recording else { return }
         let instant = now()
-        let elapsed = startedAt.map { instant.timeIntervalSince($0) } ?? 0
-        // A dead capture device delivers zeros forever while the recording goes on, and the
-        // meter alone reads as "you are too quiet". Say so instead — but never stop the
-        // recording: that decision stays the user's.
-        guard level == 0 else {
-            silentSince = nil
-            hud.show(.recording(level: level, elapsed: elapsed))
-            return
-        }
-        let since = silentSince ?? instant
-        silentSince = since
-        if instant.timeIntervalSince(since) >= Self.noInputWarningSeconds {
-            hud.show(.recordingNoInput(elapsed: elapsed))
+        lastLevel = level
+        if level == 0 {
+            silentSince = silentSince ?? instant
         } else {
-            hud.show(.recording(level: level, elapsed: elapsed))
+            silentSince = nil
         }
+        guard hudRevealed else { return }
+        hud.show(recordingHUDState(at: instant))
+    }
+
+    /// What the recording HUD shows at `instant`, from the latest level and silent run.
+    /// A dead capture device delivers zeros forever while the recording goes on, and the
+    /// meter alone reads as "you are too quiet". Say so instead — but never stop the
+    /// recording: that decision stays the user's.
+    private func recordingHUDState(at instant: Date) -> HUDState {
+        let elapsed = startedAt.map { instant.timeIntervalSince($0) } ?? 0
+        if let silentSince, instant.timeIntervalSince(silentSince) >= Self.noInputWarningSeconds {
+            return .recordingNoInput(elapsed: elapsed)
+        }
+        return .recording(level: lastLevel, elapsed: elapsed)
     }
 
     private func fail(_ error: Error) {
