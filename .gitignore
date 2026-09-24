@@ -36,6 +36,9 @@ macos/AppBundle/AppIcon.iconset/
 .claude/worktrees/
 .worktrees/
 .superpowers/
+# Kanban card bodies: machine-local, and they name absolute worktree paths that
+# `npm run audit` rightly refuses to let into a public repository.
+.planning/
 
 # graphify — the generated graph is machine-local and rebuildable; only the
 # wiring (README with the rebuild command) is committed.

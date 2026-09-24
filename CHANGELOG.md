@@ -7,11 +7,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Glossary** (Settings ▸ Dictation): dictation can now paste your jargon the way you
+  spell it. Switch on **Correct recognised terms** and Macomprendo rewrites what the
+  recogniser produced — `tsconfig json` becomes `tsconfig.json`, `NVM` becomes `nvm`,
+  `Safe Area View` becomes `SafeAreaView` — leaving the rest of the sentence alone. The
+  original transcript is kept in history.
+  Terms live in **packs**: plain text files in
+  `~/Library/Application Support/Macomprendo/Vocabulary/`, one term per line, comments
+  allowed. Six packs ship with the app (TypeScript, React Native, Python, Go, Ruby, Godot)
+  and all of them are off until you switch them on; the first time you turn the glossary on
+  it offers to enable them for you, and takes no for an answer. You can also add your own
+  terms in a box in Settings, which outrank every pack.
+  Packs can be edited in Settings without leaving the app, duplicated, created, deleted, or
+  reset to the version that shipped — editing a pack keeps its comments and layout exactly
+  as they were. Drop a file into the folder yourself, press **Reload**, and it appears in
+  the list, switched off until you tick it. Each pack says how many terms it holds, how many
+  lines it could not read, and how many of its terms are being overridden by a pack above
+  it, so a pack that is not doing what you expect is visible rather than silent. A pack
+  file, the folder or `packs.json` that cannot be read is named in the section instead of
+  quietly shortening the list, and dictation keeps working throughout.
 - After a dictation the glossary corrected, a floating panel shows the inserted text with each
   rewritten term underlined in green; hovering one reveals what the recogniser originally
   produced, and a caption names the packs that fired. It never takes focus from the app the
   text went into, sits clear of the status HUD, hovering holds it open, and it fades four
   seconds after the pointer leaves or the moment the next dictation begins.
+- **Recording quality** (Settings ▸ General): saved dictation recordings can now be kept
+  lossless (ALAC, ~1.11 MB/min) instead of compressed (AAC, ~0.35 MB/min). Compressed stays
+  the default, the file extension stays `.m4a` for both, and the choice applies to the next
+  dictation.
+- `npm run sync-graph` carries the git-ignored graphify knowledge graph from the main
+  checkout into a worktree and refreshes it with the free AST-only `graphify update`, so a
+  fresh worktree is not blind to the graph and nobody has to rebuild it. `npm run
+  sync-graph:check` verifies a worktree has it.
 
 ### Fixed
 - Dictation no longer transcribes a recording that contains no sound. When the microphone
@@ -34,35 +61,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added an animated dictation/refinement example with pause, replay and reduced-motion support.
 - New app icon: a human hand and robotic hand form a heart, expressing mutual
   understanding. The icon build now uses the approved transparent PNG master.
-
-### Added
-- **Glossary** (Settings ▸ Dictation): dictation can now paste your jargon the way you
-  spell it. Switch on **Correct recognised terms** and Macomprendo rewrites what the
-  recogniser produced — `tsconfig json` becomes `tsconfig.json`, `NVM` becomes `nvm`,
-  `Safe Area View` becomes `SafeAreaView` — leaving the rest of the sentence alone. The
-  original transcript is kept in history.
-  Terms live in **packs**: plain text files in
-  `~/Library/Application Support/Macomprendo/Vocabulary/`, one term per line, comments
-  allowed. Six packs ship with the app (TypeScript, React Native, Python, Go, Ruby, Godot)
-  and all of them are off until you switch them on; the first time you turn the glossary on
-  it offers to enable them for you, and takes no for an answer. You can also add your own
-  terms in a box in Settings, which outrank every pack.
-  Packs can be edited in Settings without leaving the app, duplicated, created, deleted, or
-  reset to the version that shipped — editing a pack keeps its comments and layout exactly
-  as they were. Drop a file into the folder yourself, press **Reload**, and it appears in
-  the list, switched off until you tick it. Each pack says how many terms it holds, how many
-  lines it could not read, and how many of its terms are being overridden by a pack above
-  it, so a pack that is not doing what you expect is visible rather than silent. A pack
-  file, the folder or `packs.json` that cannot be read is named in the section instead of
-  quietly shortening the list, and dictation keeps working throughout.
-- **Recording quality** (Settings ▸ General): saved dictation recordings can now be kept
-  lossless (ALAC, ~1.11 MB/min) instead of compressed (AAC, ~0.35 MB/min). Compressed stays
-  the default, the file extension stays `.m4a` for both, and the choice applies to the next
-  dictation.
-- `npm run sync-graph` carries the git-ignored graphify knowledge graph from the main
-  checkout into a worktree and refreshes it with the free AST-only `graphify update`, so a
-  fresh worktree is not blind to the graph and nobody has to rebuild it. `npm run
-  sync-graph:check` verifies a worktree has it.
 
 ## [0.2.0] - 2026-09-12
 
