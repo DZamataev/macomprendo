@@ -340,6 +340,11 @@ final class DictationController: ObservableObject {
                 if stoppedAtLimit {
                     hud.show(.success(Self.recordingLimitMessage(
                         seconds: settings().maximumRecordingSeconds)))
+                } else if run == nil {
+                    // The short-dictation "OK" is its own confirmation: it appears in the
+                    // document the user is looking at. Dismiss "Transcribing" rather than
+                    // replace it, or it would stay up with nothing left to hide it.
+                    hud.hide()
                 } else if historyResult.error == nil {
                     hud.show(.success("Inserted"))
                 }

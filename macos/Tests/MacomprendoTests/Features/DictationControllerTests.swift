@@ -32,7 +32,8 @@ import Testing
                              recordingEnabled: Bool = false,
                              transcript: String? = nil,
                              glossaryEnabled: Bool = false,
-                             glossary: Glossary = Glossary()) -> Harness {
+                             glossary: Glossary = Glossary(),
+                             hudPresenter: (any HUDPresenting)? = nil) -> Harness {
         let recorder = FakeAudioRecorder()
         let transcriber = FakeTranscriptionProvider()
         let inserter = FakeTextInserter()
@@ -44,7 +45,8 @@ import Testing
         // continuation and hides the HUD before the assertion runs. Never resolving
         // within a test's lifetime keeps the asserted state stable; HUDController's own
         // auto-hide timing is covered by HUDControllerTests.
-        let hud = HUDController(sleep: { _ in try? await Task.sleep(for: .seconds(3600)) })
+        let hud = HUDController(presenter: hudPresenter,
+                                sleep: { _ in try? await Task.sleep(for: .seconds(3600)) })
         let pasteboard = FakePasteboard()
         let settings = SettingsHolder()
         settings.value.dictationMode = mode
@@ -971,8 +973,24 @@ import Testing
         #expect(h.inserter.inserted.map(\.text) == ["OK"])
         #expect(await h.historyStore.appendRequests.isEmpty)
         #expect(await h.encoder.requests.isEmpty)
-        #expect(h.hud.state == .success("Inserted"))
+        #expect(h.hud.state == .hidden)
         #expect(h.history.errorMessage == nil)
+    }
+
+    // The short tap's "OK" lands in the user's document, which is its own confirmation. The
+    // cycle ends with the HUD dismissed — not "Inserted", and not left on "Transcribing".
+    @Test func shortDictationEndsWithTheHUDDismissedRatherThanASuccessMessage() async {
+        let presenter = FakeHUDPresenter()
+        let h = makeHarness(historyEnabled: false, transcript: "never used", hudPresenter: presenter)
+        h.settings.value.shortDictationInsertsOK = true
+        h.recorder.samplesToReturn = [0.1, 0.2]
+
+        await recordAndFinish(h)
+
+        #expect(h.inserter.inserted.map(\.text) == ["OK"])
+        #expect(h.controller.state == .idle)
+        #expect(h.hud.state == .hidden)
+        #expect(presenter.dismissCount == 1)
     }
 
     // The same short buffer with the feature off goes to the model: that is a real
@@ -1031,7 +1049,7 @@ import Testing
         await recordAndFinish(h)
 
         #expect(h.inserter.inserted.map(\.text) == ["OK"])
-        #expect(h.hud.state == .success("Inserted"))
+        #expect(h.hud.state == .hidden)
         #expect(await h.encoder.requests.isEmpty)
         #expect(h.history.errorMessage == nil)
     }
