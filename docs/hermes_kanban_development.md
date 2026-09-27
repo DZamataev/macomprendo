@@ -91,9 +91,8 @@ The four roles on this repo:
 | `macoimpl` | `claude-opus-5` | Writes the failing test, then the implementation |
 | `macoreview` | `claude-opus-5` | Adversarial review, blind to intent |
 | `macofix` | `claude-sonnet-5` | Applies or evidence-rejects raw findings |
-| `macomanager` | `claude-sonnet-5` | Owns the board when a run is unattended |
 
-All four route through the `teamclaude` provider inherited from the default
+All three route through the `teamclaude` provider inherited from the default
 profile. The reviewer keeps the strongest model deliberately: its job is to catch
 a Swift 6 data race or a missed cancellation path, and a reviewer that misses
 those produces false confidence, which is worse than no review.
@@ -378,9 +377,11 @@ The dispatcher runs inside the gateway on a 60 s tick;
 
 ## What the coordinating session must still do
 
-The chat session does not run between operator messages: there is no polling loop.
-Autonomy comes from the dispatcher plus notification subscriptions. For genuinely
-unattended supervision, schedule it with `cronjob`.
+The orchestrating session is the board's only supervisor; there is no cron
+coordinator. Cards created by the scripts subscribe that session, so completions and
+blocks arrive in it as turns. Keep it open while the board runs, overnight included.
+With the session closed, cards keep moving but nothing lands; on return, land the
+finished chains first. With the Mac asleep, nothing moves.
 
 The coordinator's own jobs, which no worker can do:
 
