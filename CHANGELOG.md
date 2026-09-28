@@ -60,6 +60,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   counts from the moment you pressed.
 
 ### Changed
+- The corrected-text panel that follows a dictation with glossary corrections now hides
+  after two seconds instead of four. Hovering it still holds it open.
 - Redesigned the GitHub Pages site around the new app icon, with an outcome-led landing
   page, feature overview, accessible FAQ, and refreshed support and policy pages.
 - Added an animated dictation/refinement example with pause, replay and reduced-motion support.

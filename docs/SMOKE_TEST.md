@@ -218,11 +218,11 @@ unit tests. Enable the `typescript` pack and turn **Correct recognised terms** o
 - [ ] **Hovering a marked span shows what the recogniser produced.** Rest the pointer on the
       underlined term: a tooltip shows the original spelling (`tsconfig json`).
 - [ ] **Hovering holds the panel open; leaving lets it go.** Move the pointer into the panel
-      before four seconds are up and keep it there for ten — the panel stays. Move the pointer
-      away and the panel disappears about four seconds later.
+      before two seconds are up and keep it there for ten — the panel stays. Move the pointer
+      away and the panel disappears about two seconds later.
 - [ ] **A second dictation replaces the content rather than stacking.** While the panel is
       visible, dictate another sentence with a glossary term: one panel remains, showing the
-      new text and the new caption, and its four seconds start again.
+      new text and the new caption, and its two seconds start again.
 - [ ] **The panel is visible above a full-screen application.** Put TextEdit into full screen,
       dictate a sentence with a glossary term, and the panel appears over it.
 - [ ] **No panel when nothing was corrected.** Dictate a sentence with no glossary term, and

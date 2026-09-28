@@ -14,9 +14,9 @@ final class CorrectionReviewController: ObservableObject {
     /// The review on screen, or `nil` when the panel is down.
     @Published private(set) var review: CorrectionReview?
 
-    /// Four seconds — the timing the HUD gives an error, not the 1.2 s it gives a success.
-    /// This is text to read rather than a status to glance at.
-    static let autoHideDuration: TimeInterval = 4
+    /// Two seconds: long enough to read a line of corrected text, short enough not to linger
+    /// over the document it went into. Hovering holds the panel open for longer reads.
+    static let autoHideDuration: TimeInterval = 2
 
     private let sleep: @Sendable (TimeInterval) async -> Void
     /// Called when the timer, not the caller, takes the panel down — the window presenter

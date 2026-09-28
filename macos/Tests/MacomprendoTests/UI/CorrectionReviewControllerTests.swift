@@ -23,10 +23,10 @@ struct CorrectionReviewControllerTests {
         #expect(controller.hideTask == nil)
     }
 
-    @Test func usesTheSameFourSecondsTheHUDGivesAnError() {
-        // Text to read, not a status to glance at: the HUD's error timing, not its success one.
-        #expect(CorrectionReviewController.autoHideDuration == HUDController.autoHideDuration(for: .error("Nope")))
-        #expect(CorrectionReviewController.autoHideDuration == 4)
+    @Test func staysUpForTwoSeconds() {
+        // Long enough to read a line of corrected text, short enough not to linger over the
+        // document the text went into. Hovering still holds it open.
+        #expect(CorrectionReviewController.autoHideDuration == 2)
     }
 
     @Test func presentShowsTheReviewAndHidesItAfterTheDuration() async {
@@ -38,7 +38,7 @@ struct CorrectionReviewControllerTests {
         #expect(controller.hideTask != nil)
 
         await controller.hideTask?.value
-        #expect(sleeps.durations == [4])
+        #expect(sleeps.durations == [CorrectionReviewController.autoHideDuration])
         #expect(controller.review == nil)
         #expect(hides.count == 1)
     }
@@ -54,14 +54,15 @@ struct CorrectionReviewControllerTests {
 
         #expect(controller.review == second)
         // A fresh timer, and the superseded one cancelled: were it left running, the first
-        // dictation's four seconds would take the second dictation's text off the screen.
+        // dictation's timer would take the second dictation's text off the screen.
         #expect(firstTask?.isCancelled == true)
         #expect(controller.hideTask != nil)
         #expect(controller.hideTask != firstTask)
 
         await firstTask?.value
         await controller.hideTask?.value
-        #expect(sleeps.durations == [4, 4])
+        #expect(sleeps.durations == [CorrectionReviewController.autoHideDuration,
+                                      CorrectionReviewController.autoHideDuration])
         #expect(controller.review == nil)
         // Exactly one, from the live timer: the cancelled one must report nothing.
         #expect(hides.count == 1)
@@ -89,7 +90,7 @@ struct CorrectionReviewControllerTests {
 
         #expect(controller.hideTask != nil)
         await controller.hideTask?.value
-        #expect(sleeps.durations.last == 4)
+        #expect(sleeps.durations.last == CorrectionReviewController.autoHideDuration)
         #expect(controller.review == nil)
         #expect(hides.count == 1)
     }
