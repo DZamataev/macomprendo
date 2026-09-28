@@ -7,6 +7,9 @@ enum HUDState: Equatable, Sendable {
     /// Still recording, but the input has produced nothing for long enough that the
     /// microphone is the likely cause. Never stops the recording.
     case recordingNoInput(elapsed: TimeInterval)
+    /// Still recording, from `to`, after `from` delivered no signal. Stays up for the rest of
+    /// the recording with a live meter, so the user knows which microphone is listening.
+    case recordingFallback(to: String, from: String, level: Float, elapsed: TimeInterval)
     /// Recording without a live meter, with a mode-specific instruction.
     case recordingPrompt(hint: String)
     case transcribing
@@ -47,7 +50,8 @@ final class HUDController: ObservableObject {
         switch state {
         case .success, .toast: 1.2
         case .error: 4
-        case .hidden, .recording, .recordingNoInput, .recordingPrompt, .transcribing, .speaking: nil
+        case .hidden, .recording, .recordingNoInput, .recordingFallback, .recordingPrompt,
+             .transcribing, .speaking: nil
         }
     }
 

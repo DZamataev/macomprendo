@@ -21,6 +21,9 @@ struct AppEnvironment {
     var hotkeys: any HotkeyServicing
     var middleMouse: any MiddleMouseMonitoring
     var recorder: any AudioRecording
+    /// The input devices the recorder chooses from and Settings lists — one instance, so
+    /// both see the same Core Audio listener.
+    var audioInputDevices: any AudioInputDeviceListing
     var inserter: any TextInserting
     var tracker: any FrontmostAppTracking
     var permissions: any PermissionsChecking
@@ -69,11 +72,13 @@ struct AppEnvironment {
         let keySimulator = CGEventKeySimulator()
         let models = LocalModelManager(directory: modelsDirectory, http: http)
         let languageDetector = NLLanguageDetector()
+        let audioInputDevices = CoreAudioInputDevices()
 
         return AppEnvironment(
             hotkeys: KeyboardShortcutsHotkeyService(),
             middleMouse: NSEventMiddleMouseMonitor(),
-            recorder: AVAudioEngineRecorder(),
+            recorder: AVAudioEngineRecorder(devices: audioInputDevices),
+            audioInputDevices: audioInputDevices,
             inserter: PasteTextInserter(pasteboard: pasteboard,
                                         tracker: tracker,
                                         keySimulator: keySimulator),

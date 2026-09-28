@@ -58,6 +58,24 @@ struct HUDView: View {
                     .lineLimit(2)
             }
             .padding(12)
+        case .recordingFallback(let to, let from, let level, let elapsed):
+            VStack(spacing: 6) {
+                LevelMeter(level: level)
+                HStack(spacing: 6) {
+                    Text("Recording")
+                    Text(Self.elapsedText(elapsed)).monospacedDigit()
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Icon(.warning, size: 11).foregroundStyle(Color.orange)
+                    Text(Self.fallbackText(to: to, from: from))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                }
+                .font(.caption2)
+            }
+            .padding(12)
         case .recordingPrompt(let hint):
             VStack(spacing: 6) {
                 Icon(.microphoneFill, size: 20).foregroundStyle(Color.red)
@@ -116,12 +134,17 @@ struct HUDView: View {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
+    nonisolated static func fallbackText(to: String, from: String) -> String {
+        InputFallback.message(to: to, from: from)
+    }
+
     /// Which states name the model. `.speaking` deliberately does not: it belongs to
     /// text-to-speech, where a transcription model's name would be actively misleading.
     nonisolated static func captionText(for state: HUDState, caption: String?) -> String? {
         guard let caption, !caption.isEmpty else { return nil }
         switch state {
-        case .recording, .recordingNoInput, .recordingPrompt, .transcribing: return caption
+        case .recording, .recordingNoInput, .recordingFallback, .recordingPrompt, .transcribing:
+            return caption
         case .hidden, .speaking, .success, .error, .toast: return nil
         }
     }

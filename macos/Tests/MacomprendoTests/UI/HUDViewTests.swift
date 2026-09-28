@@ -35,6 +35,19 @@ import Testing
     /// The no-input warning is still a recording state: it names the model and never
     /// auto-hides, because the recording it warns about is still running.
     @MainActor
+    @Test func theFallbackNoticeIsARecordingStateThatNeverAutoHides() {
+        let state = HUDState.recordingFallback(to: "MacBook Pro Microphone", from: "MCHOSE V9",
+                                               level: 0.5, elapsed: 3)
+        #expect(HUDView.captionText(for: state, caption: "Large v3 Turbo") == "Large v3 Turbo")
+        #expect(HUDController.autoHideDuration(for: state) == nil)
+    }
+
+    @Test func theFallbackNoticeNamesBothDevices() {
+        #expect(HUDView.fallbackText(to: "MacBook Pro Microphone", from: "MCHOSE V9")
+            == "No signal from MCHOSE V9 — switched to MacBook Pro Microphone")
+    }
+
+    @MainActor
     @Test func theNoInputWarningKeepsTheModelCaptionAndNeverAutoHides() {
         let state = HUDState.recordingNoInput(elapsed: 3)
         #expect(HUDView.captionText(for: state, caption: "Large v3 Turbo") == "Large v3 Turbo")

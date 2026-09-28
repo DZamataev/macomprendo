@@ -24,6 +24,9 @@ final class AppModel: ObservableObject {
             if settings.maximumRecordingSeconds != oldValue.maximumRecordingSeconds {
                 env.recorder.setMaximumDuration(TimeInterval(settings.maximumRecordingSeconds))
             }
+            if settings.preferredInputDeviceUID != oldValue.preferredInputDeviceUID {
+                env.recorder.setPreferredInputDevice(uid: settings.preferredInputDeviceUID)
+            }
             if settings.historyRetention != oldValue.historyRetention {
                 Task { [weak self] in
                     guard let self, let error = await self.history.applyRetention() else { return }
@@ -72,6 +75,8 @@ final class AppModel: ObservableObject {
             self.ttsModelsViewModel.rows.reduce(into: [:]) { $0[$1.id] = $1.state }
         })
     lazy var speechSourceModel = SpeechSourceModel(holder: self)
+    lazy var microphonePickerModel = MicrophonePickerModel(holder: self,
+                                                           devices: env.audioInputDevices)
     lazy var savedAudioModel = SavedAudioModel(history: history, revealer: env.fileRevealer)
     /// The About window's content, owned here so the view never constructs a service
     /// (invariant 1). Not actually deferred to first open: SwiftUI evaluates every `Scene`'s
@@ -197,6 +202,7 @@ final class AppModel: ObservableObject {
                                         glossary: { [glossaryBox] in glossaryBox.glossary })
 
         env.recorder.setMaximumDuration(TimeInterval(loaded.maximumRecordingSeconds))
+        env.recorder.setPreferredInputDevice(uid: loaded.preferredInputDeviceUID)
 
         var seeded = settings
         FactoryPresets.seed(into: &seeded)

@@ -44,6 +44,27 @@ import Testing
     #expect(try Settings.migrate(JSONEncoder().encode(settings)).appendSpaceAfterDictation)
 }
 
+@Test func preferredInputDeviceDefaultsToTheSystemDefaultAndRoundTrips() throws {
+    #expect(Settings.default.preferredInputDeviceUID == nil)
+
+    var settings = Settings.default
+    settings.preferredInputDeviceUID = "BuiltInMicrophoneDevice"
+    settings.preferredInputDeviceName = "MacBook Pro Microphone"
+    let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+    #expect(decoded.preferredInputDeviceUID == "BuiltInMicrophoneDevice")
+    #expect(decoded.preferredInputDeviceName == "MacBook Pro Microphone")
+}
+
+@Test func legacySettingsDecodeWithNoPreferredInputDevice() throws {
+    var object = try #require(JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(Settings.default)) as? [String: Any])
+    object.removeValue(forKey: "preferredInputDeviceUID")
+    object.removeValue(forKey: "preferredInputDeviceName")
+    let decoded = try Settings.migrate(JSONSerialization.data(withJSONObject: object))
+    #expect(decoded.preferredInputDeviceUID == nil)
+    #expect(decoded.preferredInputDeviceName == nil)
+}
+
 @Test func legacySettingsDecodeAppendSpaceAfterDictationAsOff() throws {
     var object = try #require(JSONSerialization.jsonObject(
         with: JSONEncoder().encode(Settings.default)) as? [String: Any])

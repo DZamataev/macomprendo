@@ -288,6 +288,13 @@ struct Settings: Codable, Sendable, Equatable {
     /// `Settings.recordingSecondsRange` on decode so a hand-edited document cannot brick
     /// the app.
     var maximumRecordingSeconds: Int
+    /// The microphone to record from, by Core Audio device UID. `nil` follows the system
+    /// default input. A chosen device that is not connected also falls back to the default,
+    /// and the choice is kept for when it comes back.
+    var preferredInputDeviceUID: String?
+    /// The chosen device's name when it was picked, so Settings can still name it while it
+    /// is disconnected.
+    var preferredInputDeviceName: String?
     /// Replaces direct Dictate recordings shorter than half a second with "OK" without loading ASR.
     var shortDictationInsertsOK: Bool
     /// Adds one separating space after direct Dictate insertion; history keeps the raw transcript.
@@ -353,6 +360,8 @@ struct Settings: Codable, Sendable, Equatable {
             savedRecordingFormat: .aac,
             historyRetention: .ninetyDays,
             maximumRecordingSeconds: 300,
+            preferredInputDeviceUID: nil,
+            preferredInputDeviceName: nil,
             shortDictationInsertsOK: false,
             appendSpaceAfterDictation: false,
             middleMouseAction: nil,
@@ -426,6 +435,8 @@ extension Settings {
             ?? d.maximumRecordingSeconds
         maximumRecordingSeconds = min(max(seconds, Settings.recordingSecondsRange.lowerBound),
                                       Settings.recordingSecondsRange.upperBound)
+        preferredInputDeviceUID = try c.decodeIfPresent(String.self, forKey: .preferredInputDeviceUID)
+        preferredInputDeviceName = try c.decodeIfPresent(String.self, forKey: .preferredInputDeviceName)
         shortDictationInsertsOK = try c.decodeIfPresent(Bool.self, forKey: .shortDictationInsertsOK)
             ?? d.shortDictationInsertsOK
         appendSpaceAfterDictation = try c.decodeIfPresent(Bool.self, forKey: .appendSpaceAfterDictation)

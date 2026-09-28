@@ -14,12 +14,17 @@ final class ScriptedRecorder: AudioRecording, @unchecked Sendable {
     // Ruling 1 (task-9 pre-flight): `AudioRecording` gained `autoStopped` after this
     // brief was written. It never fires in these tests.
     let autoStopped: AsyncStream<Void> = AsyncStream { _ in }
+    private let fallbacks = InputFallbackBroadcaster()
+    func inputFallbacks() -> AsyncStream<InputFallback> { fallbacks.subscribe() }
+    func emitFallback(_ fallback: InputFallback) { fallbacks.yield(fallback) }
 
     private(set) var maximumDurations: [TimeInterval] = []
 
     func setMaximumDuration(_ seconds: TimeInterval) {
         lock.withLock { maximumDurations.append(seconds) }
     }
+
+    func setPreferredInputDevice(uid: String?) {}
 
     var startCount: Int { lock.withLock { starts } }
     var stopCount: Int { lock.withLock { stops } }

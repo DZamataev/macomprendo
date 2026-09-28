@@ -16,6 +16,8 @@ import Foundation
     var onTranscript: (@MainActor (String) -> Void)?
     var onError: (@MainActor (Error) -> Void)?
     var onHistoryError: (@MainActor (MacomprendoError) -> Void)?
+    /// A fallback from a silent input device during this capture's recording.
+    var onFallback: (@MainActor (InputFallback) -> Void)?
 
     private let recorder: any AudioRecording
     private let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
@@ -35,6 +37,7 @@ import Foundation
     private var task: Task<Void, Never>?
     private var pendingStopTask: Task<Void, Never>?
     private var generation = 0
+    private var fallbackTask: Task<Void, Never>?
 
     init(recorder: any AudioRecording,
          transcriberProvider: @escaping @Sendable () async throws -> any TranscriptionProvider,
@@ -54,6 +57,13 @@ import Foundation
         self.source = source
         self.isGlossaryEnabled = isGlossaryEnabled
         self.glossary = glossary
+        let fallbacks = recorder.inputFallbacks()
+        fallbackTask = Task { [weak self] in
+            for await fallback in fallbacks {
+                guard let self, self.state == .recording else { continue }
+                self.onFallback?(fallback)
+            }
+        }
     }
 
     func handle(_ event: HotkeyEvent, mode: DictationMode? = nil) {

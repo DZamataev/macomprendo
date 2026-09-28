@@ -10,6 +10,7 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
 
     let level: AsyncStream<Float>
     let autoStopped: AsyncStream<Void>
+    private let fallbacks = InputFallbackBroadcaster()
     private let levelContinuation: AsyncStream<Float>.Continuation
     private let autoStopContinuation: AsyncStream<Void>.Continuation
     private let lock = NSLock()
@@ -21,6 +22,7 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
     private var _stopGate: AsyncGate?
     private var _stopControls: [StopControl] = []
     private var _maximumDurations: [TimeInterval] = []
+    private var _preferredInputDeviceUIDs: [String?] = []
 
     init() {
         var continuation: AsyncStream<Float>.Continuation!
@@ -29,6 +31,13 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
         var autoStopContinuation: AsyncStream<Void>.Continuation!
         autoStopped = AsyncStream(bufferingPolicy: .unbounded) { autoStopContinuation = $0 }
         self.autoStopContinuation = autoStopContinuation
+    }
+
+    func inputFallbacks() -> AsyncStream<InputFallback> { fallbacks.subscribe() }
+
+    /// Announces a fallback, as `AVAudioEngineRecorder` does after leaving a silent device.
+    func emitFallback(_ fallback: InputFallback) {
+        fallbacks.yield(fallback)
     }
 
     var samplesToReturn: [Float] {
@@ -46,6 +55,13 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
 
     func setMaximumDuration(_ seconds: TimeInterval) {
         lock.withLock { _maximumDurations.append(seconds) }
+    }
+
+    /// Every preferred input device handed to the recorder, in call order.
+    var preferredInputDeviceUIDs: [String?] { lock.withLock { _preferredInputDeviceUIDs } }
+
+    func setPreferredInputDevice(uid: String?) {
+        lock.withLock { _preferredInputDeviceUIDs.append(uid) }
     }
 
     var startCount: Int { lock.withLock { _startCount } }

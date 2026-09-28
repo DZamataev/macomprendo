@@ -64,6 +64,10 @@ enum RefineSide: Equatable, Sendable {
         capture.onHistoryError = { [weak self] error in
             self?.toaster.toast(ErrorText.describe(error), duration: 2.5)
         }
+        // No live recording HUD here in hold mode (see below), so the fallback is a toast.
+        capture.onFallback = { [weak self] fallback in
+            self?.toaster.toast(fallback.message, duration: 2.5)
+        }
         capture.onStateChange = { [weak self] state in
             guard let self else { return }
             self.isCapturing = state != .idle

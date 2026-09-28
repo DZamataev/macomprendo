@@ -258,6 +258,22 @@ import Testing
         await rig.controller.drain()
     }
 
+    /// Dictate & Refine has no live recording HUD in hold mode, so a fallback is a toast —
+    /// the user still learns which microphone their words went into.
+    @Test func aFallbackDuringCaptureToastsWhichMicrophoneTookOver() async {
+        let rig = makeRig(mode: .hold)
+        rig.controller.handle(.keyDown(.dictateAndRefine))
+        rig.audioRecorder.emitFallback(InputFallback(from: "MCHOSE V9", to: "MacBook Pro Microphone"))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while rig.toaster.messages.isEmpty, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(rig.toaster.messages == ["No signal from MCHOSE V9 — switched to MacBook Pro Microphone"])
+        rig.controller.handle(.keyUp(.dictateAndRefine))
+        await rig.controller.drainCapture()
+        await rig.controller.drain()
+    }
+
     @Test func aSilentDictationHidesTheTranscribingHUDAndToastsNothingHeard() async {
         let rig = makeRig()
         rig.audioRecorder.samples = []

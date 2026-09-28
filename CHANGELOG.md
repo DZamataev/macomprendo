@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Microphone** picker (Settings ▸ General ▸ Microphone): record from a chosen input
+  device instead of whatever macOS has as the default. **System default** stays the default
+  and names the device it currently means. A chosen device that is unplugged or switched
+  off falls back to the system default and stays selected, marked **not connected**, so it
+  is used again the moment it comes back. The list follows devices as they are plugged in
+  and removed, and changing the choice — or the system default, while following it — moves
+  a recording that is already running to the new device.
+- A microphone that delivers no signal at all mid-recording — typically a wireless headset
+  whose dongle is plugged in while the headset itself is off — is abandoned after two
+  seconds for a working one (the system default, then the built-in microphone), and the
+  recording carries on. The HUD keeps its level meter and says which device went silent and
+  which one took over; Dictate & Refine shows the same as a notice. A quiet room is not
+  mistaken for a dead device, and the next recording tries the chosen microphone again.
 - **Glossary** (Settings ▸ Dictation): dictation can now paste your jargon the way you
   spell it. Switch on **Correct recognised terms** and Macomprendo rewrites what the
   recogniser produced — `tsconfig json` becomes `tsconfig.json`, `NVM` becomes `nvm`,
@@ -41,6 +54,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sync-graph:check` verifies a worktree has it.
 
 ### Fixed
+- Switching the input device in the middle of a recording no longer crashes the app on the
+  next dictation. The recording now carries on from the newly selected microphone and keeps
+  what was captured before the switch.
 - Dictation no longer transcribes a recording that contains no sound. When the microphone
   produces silence for the whole recording — a muted or hijacked input device — nothing is
   sent to the speech model, nothing is pasted, no history row is written, and the HUD says

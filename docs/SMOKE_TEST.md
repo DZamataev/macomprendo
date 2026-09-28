@@ -130,6 +130,42 @@ only real hardware can produce that, so none of this is reachable from unit test
 - [ ] **A deliberate short tap is unaffected.** With Settings ▸ General ▸ "Insert “OK” for a
       very short dictation" on and the microphone still muted, tap the hotkey for well under half
       a second — `OK` is inserted and the HUD shows the success, not the silence error.
+- [ ] **Switching the input device mid-recording neither crashes nor loses the recording.**
+      Start a dictation on one microphone (a silent one — e.g. a wireless headset whose dongle
+      is plugged in but whose headset is off — reproduces the original crash), and while the
+      HUD is recording pick the built-in microphone in the menubar Sound menu or System
+      Settings ▸ Sound ▸ Input. Keep talking, release: the words said after the switch are
+      transcribed. Then dictate again at once — the app records normally instead of quitting.
+
+## Microphone picker (Settings ▸ General ▸ Microphone)
+
+Device enumeration and binding are Core Audio calls, so only real hardware exercises them.
+
+- [ ] **The list is live.** Open the picker: the first row reads **System default (…)** with
+      the current default input in brackets, followed by every connected input device and no
+      output-only devices. Plug in (or power on) a USB/Bluetooth microphone with Settings open —
+      it appears without reopening the window; remove it — it disappears.
+- [ ] **A chosen device is used while it is not the default.** Leave the system default on the
+      built-in microphone, choose the external one, dictate: the level meter moves when you
+      speak into the external microphone and the transcript is right.
+- [ ] **A disconnected choice falls back and is kept.** With the external microphone chosen,
+      switch it off: the picker shows **… — not connected** selected, with an orange caption
+      naming the fallback. Dictate — the built-in microphone records. Switch the device back on
+      — the caption goes, and the next dictation uses it again.
+- [ ] **A silent device is abandoned mid-recording.** Plug in a wireless headset's dongle with
+      the headset switched off and make it the chosen (or default) microphone. Hold the
+      dictation hotkey and start talking: within about two seconds the HUD reads **No signal
+      from <headset> — switched to MacBook … Microphone** above a meter that moves with your
+      voice. Release — the words are transcribed. Dictate again straight away: it starts on
+      the headset again and falls back the same way.
+- [ ] **A quiet room is not a dead device.** With a working microphone chosen, hold the hotkey
+      for five seconds without speaking: no fallback notice appears (the three-second
+      "Not hearing anything" warning may, if the room is very quiet).
+- [ ] **Dictate & Refine says so too.** Repeat the silent-device step with the Dictate & Refine
+      hotkey: a notice names both devices and the refined text reflects what you said.
+- [ ] **Changing the choice mid-recording moves the recording.** Start a dictation on one
+      device and, while recording, pick the other in Settings. Keep talking, release — the words
+      after the switch are transcribed, and the next dictation starts normally.
 
 ## Glossary (Settings ▸ Dictation)
 

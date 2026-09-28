@@ -66,6 +66,9 @@ final class DictationController: ObservableObject {
     /// recording cancels it.
     private var revealTask: Task<Void, Never>?
     private var levelTask: Task<Void, Never>?
+    private var fallbackTask: Task<Void, Never>?
+    /// The fallback this recording made, if any. Cleared at the start of every recording.
+    private var fallback: InputFallback?
     private var autoStopTask: Task<Void, Never>?
     private(set) var activeTask: Task<Void, Never>?
 
@@ -140,6 +143,12 @@ final class DictationController: ObservableObject {
         // leaves `.recording` instead of sitting frozen. `finish()` already no-ops unless
         // `state == .recording`, so this can never double-finish a session that already
         // ended through the normal hotkey path.
+        let fallbacks = recorder.inputFallbacks()
+        fallbackTask = Task { [weak self] in
+            for await fallback in fallbacks {
+                self?.onFallback(fallback)
+            }
+        }
         autoStopTask = Task { [weak self, recorder] in
             for await _ in recorder.autoStopped {
                 self?.finish(reachedLimit: true)
@@ -236,6 +245,7 @@ final class DictationController: ObservableObject {
         }
         startedAt = now()
         silentSince = nil
+        fallback = nil
         lastLevel = 0
         state = .recording
         // Leaving `.idle`: the HUD's cancel hint needs Esc to actually do something.
@@ -481,6 +491,15 @@ final class DictationController: ObservableObject {
         hud.show(recordingHUDState(at: instant))
     }
 
+    private func onFallback(_ fallback: InputFallback) {
+        guard state == .recording else { return }
+        self.fallback = fallback
+        // The silent run belonged to the device just left.
+        silentSince = nil
+        guard hudRevealed else { return }
+        hud.show(recordingHUDState(at: now()))
+    }
+
     /// What the recording HUD shows at `instant`, from the latest level and silent run.
     /// A dead capture device delivers zeros forever while the recording goes on, and the
     /// meter alone reads as "you are too quiet". Say so instead — but never stop the
@@ -489,6 +508,10 @@ final class DictationController: ObservableObject {
         let elapsed = startedAt.map { instant.timeIntervalSince($0) } ?? 0
         if let silentSince, instant.timeIntervalSince(silentSince) >= Self.noInputWarningSeconds {
             return .recordingNoInput(elapsed: elapsed)
+        }
+        if let fallback {
+            return .recordingFallback(to: fallback.to, from: fallback.from,
+                                      level: lastLevel, elapsed: elapsed)
         }
         return .recording(level: lastLevel, elapsed: elapsed)
     }

@@ -6,6 +6,7 @@ struct GeneralTab: View {
     /// Observed so a recording saved while this screen is open redraws the size readout.
     /// `AppModel` republishes only the dictation controller, so watching it is not enough.
     @ObservedObject var history: DictationHistoryController
+    @ObservedObject var microphone: MicrophonePickerModel
     @State private var viewModel: GeneralTabModel?
     @State private var launchAtLoginError: String?
     @State private var isDeleteAudioConfirmationPresented = false
@@ -21,6 +22,20 @@ struct GeneralTab: View {
                     Text(launchAtLoginError)
                         .font(.caption)
                         .foregroundStyle(.red)
+                }
+            }
+
+            Section("Microphone") {
+                Picker("Microphone", selection: $microphone.selection) {
+                    ForEach(microphone.options) { option in
+                        Text(option.title).tag(option.uid)
+                    }
+                }
+                if let caption = microphone.caption {
+                    Text(caption)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -116,6 +131,10 @@ struct GeneralTab: View {
             reconcileLaunchAtLogin()
             await savedAudio.refreshIfSavedAudioChanged()
         }
+        // Keeps the microphone list live while the tab is open: a headset switched on or a
+        // dongle unplugged shows up without reopening Settings.
+        .onAppear { microphone.startObserving() }
+        .onDisappear { microphone.stopObserving() }
     }
 
     /// The system is the truth: on appear, pull `settings.launchAtLogin` back in line with

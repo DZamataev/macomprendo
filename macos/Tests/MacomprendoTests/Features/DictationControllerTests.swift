@@ -1463,6 +1463,77 @@ import Testing
         #expect(h.hud.state == .recording(level: 0, elapsed: 2))
     }
 
+    // MARK: - Falling back from a silent input device
+
+    @Test func aFallbackShowsWhichMicrophoneTookOverWhileRecordingContinues() async {
+        let h = makeHarness(mode: .hold)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        advance(3, h)
+
+        h.recorder.emitFallback(InputFallback(from: "MCHOSE V9", to: "MacBook Pro Microphone"))
+        await waitFor("the fallback notice") {
+            if case .recordingFallback = h.hud.state { return true }
+            return false
+        }
+
+        #expect(h.hud.state == .recordingFallback(to: "MacBook Pro Microphone", from: "MCHOSE V9",
+                                                  level: 0, elapsed: 3))
+        #expect(h.controller.state == .recording)
+    }
+
+    /// The notice stays up for the rest of the recording, with a live meter: the user needs
+    /// to know which microphone the words are going into, not just that something changed.
+    @Test func theFallbackNoticeKeepsTheMeterLiveAndReplacesTheNoInputWarning() async {
+        let h = makeHarness(mode: .hold)
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        advance(1, h)
+        await emit(0, elapsed: 1, into: h)
+        advance(3, h)
+        await emit(0, elapsed: 4, into: h)
+        #expect(h.hud.state == .recordingNoInput(elapsed: 4))
+
+        h.recorder.emitFallback(InputFallback(from: "MCHOSE V9", to: "MacBook Pro Microphone"))
+        await waitFor("the fallback notice") {
+            if case .recordingFallback = h.hud.state { return true }
+            return false
+        }
+        advance(1, h)
+        h.recorder.emitLevel(0.6)
+        await waitFor("the meter to move under the notice") {
+            h.hud.state == .recordingFallback(to: "MacBook Pro Microphone", from: "MCHOSE V9",
+                                              level: 0.6, elapsed: 5)
+        }
+    }
+
+    @Test func theFallbackNoticeDoesNotCarryIntoTheNextRecording() async {
+        let h = makeHarness(mode: .hold, transcript: "spoken")
+        h.recorder.samplesToReturn = [0.5, -0.5]
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.recorder.emitFallback(InputFallback(from: "MCHOSE V9", to: "MacBook Pro Microphone"))
+        await waitFor("the fallback notice") {
+            if case .recordingFallback = h.hud.state { return true }
+            return false
+        }
+        h.controller.handle(.keyUp(.dictate))
+        await h.controller.activeTask?.value
+
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        advance(1, h)
+        await emit(0.4, elapsed: 1, into: h)
+        #expect(h.hud.state == .recording(level: 0.4, elapsed: 1))
+    }
+
+    @Test func aFallbackWhileIdleShowsNothing() async {
+        let h = makeHarness(mode: .hold)
+        h.recorder.emitFallback(InputFallback(from: "MCHOSE V9", to: "MacBook Pro Microphone"))
+        await settle()
+        #expect(h.hud.state == .hidden)
+    }
+
     // MARK: - The short-tap window
 
     /// Gives queued MainActor work — a level from the recorder's stream, a released sleep —

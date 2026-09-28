@@ -40,6 +40,23 @@ import Testing
         #expect(recorder.maximumDurations == [300, 900])
     }
 
+    @Test func theRecorderFollowsThePreferredInputDevice() async {
+        let recorder = FakeAudioRecorder()
+        var stored = Settings.default
+        stored.preferredInputDeviceUID = "MCHOSE-USB-0001"
+        let store = InMemorySettingsStore()
+        store.save(try! JSONEncoder().encode(stored))
+        let model = AppModel(store: store, keychain: InMemoryKeychainStore(),
+                             env: .fake(recorder: recorder))
+
+        #expect(recorder.preferredInputDeviceUIDs == ["MCHOSE-USB-0001"])
+
+        model.settings.preferredInputDeviceUID = nil
+        model.settings.preferredInputDeviceUID = "BuiltInMicrophoneDevice"
+
+        #expect(recorder.preferredInputDeviceUIDs == ["MCHOSE-USB-0001", nil, "BuiltInMicrophoneDevice"])
+    }
+
     @Test func startAppliesRetentionAndPurgesOrphanedAudio() async {
         let historyStore = FakeDictationHistoryStore()
         let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
