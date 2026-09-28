@@ -1,410 +1,358 @@
-# Hermes Kanban — running agent development on Macomprendo
+# Hermes Kanban — multi-agent development on Macomprendo
 
-> On-demand runbook. Read before setting up a multi-agent Kanban run for a
-> Macomprendo effort. It records what this repository's constraints do to the
-> generic Kanban feature. Generic Hermes documentation lives at
-> <https://claude-code.nousresearch.com/docs/user-guide/features/kanban>; this file
-> is only the delta.
+> Per-repo runbook. Read it before putting a Macomprendo effort on a Hermes Kanban
+> board. Everything the method needs is in this repository: this file, the role
+> preambles in `docs/agents/kanban/`, the settings in `.kanban/config.json` and the
+> tool `scripts/kanban.mjs` (`npm run kanban`). Generic Hermes documentation:
+> <https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban>.
 
-## When to use it
+Cards run as separate, non-interactive Hermes workers, one role per profile. One
+foreground session — the **orchestrator** — plans, feeds the board and lands the
+results. It is the board's only supervisor: every card it creates reports back into
+it, so there is no watcher script and no cron job to run.
 
-Use Kanban when the work is a **multi-slice effort that must survive session
-restarts** and where slices deserve independent review — a feature spec with
-several behaviours, a migration, a research-then-implement chain.
+## 1. When the board is worth it
 
-Do not use it for a single change: a normal plan-and-approve session is cheaper.
-Do not use `delegate_task` for this shape either — subagents die with the parent
-process, so an overnight run loses everything.
+Use it for a **multi-slice effort that must survive session restarts** and whose
+slices deserve independent review: a spec with several behaviours, a migration, a
+research-then-implement chain. Do not use it for a one-session change (a normal
+plan-and-approve session is cheaper), for design interviews, or for work whose
+acceptance is taste. `delegate_task` is the wrong shape too: subagents die with the
+parent process.
 
-## The invariant that shapes everything: one writer per worktree
+| Work item | Goes to |
+|---|---|
+| product or design question | the foreground session, never a card |
+| task with written acceptance checks | an implement → review → fix chain |
+| research (read, probe, write one file) | a `research` card, no commits |
+| anything needing eyes, ears, hands or credentials | a blocked `gate` card for the operator |
 
-Git has no cross-process write lock beyond `index.lock`. Two workers editing the
-same checkout corrupt each other's staging, and a stale lock blocks everyone.
+## 2. The pipeline
 
-**Serialize every code-writing card into a single dependency chain.** Make each
-card's parent the previous card's last stage, so the dispatcher can never run two
-writers at once. Read-only cards (adversarial review) are safe to leave
-unchained, but keep them behind the implementation they review.
-
-Throughput is bounded by the chain, not by `max_concurrent_children`.
-Parallelism would mean separate worktrees, which this repo rarely needs.
-
-## Workspace: a dedicated worktree, never the operator's checkout
-
-```bash
-git worktree add .worktrees/<effort> -b <branch> HEAD
-cd .worktrees/<effort>
-npm ci                          # Node tooling for scripts/ and the audit
-npm run sync-graph              # copies the knowledge graph in and refreshes it
-swift build --package-path macos   # warms SwiftPM and downloads the binary targets
-```
-
-`npm run sync-graph` exists because `graphify-out/` is git-ignored: it is generated,
-machine-local and about 17 MB, so a fresh worktree starts without it and any worker
-there is blind to the graph. The tool copies `graph.json`, the cache and the manifest
-from the checkout that owns `.git`, installs the ignore rule into the shared
-`.git/info/exclude` so a branch predating that `.gitignore` rule cannot commit the
-graph either, rewrites the recorded scan root, and runs the free AST-only
-`graphify update` so the graph describes **this branch** rather than the operator's
-tree. Rebuilding from scratch instead would cost over a million tokens.
-Re-run it after pulling or rebasing; `npm run sync-graph:check` exits non-zero when a
-worktree is missing the graph.
-
-Warming the build in the coordinating session matters more here than the
-equivalent step in a JS repo: `macos/Packages/{WhisperBinary,SherpaOnnxBinary}`
-are **binary targets fetched over the network** (whisper.cpp and sherpa-onnx
-xcframeworks, tens of megabytes). A worker that hits a cold cache spends its
-first turns downloading, and a network failure there reads like a build error.
-After warming, a full `swift test` on this machine takes about 7 seconds.
-
-Use `--workspace dir:<absolute path>` on every card. Relative paths are rejected
-at dispatch. Do not use `scratch` (deleted on completion) and do not use the
-`worktree` kind — the chain needs one shared tree, not a tree per card.
-
-The spec a card implements must already be committed on the worktree's branch.
-A worker cannot read a file that only exists in the operator's uncommitted
-working tree.
-
-## Role profiles, and why `default` is not enough
-
-Each worker is a separate process with its own conversation, so context freshness
-is free. Memory is not: profiles sharing a home share `memories/MEMORY.md`, so an
-implementer's note becomes a reviewer's prior knowledge and destroys the
-reviewer's blindness.
-
-```bash
-hermes profile create <name> --clone-from default --no-alias \
-  --description "<what this role does — the decomposer routes on this>"
-```
-
-**`--clone-from` copies the memories too.** The generic advice that "memories
-diverge from that moment" is true only going forward; the clone starts with every
-note the source profile had, including project-specific knowledge from unrelated
-repositories. After creating a role profile, **rewrite
-`~/.hermes/profiles/<name>/memories/MEMORY.md` down to what that role should
-know** — especially for the reviewer, whose whole value is not knowing.
-
-The four roles on this repo:
-
-| Profile | Model | Role |
-|---|---|---|
-| `macoimpl` | `claude-opus-5` | Writes the failing test, then the implementation |
-| `macoreview` | `claude-opus-5` | Adversarial review, blind to intent |
-| `macofix` | `claude-sonnet-5` | Applies or evidence-rejects raw findings |
-
-All three route through the `teamclaude` provider inherited from the default
-profile. The reviewer keeps the strongest model deliberately: its job is to catch
-a Swift 6 data race or a missed cancellation path, and a reviewer that misses
-those produces false confidence, which is worse than no review.
-
-**Set up profiles before creating cards.** A card already `running` cannot be
-reassigned (`cannot reassign: currently running`).
-
-Per-role model overrides:
-
-```bash
-HERMES_HOME=~/.hermes/profiles/<name> hermes config set model <model>
-```
-
-`hermes profile show` keeps reporting the inherited `base_url`, which looks like
-the override did not take. **Verify from the agent log, not from `profile show`
-and not by asking the model:**
-
-```bash
-grep "OpenAI client created" ~/.hermes/profiles/<name>/logs/agent.log | tail -3
-```
-
-## Card bodies: what actually has to be in them
-
-A worker knows nothing about your conversation. Everything below has to be in the
-card body, or it does not exist.
-
-Repository constraints worth restating on every code card:
-
-- read `AGENTS.md` in the worktree root and the spec the card names before
-  editing; the invariants there are not optional;
-- **TDD is invariant 3**: the failing test comes first, and the card should ask
-  for evidence that it failed (paste the failure) before the implementation;
-- everything OS-facing sits behind a protocol with a fake in
-  `macos/Tests/MacomprendoTests/Fakes/`;
-- Swift 6 strict concurrency: providers are `Sendable`, controllers are
-  `@MainActor`, one in-flight task per controller;
-- every user-visible failure is a `MacomprendoError` case with
-  `errorDescription` and `recoverySuggestion`;
-- never log transcript or audio content at default level;
-- local commits authorized only when the card says so; **push, PR, merge, rebase,
-  reset, amend, revert, force, branch deletion forbidden**;
-- `npm run test:swift` is cheap here (about 7 s) — unlike a large JS suite, every
-  card can afford to run it, and should;
-- record objective blockers instead of guessing.
+1. **Spec and plan** in `docs/superpowers/specs/` and `docs/superpowers/plans/`
+   (see `AGENTS.md`, "Planning convention"). Design forks are settled with the
+   operator in the foreground and land in the spec or an ADR, not in chat.
+2. **Task files**, one per card, under `docs/agents/kanban/tasks/<slug>.md`: the
+   spec or plan path (the worker reads acceptance from it, not from a paraphrase),
+   the non-obvious constraint, the traps of section 7 that apply, and any constant
+   that defines a threshold, by symbol and value. **Commit them on the effort's
+   branch** — a worker cannot read a file that exists only in the operator's
+   uncommitted tree.
+3. **Cards**, only through `npm run kanban` (section 5).
+4. **Landing** by the orchestrator (section 9).
 
 ### Write outcomes, not mechanisms
 
-A card body is the worker's specification, and a worker implements what it says —
-including the parts you wrote carelessly. "A row whose file has vanished offers no
-control rather than a dead button" sounded reasonable when it was written into a
-card here; it produced a Play button that disappeared the moment a recording was
-deleted, a test that asserted that disappearance, and a reviewer with no grounds
-to object.
-
-State the outcome the user should see and let the worker choose the mechanism:
+A task file is the worker's specification, and a worker implements what it says —
+including the parts written carelessly. "A row whose file has vanished offers no
+control rather than a dead button" sounded reasonable in a card here; it produced a
+Play button that disappeared the moment a recording was deleted, a test asserting
+that disappearance, and a reviewer with no grounds to object. State what the user
+should see and let the worker choose the mechanism:
 
 > A recording the user deleted outside the app must still offer Play, and pressing
 > it must say the file is gone. Restoring the file must make playback work again.
 
-That phrasing is checkable, survives a redesign, and would have failed the wrong
-implementation on the first run.
+### Slice by reachable capability
 
-### Repo-specific traps to name in the card
+Slice by what becomes **reachable** in the app, not by module. Every producing card
+needs a consumer card naming the call sites it converts, or the board goes green
+while the feature is unreachable. Before saying "ready to test", check the entry
+point (hotkey routing in `AppModel`, the Settings tab) and the default in
+`Settings.default` yourself.
 
-- **`AGENTS.md` and `CLAUDE.md` are write-protected.** A card whose work implies
-  an edit there blocks on an approval prompt no unattended run can answer. Say so
-  up front and have the card report the exact text instead of attempting the
-  write. `CLAUDE.md` is a symlink to `AGENTS.md`; never edit it.
-- **A new resource directory must be declared twice** (invariant 17): `resources:`
-  in `macos/Package.swift` *and* a `type: folder, buildPhase: resources` entry in
-  `macos/project.yml`. `swift test` stays green when the second is missing, so the
-  card must check both.
-- **`macos/project.yml` is the source of truth for the Xcode project.** A card
-  that adds files must leave `npm run gen` a no-op, which means running it and
-  committing the regenerated `.xcodeproj`. `brew install xcodegen` is a
-  prerequisite — verify it exists before assigning such a card.
-- **Icons come from `Icon(.case)`** (invariant 12). A card that adds UI must not
-  reach for `Image(systemName:)`.
-- **Hardware-bound glue is exempt from unit tests** (invariant 3) — AVAudioEngine,
-  AX, CGEvent, NSPanel — and belongs in `docs/SMOKE_TEST.md` instead. Say which
-  side of that line the slice sits on, or the worker will either over-test glue or
-  under-test logic.
+## 3. Bring-up
 
-## Adversarial review as a card, not a habit
-
-The review stage is worth having only if three properties hold, and all three are
-properties of the *card body*:
-
-1. **No author named.** Naming one invites deference.
-2. **No intent stated.** Stating it forfeits the reconstruct-intent-from-the-diff
-   test.
-3. **Findings read raw**, not re-summarized by the implementer before acting.
-
-The reviewer card must instruct: read only the handoff's `START_HEAD`/`END_HEAD`
-range and the surrounding source; do not read the spec, the ADR, or the
-implementation card; return indexed `F1…` findings with `path:line`, consequence
-and a concrete fix; say *zero actionable findings* explicitly when there are none;
-modify nothing.
-
-That only works if the implementer's completion summary is **neutral**: hashes,
-changed files, verification commands and results, mutation evidence, blockers —
-and no explanation of what the change was *for*.
-
-The remediation card is a third role: it reads both the handoff and the raw
-findings, applies or evidence-rejects each one, and stops after two failed
-attempts on the same finding rather than churning.
-
-## Proving a test actually tests
-
-A green suite proves nothing about a test that cannot fail. Ask code cards for
-**mutation evidence**: break the real source until the new assertion fails, paste
-the failure, restore, re-run green. On this repo the cheapest form is inverting a
-condition or returning a wrong constant from the function under test.
-
-This matters most for the parts of Macomprendo whose failure mode is silence —
-retention that deletes nothing, an error that never surfaces, a setting that
-round-trips to its default.
-
-### What mutation evidence cannot buy you
-
-A test can be mutation-proof and still assert the wrong rule. Three defects
-survived a twelve-finding adversarial review on the first run here, and every one
-of them was covered by a passing test:
-
-- the history window did not show a new dictation until it was closed and
-  reopened — `append` wrote to the database and never touched the published list;
-- the Settings size readout never moved, because it was read once in `.task`;
-- deleting a recording in Finder made the Play control **disappear**, because
-  playability was decided from a cached directory listing that was pruned on the
-  first failed read.
-
-Each had tests. The third had a test that asserted exactly the wrong behaviour —
-`aVanishedFileReportsAnErrorAndStopsOfferingTheControl` — written from a card body
-that said a vanished file should "offer no control rather than a dead button".
-The card was wrong, the implementation matched it, the test locked it in, and the
-reviewer had no way to see the mistake because the card was its ground truth.
-
-The lesson is not "write more tests". It is that **a card body's wording becomes
-the specification**, and a plausible-sounding phrase in it will be implemented and
-then defended by a test. Prefer stating the user-visible outcome ("a recording the
-user deleted must still offer Play, and say the file is gone when pressed") over
-the mechanism ("hide the control when the file is missing"). And treat any
-end-to-end behaviour that only a human can see — a window open while something
-else changes it — as un-reviewable by agents: it goes on the smoke test, or it
-ships broken.
-
-## Human gates
-
-Anything needing eyes, taste, or an external side effect gets its own card created
-with `--initial-status blocked`, so the dispatcher never runs it unprompted. Two
-kinds recur here:
-
-- **Judgement gates** — UI acceptance in a real menubar app, audio quality. An
-  agent can produce and measure the artifacts; it must not pick.
-- **Side-effect gates** — pushing, releasing, anything the outside world sees.
-
-A gate card should carry everything the decision needs: artifact paths, a
-verification protocol, and the exact question.
-
-`hermes kanban edit` only backfills a result; it cannot rewrite a body. To turn a
-granted gate into an autonomous card, **archive the gate and create a replacement**
-carrying the whole procedure, then re-link the chain.
-
-## Telegram notifications
-
-The destination is operator-specific, so it lives in `.env.local` (gitignored;
-`.env.example` documents the shape) rather than in this file:
+The setup choices are the orchestrator's; report them afterwards.
 
 ```bash
-set -a && . ./.env.local && set +a
-
-hermes kanban --board <board> notify-subscribe <task> \
-  --platform telegram \
-  --chat-id "$KANBAN_NOTIFY_CHAT_ID" \
-  --thread-id "$KANBAN_NOTIFY_THREAD_ID" \
-  --user-id "$KANBAN_NOTIFY_CHAT_ID" \
-  --chat-type thread --delivery-mode notify
+# once per machine: the three role profiles (existing ones are kept)
+npm run kanban -- profiles
+# once per effort: a board, a worktree, a warm build
+hermes kanban boards create macomprendo-<effort> --name "Macomprendo — <effort>"
+git worktree add -b <effort>/chain .worktrees/<effort> main
+cd .worktrees/<effort>
+npm ci
+npm run sync-graph
+swift build --package-path macos && npm run test:swift
 ```
 
-Drop `--thread-id` and use `--chat-type dm` for a direct message instead of a
-forum topic. Subscribe every card at creation time: a board with no
-subscriptions is one you have to poll.
+- **Board.** `.kanban/config.json` names the default board. For an effort on its
+  own board, change `board` in the worktree's copy of that file and commit it on
+  the effort's branch; `npm run kanban` reads the config of the tree it runs from.
+- **Profiles before cards.** A claimed card keeps the model it started with, and a
+  running card cannot be reassigned. Pin models first (section 4), then create
+  cards.
+- **Warm the worktree before the first card.** `macos/Packages/{WhisperBinary,
+  SherpaOnnxBinary}` are binary targets fetched over the network (tens of
+  megabytes). A worker on a cold cache spends its first turns downloading, and a
+  network failure there reads like a build error. `graphify-out/` is git-ignored,
+  so without `npm run sync-graph` the workers are blind to the knowledge graph;
+  rebuilding it from scratch would cost over a million tokens. Re-run
+  `sync-graph` after landing into the worktree's base.
+- **`xcodegen`** must be installed (`brew install xcodegen`) before any card that
+  adds a Swift file: such a card has to leave `npm run gen` a no-op.
+- **Notification target** — `KANBAN_NOTIFY_CHAT_ID`, `KANBAN_NOTIFY_THREAD_ID` —
+  goes into `.env.local` of the primary checkout (gitignored; `.env.example`
+  documents the shape). Never into a tracked file: a chat id names a private group,
+  and `npm run audit` refuses to publish one.
+- **Verify** after the first chain: `hermes kanban --board <b> list` shows the head
+  `running`, `show <child>` has the right `parents:`, `notify-list <id>` shows the
+  chat and the session.
 
-Notification text is hard-truncated in Hermes source, not configurable:
+## 4. Roles and profiles
 
-| Event | What reaches you |
-|---|---|
-| `completed` | the **first line** of the summary, 200 chars |
-| `blocked` | `reason`, 160 chars |
-| `gave_up` | `error`, 200 chars |
-| `crashed`, `timed_out` | no free text at all |
+| Role | Profile | Preamble | Sees |
+|---|---|---|---|
+| orchestrator | the foreground session | — | everything; owns the board, the spec, `AGENTS.md`, merges |
+| implement | `macoimpl` | `common.md` | the repo, the task, the spec it names |
+| research | `macoimpl` | `research.md` | the repo and the web; writes one new file |
+| adversarial review | `macoreview` | `review.md` | the diff and the repo's rules — **not** the task, spec, plan or author |
+| fix | `macofix` | `fix.md` | the raw findings and the implementation summary |
+| gate | the operator | `gate.md` | absolute artifact paths, one command, numbered questions |
 
-So **block reasons must open with the decision or action required**, naming the
-artifact or path, with context after the first 160 characters. Completion
-summaries stay neutral despite the truncation — a mechanical opening line
-(`START_HEAD … END_HEAD …, N files, gates green`) is the safe compromise.
+- **One profile per role.** Profiles sharing a home share `memories/MEMORY.md`, and
+  a reviewer that can read the implementer's notes is not blind.
+- `hermes profile create --clone-from` copies `MEMORY.md` **wholesale**, notes from
+  unrelated repositories included. `npm run kanban -- profiles` rewrites every new
+  profile's memory to its role before any card runs; `--force-memory` redoes it for
+  existing ones.
+- **Models are pinned in the profiles, not recorded here** — they change with quota.
+  `npm run kanban -- profiles --model-review <provider>:<model>` pins one;
+  `--fallback-<role> <provider>:<model>` writes that profile's `fallback_providers`.
+  The rule: **the reviewer runs on a different model family than the author.** A
+  weak reviewer that misses a Swift 6 race or a missed cancellation path produces
+  false confidence, which is worse than no review. When quota forces one family for
+  all roles, the review is a second pass, not an independent one; say so in the
+  hand-off.
+- Implement and fix profiles get `kanban.worker_fallback: wait`: a quota wall
+  requeues the card as `rate_limited` instead of finishing it on a weaker model.
+  The reviewer stays on `allow`.
+- **Check routing:** `HERMES_HOME=~/.hermes/profiles/<p> hermes config get
+  model.default` (configured) and `grep "OpenAI client created"
+  ~/.hermes/profiles/<p>/logs/agent.log` (actual — only after a real run).
+  `hermes profile show` prints the inherited `base_url` and misleads.
+- A config change binds at the next spawn. **Never kill a running worker to apply
+  one.**
 
-## Watching a running card
+## 5. Cards
 
-Four levels, cheapest first:
+Always through the tool. The role preamble lives in `docs/agents/kanban/`, so a card
+can never be created without its prohibitions and its gate.
 
 ```bash
-hermes kanban --board <slug> list      # one line per card
-hermes kanban --board <slug> stats     # counts by status and assignee
-hermes kanban --board <slug> show <id> # body, comments, events, latest summary
-hermes kanban --board <slug> runs <id> # attempts, outcomes, elapsed
-hermes kanban --board <slug> log <id> --tail 100
+# one slice: implement → review → fix, after the previous slice, with an operator gate
+npm run kanban -- chain --title "Microphone picker" \
+  --task docs/agents/kanban/tasks/mic-picker.md \
+  --workdir "$PWD" --after <previous-fix-id> \
+  --gate-task docs/agents/kanban/tasks/mic-picker-gate.md
+# a single card (research writes one new file; no worktree needed)
+npm run kanban -- card research "Audio device APIs" docs/agents/kanban/tasks/devices.md "$PWD"
+```
+
+`chain` prints `impl=… review=… fix=… [gate=…] [session=…]`. `--hold` creates the
+chain without releasing it.
+
+What the tool guarantees, so you know it when working by hand:
+
+- **Race-free chains.** Every card is created `--initial-status blocked`, its
+  parents are read back with `show --json`, and only then are implement, review and
+  fix released and the dispatcher nudged. A card whose parent did not resolve would
+  otherwise be claimed on the next tick. The gate stays blocked.
+- **Every card follows two destinations:** the chat from `.env.local` and the
+  orchestrating session (`--platform tui --chat-id $HERMES_SESSION_KEY`). A chain
+  whose session subscription did not land is left blocked. `create --json` skips
+  Hermes' own auto-subscribe, which is why this is explicit.
+- Implement and fix cards carry `--completion-contract local-commit`: the board
+  refuses `done` until the tree is clean and HEAD moved since the run started.
+- Bodies go through stdin (`--body-file -`); `--workspace dir:<absolute path>`;
+  retries per role and `--max-runtime` come from `.kanban/config.json`.
+  Macomprendo slices are small and the suite runs in seconds, so `2h` is generous.
+- `create --json` returns the id under **`id`**, not `task_id`; an empty id stops
+  the tool instead of producing `--parent None`.
+
+Board mechanics the tool cannot enforce:
+
+- **One writer per worktree.** Cards sharing a workspace are chained; the next
+  slice's implement card is parented on the previous slice's fix card. Two workers
+  in one checkout corrupt each other's index, and a stale `index.lock` blocks
+  everyone. Research cards that each write one *new* file may share the primary
+  checkout.
+- **A body is frozen at creation.** When a queued card's inputs move, create a new
+  card with its own parents and `hermes kanban replace OLD --with NEW`: OLD's
+  children and subscriptions move to NEW and OLD is archived in one step (refused
+  while OLD is running — block it first). A bare `archive` releases the children.
+  Comment only on a running card; a correcting comment longer than the section it
+  corrects is the signal to recreate.
+- Never keep a board command in a shell variable: zsh (the terminal tool) does not
+  word-split it, and every call fails silently.
+- `unset HERMES_DELEGATED_CHILD_CONTEXT` before board writes from a session that
+  inherited it (the tool does this for its own calls).
+
+## 6. Review and fix
+
+The review is worth having only if the reviewer is blind to intent:
+
+1. no author named — naming one invites deference;
+2. no intent stated — the reviewer reconstructs it from the diff;
+3. findings read **raw** by the fix card, not re-summarised.
+
+So the implementer's summary is **neutral**: first line exactly
+`START_HEAD..END_HEAD, N files, gate: green`, then files, commands and output,
+mutation evidence, blockers — nothing about purpose. The reviewer takes its range
+from that first line (falling back to `main..HEAD`), runs the gate itself and
+**states the range it reviewed**. It returns `F1…` findings with `path:line`,
+consequence, fix and severity, and says *zero actionable findings* in words when
+there are none.
+
+The fix card applies each finding with a test and a manual mutation check, or
+rejects it with proof. A finding that argues with an ADR or the spec, or overturns
+a default the operator chose, comes back as **needs decision** — never settled by a
+card. (On the first run here, a reviewer judged the 90-day retention default unsafe
+and the fix card changed it; reverting that touched the source, its tests, the
+changelog, the spec and a guard test.) A symptom-shaped finding is fixed on every
+path that produces it. Two failed attempts on one finding: stop and record.
+Findings the fixer rejected are the operator's first suspects at acceptance: name
+them in the hand-off.
+
+### Proving a test actually tests
+
+Every new guarantee gets a manual mutation check: break the real source line, see
+the targeted assertion fail, restore, run green. Here the cheapest form is
+inverting a condition or returning a wrong constant. It matters most where
+Macomprendo's failure mode is silence: retention that deletes nothing, an error
+that never surfaces, a setting that round-trips to its default.
+
+A test can be mutation-proof and still assert the wrong rule. On the first run,
+three defects survived a twelve-finding review, each covered by a passing test:
+the history window did not show a new dictation until reopened; the Settings size
+readout never moved; deleting a recording in Finder made Play **disappear** — with
+a test asserting exactly that, written from a card that said so. The card was
+wrong, the code matched it, the test locked it in, and the reviewer could not see
+it. Treat end-to-end behaviour only a human sees as un-reviewable by agents: it
+goes into `docs/SMOKE_TEST.md` and a gate card, or it ships broken.
+
+## 7. Traps specific to this repository
+
+The role preambles repeat these; name the ones that apply in the task file too.
+
+- **`AGENTS.md` and `CLAUDE.md` are write-protected.** An edit there blocks on an
+  approval prompt no unattended run can answer. Workers return the exact text; the
+  orchestrator applies it. `CLAUDE.md` is a symlink; never edit it.
+- **A new resource directory is declared twice** (invariant 17): `resources:` in
+  `macos/Package.swift` and a folder entry in `macos/project.yml`. `swift test`
+  stays green without the second.
+- **`macos/project.yml` is the source of truth** for the Xcode project. A card that
+  adds or removes files leaves `npm run gen` a no-op and commits the `.xcodeproj`.
+- **Icons come from `Icon(.case)`**, never `Image(systemName:)` (invariant 12).
+- **Hardware-bound glue is exempt from unit tests** (invariant 3): AVAudioEngine,
+  AX, CGEvent, NSPanel, whisper C calls. The task says which side of that line a
+  slice sits on, or the worker over-tests glue or under-tests logic.
+- **The suite is timing-sensitive under load.** `waitFor` tests time out when a
+  build compiles in the same tree at the same moment; the timeout message reports
+  the poll count and suspected starvation. Re-run on an idle tree first.
+- **Build outputs have one writer too.** Before building in a worktree yourself,
+  check no worker is compiling there (`pgrep -fl 'swift-build|xcodebuild'`).
+- **A dead worker leaves `.git/worktrees/<name>/index.lock`.** Remove it only when
+  `lsof` shows nobody holding it and its mtime matches a run that has ended.
+- **Workers do not inherit the interactive shell.** A toolchain path a card needs
+  goes into its task file.
+
+## 8. What agents cannot check here
+
+Route each of these to a gate card with `docs/SMOKE_TEST.md` steps:
+
+- anything on real audio hardware: microphones, device switching, input levels;
+- global hotkeys, simulated ⌘C/⌘V, the pasteboard restore, Accessibility and
+  microphone permission prompts (TCC);
+- panels and HUDs: placement, timing, focus never moving, full-screen apps;
+- signing, notarisation, the installed app (`npm run install-app:signed`);
+- a window left open while something else changes its data.
+
+A gate card carries absolute artifact paths, one copy-pasteable command (usually
+`npm run install-app:signed` in the chain's worktree plus the smoke section) and
+numbered questions. The operator's verdict splits three ways, handled in one turn:
+accepted parts (complete the gate), a stated design rule (a docs commit on `main`,
+now), defects (a new chain and a new gate). `hermes kanban edit` cannot rewrite a
+body: to turn a gate into an autonomous card, create the replacement and `replace`.
+
+## 9. Supervising, landing, returning
+
+The orchestrating session supervises the board by being subscribed to every card:
+completions (the whole run summary) and blocks arrive in it as turns, and it
+verifies, lands and re-plans as they come.
+
+- **Keep the session open** — the desktop tab or TUI — while the board runs,
+  overnight included, with the Mac awake.
+- **A closed session stops landing, not work.** Cards keep moving along their
+  chains; finished chains wait. On return, do the returning pass below first.
+- **The Mac asleep stops everything.** Workers resume after wake; a suite that
+  timed out across the sleep is re-run, never trusted.
+- **One orchestrator per board.** A second session landing the same chains
+  duplicates merges.
+
+**Hermes build.** Session delivery relies on Kanban fixes that live on the `develop`
+branch of [DZamataev/hermes-agent](https://github.com/DZamataev/hermes-agent) and
+have not reached upstream: without them a subscription dies at the orchestrator's
+first context compaction, a model fallback is silent, `done` is accepted over an
+uncommitted tree and the session gets only a summary's first line. Check:
+`hermes kanban replace -h` must print usage, not "invalid choice". If it does not,
+supervise by hand (`list`, `show`) and say so.
+
+**Landing a chain** (its fix card is done), in its worktree: clean `git status`,
+the gate, and the `landChecks` of `.kanban/config.json` (`npm run test:scripts`,
+`npm run audit`, `swift build --package-path macos` with no new warnings,
+`npm run gen` a no-op). Then in the primary checkout `git merge --ff-only
+<effort>/chain`, or a merge commit plus the gate again; abort on conflict. **Push
+only on the operator's explicit word**, and confirm with `git ls-remote origin
+refs/heads/main`. Update the spec where the code moved it.
+
+**Returning to a board** ("status"): `list`, read `Latest summary:` of every card
+that finished, land what can be landed, then answer with one line per slice (what
+landed, elapsed, findings, tests before → after), gate questions numbered,
+rejected findings named. If the next eligible card is a gate, install the build
+yourself and still give the command.
+
+## 10. Watching and stopping
+
+```bash
+hermes kanban --board <b> list            # one line per card
+hermes kanban --board <b> show <id>       # body, comments, events, latest summary
+hermes kanban --board <b> runs <id>       # attempts, outcomes, elapsed, fallbacks
 tail -f ~/.hermes/profiles/<profile>/logs/agent.log   # the live transcript
+hermes sessions export <session-id>       # afterwards
 ```
 
-The agent log is per **profile**, not per card: two cards sharing a profile
-interleave their lines, which is one more reason roles get distinct profiles.
+You cannot attach to a worker; comment on a running card to steer it (the text
+arrives in its next tool result). The dispatcher reclaims crashed, stale and
+protocol-violating workers with bounded retries; do not kill workers by hand —
+`block` a card you need stopped. A worker's block reason and an operator's stall
+diagnosis are hypotheses: re-run the quoted check and read the board before acting.
 
-`hermes sessions list -p <profile>` maps cards to session ids (titled
-`Work kanban task <id>`); `sessions export <session-id>` dumps the conversation.
-Sessions live in the profile's SQLite state, not as loose files.
+Before a reboot: `hermes pause --reason …` (global, stops dispatch only) **and** a
+comment on each running card: commit what exists, then `kanban_block` with the
+resume point.
 
-**You cannot attach to a running worker.** Workers are spawned without a PTY. To
-change a running card's course, comment on the card — the text arrives in the
-worker's next tool result. The log is read-only.
+Notification text is truncated in Hermes, not configurable:
 
-## Failure modes to expect
+| Event | Chat | Orchestrating session |
+|---|---|---|
+| completed | first line of the summary, ~200 chars | the whole run summary, up to 4000 chars, plus `· fallback A → B` |
+| blocked | the reason, ~160 chars | the same |
+| gave_up | the error, ~200 chars | the same |
+| crashed, timed_out | no text | no text |
 
-**The review card needs its range, and nobody gives it one automatically.** A
-reviewer card that names `START_HEAD`/`END_HEAD` has no way to learn them unless
-the coordinator comments them on the card, because card bodies are written before
-the implementation exists. In the first run on this board the reviewer found only
-the previous slice's handoff range, inferred the full branch range itself, and
-said so on the card — which worked, but only because it was told to record what it
-reviewed. Either comment the range when the last code card completes, or write the
-card body to say "review `main..<branch>`" and skip the handshake.
+So block reasons open with the action and the path; completion summaries keep a
+mechanical first line.
 
-**A card with no `--parent` dispatches immediately.** Dependencies are the only
-thing holding a card back. Create the chain parent-first, or block the card in the
-same breath as creating it.
+## 11. Standing authorizations
 
-**`--json` returns the new id under `id`**, not `task_id`. Reading the wrong key
-yields `None`, and follow-up `link` calls fail with `unknown task(s): None` while
-the cards themselves exist and dispatch on their own.
+None recorded yet. When the operator grants one twice, write it here with what it
+does **not** cover.
 
-**A card body is immutable.** When the facts a card was written against change,
-**recreate it** — archive the stale card, create the corrected one, re-link, and
-re-subscribe. A correcting comment is worse than it looks: the body is the
-assignment, and a worker that never opens the comments follows the stale one.
+## 12. Calibration from the first run
 
-**Protocol violation.** A worker that exits without calling
-`kanban_complete`/`kanban_block` is recorded as `protocol_violation`; the
-dispatcher retries up to three consecutive times, then auto-blocks.
-
-**Stale `index.lock`.** A worker that dies mid-commit leaves
-`.git/worktrees/<name>/index.lock`. Confirm nobody holds it (`lsof` empty) and
-check its timestamp against the run that died before removing it.
-
-**Reassignment during a run is refused.** Plan the role split before dispatch.
-
-**A card created by a worker inherits a scratch workspace, not yours.** Pass
-`--workspace dir:/abs/path` explicitly at creation; the CLI wants a scheme, not a
-bare path.
-
-## Board bring-up, condensed
-
-```bash
-hermes kanban boards create <slug> --name "<name>" \
-  --default-workdir <absolute worktree path> --switch
-
-hermes kanban --board <slug> create "<title>" \
-  --body "<full standing constraints + this slice's work>" \
-  --assignee <role profile> --workspace dir:<abs path> \
-  --parent <previous stage> \
-  --max-runtime 2h --max-retries 2 \
-  --completion-contract local-only \
-  --goal --goal-max-turns 30
-```
-
-Use `--goal` for open-ended slices where one pass rarely finishes; skip it for
-cheap mechanical cards — the per-turn judge is not free. Macomprendo slices are
-small and its test suite is fast, so `--max-runtime 2h` is generous here where a
-React Native repo would need `6h`.
-
-The dispatcher runs inside the gateway on a 60 s tick;
-`hermes kanban --board <slug> dispatch` nudges it immediately.
-
-## What the coordinating session must still do
-
-The orchestrating session is the board's only supervisor; there is no cron
-coordinator. Cards created by the scripts subscribe that session, so completions and
-blocks arrive in it as turns. Keep it open while the board runs, overnight included.
-With the session closed, cards keep moving but nothing lands; on return, land the
-finished chains first. With the Mac asleep, nothing moves.
-
-The coordinator's own jobs, which no worker can do:
-
-- keep the spec current as cards resolve, rather than letting code drift from it;
-- verify external side effects independently;
-- apply the edits workers are forbidden to make (`AGENTS.md`);
-- decide when a surprise finding deserves a new card instead of being absorbed
-  silently into an existing slice;
-- **carry an operator decision back through every artefact it touches.** A review
-  finding can be technically right and still contradict a decision the operator
-  already made. On the first run here, the reviewer judged the 90-day retention
-  default unsafe for existing installs and the remediation card changed it — a
-  sound call in general, and the wrong one for a product whose only user is the
-  operator. Reverting it meant touching the source, its tests, the changelog, the
-  spec, *and* a guard test that asserted the now-cancelled warning existed. Miss
-  one and the repository disagrees with itself. When a finding overturns a
-  decision rather than fixing a defect, put it to the operator instead of letting
-  a card settle it.
-
-## Results from the first run
-
-One feature, six implementation slices, one review, one remediation, one human
-gate. Recorded so a later effort can calibrate.
+One feature, six implementation slices, one review, one remediation, one gate.
 
 | | |
 |---|---|
@@ -414,34 +362,15 @@ gate. Recorded so a later effort can calibrate.
 | Tests | 982 → 1064 Swift, 333 → 339 Node |
 | Defects the board produced and closed itself | 12 |
 | Defects only the operator found, after acceptance | 3 |
-| Coordinator interventions | one decision reversal, one changelog fix, three post-acceptance fixes |
 
-The review paid for itself on the first run: it caught that `0700` was applied
-only to directories the app actually created, so every upgraded install kept its
-transcript database at `0755` — and the test that claimed to cover it passed,
-because it built a fresh path under a new UUID. That class of defect (a test that
-cannot see the case it names) is exactly what an implementer cannot catch in its
-own work.
+The review paid for itself: it caught that `0700` was applied only to directories
+the app created, so every upgraded install kept its transcript database at `0755`,
+while the test claiming to cover it passed on a fresh UUID path. The three misses
+were all states a human sees and a test does not. Budget a real acceptance pass on
+hardware; it is where that class lands.
 
-The three defects it missed are just as instructive, and they share a shape: all
-were **states a human sees and a test does not** — a window left open while
-something else changes the data, a control whose disappearance is only wrong if
-you know what the user expects next. Budget a real acceptance pass on hardware;
-it is not a formality after a green board, it is where this class lands.
-
-### Cost accounting
-
-An honest tally for the whole effort, so the next one can be planned rather than
-hoped for:
-
-- **Setup is not free.** Four profiles, a worktree, a warmed build, nine card
-  bodies and this runbook came before a single line of the feature was written.
-  That investment amortises across later efforts on the same repo; it does not
-  amortise inside one.
-- **The chain, not the worker count, sets the pace.** Six serialized slices ran
-  one at a time by construction. More workers would not have been faster.
-- **The operator stays in the loop regardless.** One decision the board tried to
-  make (retention defaults), one contradiction it created between code and
-  changelog, and three defects it could not see. A board is a way to keep
-  long-running work moving without a chat session held open — not a way to stop
-  reading the diff.
+Cost: setup (profiles, a warm worktree, card bodies) comes before the first line of
+the feature and amortises across efforts, not within one. The chain, not the
+worker count, sets the pace. The operator stays in the loop regardless — a board
+keeps long work moving without a chat held open; it does not replace reading the
+diff.
