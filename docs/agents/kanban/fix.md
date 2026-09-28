@@ -9,10 +9,28 @@
   manual mutation check for that test — or rejected with proof: command output or
   the line of code that refutes it.
 - A finding that argues with a written decision (`docs/adr/`, the spec) or changes
-  a default the operator chose is **not** applied: return it as "needs decision".
+  a default the operator chose is **not** applied: return it as "needs decision"
+  — or first ask the orchestrator on your card and wait:
+  `kanban_comment(task_id=$HERMES_KANBAN_TASK, body="<finding, the decision
+  needed, your default>", await_reply_minutes=10)`; the reply comes back in
+  `replies`, empty means no answer.
 - When a finding describes a symptom, fix every path that produces it, not only
   the one cited.
 - Two failed attempts on one finding: stop on it, record it, move on.
+- Evidence as you go: append every RED run and every mutation's failing and
+  green output to `$TMPDIR/$HERMES_KANBAN_TASK-evidence.log` the moment you get
+  it, and build the summary from that file. Your context may be compacted
+  before the end; output you did not save is gone. Not in the tree: a stray
+  file there fails the clean-tree check at `kanban_complete`.
+- Long suites (e2e and the like) run in the background with a completion
+  notice and you wait for it: a foreground call hits the tool timeout. While
+  one runs, do not touch the tree — no mutations, no edits: a dev server
+  reloads on the change and the running tests fail for that reason, not for
+  the code. Mutations come after the suite has finished.
+- Nothing to change (the review had no findings, or you rejected all of
+  them): leave the tree clean and finish with `kanban_complete` carrying
+  `metadata: {"no_change": "<why, one line>"}`. Never `kanban_block` for it —
+  a block wakes the operator for a card that is done.
 - `{{GATE}}` green at the end (last line contains `{{GATE_OK}}`); `npm run gen` a
   no-op if you added files.
 - **Summary:** first line `START_HEAD..END_HEAD, N files, gate: green`, then a

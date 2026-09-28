@@ -1,15 +1,37 @@
 # Hermes Kanban — multi-agent development on Macomprendo
 
 > Per-repo runbook. Read it before putting a Macomprendo effort on a Hermes Kanban
-> board. Everything the method needs is in this repository: this file, the role
-> preambles in `docs/agents/kanban/`, the settings in `.kanban/config.json` and the
-> tool `scripts/kanban.mjs` (`npm run kanban`). Generic Hermes documentation:
-> <https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban>.
+> board. This repository holds what is specific to it: this file, the role preambles
+> in `docs/agents/kanban/` and the settings in `.kanban/config.env`. The method's
+> scripts come from the `hermes-kanban-development` skill (see **Stack** below);
+> `scripts/kanban-card.sh` is a thin wrapper over its card script. Generic Hermes
+> documentation: <https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban>.
 
 Cards run as separate, non-interactive Hermes workers, one role per profile. One
 foreground session — the **orchestrator** — plans, feeds the board and lands the
 results. It is the board's only supervisor: every card it creates reports back into
 it, so there is no watcher script and no cron job to run.
+
+## Stack (required)
+
+This method runs only on:
+
+- **Hermes from the `develop` branch of the fork
+  <https://github.com/DZamataev/hermes-agent>.** Upstream Hermes lacks what the
+  cards rely on: completion contracts (`local-commit`, `local-commit-or-none`),
+  whole summaries and block reasons in the session, delivery that survives the
+  orchestrator's context compression, the idle-board line, and a worker's
+  question to the orchestrator (`kanban_comment` with `await_reply_minutes`).
+- **The kanban scripts and role templates from
+  <https://github.com/DZamataev/hermes-tools>** (`kanban/install.sh --force`
+  installs them as the `hermes-kanban-development` skill; `$K` below is its
+  `scripts/` directory, by default
+  `~/.hermes/skills/software-development/hermes-kanban-development/scripts`).
+
+The card scripts refuse to create a card on a Hermes without these features.
+After updating either, bring this repository's copy of the role templates up to
+date: `python3 $K/kanban-sync.py --apply <this checkout>`, then review and commit
+the diff.
 
 ## 1. When the board is worth it
 
@@ -38,7 +60,7 @@ parent process.
    that defines a threshold, by symbol and value. **Commit them on the effort's
    branch** — a worker cannot read a file that exists only in the operator's
    uncommitted tree.
-3. **Cards**, only through `npm run kanban` (section 5).
+3. **Cards**, only through the scripts (section 5).
 4. **Landing** by the orchestrator (section 9).
 
 ### Write outcomes, not mechanisms
@@ -67,7 +89,7 @@ The setup choices are the orchestrator's; report them afterwards.
 
 ```bash
 # once per machine: the three role profiles (existing ones are kept)
-npm run kanban -- profiles
+bash $K/kanban-profiles.sh maco
 # once per effort: a board, a worktree, a warm build
 hermes kanban boards create macomprendo-<effort> --name "Macomprendo — <effort>"
 git worktree add -b <effort>/chain .worktrees/<effort> main
@@ -77,9 +99,9 @@ npm run sync-graph
 swift build --package-path macos && npm run test:swift
 ```
 
-- **Board.** `.kanban/config.json` names the default board. For an effort on its
-  own board, change `board` in the worktree's copy of that file and commit it on
-  the effort's branch; `npm run kanban` reads the config of the tree it runs from.
+- **Board.** `.kanban/config.env` names the default board (`KANBAN_BOARD`). For an
+  effort on its own board, change it in the worktree's copy of that file and commit
+  it on the effort's branch; the scripts read the config of the tree they run from.
 - **Profiles before cards.** A claimed card keeps the model it started with, and a
   running card cannot be reassigned. Pin models first (section 4), then create
   cards.
@@ -114,11 +136,11 @@ swift build --package-path macos && npm run test:swift
 - **One profile per role.** Profiles sharing a home share `memories/MEMORY.md`, and
   a reviewer that can read the implementer's notes is not blind.
 - `hermes profile create --clone-from` copies `MEMORY.md` **wholesale**, notes from
-  unrelated repositories included. `npm run kanban -- profiles` rewrites every new
+  unrelated repositories included. `kanban-profiles.sh maco` rewrites every new
   profile's memory to its role before any card runs; `--force-memory` redoes it for
   existing ones.
 - **Models are pinned in the profiles, not recorded here** — they change with quota.
-  `npm run kanban -- profiles --model-review <provider>:<model>` pins one;
+  `kanban-profiles.sh maco --model-review <provider>:<model>` pins one;
   `--fallback-<role> <provider>:<model>` writes that profile's `fallback_providers`.
   The rule: **the reviewer runs on a different model family than the author.** A
   weak reviewer that misses a Swift 6 race or a missed cancellation path produces
@@ -142,16 +164,16 @@ can never be created without its prohibitions and its gate.
 
 ```bash
 # one slice: implement → review → fix, after the previous slice, with an operator gate
-npm run kanban -- chain --title "Microphone picker" \
+python3 $K/kanban-chain.py --title "Microphone picker" \
   --task docs/agents/kanban/tasks/mic-picker.md \
   --workdir "$PWD" --after <previous-fix-id> \
   --gate-task docs/agents/kanban/tasks/mic-picker-gate.md
 # a single card (research writes one new file; no worktree needed)
-npm run kanban -- card research "Audio device APIs" docs/agents/kanban/tasks/devices.md "$PWD"
+scripts/kanban-card.sh research "Audio device APIs" docs/agents/kanban/tasks/devices.md "$PWD"
 ```
 
-`chain` prints `impl=… review=… fix=… [gate=…] [session=…]`. `--hold` creates the
-chain without releasing it.
+`kanban-chain.py` prints `impl=… review=… fix=… [gate=…] [session=…]`. `--hold`
+creates the chain without releasing it; `--dry-run` prints what it would create.
 
 What the tool guarantees, so you know it when working by hand:
 
@@ -163,10 +185,12 @@ What the tool guarantees, so you know it when working by hand:
   orchestrating session (`--platform tui --chat-id $HERMES_SESSION_KEY`). A chain
   whose session subscription did not land is left blocked. `create --json` skips
   Hermes' own auto-subscribe, which is why this is explicit.
-- Implement and fix cards carry `--completion-contract local-commit`: the board
-  refuses `done` until the tree is clean and HEAD moved since the run started.
+- Implement cards carry `--completion-contract local-commit`: the board refuses
+  `done` until the tree is clean and HEAD moved since the run started. Fix cards
+  carry `local-commit-or-none`: the same, or a clean unmoved tree declared with
+  `metadata.no_change` (a review with nothing to apply).
 - Bodies go through stdin (`--body-file -`); `--workspace dir:<absolute path>`;
-  retries per role and `--max-runtime` come from `.kanban/config.json`.
+  retries per role and `--max-runtime` come from `.kanban/config.env`.
   Macomprendo slices are small and the suite runs in seconds, so `2h` is generous.
 - `create --json` returns the id under **`id`**, not `task_id`; an empty id stops
   the tool instead of producing `--parent None`.
@@ -291,16 +315,14 @@ verifies, lands and re-plans as they come.
 - **One orchestrator per board.** A second session landing the same chains
   duplicates merges.
 
-**Hermes build.** Session delivery relies on Kanban fixes that live on the `develop`
-branch of [DZamataev/hermes-agent](https://github.com/DZamataev/hermes-agent) and
-have not reached upstream: without them a subscription dies at the orchestrator's
-first context compaction, a model fallback is silent, `done` is accepted over an
-uncommitted tree and the session gets only a summary's first line. Check:
-`hermes kanban replace -h` must print usage, not "invalid choice". If it does not,
-supervise by hand (`list`, `show`) and say so.
+**Hermes build.** See **Stack**: without the fork a subscription dies at the
+orchestrator's first context compaction, a model fallback is silent, `done` is
+accepted over an uncommitted tree and the session gets only a summary's first
+line. The card scripts check the build before creating anything and refuse
+without it.
 
 **Landing a chain** (its fix card is done), in its worktree: clean `git status`,
-the gate, and the `landChecks` of `.kanban/config.json` (`npm run test:scripts`,
+the gate, and `KANBAN_LAND_CHECKS` of `.kanban/config.env` (`npm run test:scripts`,
 `npm run audit`, `swift build --package-path macos` with no new warnings,
 `npm run gen` a no-op). Then in the primary checkout `git merge --ff-only
 <effort>/chain`, or a merge commit plus the gate again; abort on conflict. **Push
@@ -324,7 +346,13 @@ hermes sessions export <session-id>       # afterwards
 ```
 
 You cannot attach to a worker; comment on a running card to steer it (the text
-arrives in its next tool result). The dispatcher reclaims crashed, stale and
+arrives in its next tool result). A worker with a question it cannot settle from
+the repo asks on its own card and holds its run for the answer
+(`kanban_comment` with `await_reply_minutes`): the session gets a ❓ with the
+question and the command to answer, `hermes kanban --board <b> comment <id>
+"<answer>"`. Answer from the spec and ADRs; a product question goes to the
+operator first. No answer in time is not a failure: the worker proceeds on its
+stated default or blocks. The dispatcher reclaims crashed, stale and
 protocol-violating workers with bounded retries; do not kill workers by hand —
 `block` a card you need stopped. A worker's block reason and an operator's stall
 diagnosis are hypotheses: re-run the quoted check and read the board before acting.
@@ -338,7 +366,8 @@ Notification text is truncated in Hermes, not configurable:
 | Event | Chat | Orchestrating session |
 |---|---|---|
 | completed | first line of the summary, ~200 chars | the whole run summary, up to 4000 chars, plus `· fallback A → B` |
-| blocked | the reason, ~160 chars | the same |
+| blocked | the whole reason, up to 4000 chars | the same; a block the session made itself is not reported back to it |
+| question | the whole question and the command to answer | the same, and it wakes the session |
 | gave_up | the error, ~200 chars | the same |
 | crashed, timed_out | no text | no text |
 

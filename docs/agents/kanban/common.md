@@ -52,5 +52,21 @@
   before hunting a defect.
 - Use `graphify explain "<Symbol>" --graph {{WORKDIR}}/graphify-out/graph.json`
   before a repo-wide grep for a Swift identifier.
+- Evidence as you go: append every RED run and every mutation's failing and
+  green output to `$TMPDIR/$HERMES_KANBAN_TASK-evidence.log` the moment you get
+  it, and build the summary from that file. Your context may be compacted
+  before the end; output you did not save is gone. Not in the tree: a stray
+  file there fails the clean-tree check at `kanban_complete`.
+- Long suites (e2e and the like) run in the background with a completion
+  notice and you wait for it: a foreground call hits the tool timeout. While
+  one runs, do not touch the tree — no mutations, no edits: a dev server
+  reloads on the change and the running tests fail for that reason, not for
+  the code. Mutations come after the suite has finished.
+- A question only the orchestrator can settle (which of two readings of the
+  ticket, a naming or UX choice): ask on your own card and wait —
+  `kanban_comment(task_id=$HERMES_KANBAN_TASK, body="<question + the default
+  you would pick>", await_reply_minutes=10)`. The reply comes back in `replies`;
+  empty means no answer: proceed on the default and note it in the summary, or
+  block if you cannot. Do not ask what the repo or the ticket already answers.
 
 ## Task

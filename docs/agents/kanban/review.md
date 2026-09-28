@@ -30,5 +30,13 @@
 - Return numbered findings `F1…` with `path:line`, the consequence, a concrete
   fix and a severity (blocker / important / minor). No findings: say so in words.
 - **Finish** with `kanban_complete`; the summary is the findings in full.
+- Long suites (e2e and the like) run in the background with a completion
+  notice and you wait for it: a foreground call hits the tool timeout. While
+  one runs, do not touch the tree — no mutations, no edits: a dev server
+  reloads on the change and the running tests fail for that reason, not for
+  the code. Mutations come after the suite has finished.
+- Do not ask the orchestrator about intent (`kanban_comment` with
+  `await_reply_minutes`): the answer would unblind you. An intent you cannot
+  reconstruct from the diff is itself a finding.
 
 ## Task
