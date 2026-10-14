@@ -36,6 +36,7 @@ actor TranscriptionLane {
                           _ body: @Sendable () async throws -> T) async throws -> T {
         try await acquire(priority)
         defer { release() }
+        try Task.checkCancellation()
         return try await body()
     }
 

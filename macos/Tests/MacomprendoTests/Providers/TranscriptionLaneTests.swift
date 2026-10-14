@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Macomprendo
 
-@Suite struct TranscriptionLaneTests {
+@Suite(.timeLimit(.minutes(1))) struct TranscriptionLaneTests {
     @Test func aSingleCallRunsAndReturnsItsResult() async throws {
         let base = FakeTranscriptionProvider()
         base.result = .success("hello")
@@ -124,6 +124,74 @@ import Testing
         try await next.value
 
         #expect(order.recorded == ["holder", "next"])
+    }
+
+    @Test func aCallerCancelledBeforeItGetsTheLaneNeverRunsItsBody() async throws {
+        let lane = TranscriptionLane()
+        let holderGate = AsyncGate()
+        let order = OrderRecorder()
+
+        let holder = Task {
+            try await lane.run(.background) {
+                order.record("holder")
+                await holderGate.wait()
+            }
+        }
+        await waitFor("the holder to take the lane") { order.recorded.contains("holder") }
+
+        // A caller queued behind the holder and cancelled while waiting. `release()` and the
+        // cancellation handler both hop onto the actor, so either the waiter leaves the queue
+        // and is resumed with `CancellationError`, or `release()` hands it the lane first — in
+        // the latter case `run` must still refuse to run `body`. Asserted regardless of which
+        // cancellation path wins.
+        let queued = Task {
+            try await lane.run(.background) { order.record("queued") }
+        }
+        await waitUntil("the cancelled caller to queue") { await lane.waiterCount == 1 }
+        queued.cancel()
+
+        holderGate.open()
+        try await holder.value
+
+        do {
+            _ = try await queued.value
+            Issue.record("Expected the queued caller to throw CancellationError.")
+        } catch is CancellationError {
+            // The waiter left without running its body.
+        } catch {
+            Issue.record("Expected CancellationError for the queued caller, got \(error).")
+        }
+        #expect(order.recorded == ["holder"])
+        let afterQueued = await lane.waiterCount
+        #expect(afterQueued == 0)
+
+        // A caller already cancelled before it reaches the lane. It is held back until the
+        // cancellation has landed, so `run` is guaranteed to see a cancelled task on entry —
+        // the deterministic half of the race, with the lane free.
+        let start = AsyncGate()
+        let upFront = Task {
+            await start.wait()
+            return try await lane.run(.interactive) { order.record("upFront") }
+        }
+        upFront.cancel()
+        start.open()
+
+        do {
+            _ = try await upFront.value
+            Issue.record("Expected the up-front caller to throw CancellationError.")
+        } catch is CancellationError {
+            // The caller never entered its body.
+        } catch {
+            Issue.record("Expected CancellationError for the up-front caller, got \(error).")
+        }
+        #expect(order.recorded == ["holder"])
+        let afterUpFront = await lane.waiterCount
+        #expect(afterUpFront == 0)
+
+        // The lane is still usable.
+        let after = try await lane.run(.interactive) { "after the cancellations" }
+        #expect(after == "after the cancellations")
+        #expect(order.recorded == ["holder"])
     }
 
     @Test func aThrowingBodyReleasesTheLane() async throws {
