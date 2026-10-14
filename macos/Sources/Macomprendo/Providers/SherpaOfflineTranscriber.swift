@@ -3,11 +3,11 @@ import SherpaOnnxC
 
 /// Which sherpa-onnx offline model config a resolved file set maps onto. Pure, so the
 /// mapping is unit-tested without the C API or the filesystem.
-enum GigaAMConfigPlan: Sendable, Equatable {
+enum SherpaOfflineConfigPlan: Sendable, Equatable {
     case ctc(model: URL, tokens: URL)
     case transducer(encoder: URL, decoder: URL, joiner: URL, tokens: URL)
 
-    static func make(from files: [ModelFileRole: URL]) -> GigaAMConfigPlan? {
+    static func make(from files: [ModelFileRole: URL]) -> SherpaOfflineConfigPlan? {
         guard let tokens = files[.tokens] else { return nil }
         if let model = files[.ctcModel] {
             return .ctc(model: model, tokens: tokens)
@@ -58,13 +58,13 @@ private final class SherpaRecognizerBox: @unchecked Sendable {
 /// The recognizer is created lazily on the first `transcribe` and stays resident, because
 /// loading a 225 MB ONNX graph costs a couple of seconds. Serialisation is free: the type is
 /// an actor, and a sherpa recognizer is not safe for concurrent decoding.
-actor GigaAMTranscriber: TranscriptionProvider {
-    private let plan: GigaAMConfigPlan
+actor SherpaOfflineTranscriber: TranscriptionProvider {
+    private let plan: SherpaOfflineConfigPlan
     private var recognizerBox: SherpaRecognizerBox?
 
     init(files: [ModelFileRole: URL]) throws {
-        guard let plan = GigaAMConfigPlan.make(from: files) else {
-            throw MacomprendoError.modelMissing("GigaAM model files")
+        guard let plan = SherpaOfflineConfigPlan.make(from: files) else {
+            throw MacomprendoError.modelMissing("sherpa-onnx model files")
         }
         self.plan = plan
     }
@@ -77,7 +77,7 @@ actor GigaAMTranscriber: TranscriptionProvider {
         guard sampleRate == 16_000 else {
             // sherpa-onnx would resample, but every other rate means the recording path is
             // wrong rather than merely unusual, so say so instead of transcribing it.
-            throw MacomprendoError.audio("GigaAM requires 16 kHz mono audio, got \(sampleRate) Hz")
+            throw MacomprendoError.audio("sherpa-onnx requires 16 kHz mono audio, got \(sampleRate) Hz")
         }
         guard !pcm.isEmpty else { return "" }
 
@@ -114,7 +114,7 @@ actor GigaAMTranscriber: TranscriptionProvider {
 
         let pointer = try makeRecognizer()
         Log.providers.info(
-            "Loaded GigaAM model \(self.plan.identifyingFile.lastPathComponent, privacy: .public)"
+            "Loaded sherpa-onnx model \(self.plan.identifyingFile.lastPathComponent, privacy: .public)"
         )
 
         let box = SherpaRecognizerBox(pointer: pointer)

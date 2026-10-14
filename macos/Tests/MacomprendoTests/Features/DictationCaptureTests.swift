@@ -505,7 +505,7 @@ import Testing
         let request = await store.appendRequests.first
         #expect(request?.text == "refined input")
         #expect(request?.run?.modelID == "gigaam-v3-e2e-ctc")
-        #expect(request?.run?.engine == LocalEngine.gigaAM.rawValue)
+        #expect(request?.run?.engine == LocalEngine.sherpaOfflineASR.rawValue)
         #expect(request?.run?.language == "en")
         #expect(request?.run?.appVersion == TranscriptionRun.currentAppVersion)
         #expect(request?.rawText == nil)

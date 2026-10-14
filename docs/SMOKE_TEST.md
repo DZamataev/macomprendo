@@ -781,7 +781,7 @@ Run these checks from the signed `dist/Macomprendo.app` assembled by the release
 not from an Xcode or `swift run` development build. They are the acceptance gate for the real
 sherpa-onnx recognizer and ONNX decode path.
 
-1. Settings ▸ Dictation ▸ GigaAM. Download each of the four models to completion. After each
+1. Settings ▸ Dictation ▸ sherpa-onnx. Download each of the four models to completion. After each
    download, click "Use this model" (or select it in the active-model selector) and confirm
    the status block turns to "Ready to use".
 2. With `gigaam-v3-e2e-ctc` selected, dictate a Russian sentence containing a number.

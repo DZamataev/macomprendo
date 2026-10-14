@@ -26,7 +26,7 @@
 │ AudioInputDeviceListing    │ │  · OpenAICompatibleLLM…     │
 │ SelectedTextReading        │ │ TranscriptionProvider       │
 │ TextInserting              │ │  · WhisperCppTranscriber    │
-│ FrontmostAppTracking       │ │  · GigaAMTranscriber        │
+│ FrontmostAppTracking       │ │  · SherpaOfflineTranscriber │
 │ SpeechSynthesizing         │ │  · OpenAICompatible…        │
 │ ModelManaging              │ │ DictationAudioEncoding      │
 │ PermissionsChecking        │ │ Streaming (SSE, NDJSON)     │

@@ -11,9 +11,9 @@ struct TranscriptionRunTests {
                                         language: "ru", appVersion: "0.2.0")
 
         #expect(run.modelID == "gigaam-v3-e2e-ctc")
-        // Becomes `sherpaOfflineASR` after ADR-0014; readers accept both, because the corpus
-        // records what actually ran.
-        #expect(run.engine == LocalEngine.gigaAM.rawValue)
+        // Rows written before ADR-0014's rename say `gigaAM`; readers accept both, because the
+        // corpus records what actually ran.
+        #expect(run.engine == "sherpaOfflineASR")
         #expect(run.language == "ru")
         #expect(run.appVersion == "0.2.0")
     }

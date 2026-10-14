@@ -6,7 +6,7 @@ import Testing
 
     @Test func everyCatalogEntryReportsItsKindFromItsEngine() {
         #expect(LocalEngine.whisperCpp.kind == .asr)
-        #expect(LocalEngine.gigaAM.kind == .asr)
+        #expect(LocalEngine.sherpaOfflineASR.kind == .asr)
         #expect(ModelCatalog.all(kind: .asr).allSatisfy { $0.kind == .asr })
         #expect(ModelCatalog.all(kind: .tts).allSatisfy { $0.kind == .tts })
     }
@@ -208,7 +208,7 @@ import Testing
 
     @Test func totalSizeIsTheSumOfTheFileSet() {
         let model = LocalModel(
-            id: "x", displayName: "X", engine: .gigaAM, languages: ["ru"],
+            id: "x", displayName: "X", engine: .sherpaOfflineASR, languages: ["ru"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "x-model.onnx", sizeBytes: 100,
                           sha256: "", downloadURL: URL(string: "https://example.com/m")!),
@@ -234,7 +234,7 @@ import Testing
             switch model.engine {
             case .whisperCpp:
                 #expect(roles == [.ggml], "\(model.id) is not a whisper file set")
-            case .gigaAM:
+            case .sherpaOfflineASR:
                 let ctc: Set<ModelFileRole> = [.ctcModel, .tokens]
                 let transducer: Set<ModelFileRole> = [.encoder, .decoder, .joiner, .tokens]
                 #expect(roles == ctc || roles == transducer, "\(model.id) is not a sherpa file set")
@@ -245,7 +245,7 @@ import Testing
     }
 
     @Test func offersFourGigaAMModels() {
-        #expect(ModelCatalog.all(for: .gigaAM).map(\.id) == [
+        #expect(ModelCatalog.all(for: .sherpaOfflineASR).map(\.id) == [
             "gigaam-v3-e2e-ctc",
             "gigaam-v3-e2e-rnnt",
             "gigaam-multilingual-ctc",
@@ -261,7 +261,7 @@ import Testing
     }
 
     @Test func everyGigaAMEntryHasAUsableBrief() {
-        for model in ModelCatalog.all(for: .gigaAM) {
+        for model in ModelCatalog.all(for: .sherpaOfflineASR) {
             #expect(!model.brief.summary.isEmpty, "\(model.id) has no summary")
             #expect(!model.brief.strengths.isEmpty, "\(model.id) lists no strengths")
             #expect(!model.brief.limitations.isEmpty, "\(model.id) lists no limitations")
@@ -302,7 +302,7 @@ import Testing
     }
 
     @Test func theInstancePropertyMatchesTheStaticFunctionForTheModelsOwnLanguages() {
-        let model = LocalModel(id: "x", displayName: "X", engine: .gigaAM, languages: ["ru", "en"],
+        let model = LocalModel(id: "x", displayName: "X", engine: .sherpaOfflineASR, languages: ["ru", "en"],
                                 files: [],
                                 brief: ModelBrief(summary: "", strengths: [], limitations: [],
                                                   benchmarks: [],

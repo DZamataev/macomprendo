@@ -51,7 +51,7 @@ enum SherpaTTSModelPlan: Sendable, Equatable {
                     directory.appendingPathComponent("number-zh.fst"),
                 ]
             )
-        case .whisperCpp, .gigaAM:
+        case .whisperCpp, .sherpaOfflineASR:
             throw MacomprendoError.modelMissing(modelID)
         }
     }

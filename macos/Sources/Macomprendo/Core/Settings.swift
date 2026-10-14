@@ -332,8 +332,8 @@ struct Settings: Codable, Sendable, Equatable {
     var lastTranscriptionEndpointID: UUID?
     var lastTranscriptionEndpointModel: String?
     /// whisper.cpp's thread count. `nil` leaves it to the machine's core count. Only
-    /// whisper.cpp reads these two: GigaAM takes no parameters and an endpoint decides
-    /// for itself.
+    /// whisper.cpp reads these two: the sherpa-onnx models take no parameters and an endpoint
+    /// decides for itself.
     var whisperThreads: Int?
     /// whisper.cpp's `translate` flag: transcribe non-English speech into English.
     var whisperTranslate: Bool

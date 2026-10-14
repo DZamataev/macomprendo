@@ -50,7 +50,7 @@ struct DictationTab: View {
 
             Form {
                 switch tab.viewedTab {
-                case .whisperCpp, .gigaAM:
+                case .whisperCpp, .sherpaOfflineASR:
                     modelsSection
                     parametersSection
                 case .endpoint:

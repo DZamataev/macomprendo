@@ -7,13 +7,13 @@ enum ModelKind: String, Sendable, CaseIterable { case asr, tts }
 /// runtime (sherpa-onnx) serves both kinds.
 enum LocalEngine: String, Codable, Sendable, CaseIterable {
     case whisperCpp
-    case gigaAM
+    case sherpaOfflineASR
     case sherpaVits
     case sherpaKokoro
 
     var kind: ModelKind {
         switch self {
-        case .whisperCpp, .gigaAM: .asr
+        case .whisperCpp, .sherpaOfflineASR: .asr
         case .sherpaVits, .sherpaKokoro: .tts
         }
     }
@@ -224,7 +224,7 @@ enum ModelCatalog {
         LocalModel(
             id: "gigaam-v3-e2e-ctc",
             displayName: "GigaAM v3 e2e CTC (Russian)",
-            engine: .gigaAM,
+            engine: .sherpaOfflineASR,
             languages: ["ru"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "gigaam-v3-e2e-ctc-model.onnx", sizeBytes: 224893661, sha256: "d5fea8df94263c285e54b21e5774b707c707192d3bdbeffd7b1eb07fb6743b35", downloadURL: URL(string: "\(v3CTCBase)/model.int8.onnx")!),
@@ -241,7 +241,7 @@ enum ModelCatalog {
         LocalModel(
             id: "gigaam-v3-e2e-rnnt",
             displayName: "GigaAM v3 e2e RNN-T (Russian)",
-            engine: .gigaAM,
+            engine: .sherpaOfflineASR,
             languages: ["ru"],
             files: [
                 ModelFile(role: .encoder, fileName: "gigaam-v3-e2e-rnnt-encoder.onnx", sizeBytes: 224570820, sha256: "369f35a71bf288d3b8e0391fabd8dba5f2314088d440bca474056b7b4b6e66bf", downloadURL: URL(string: "\(v3RNNTBase)/encoder.int8.onnx")!),
@@ -260,7 +260,7 @@ enum ModelCatalog {
         LocalModel(
             id: "gigaam-multilingual-ctc",
             displayName: "GigaAM Multilingual CTC",
-            engine: .gigaAM,
+            engine: .sherpaOfflineASR,
             languages: ["ru", "en", "kk", "ky", "uz"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "gigaam-multilingual-ctc-model.onnx", sizeBytes: 224762524, sha256: "2d94f93ffd4ef58e7899c9de885c25bbbc8c9f1073618868d118a674450ba5f7", downloadURL: URL(string: "\(multilingualBase)/model.int8.onnx")!),
@@ -283,7 +283,7 @@ enum ModelCatalog {
         LocalModel(
             id: "gigaam-multilingual-large-ctc",
             displayName: "GigaAM Multilingual Large CTC",
-            engine: .gigaAM,
+            engine: .sherpaOfflineASR,
             languages: ["ru", "en", "kk", "ky", "uz"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "gigaam-multilingual-large-ctc-model.onnx", sizeBytes: 591645642, sha256: "6b6f195026b0f90721cd4593c664becf009a71131550b664eec71446ec351c81", downloadURL: URL(string: "\(multilingualBase)/large/model.int8.onnx")!),

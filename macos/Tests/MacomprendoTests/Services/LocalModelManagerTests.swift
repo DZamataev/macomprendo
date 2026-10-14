@@ -679,7 +679,7 @@ import Testing
     /// models, so this is what proves the manager treats a model as a file set.
     private func twoFileModel() -> LocalModel {
         LocalModel(
-            id: "two", displayName: "Two", engine: .gigaAM, languages: ["ru"],
+            id: "two", displayName: "Two", engine: .sherpaOfflineASR, languages: ["ru"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "two-model.onnx", sizeBytes: 8,
                           sha256: "", downloadURL: URL(string: "https://example.com/model.onnx")!),
@@ -730,7 +730,7 @@ import Testing
         let manager = LocalModelManager(directory: directory, http: StubHTTPClient(), catalog: [twoFileModel()])
 
         let resolved = try #require(await manager.resolved("two"))
-        #expect(resolved.engine == .gigaAM)
+        #expect(resolved.engine == .sherpaOfflineASR)
         #expect(resolved.files[.ctcModel] == directory.appendingPathComponent("two-model.onnx"))
         #expect(resolved.files[.tokens] == directory.appendingPathComponent("two-tokens.txt"))
     }
