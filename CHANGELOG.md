@@ -46,7 +46,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Replacement rules** in glossary packs: a line such as `pytest = пайтест, пайтеста` now
   rewrites each listed form to the term, so a word the recogniser wrote by ear is pasted the way
   you spell it. Forms match whole — list every ending you want caught — and the ending is
-  dropped. The target may be Cyrillic too, to fix a garbled word (`ранбуке = рамбуке`). A term
+  dropped. The target may be Cyrillic too, to fix a garbled word (`ранбуке = рамбуке`). The same
+  syntax works in **Your own terms**, where such a rule outranks every pack. A term
   such as `jQuery` or `iOS` at the start of a sentence now keeps its own spelling instead of
   becoming `JQuery`.
 - After a dictation the glossary corrected, a floating panel shows the inserted text with each

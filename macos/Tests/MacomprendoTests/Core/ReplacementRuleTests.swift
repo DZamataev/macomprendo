@@ -114,3 +114,26 @@ struct ReplacementRuleSentenceCapitalTests {
         #expect(replaced("Пайтест упал", "pytest = пайтест") == "Pytest упал")
     }
 }
+
+@Suite("Replacement rules — the manual list")
+struct ReplacementRuleManualListTests {
+    @Test func aManualLineWithFormsRewritesThemToItsTerm() {
+        let glossary = Glossary(manualTerms: ["LOOKY = луки, луки-приложение", "nvm"])
+        #expect(Normalizer.normalise("открой луки и NVM", with: glossary).text
+                == "открой LOOKY и nvm")
+    }
+
+    @Test func aManualFormOutranksTheSameFormInAPack() {
+        let glossary = Glossary(packs: [GlossaryPack.parse("Lukey = луки", name: "p")],
+                                manualTerms: ["LOOKY = луки"])
+        #expect(Normalizer.normalise("открой луки", with: glossary).text == "открой LOOKY")
+        #expect(glossary.inertTermCountsByPack["p"] == 1)
+    }
+
+    @Test func aManualRewriteReportsNoPack() {
+        let result = Normalizer.normalise("открой луки",
+                                          with: Glossary(manualTerms: ["LOOKY = луки"]))
+        #expect(result.rewrites.map(\.packName) == [nil])
+        #expect(result.rewrites.map(\.original) == ["луки"])
+    }
+}

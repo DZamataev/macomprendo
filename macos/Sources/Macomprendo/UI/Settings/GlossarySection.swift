@@ -140,8 +140,9 @@ struct GlossarySection: View {
             TextEditor(text: $model.manualTermsText)
                 .font(.body.monospaced())
                 .frame(minHeight: 60, maxHeight: 90)
-            Text("One term per line, in the spelling you want pasted. These outrank every "
-                 + "pack.")
+            Text("One term per line, in the spelling you want pasted. A line such as "
+                 + "LOOKY = луки, луке also rewrites those forms to the term. These outrank "
+                 + "every pack.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
