@@ -31,7 +31,7 @@ import Testing
     private func twoFileModel() -> LocalModel {
         LocalModel(id: "two-file",
                       displayName: "Two File",
-                      engine: .gigaAM,
+                      engine: .sherpaOfflineASR,
                       languages: ["ru"],
                       files: [
                           ModelFile(role: .ctcModel, fileName: "two-model.onnx", sizeBytes: 300,

@@ -7,13 +7,13 @@ enum ModelKind: String, Sendable, CaseIterable { case asr, tts }
 /// runtime (sherpa-onnx) serves both kinds.
 enum LocalEngine: String, Codable, Sendable, CaseIterable {
     case whisperCpp
-    case gigaAM
+    case sherpaOfflineASR
     case sherpaVits
     case sherpaKokoro
 
     var kind: ModelKind {
         switch self {
-        case .whisperCpp, .gigaAM: .asr
+        case .whisperCpp, .sherpaOfflineASR: .asr
         case .sherpaVits, .sherpaKokoro: .tts
         }
     }
@@ -141,7 +141,7 @@ enum ModelCatalog {
     static let defaultID = "large-v3-turbo"
     static let lightweightID = "base"
 
-    static let all: [LocalModel] = whisper + gigaAM + localTTS
+    static let all: [LocalModel] = whisper + gigaAM + parakeet + localTTS
 
     static func model(id: String) -> LocalModel? {
         all.first { $0.id == id }
@@ -224,7 +224,7 @@ enum ModelCatalog {
         LocalModel(
             id: "gigaam-v3-e2e-ctc",
             displayName: "GigaAM v3 e2e CTC (Russian)",
-            engine: .gigaAM,
+            engine: .sherpaOfflineASR,
             languages: ["ru"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "gigaam-v3-e2e-ctc-model.onnx", sizeBytes: 224893661, sha256: "d5fea8df94263c285e54b21e5774b707c707192d3bdbeffd7b1eb07fb6743b35", downloadURL: URL(string: "\(v3CTCBase)/model.int8.onnx")!),
@@ -241,7 +241,7 @@ enum ModelCatalog {
         LocalModel(
             id: "gigaam-v3-e2e-rnnt",
             displayName: "GigaAM v3 e2e RNN-T (Russian)",
-            engine: .gigaAM,
+            engine: .sherpaOfflineASR,
             languages: ["ru"],
             files: [
                 ModelFile(role: .encoder, fileName: "gigaam-v3-e2e-rnnt-encoder.onnx", sizeBytes: 224570820, sha256: "369f35a71bf288d3b8e0391fabd8dba5f2314088d440bca474056b7b4b6e66bf", downloadURL: URL(string: "\(v3RNNTBase)/encoder.int8.onnx")!),
@@ -260,7 +260,7 @@ enum ModelCatalog {
         LocalModel(
             id: "gigaam-multilingual-ctc",
             displayName: "GigaAM Multilingual CTC",
-            engine: .gigaAM,
+            engine: .sherpaOfflineASR,
             languages: ["ru", "en", "kk", "ky", "uz"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "gigaam-multilingual-ctc-model.onnx", sizeBytes: 224762524, sha256: "2d94f93ffd4ef58e7899c9de885c25bbbc8c9f1073618868d118a674450ba5f7", downloadURL: URL(string: "\(multilingualBase)/model.int8.onnx")!),
@@ -283,7 +283,7 @@ enum ModelCatalog {
         LocalModel(
             id: "gigaam-multilingual-large-ctc",
             displayName: "GigaAM Multilingual Large CTC",
-            engine: .gigaAM,
+            engine: .sherpaOfflineASR,
             languages: ["ru", "en", "kk", "ky", "uz"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "gigaam-multilingual-large-ctc-model.onnx", sizeBytes: 591645642, sha256: "6b6f195026b0f90721cd4593c664becf009a71131550b664eec71446ec351c81", downloadURL: URL(string: "\(multilingualBase)/large/model.int8.onnx")!),
@@ -300,6 +300,42 @@ enum ModelCatalog {
                     Benchmark(language: "kk", dataset: "FLEURS", metric: "WER %", value: 4.4, comparedTo: ["Whisper large-v3": 32.4])
                 ],
                 sourceURL: gigaAMMultilingualSource
+            )
+        )
+    ]
+
+    // MARK: - Parakeet
+
+    private static let parakeetSource = URL(string: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3")!
+    private static let parakeetBase = "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main"
+
+    /// NVIDIA's weights in sherpa-onnx's int8 conversion, fetched as loose files rather than the
+    /// release archive of the same bytes, so it takes the transducer path GigaAM RNN-T already
+    /// uses (ADR-0014, amended).
+    private static let parakeet: [LocalModel] = [
+        LocalModel(
+            id: "parakeet-tdt-0.6b-v3",
+            displayName: "Parakeet TDT 0.6B v3",
+            engine: .sherpaOfflineASR,
+            languages: ["bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de",
+                        "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "sk",
+                        "sl", "es", "sv", "ru", "uk"],
+            files: [
+                ModelFile(role: .encoder, fileName: "parakeet-tdt-0.6b-v3-encoder.onnx", sizeBytes: 652184281, sha256: "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247", downloadURL: URL(string: "\(parakeetBase)/encoder.int8.onnx")!),
+                ModelFile(role: .decoder, fileName: "parakeet-tdt-0.6b-v3-decoder.onnx", sizeBytes: 11845275, sha256: "179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e", downloadURL: URL(string: "\(parakeetBase)/decoder.int8.onnx")!),
+                ModelFile(role: .joiner, fileName: "parakeet-tdt-0.6b-v3-joiner.onnx", sizeBytes: 6355277, sha256: "3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3", downloadURL: URL(string: "\(parakeetBase)/joiner.int8.onnx")!),
+                ModelFile(role: .tokens, fileName: "parakeet-tdt-0.6b-v3-tokens.txt", sizeBytes: 93939, sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d", downloadURL: URL(string: "\(parakeetBase)/tokens.txt")!)
+            ],
+            brief: ModelBrief(
+                summary: "NVIDIA's Parakeet TDT, a 600M transducer covering 25 European languages, Russian and English among them. It detects the spoken language itself and writes punctuation and capitals.",
+                strengths: ["Punctuation and capitalisation in every language", "Russian, Ukrainian and English in one model", "Automatic language detection"],
+                limitations: ["No Kazakh, Kyrgyz or Uzbek", "670 MB download", "NVIDIA's own benchmarks, scored without punctuation — not comparable with the GigaAM rows", "Weights licensed by NVIDIA under CC BY 4.0"],
+                benchmarks: [
+                    Benchmark(language: "ru", dataset: "FLEURS", metric: "WER %", value: 5.51, comparedTo: [:]),
+                    Benchmark(language: "ru", dataset: "CoVoST2", metric: "WER %", value: 3.00, comparedTo: [:]),
+                    Benchmark(language: "en", dataset: "FLEURS", metric: "WER %", value: 4.85, comparedTo: [:])
+                ],
+                sourceURL: parakeetSource
             )
         )
     ]

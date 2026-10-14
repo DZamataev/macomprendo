@@ -62,4 +62,7 @@ your request from their publishers and carry their own licences, which you are r
 observing. Notably, the Piper voice **ru_RU-ruslan** was trained on the
 [RUSLAN corpus](https://ruslan-corpus.github.io/), licensed **CC BY-NC-SA 4.0 —
 non-commercial use only**, and **ru_RU-irina**'s training data has no declared licence.
-whisper's GGML weights are MIT, and GigaAM is MIT.
+whisper's GGML weights are MIT, and GigaAM is MIT. NVIDIA's
+[Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) is licensed
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the app downloads the int8 ONNX
+conversion published by [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).

@@ -3,11 +3,11 @@ import SherpaOnnxC
 
 /// Which sherpa-onnx offline model config a resolved file set maps onto. Pure, so the
 /// mapping is unit-tested without the C API or the filesystem.
-enum GigaAMConfigPlan: Sendable, Equatable {
+enum SherpaOfflineConfigPlan: Sendable, Equatable {
     case ctc(model: URL, tokens: URL)
     case transducer(encoder: URL, decoder: URL, joiner: URL, tokens: URL)
 
-    static func make(from files: [ModelFileRole: URL]) -> GigaAMConfigPlan? {
+    static func make(from files: [ModelFileRole: URL]) -> SherpaOfflineConfigPlan? {
         guard let tokens = files[.tokens] else { return nil }
         if let model = files[.ctcModel] {
             return .ctc(model: model, tokens: tokens)
@@ -52,32 +52,32 @@ private final class SherpaRecognizerBox: @unchecked Sendable {
     }
 }
 
-/// Local transcription through sherpa-onnx: Russian for the v3 entries, and Russian, English,
-/// Kazakh, Kyrgyz and Uzbek for the multilingual ones.
+/// Local transcription through sherpa-onnx's offline recognizer: the GigaAM CTC and RNN-T
+/// entries and NVIDIA's Parakeet TDT transducer.
 ///
 /// The recognizer is created lazily on the first `transcribe` and stays resident, because
 /// loading a 225 MB ONNX graph costs a couple of seconds. Serialisation is free: the type is
 /// an actor, and a sherpa recognizer is not safe for concurrent decoding.
-actor GigaAMTranscriber: TranscriptionProvider {
-    private let plan: GigaAMConfigPlan
+actor SherpaOfflineTranscriber: TranscriptionProvider {
+    private let plan: SherpaOfflineConfigPlan
     private var recognizerBox: SherpaRecognizerBox?
 
     init(files: [ModelFileRole: URL]) throws {
-        guard let plan = GigaAMConfigPlan.make(from: files) else {
-            throw MacomprendoError.modelMissing("GigaAM model files")
+        guard let plan = SherpaOfflineConfigPlan.make(from: files) else {
+            throw MacomprendoError.modelMissing("sherpa-onnx model files")
         }
         self.plan = plan
     }
 
-    /// GigaAM models take no language parameter: the v3 entries are Russian-only and the
-    /// multilingual entries decode character-wise across their languages with no hint. The
+    /// These models take no language parameter: the GigaAM v3 entries are Russian-only, and the
+    /// multilingual GigaAM entries and Parakeet detect the language themselves. The
     /// argument is accepted and ignored rather than rejected — failing a dictation over a
     /// setting the UI does not offer would be worse than simply transcribing.
     func transcribe(_ pcm: [Float], sampleRate: Int, language: String?) async throws -> String {
         guard sampleRate == 16_000 else {
             // sherpa-onnx would resample, but every other rate means the recording path is
             // wrong rather than merely unusual, so say so instead of transcribing it.
-            throw MacomprendoError.audio("GigaAM requires 16 kHz mono audio, got \(sampleRate) Hz")
+            throw MacomprendoError.audio("sherpa-onnx requires 16 kHz mono audio, got \(sampleRate) Hz")
         }
         guard !pcm.isEmpty else { return "" }
 
@@ -114,7 +114,7 @@ actor GigaAMTranscriber: TranscriptionProvider {
 
         let pointer = try makeRecognizer()
         Log.providers.info(
-            "Loaded GigaAM model \(self.plan.identifyingFile.lastPathComponent, privacy: .public)"
+            "Loaded sherpa-onnx model \(self.plan.identifyingFile.lastPathComponent, privacy: .public)"
         )
 
         let box = SherpaRecognizerBox(pointer: pointer)
@@ -127,9 +127,10 @@ actor GigaAMTranscriber: TranscriptionProvider {
     /// when `SherpaOnnxCreateOfflineRecognizer` runs — hence the nesting rather than an array
     /// of pointers built up and released beforehand.
     ///
-    /// `feat_config.feature_dim` is deliberately left at zero: sherpa recognises a GigaAM graph
-    /// from its ONNX metadata and forces the 64 mel bins and the window settings GigaAM's own
-    /// preprocessing uses, overriding whatever is passed in.
+    /// `feat_config.feature_dim` is deliberately left at zero: sherpa reads the feature size from
+    /// the encoder's ONNX metadata, and for a GigaAM graph forces the 64 mel bins and window
+    /// settings GigaAM's own preprocessing uses. Parakeet's metadata carries its own size and
+    /// marks it TDT, so the same zero-initialised config serves both.
     private func makeRecognizer() throws -> OpaquePointer {
         var config = SherpaOnnxOfflineRecognizerConfig()
         config.feat_config.sample_rate = 16_000

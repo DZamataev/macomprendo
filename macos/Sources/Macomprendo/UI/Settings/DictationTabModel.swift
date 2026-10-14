@@ -4,7 +4,7 @@ import SwiftUI
 /// One backend's sub-tab in the Dictation settings.
 enum DictationBackendTab: String, CaseIterable, Identifiable, Sendable {
     case whisperCpp
-    case gigaAM
+    case sherpaOfflineASR
     case endpoint
 
     var id: String { rawValue }
@@ -12,7 +12,7 @@ enum DictationBackendTab: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .whisperCpp: "whisper.cpp"
-        case .gigaAM: "GigaAM"
+        case .sherpaOfflineASR: "sherpa-onnx"
         case .endpoint: "OpenAI endpoint"
         }
     }
@@ -21,7 +21,7 @@ enum DictationBackendTab: String, CaseIterable, Identifiable, Sendable {
     var engine: LocalEngine? {
         switch self {
         case .whisperCpp: .whisperCpp
-        case .gigaAM: .gigaAM
+        case .sherpaOfflineASR: .sherpaOfflineASR
         case .endpoint: nil
         }
     }
@@ -31,9 +31,9 @@ enum DictationBackendTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .whisperCpp, .endpoint:
             ""
-        case .gigaAM:
+        case .sherpaOfflineASR:
             "No settings. The Russian models take no language hint, the multilingual models "
-                + "detect their own language, and decoding is greedy."
+                + "and Parakeet detect their own language, and decoding is greedy."
         }
     }
 }
@@ -82,7 +82,7 @@ final class DictationTabModel: ObservableObject {
             return .endpoint
         case .local(let modelID):
             let engine = catalog.first { $0.id == modelID }?.engine ?? .whisperCpp
-            return engine == .gigaAM ? .gigaAM : .whisperCpp
+            return engine == .sherpaOfflineASR ? .sherpaOfflineASR : .whisperCpp
         }
     }
 
@@ -232,7 +232,7 @@ final class DictationTabModel: ObservableObject {
         switch model.engine {
         case .whisperCpp:
             "whisper.cpp — \(model.displayName)"
-        case .gigaAM:
+        case .sherpaOfflineASR:
             "sherpa-onnx — \(model.displayName)"
         case .sherpaVits, .sherpaKokoro:
             model.displayName

@@ -46,8 +46,8 @@ struct ProviderFactory: Sendable {
                     throw MacomprendoError.modelMissing(modelID)
                 }
                 return WhisperCppTranscriber(modelURL: modelURL, options: whisper)
-            case .gigaAM:
-                return try GigaAMTranscriber(files: resolved.files)
+            case .sherpaOfflineASR:
+                return try SherpaOfflineTranscriber(files: resolved.files)
             case .sherpaVits, .sherpaKokoro:
                 // Transcription settings only offer `.asr` entries. Treat a stale or hand-edited
                 // TTS id as unavailable rather than opening it with the wrong runtime.

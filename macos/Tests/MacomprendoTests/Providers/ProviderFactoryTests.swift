@@ -185,9 +185,9 @@ import Testing
         #expect(transcriber is WhisperCppTranscriber)
     }
 
-    @Test func buildsAGigaAMTranscriberForAGigaAMModel() async throws {
+    @Test func buildsASherpaOfflineTranscriberForAGigaAMModel() async throws {
         let models = StubModelManager()
-        models.resolvedEngines["gigaam-v3-e2e-ctc"] = .gigaAM
+        models.resolvedEngines["gigaam-v3-e2e-ctc"] = .sherpaOfflineASR
         models.resolvedFiles["gigaam-v3-e2e-ctc"] = [
             .ctcModel: URL(fileURLWithPath: "/models/gigaam-v3-e2e-ctc-model.onnx"),
             .tokens: URL(fileURLWithPath: "/models/gigaam-v3-e2e-ctc-tokens.txt")
@@ -198,7 +198,7 @@ import Testing
             for: .local(modelID: "gigaam-v3-e2e-ctc"), endpoints: [], models: models
         )
 
-        #expect(transcriber is GigaAMTranscriber)
+        #expect(transcriber is SherpaOfflineTranscriber)
     }
 
     @Test func throwsModelMissingWhenTheModelIsNotResolved() async {
@@ -212,7 +212,7 @@ import Testing
 
     @Test func throwsModelMissingWhenAGigaAMFileSetIsIncomplete() async {
         let models = StubModelManager()
-        models.resolvedEngines["broken"] = .gigaAM
+        models.resolvedEngines["broken"] = .sherpaOfflineASR
         models.resolvedFiles["broken"] = [.ctcModel: URL(fileURLWithPath: "/models/m.onnx")]
         let factory = ProviderFactory(http: StubHTTPClient(), keychain: InMemoryKeychainStore())
 

@@ -775,13 +775,13 @@ prerequisites, installed in the login keychain.
 - [ ] `README.md` install instructions match the artifact names actually produced.
 - [ ] `DISTRIBUTING.md` lists the resources and frameworks in the current Xcode app product.
 
-## GigaAM local transcription
+## sherpa-onnx local transcription (GigaAM, Parakeet)
 
 Run these checks from the signed `dist/Macomprendo.app` assembled by the release build above,
 not from an Xcode or `swift run` development build. They are the acceptance gate for the real
 sherpa-onnx recognizer and ONNX decode path.
 
-1. Settings ▸ Dictation ▸ GigaAM. Download each of the four models to completion. After each
+1. Settings ▸ Dictation ▸ sherpa-onnx. Download each of the five models to completion. After each
    download, click "Use this model" (or select it in the active-model selector) and confirm
    the status block turns to "Ready to use".
 2. With `gigaam-v3-e2e-ctc` selected, dictate a Russian sentence containing a number.
@@ -792,11 +792,17 @@ sherpa-onnx recognizer and ONNX decode path.
 5. Repeat step 4 with `gigaam-multilingual-large-ctc`. Neither multilingual entry has an
    upstream sherpa-onnx export, so nobody has verified their embedded ONNX metadata for us:
    confirm the model loads rather than failing inside sherpa.
-6. Switch between two GigaAM models and dictate after each. Memory in Activity Monitor
+6. With `parakeet-tdt-0.6b-v3` selected, dictate a Russian sentence, then an English one
+   without changing anything: both come out with punctuation and capitals in their own
+   language. Before downloading, the model's brief names CC BY 4.0. The decode path itself is
+   also covered by `MACOMPRENDO_PARAKEET_DIR=<dir> swift test --package-path macos --filter
+   parakeetTranscribesRealSpeech`, where `<dir>` holds sherpa's four file names and 16 kHz
+   mono WAVs under `test_wavs/`.
+7. Switch between two GigaAM models and dictate after each. Memory in Activity Monitor
    returns to roughly its previous level, showing the old recognizer was freed.
-7. Start a dictation, then press the hotkey again mid-transcription: the first task is
+8. Start a dictation, then press the hotkey again mid-transcription: the first task is
    cancelled and no text is inserted twice.
-8. The HUD names the active model while recording, and does not name it while Speak plays.
-9. Make a downloaded GigaAM model active, delete it from its row while it remains selected,
+9. The HUD names the active model while recording, and does not name it while Speak plays.
+10. Make a downloaded GigaAM model active, delete it from its row while it remains selected,
    then press the dictation hotkey: the failure names the missing model rather than failing
    opaquely.

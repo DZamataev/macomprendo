@@ -21,7 +21,7 @@ import Testing
     @Test func theSubTabShownOnOpenIsTheOneTheActiveModelBelongsTo() {
         var settings = Settings.default
         settings.transcriptionSource = .local(modelID: "gigaam-v3-e2e-ctc")
-        #expect(tabModel(settings).viewedTab == .gigaAM)
+        #expect(tabModel(settings).viewedTab == .sherpaOfflineASR)
 
         settings.transcriptionSource = .local(modelID: "base")
         #expect(tabModel(settings).viewedTab == .whisperCpp)
@@ -35,7 +35,7 @@ import Testing
         let tab = tabModel(settings)
         let before = tab.holder.settings
 
-        tab.viewedTab = .gigaAM
+        tab.viewedTab = .sherpaOfflineASR
         tab.viewedTab = .endpoint
         tab.viewedTab = .whisperCpp
 
@@ -47,8 +47,8 @@ import Testing
 
     @Test func eachTabListsOnlyItsOwnEnginesModels() {
         let tab = tabModel()
-        #expect(tab.rows(for: .gigaAM).allSatisfy { $0.engine == .gigaAM })
-        #expect(tab.rows(for: .gigaAM).count == 4)
+        #expect(tab.rows(for: .sherpaOfflineASR).allSatisfy { $0.engine == .sherpaOfflineASR })
+        #expect(tab.rows(for: .sherpaOfflineASR).count == 5)
         #expect(tab.rows(for: .whisperCpp).count == 9)
         #expect(tab.rows(for: .endpoint).isEmpty)
     }
@@ -213,7 +213,7 @@ import Testing
         tab.activate(.local(modelID: "base"))
         tab.modelStates["base"] = .downloaded
 
-        tab.viewedTab = .gigaAM
+        tab.viewedTab = .sherpaOfflineASR
 
         #expect(tab.statusHeadline == "Ready to use")
         #expect(tab.statusDetail.contains("Base (multilingual)"))
@@ -224,7 +224,7 @@ import Testing
     }
 
     @Test func gigaAMReportsThatItHasNoParametersToConfigure() {
-        #expect(DictationBackendTab.gigaAM.parameterSummary.lowercased().contains("no settings"))
+        #expect(DictationBackendTab.sherpaOfflineASR.parameterSummary.lowercased().contains("no settings"))
         #expect(DictationBackendTab.whisperCpp.parameterSummary.isEmpty)
     }
 

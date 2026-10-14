@@ -6,7 +6,7 @@ import Testing
 
     @Test func everyCatalogEntryReportsItsKindFromItsEngine() {
         #expect(LocalEngine.whisperCpp.kind == .asr)
-        #expect(LocalEngine.gigaAM.kind == .asr)
+        #expect(LocalEngine.sherpaOfflineASR.kind == .asr)
         #expect(ModelCatalog.all(kind: .asr).allSatisfy { $0.kind == .asr })
         #expect(ModelCatalog.all(kind: .tts).allSatisfy { $0.kind == .tts })
     }
@@ -14,7 +14,7 @@ import Testing
     @Test func allByKindPartitionsTheCatalog() {
         let asr = ModelCatalog.all(kind: .asr)
         let tts = ModelCatalog.all(kind: .tts)
-        #expect(asr.count == 13)
+        #expect(asr.count == 14)
         #expect(tts.count == 8)
         #expect(asr.count + tts.count == ModelCatalog.all.count)
     }
@@ -158,13 +158,14 @@ import Testing
         #expect(ModelCatalog.model(id: "kokoro-multi-lang-v1_1")?.brief.summary.hasPrefix("A 427 MB") == true)
     }
 
-    @Test func containsExactlyTheThirteenOfferedASRModelsInOrder() {
+    @Test func containsExactlyTheFourteenOfferedASRModelsInOrder() {
         #expect(ModelCatalog.all(kind: .asr).map(\.id) == [
             "tiny", "tiny.en", "base", "base.en",
             "small", "small.en", "medium", "medium.en",
             "large-v3-turbo",
             "gigaam-v3-e2e-ctc", "gigaam-v3-e2e-rnnt",
-            "gigaam-multilingual-ctc", "gigaam-multilingual-large-ctc"
+            "gigaam-multilingual-ctc", "gigaam-multilingual-large-ctc",
+            "parakeet-tdt-0.6b-v3"
         ])
     }
 
@@ -208,7 +209,7 @@ import Testing
 
     @Test func totalSizeIsTheSumOfTheFileSet() {
         let model = LocalModel(
-            id: "x", displayName: "X", engine: .gigaAM, languages: ["ru"],
+            id: "x", displayName: "X", engine: .sherpaOfflineASR, languages: ["ru"],
             files: [
                 ModelFile(role: .ctcModel, fileName: "x-model.onnx", sizeBytes: 100,
                           sha256: "", downloadURL: URL(string: "https://example.com/m")!),
@@ -234,7 +235,7 @@ import Testing
             switch model.engine {
             case .whisperCpp:
                 #expect(roles == [.ggml], "\(model.id) is not a whisper file set")
-            case .gigaAM:
+            case .sherpaOfflineASR:
                 let ctc: Set<ModelFileRole> = [.ctcModel, .tokens]
                 let transducer: Set<ModelFileRole> = [.encoder, .decoder, .joiner, .tokens]
                 #expect(roles == ctc || roles == transducer, "\(model.id) is not a sherpa file set")
@@ -244,13 +245,47 @@ import Testing
         }
     }
 
-    @Test func offersFourGigaAMModels() {
-        #expect(ModelCatalog.all(for: .gigaAM).map(\.id) == [
+    @Test func theSherpaOfflineEngineOffersFourGigaAMModelsAndParakeet() {
+        #expect(ModelCatalog.all(for: .sherpaOfflineASR).map(\.id) == [
             "gigaam-v3-e2e-ctc",
             "gigaam-v3-e2e-rnnt",
             "gigaam-multilingual-ctc",
-            "gigaam-multilingual-large-ctc"
+            "gigaam-multilingual-large-ctc",
+            "parakeet-tdt-0.6b-v3"
         ])
+    }
+
+    @Test func parakeetIsAFourFileTransducerPinnedToTheSherpaConversion() throws {
+        // Loose files from the sherpa-onnx conversion on Hugging Face rather than the 487 MB
+        // release archive: the same bytes (the release tar's tokens.txt hashes identically),
+        // a per-file digest, and the transducer path GigaAM RNN-T already takes.
+        let parakeet = try #require(ModelCatalog.model(id: "parakeet-tdt-0.6b-v3"))
+        #expect(parakeet.engine == .sherpaOfflineASR)
+        #expect(parakeet.archiveSentinel == nil)
+        #expect(parakeet.files.map(\.role) == [.encoder, .decoder, .joiner, .tokens])
+        // In role order. A bare list, because a digest beside a word like "tokens" reads as a
+        // credential to the audit's secret scanner.
+        #expect(parakeet.files.map(\.sha256) == [
+            "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247",
+            "179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e",
+            "3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3",
+            "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+        ])
+        #expect(parakeet.totalSizeBytes == 670478772)
+        #expect(parakeet.files.allSatisfy {
+            $0.downloadURL.absoluteString.hasPrefix(
+                "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/")
+        })
+    }
+
+    @Test func parakeetDeclaresItsTwentyFiveLanguagesAndItsLicence() throws {
+        let parakeet = try #require(ModelCatalog.model(id: "parakeet-tdt-0.6b-v3"))
+        #expect(parakeet.languages == ["bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de",
+                                       "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "sk",
+                                       "sl", "es", "sv", "ru", "uk"])
+        #expect(parakeet.brief.sourceURL.absoluteString
+                == "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3")
+        #expect(parakeet.brief.limitations.contains { $0.contains("CC BY 4.0") })
     }
 
     @Test func theRussianEntriesDeclareRussianAndTheMultilingualOnesDeclareFive() {
@@ -261,7 +296,7 @@ import Testing
     }
 
     @Test func everyGigaAMEntryHasAUsableBrief() {
-        for model in ModelCatalog.all(for: .gigaAM) {
+        for model in ModelCatalog.all(for: .sherpaOfflineASR) {
             #expect(!model.brief.summary.isEmpty, "\(model.id) has no summary")
             #expect(!model.brief.strengths.isEmpty, "\(model.id) lists no strengths")
             #expect(!model.brief.limitations.isEmpty, "\(model.id) lists no limitations")
@@ -302,7 +337,7 @@ import Testing
     }
 
     @Test func theInstancePropertyMatchesTheStaticFunctionForTheModelsOwnLanguages() {
-        let model = LocalModel(id: "x", displayName: "X", engine: .gigaAM, languages: ["ru", "en"],
+        let model = LocalModel(id: "x", displayName: "X", engine: .sherpaOfflineASR, languages: ["ru", "en"],
                                 files: [],
                                 brief: ModelBrief(summary: "", strengths: [], limitations: [],
                                                   benchmarks: [],
