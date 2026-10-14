@@ -95,3 +95,4 @@ xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
 | `everyIconHasAVendoredSVG` fails | An `AppIcon` case has no SVG: add it to `Resources/Icons/icons.json` and run `npm run sync-icons` |
 | An icon renders as an SF Symbol instead of Phosphor | The SVG is missing from the built bundle — check the `resources:` entry in `Package.swift` and the folder reference in `project.yml` |
 | xcodebuild cannot find a package | Run `npm run gen` after editing `macos/project.yml` |
+| `npm run audit` reports `generic-api-key` in a test | A 64-hex digest on the same line as a word like `tokens` or `key` reads as a credential; assert digests as a bare list in role order. Once committed it also fails the history scan, so fix it in the commit that introduced it (`--fixup` + autosquash) before pushing |
