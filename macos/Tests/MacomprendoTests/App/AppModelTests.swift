@@ -440,12 +440,14 @@ import Testing
 
     /// Invariant 1: the About window's link opener comes from the environment rather than
     /// being constructed by the view.
-    @Test func theAboutModelLinksThroughTheEnvironmentsURLOpener() {
+    @Test func theAboutModelLinksThroughTheEnvironmentsURLOpener() throws {
         let opener = FakeURLOpener()
         let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
                              env: .fake(urlOpener: opener))
 
-        model.aboutModel.openPrivacyStatement()
+        model.aboutModel.open(try #require(model.aboutModel.links.first {
+            $0.url == AboutModel.privacyURL
+        }))
 
         #expect(opener.opened == [AboutModel.privacyURL])
     }

@@ -85,15 +85,43 @@ import Testing
         #expect(model.copyleftDisclosure.contains("github.com/DZamataev/macomprendo"))
     }
 
-    @Test func openingThePrivacyStatementUsesTheOneConstant() {
+    @Test func openingThePrivacyStatementUsesTheOneConstant() throws {
         let opener = FakeURLOpener()
         let model = AboutModel(bundle: ResourceBundle.current, opener: opener)
 
-        model.openPrivacyStatement()
+        model.open(try #require(model.links.first { $0.title == "Privacy statement" }))
 
         #expect(opener.opened == [AboutModel.privacyURL])
         #expect(AboutModel.privacyURL.absoluteString
                 == "https://dzamataev.github.io/macomprendo/privacy/")
+    }
+
+    @Test func linksToTheSiteTheSourceThePrivacyStatementAndSupport() {
+        let opener = FakeURLOpener()
+        let model = AboutModel(bundle: ResourceBundle.current, opener: opener)
+
+        #expect(model.links.map(\.title) == ["Website", "Source code", "Privacy statement",
+                                              "Support"])
+        #expect(model.links.map(\.url.absoluteString) == [
+            "https://dzamataev.github.io/macomprendo/",
+            "https://github.com/DZamataev/macomprendo",
+            "https://dzamataev.github.io/macomprendo/privacy/",
+            "https://dzamataev.github.io/macomprendo/support/",
+        ])
+
+        for link in model.links { model.open(link) }
+
+        #expect(opener.opened == model.links.map(\.url))
+    }
+
+    @Test func copyrightComesFromTheBundleAndIsAbsentWithoutIt() throws {
+        let signed = AboutModel(bundle: try makeBundle(info: [
+            "NSHumanReadableCopyright": "© 2026 Denis Zamataev",
+        ]), opener: FakeURLOpener())
+        let bare = AboutModel(bundle: try makeBundle(info: [:]), opener: FakeURLOpener())
+
+        #expect(signed.copyright == "© 2026 Denis Zamataev")
+        #expect(bare.copyright == nil)
     }
 
     @Test func nothingIsSelectedUntilTheWindowAsksForADefault() {

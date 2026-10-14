@@ -82,6 +82,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   counts from the moment you pressed.
 
 ### Changed
+- The About window now links to the website, the source code and the support page beside the
+  privacy statement, and shows the copyright line.
 - Redesigned the GitHub Pages site around the new app icon, with an outcome-led landing
   page, feature overview, accessible FAQ, and refreshed support and policy pages.
 - Added an animated dictation/refinement example with pause, replay and reduced-motion support.

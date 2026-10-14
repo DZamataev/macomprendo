@@ -1,5 +1,11 @@
 import Foundation
 
+/// One link in the About window's header.
+struct AboutLink: Equatable, Sendable {
+    let title: String
+    let url: URL
+}
+
 /// The testable core of the About window: what it shows and where its links go. Holds no
 /// SwiftUI, so it can be driven from tests with a fake opener and a fake bundle.
 ///
@@ -14,10 +20,24 @@ final class AboutModel: ObservableObject {
     /// Generated from `PRIVACY.md` and served from the project subpath (invariant 15).
     /// One constant, because a shipped 404 here would need another release to fix.
     static let privacyURL = URL(string: "https://dzamataev.github.io/macomprendo/privacy/")!
+    static let siteURL = URL(string: "https://dzamataev.github.io/macomprendo/")!
+    static let sourceURL = URL(string: "https://github.com/DZamataev/macomprendo")!
+    /// The support page rather than the mailbox itself, so the contact route can change
+    /// without shipping a new build (issue #7).
+    static let supportURL = URL(string: "https://dzamataev.github.io/macomprendo/support/")!
 
     let appName: String
     let version: String
     let build: String
+    /// `NSHumanReadableCopyright`, or nil when the bundle carries none.
+    let copyright: String?
+
+    let links = [
+        AboutLink(title: "Website", url: siteURL),
+        AboutLink(title: "Source code", url: sourceURL),
+        AboutLink(title: "Privacy statement", url: privacyURL),
+        AboutLink(title: "Support", url: supportURL),
+    ]
 
     /// Every redistributed component, in the registry's own order.
     let entries: [LicenseEntry]
@@ -42,6 +62,7 @@ final class AboutModel: ObservableObject {
         self.appName = string("CFBundleName") ?? Self.fallbackAppName
         self.version = string("CFBundleShortVersionString") ?? Self.unknownVersionText
         self.build = string("CFBundleVersion") ?? Self.unknownVersionText
+        self.copyright = string("NSHumanReadableCopyright")
     }
 
     /// `1.2.3 (45)` — the marketing version with the build behind it.
@@ -76,8 +97,8 @@ final class AboutModel: ObservableObject {
         select(first)
     }
 
-    func openPrivacyStatement() {
-        opener.open(Self.privacyURL)
+    func open(_ link: AboutLink) {
+        opener.open(link.url)
     }
 
     func openHomepage(of entry: LicenseEntry) {
