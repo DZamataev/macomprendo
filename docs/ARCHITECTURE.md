@@ -163,8 +163,8 @@ Two manifests describe one source tree:
 Both declare the same three dependencies: `KeyboardShortcuts`, and two local wrappers around
 vendored binaries. `macos/Packages/WhisperBinary` wraps the prebuilt `whisper.xcframework`
 published with each whisper.cpp release, because whisper.cpp itself no longer ships a
-`Package.swift`; `macos/Packages/SherpaOnnxBinary` wraps sherpa-onnx, which runs GigaAM and
-local TTS (ADR-0009).
+`Package.swift`; `macos/Packages/SherpaOnnxBinary` wraps sherpa-onnx, which runs GigaAM,
+Parakeet and local TTS (ADR-0009, ADR-0014).
 
 ## Icons
 

@@ -20,6 +20,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   recording carries on. The HUD keeps its level meter and says which device went silent and
   which one took over; Dictate & Refine shows the same as a notice. A quiet room is not
   mistaken for a dead device, and the next recording tries the chosen microphone again.
+- **Parakeet TDT 0.6B v3** (Settings ▸ Dictation ▸ sherpa-onnx): NVIDIA's local speech model
+  for 25 European languages, Russian, Ukrainian and English among them. It detects the spoken
+  language itself and writes punctuation and capitals. A 670 MB download; the weights are
+  licensed by NVIDIA under CC BY 4.0.
 - **Glossary** (Settings ▸ Dictation): dictation can now paste your jargon the way you
   spell it. Switch on **Correct recognised terms** and Macomprendo rewrites what the
   recogniser produced — `tsconfig json` becomes `tsconfig.json`, `NVM` becomes `nvm`,
@@ -82,6 +86,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   counts from the moment you pressed.
 
 ### Changed
+- The Dictation settings sub-tab that held the GigaAM models is now called **sherpa-onnx**, after
+  the recognizer that runs them, since it also holds Parakeet.
 - The About window now links to the website, the source code and the support page beside the
   privacy statement, and shows the copyright line.
 - Redesigned the GitHub Pages site around the new app icon, with an outcome-led landing

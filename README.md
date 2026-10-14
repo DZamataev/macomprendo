@@ -1,7 +1,7 @@
 # Macomprendo
 
 A menubar-only macOS app for dictation, reading selected text, refinement, and summarization.
-Speech-to-text runs locally with whisper.cpp or GigaAM. Text-to-speech can use macOS voices,
+Speech-to-text runs locally with whisper.cpp, GigaAM or Parakeet. Text-to-speech can use macOS voices,
 downloaded Piper and Kokoro models, or an OpenAI-compatible endpoint. Refinement and
 summarization run through local Ollama or another endpoint you configure.
 
@@ -26,8 +26,9 @@ linked — see [NOTICE](NOTICE).
 
 Other things it does:
 
-- **Local transcription** with whisper.cpp or GigaAM. Whisper uses Metal and supports models
-  from `tiny` through `large-v3-turbo`; GigaAM provides Russian-focused models. Files are
+- **Local transcription** with whisper.cpp, GigaAM or Parakeet. Whisper uses Metal and supports
+  models from `tiny` through `large-v3-turbo`; GigaAM provides Russian-focused models; NVIDIA's
+  Parakeet TDT covers 25 European languages with punctuation. Files are
   downloaded on demand and stored in
   `~/Library/Application Support/Macomprendo/models/`.
 - **Automatic multi-voice text-to-speech.** Macomprendo detects language runs inside one

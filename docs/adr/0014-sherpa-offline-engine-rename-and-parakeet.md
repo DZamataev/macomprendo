@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — 2026-09-14
+Accepted — 2026-09-14. Amended 2026-10-14 on implementation; see **Amendment** below.
 
 ## Context
 
@@ -48,3 +48,26 @@ supports contextual biasing.
   under invariant 16.
 - "GigaAM takes no parameters" stops being true catalog-wide once entries with their own config
   knobs arrive; the Dictation tab's parameters pane becomes per-model rather than per-engine.
+
+## Amendment — 2026-10-14
+
+Implementation checked three of the consequences above against the code and replaced them:
+
+- **No migration.** No `LocalEngine` value is persisted anywhere: settings store a model id, and
+  the only engine string on disk is `TranscriptionRun.engine`, a plain `String` in the history
+  database. The hand-written `init(from:)` would decode nothing, so it was not written. New rows
+  record `sherpaOfflineASR`; rows already written keep `gigaAM`, and readers accept both.
+- **Loose files, not the archive.** The four files of sherpa-onnx's int8 conversion are
+  published loose on Hugging Face (`csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`) with
+  per-file digests, and its `tokens.txt` hashes identically to the one inside the 487 MB release
+  archive. Loose files take the transducer path GigaAM RNN-T already uses, so archive-backed ASR
+  was not needed.
+- **No `LicenseRegistry` entry.** The registry lists components the app *redistributes*
+  (invariant 16); a model the user downloads from its publisher is not one. CC BY 4.0 is stated
+  in `NOTICE` under *Downloaded models* and in the model's brief; showing each model's licence in
+  the app is issue #19.
+
+Decoding stays `greedy_search`, so Parakeet's hotword support is not used yet: no glossary
+biasing ships for any backend. The parameters pane stays per-engine, because Parakeet has no
+setting of its own. A real-speech integration test confirmed sherpa reads Parakeet's encoder
+metadata as TDT: English and Russian samples decode with punctuation and capitals.
