@@ -52,6 +52,9 @@ actor SQLiteTranscriptStore: TranscriptStoring {
 
     func appendSegment(_ segment: TranscriptSegment, to id: Int64) throws {
         let db = try connection()
+        // Match `FakeTranscriptStore`: a missing transcript is reported by name, not as the raw
+        // foreign-key failure SQLite would raise.
+        try requireExistingTranscript(id, on: db)
         let statement = try prepare("""
             INSERT INTO transcript_segments (transcript_id, start_s, end_s, text, raw_text)
             VALUES (?1, ?2, ?3, ?4, ?5)
@@ -241,10 +244,23 @@ actor SQLiteTranscriptStore: TranscriptStoring {
         return opened
     }
 
+    private func requireExistingTranscript(_ id: Int64, on db: OpaquePointer) throws {
+        let statement = try prepare("SELECT 1 FROM transcripts WHERE id = ?1", on: db)
+        defer { sqlite3_finalize(statement) }
+        try check(sqlite3_bind_int64(statement, 1, id), on: db)
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw missingTranscript(id)
+        }
+    }
+
     private func requireOneChange(_ id: Int64, on db: OpaquePointer) throws {
         guard sqlite3_changes(db) == 1 else {
-            throw MacomprendoError.transcriptStore("no transcript has identifier \(id)")
+            throw missingTranscript(id)
         }
+    }
+
+    private func missingTranscript(_ id: Int64) -> MacomprendoError {
+        .transcriptStore("no transcript has identifier \(id)")
     }
 
     private func execute(_ sql: String, on db: OpaquePointer) throws {

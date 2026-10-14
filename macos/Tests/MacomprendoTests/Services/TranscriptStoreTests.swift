@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import Testing
 @testable import Macomprendo
 
@@ -127,5 +128,54 @@ import Testing
         let reopened = SQLiteTranscriptStore(
             databaseURL: directory.appendingPathComponent("t.sqlite3"))
         #expect(try await reopened.transcript(id: id)?.header.title == "kept")
+    }
+
+    @Test func appendingToAMissingTranscriptIsAnError() async throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        await #expect(throws: MacomprendoError.transcriptStore("no transcript has identifier 42")) {
+            try await store.appendSegment(TranscriptSegment(start: 0, end: 1, text: "x"), to: 42)
+        }
+    }
+
+    @Test func deletingATranscriptLeavesNoOrphanSegmentsInTheDatabase() async throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let databaseURL = directory.appendingPathComponent("t.sqlite3")
+        let id = try await store.create(sourceKind: .file, title: "a", sourceBookmark: nil,
+                                        duration: 1, run: run, at: .now)
+        try await store.appendSegment(TranscriptSegment(start: 0, end: 1, text: "x"), to: id)
+        try await store.appendSegment(TranscriptSegment(start: 1, end: 2, text: "y"), to: id)
+        // The rows really are on disk before the delete, so the check below can actually fail.
+        #expect(try segmentRows(in: databaseURL) == 2)
+
+        try await store.delete(id: id)
+
+        // Read the file through a second, direct connection. AUTOINCREMENT never reuses ids, so
+        // checking through the store cannot prove the rows are gone — only counting them can.
+        #expect(try segmentRows(in: databaseURL) == 0)
+    }
+
+    /// Opens the database file directly and counts segment rows, bypassing the store.
+    private func segmentRows(in databaseURL: URL) throws -> Int32 {
+        var database: OpaquePointer?
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
+        guard sqlite3_open_v2(databaseURL.path, &database, flags, nil) == SQLITE_OK,
+              let database else {
+            let message = database.map { String(cString: sqlite3_errmsg($0)) } ?? "cannot open"
+            if let database { sqlite3_close_v2(database) }
+            throw MacomprendoError.transcriptStore(message)
+        }
+        defer { sqlite3_close_v2(database) }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM transcript_segments",
+                                 -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw MacomprendoError.transcriptStore("cannot prepare the segment count")
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw MacomprendoError.transcriptStore("cannot read the segment count")
+        }
+        return sqlite3_column_int(statement, 0)
     }
 }
