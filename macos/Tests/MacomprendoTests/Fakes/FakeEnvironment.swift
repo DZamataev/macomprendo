@@ -30,7 +30,12 @@ extension AppEnvironment {
                      ax: any AXReading = ScriptedAXReader(text: nil),
                      speech: any SpeechSynthesizing = ScriptedSpeech(),
                      quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)? = nil,
-                     activationPolicy: any ActivationPolicyControlling = FakeActivationPolicy()) -> AppEnvironment {
+                     activationPolicy: any ActivationPolicyControlling = FakeActivationPolicy(),
+                     transcriptStore: any TranscriptStoring = FakeTranscriptStore(),
+                     mediaDecoder: any MediaAudioDecoding = ScriptedMediaDecoder(),
+                     speechSegmenter: any SpeechSegmenting = ScriptedSegmenter(),
+                     fileBookmarks: any FileBookmarking = FakeFileBookmarks(),
+                     transcriptionLane: TranscriptionLane = TranscriptionLane()) -> AppEnvironment {
         AppEnvironment(hotkeys: hotkeys,
                        middleMouse: middleMouse,
                        recorder: recorder,
@@ -59,6 +64,11 @@ extension AppEnvironment {
                        ax: ax,
                        speech: speech,
                        quickPanelHost: quickPanelHost,
-                       activationPolicy: activationPolicy)
+                       activationPolicy: activationPolicy,
+                       transcriptStore: transcriptStore,
+                       mediaDecoder: mediaDecoder,
+                       speechSegmenter: speechSegmenter,
+                       fileBookmarks: fileBookmarks,
+                       transcriptionLane: transcriptionLane)
     }
 }

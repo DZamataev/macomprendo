@@ -7,4 +7,5 @@ import Foundation
 enum WindowID {
     static let dictationHistory = "dictation-history"
     static let about = "about"
+    static let transcripts = "transcripts"
 }

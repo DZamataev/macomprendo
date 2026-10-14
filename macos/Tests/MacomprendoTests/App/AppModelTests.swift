@@ -555,4 +555,87 @@ import Testing
 
         #expect(revealer.revealed == [store.directoryURL])
     }
+
+    // MARK: - Transcription lane and file jobs
+
+    /// A local source is one speech context, so its provider goes through the environment's
+    /// lane at interactive priority: a dictation overtakes file segments already queued.
+    @Test func dictationTranscriberGoesThroughTheLaneAtInteractivePriority() async throws {
+        let models = StubModelManager()
+        models.resolvedFiles["base"] = [.ggml: URL(fileURLWithPath: "/models/ggml-base.bin")]
+        let lane = TranscriptionLane()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(models: models, transcriptionLane: lane))
+        model.settings.transcriptionSource = .local(modelID: "base")
+
+        let provider = try await model.transcriberProvider()
+
+        let wrapped = try #require(provider as? LaneTranscriptionProvider)
+        #expect(wrapped.lane === lane)
+        guard case .interactive = wrapped.priority else {
+            Issue.record("expected interactive priority, got \(wrapped.priority)")
+            return
+        }
+    }
+
+    /// A file job's segments must wait behind dictation: the same lane, background priority.
+    @Test func fileTranscriberUsesBackgroundPriority() async throws {
+        let models = StubModelManager()
+        models.resolvedFiles["base"] = [.ggml: URL(fileURLWithPath: "/models/ggml-base.bin")]
+        let lane = TranscriptionLane()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(models: models, transcriptionLane: lane))
+        model.settings.transcriptionSource = .local(modelID: "base")
+
+        let provider = try await model.backgroundTranscriberProvider()
+
+        let wrapped = try #require(provider as? LaneTranscriptionProvider)
+        #expect(wrapped.lane === lane)
+        guard case .background = wrapped.priority else {
+            Issue.record("expected background priority, got \(wrapped.priority)")
+            return
+        }
+    }
+
+    /// Concurrent remote requests are fine, so an endpoint provider is handed out unwrapped.
+    @Test func anEndpointSourceIsNotWrapped() async throws {
+        let endpoint = Endpoint(name: "Test", kind: .openAICompatible,
+                                baseURL: URL(string: "https://example.test")!)
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake())
+        model.settings.endpoints = [endpoint]
+        model.settings.transcriptionSource = .endpoint(id: endpoint.id, model: "whisper-1")
+
+        let provider = try await model.transcriberProvider()
+
+        #expect(!(provider is LaneTranscriptionProvider))
+    }
+
+    /// No job can be running at launch, so an `inProgress` row is a job the app did not
+    /// finish; `start()` repairs it before anything else can begin a job.
+    @Test func startMarksAbandonedTranscriptsIncomplete() async throws {
+        let store = FakeTranscriptStore()
+        let id = await store.create(sourceKind: .file, title: "interrupted.m4a",
+                                    sourceBookmark: nil, duration: nil,
+                                    run: TranscriptionRun.from(.local(modelID: "base"),
+                                                               language: nil),
+                                    at: Date())
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(transcriptStore: store))
+
+        model.start()
+
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if await store.snapshot(id)?.header.status == .incomplete { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        let marked = try #require(await store.snapshot(id))
+        #expect(marked.header.status == .incomplete)
+        #expect(marked.header.statusReason == TranscriptLibraryController.abandonedJobReason)
+    }
 }

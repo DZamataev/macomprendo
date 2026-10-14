@@ -54,6 +54,9 @@ final class AppModel: ObservableObject {
     let history: DictationHistoryController
     let dictation: DictationController
     let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
+    /// The file jobs' provider: the same closure as `transcriberProvider`, waiting on the
+    /// local-model lane at background priority so a dictation overtakes it.
+    let backgroundTranscriberProvider: @Sendable () async throws -> any TranscriptionProvider
     private(set) var textFeatures: TextFeatures?
     lazy var dockIcon = DockIconCoordinator(policy: env.activationPolicy)
     lazy var modelsViewModel = ModelsViewModel(models: env.models)
@@ -78,6 +81,39 @@ final class AppModel: ObservableObject {
     lazy var microphonePickerModel = MicrophonePickerModel(holder: self,
                                                            devices: env.audioInputDevices)
     lazy var savedAudioModel = SavedAudioModel(history: history, revealer: env.fileRevealer)
+    /// File transcription's controllers, wired to the environment's services. Every closure
+    /// reads the current settings, glossary and readiness, so a job started after a settings
+    /// change sees the new values.
+    lazy var fileTranscription = FileTranscriptionController(
+        store: env.transcriptStore,
+        bookmarks: env.fileBookmarks,
+        pipeline: { [unowned self] in
+            LongAudioPipeline(decoder: env.mediaDecoder,
+                              segmenter: env.speechSegmenter,
+                              transcriber: self.backgroundTranscriberProvider,
+                              language: self.settings.transcriptionLanguage)
+        },
+        settings: { [unowned self] in self.settings },
+        glossary: { [unowned self] in self.glossary },
+        readiness: { [unowned self] in self.dictationTabModel.readiness },
+        transcriptsChanged: { [weak self] in
+            Task { await self?.transcriptLibrary.reload() }
+        })
+    lazy var transcriptLibrary = TranscriptLibraryController(store: env.transcriptStore,
+                                                             pasteboard: env.pasteboard)
+    lazy var transcriptSummary = TranscriptSummaryController(
+        store: env.transcriptStore,
+        llm: { [unowned self] in try self.llmTarget(for: .summarize) },
+        preset: { [unowned self] in
+            self.settings.defaultPreset(for: .summarize,
+                                        language: self.settings.promptLanguage)
+        },
+        language: { RefineController.uiLanguageName() },
+        chosenLanguage: { [unowned self] in
+            self.settings.translationTarget.resolvedName(
+                promptLanguage: self.settings.promptLanguage,
+                systemLanguageCode: TranslationTarget.currentSystemLanguageCode)
+        })
     /// The About window's content, owned here so the view never constructs a service
     /// (invariant 1). Not actually deferred to first open: SwiftUI evaluates every `Scene`'s
     /// content `ViewBuilder` — including this one's `AboutView(model: model.aboutModel)` —
@@ -109,6 +145,7 @@ final class AppModel: ObservableObject {
     private var hotkeyTask: Task<Void, Never>?
     private var middleMouseTask: Task<Void, Never>?
     private var historyMaintenanceTask: Task<Void, Never>?
+    private var transcriptMaintenanceTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
 
     init(store: any SettingsPersisting,
@@ -162,31 +199,44 @@ final class AppModel: ObservableObject {
         let factory = env.factory
         let models = env.models
         let localTranscriptionCache = env.localTranscriptionCache
-        let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider = {
-            let settings = snapshot.current
-            let options = WhisperOptions(threads: settings.whisperThreads,
-                                         translate: settings.whisperTranslate)
-            let configuration = LocalTranscriptionProviderCache.Configuration(
-                source: settings.transcriptionSource,
-                whisper: options)
-            do {
-                let candidate = try await factory.transcriber(
-                    for: settings.transcriptionSource,
-                    endpoints: settings.endpoints,
-                    models: models,
+        let lane = env.transcriptionLane
+        func makeTranscriberProvider(
+            _ priority: TranscriptionLane.Priority
+        ) -> @Sendable () async throws -> any TranscriptionProvider {
+            {
+                let settings = snapshot.current
+                let options = WhisperOptions(threads: settings.whisperThreads,
+                                             translate: settings.whisperTranslate)
+                let configuration = LocalTranscriptionProviderCache.Configuration(
+                    source: settings.transcriptionSource,
                     whisper: options)
-                guard case .local = settings.transcriptionSource else { return candidate }
-                return await localTranscriptionCache.provider(
-                    candidate,
-                    configuration: configuration)
-            } catch {
-                if case .local = settings.transcriptionSource {
-                    await localTranscriptionCache.removeAll(ifMatching: configuration)
+                do {
+                    let candidate = try await factory.transcriber(
+                        for: settings.transcriptionSource,
+                        endpoints: settings.endpoints,
+                        models: models,
+                        whisper: options)
+                    // Concurrent remote requests are fine, so only the one local speech
+                    // context goes through the lane: dictation at `.interactive`, file jobs
+                    // at `.background`, so a hotkey press overtakes a file already queueing
+                    // segments.
+                    guard case .local = settings.transcriptionSource else { return candidate }
+                    let cached = await localTranscriptionCache.provider(
+                        candidate,
+                        configuration: configuration)
+                    return LaneTranscriptionProvider(base: cached, lane: lane,
+                                                     priority: priority)
+                } catch {
+                    if case .local = settings.transcriptionSource {
+                        await localTranscriptionCache.removeAll(ifMatching: configuration)
+                    }
+                    throw error
                 }
-                throw error
             }
         }
+        let transcriberProvider = makeTranscriberProvider(.interactive)
         self.transcriberProvider = transcriberProvider
+        self.backgroundTranscriberProvider = makeTranscriberProvider(.background)
 
         dictation = DictationController(recorder: env.recorder,
                                         transcriberProvider: transcriberProvider,
@@ -232,6 +282,13 @@ final class AppModel: ObservableObject {
 
     /// Called once at launch: applies hotkey enablement and starts routing hotkey events.
     func start() {
+        // Before anything else can start a job: no job can be running at launch, so every
+        // `inProgress` transcript belongs to a job the app did not finish.
+        if transcriptMaintenanceTask == nil {
+            transcriptMaintenanceTask = Task { [weak self] in
+                await self?.transcriptLibrary.performLaunchMaintenance()
+            }
+        }
         if settings.glossaryEnabled {
             Task { [weak self] in await self?.refreshGlossary() }
         }

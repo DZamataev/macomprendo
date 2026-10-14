@@ -58,6 +58,16 @@ import Testing
         #expect(policy.calls == [true, false])
     }
 
+    @Test func transcriptsKeepsDockVisibleUntilTheLastWindowCloses() {
+        let (coordinator, policy) = make()
+        coordinator.open(.settings)
+        coordinator.open(.transcripts)
+        coordinator.close(.settings)
+        #expect(policy.calls == [true])
+        coordinator.close(.transcripts)
+        #expect(policy.calls == [true, false])
+    }
+
     @Test func openingTheSameOwnerTwiceCallsThePolicyOnce() {
         let (coordinator, policy) = make()
         coordinator.open(.settings)
