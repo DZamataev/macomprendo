@@ -67,6 +67,7 @@ import Foundation
     /// Starts a job for `url`, cancelling any job already running. A backend that is not ready
     /// fails before any decoding starts and creates no row.
     func transcribe(fileAt url: URL) {
+        guard !isShuttingDown else { return }
         let previous = supersede()
         switch readiness() {
         case .ready:
@@ -79,6 +80,7 @@ import Foundation
     /// Continues an `incomplete` transcript from the end of its last stored segment, cancelling
     /// any job already running.
     func resume(transcriptID: Int64) {
+        guard !isShuttingDown else { return }
         let previous = supersede()
         start(.resume(transcriptID: transcriptID, fileAt: nil), after: previous)
     }
@@ -88,6 +90,7 @@ import Foundation
     /// the bookmark no longer resolves. A fresh bookmark for `url` replaces the stale one,
     /// so the next `Resume` finds the file again.
     func resume(transcriptID: Int64, fileAt url: URL) {
+        guard !isShuttingDown else { return }
         let previous = supersede()
         start(.resume(transcriptID: transcriptID, fileAt: url), after: previous)
     }

@@ -408,6 +408,52 @@ import Testing
         #expect(box.provider == nil)
     }
 
+    /// The quit path is one-way: once `shutdown()` has begun, `transcribe` must not start a job.
+    /// A job started after it would build the provider the quit path exists to release, and its
+    /// row would be left behind by a launch maintenance that already ran.
+    @Test func noJobStartsOnceTheAppIsQuitting() async {
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 10,
+                                                        chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]]))
+
+        await rig.controller.shutdown()
+        rig.controller.transcribe(fileAt: Self.fileURL)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .idle)
+        #expect(rig.decoder.requests.isEmpty)
+        let createCount = await rig.store.createCount
+        #expect(createCount == 0)
+    }
+
+    /// The same for both `resume` entry points: quitting must not reopen a stored transcript.
+    @Test func noResumeStartsOnceTheAppIsQuitting() async throws {
+        let path = "/files/meeting.m4a"
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 60,
+                                                        chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]]))
+        let id = await rig.store.create(sourceKind: .file, title: "meeting.m4a",
+                                        sourceBookmark: Data(path.utf8), duration: 60,
+                                        run: TranscriptionRun.from(rig.settings.value.transcriptionSource,
+                                                                   language: nil),
+                                        at: Self.fixedNow)
+        try await rig.store.appendSegment(TranscriptSegment(start: 0, end: 12, text: "earlier"),
+                                          to: id)
+        try await rig.store.setStatus(.incomplete, reason: "Cancelled.", for: id)
+
+        await rig.controller.shutdown()
+        rig.controller.resume(transcriptID: id)
+        rig.controller.resume(transcriptID: id, fileAt: URL(fileURLWithPath: path))
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .idle)
+        #expect(rig.decoder.requests.isEmpty)
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == "Cancelled.")
+        #expect(stored?.segments.map(\.text) == ["earlier"])
+    }
+
     // MARK: - Resume
 
     @Test func resumeContinuesFromTheLastSegmentEnd() async throws {
