@@ -121,7 +121,9 @@ struct GlossaryStoreTests {
         #expect(text == """
         # pack: mine
         # One term per line, in the spelling you want pasted.
-        # `term = форма, форма` also rewrites those Cyrillic forms to the term.
+        # `term = форма, форма` rewrites each listed form, matched whole, to the term.
+        # List every ending you want caught. A form that is also an ordinary word
+        # (`под`, `метро`) is rewritten everywhere — prefer a longer form (`под инсталл`).
 
         """)
         let pack = try #require(await store.reload().packs.first { $0.name == "mine" })

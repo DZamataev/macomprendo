@@ -25,7 +25,7 @@ gofmt
 golangci-lint
 go mod tidy
 go.mod
-TextEditor = текст-эдитор, текстэдитор
+pod install = под инсталл
 ```
 
 The rules, in full:
@@ -37,9 +37,16 @@ The rules, in full:
 - **Blank lines are ignored.**
 - **Surrounding whitespace is trimmed, interior whitespace is not.** `  go.mod  ` is the
   term `go.mod`; `git rebase` is one two-word term, not two terms.
-- **`term = форма, форма` adds Cyrillic forms** for the same term, comma-separated. The
-  app parses and stores them today; rewriting from them is a later feature, so listing
-  them costs nothing and prepares for it.
+- **`term = форма, форма` rewrites those forms to the term.** Use it for what the recogniser
+  writes by ear: `pytest = пайтест`, `handoff = хенд-офф`. The term may be Cyrillic too, for a
+  garbled Russian word: `ранбуке = рамбуке`.
+  - **A form matches whole**, ignoring case, spaces, hyphens and `ё`/`е` — `текст-эдитор`
+    also catches `Текст эдитор`. It never matches part of a word: `вебпак` does not catch
+    `вебпака`. List every ending you want caught: `webpack = вебпак, вебпака, вебпаком`.
+  - **The ending is dropped**: `с вебпаком` becomes `с webpack`, as the recogniser itself
+    usually writes it.
+  - **A form that is also an ordinary word is rewritten everywhere.** `pod = под` turns
+    `под диваном` into `pod диваном`. Prefer a longer form: `pod install = под инсталл`.
 - **A duplicate term keeps its first occurrence.** The second line is dropped silently.
 - **A malformed line is skipped, not fatal.** A line with an `=` and an empty side —
   `= текст` or `TextEditor =` — is dropped and counted; the rest of the pack still works.

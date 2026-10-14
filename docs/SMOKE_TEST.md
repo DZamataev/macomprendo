@@ -200,6 +200,13 @@ referred to below as **the Vocabulary folder**.
       (dotted, lower-case), which is how they are spelled in `typescript.txt`. Turn the master
       switch off, dictate the same sentence: the transcript is pasted as the recogniser wrote
       it, uncorrected.
+- [ ] **A replacement rule rewrites a listed form.** Create a pack `smoke-forms` holding
+      `pytest = пайтест, пайтеста` and `pod install = под инсталл`, enable it, and dictate into
+      TextEdit, pausing between words: «Пайтест. Без пайтеста не заметил. Сделал под инсталл, кот
+      под диваном.» If the recogniser writes those words in Cyrillic, the pasted text reads
+      `Pytest.`, `Без pytest`, `pod install` — and `под диваном` is untouched. If it writes them
+      in Latin, normalisation handles them and the check is inconclusive: repeat inside a longer
+      Russian sentence. Delete the pack afterwards.
 - [ ] **The original transcript is kept beside the corrected one.** With dictation history on
       and a correction made as above, the History window shows the corrected text (nothing in
       the UI renders the raw form today). Verify the raw text was stored by querying the

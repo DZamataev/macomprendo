@@ -52,8 +52,8 @@ directory; a pack is enabled by listing its name in `packs.json`, beside the pac
 _Avoid_: group, category, preset, collection
 
 **Replacement rule**:
-A term that also lists the Cyrillic forms a recogniser produces for it, so they can be rewritten
-to the canonical spelling after transcription.
+A term that also lists other spellings the recogniser writes for it — usually by ear, in
+Cyrillic — each rewritten to the canonical spelling when matched whole.
 _Avoid_: substitution, find-and-replace, correction
 
 **Normalisation**:

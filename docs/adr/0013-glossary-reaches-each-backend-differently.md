@@ -56,10 +56,12 @@ user put it there.
 | sherpa offline CTC (GigaAM Multilingual) | none |
 | OpenAI-compatible endpoint | multipart `prompt` |
 
-**3. Cyrillic replacement rules**, the `TextEditor = текст-эдитор` form, last — 9 % of failures,
-and the only mechanism needing hand-written forms per term. It matches on a stem of at least four
-characters plus up to three characters of inflection, because Russian inflects
-(`текст-эдиторе`, `текст-эдитора`).
+**3. Replacement rules**, the `pytest = пайтест` form, last. *Amended 2026-09-28:* forms are
+matched **whole**, not by stem. The corpus in
+`docs/superpowers/specs/2026-09-28-cyrillic-forms-control-dictation.md` showed a four-character
+stem plus inflection rewriting `редиску`, `реакцию` and `реактор` in a single paragraph, and
+showed the model itself dropping the ending in 8 of 12 inflected mentions — so every wanted
+ending is listed, and a match becomes the bare term.
 
 A single "use the glossary" switch controls all three. Which biasing mechanism is active is a
 property of the selected model, displayed on the Dictation tab, not a user choice.
