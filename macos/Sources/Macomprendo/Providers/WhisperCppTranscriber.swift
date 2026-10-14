@@ -150,6 +150,17 @@ actor WhisperCppTranscriber: TranscriptionProvider {
         return WhisperTextAssembler.join(segments)
     }
 
+    /// Frees the native context now instead of waiting for this transcriber to be deallocated.
+    /// The real-recording test uses it to prove the context is gone before the process exits
+    /// (whisper.cpp v1.9.2 aborts in a ggml-metal static destructor when a context is still
+    /// alive there). Waits behind an in-flight `transcribe` like any other isolated call, so it
+    /// can never free a context `whisper_full` is using. The app itself relies on
+    /// `LocalTranscriptionProviderCache.removeAll()` dropping the last reference, which reaches
+    /// the same `whisper_free` through `WhisperContextBox`'s `deinit`.
+    func release() {
+        contextBox = nil
+    }
+
     private func loadedContext() throws -> OpaquePointer {
         if let contextBox { return contextBox.pointer }
 

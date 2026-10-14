@@ -44,23 +44,29 @@ import Testing
         let fixture = try #require(Self.fixtureURL)
         let expectations = try #require(Self.expectURL)
 
-        let pipeline = LongAudioPipeline(decoder: AVAssetMediaDecoder(),
-                                         segmenter: SherpaSileroSegmenter(),
-                                         transcriber: {
-                                             WhisperCppTranscriber(modelURL: Self.modelURL)
-                                         },
-                                         language: Self.language)
+        let transcriber = WhisperCppTranscriber(modelURL: Self.modelURL)
         var segments: [(start: TimeInterval, end: TimeInterval, text: String)] = []
-        for try await event in pipeline.run(fixture, from: 0) {
-            if case .segment(let start, let end, let text) = event {
-                segments.append((start, end, text))
+        do {
+            let pipeline = LongAudioPipeline(decoder: AVAssetMediaDecoder(),
+                                             segmenter: SherpaSileroSegmenter(),
+                                             transcriber: { transcriber },
+                                             language: Self.language)
+            for try await event in pipeline.run(fixture, from: 0) {
+                if case .segment(let start, let end, let text) = event {
+                    segments.append((start, end, text))
+                }
             }
+            // The stream is over, but its producing task is not necessarily — it holds the
+            // transcriber, and with it the whisper context, until it ends. Wait for it rather
+            // than sleeping and hoping.
+            await pipeline.awaitCompletion()
         }
-        // The stream is finished, but its task may still hold the transcriber. whisper.cpp v1.9.2
-        // asserts in a Metal static destructor when the context is still alive as swift-testing
-        // calls exit() — a pre-existing teardown issue, not something this test adds. Give the
-        // task a moment to release it so the process exits cleanly.
-        try await Task.sleep(for: .seconds(2))
+        // The pipeline's reference to the transcriber is dropped with the scope above; free the
+        // context explicitly rather than relying on this object's deallocation timing.
+        // whisper.cpp v1.9.2 asserts in a ggml-metal static destructor when a whisper context
+        // is still alive as swift-testing calls exit() — a pre-existing teardown issue, not
+        // something this test adds.
+        await transcriber.release()
 
         // Both sides are normalised the way a human comparing them would: case, `ё`→`е`,
         // punctuation dropped, whitespace collapsed.

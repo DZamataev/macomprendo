@@ -329,6 +329,85 @@ import Testing
         #expect(rig.controller.state == .idle)
     }
 
+    /// Waits for the job's row to be settled in the store. The controller's `state` is *not* a
+    /// signal here: with the pipeline running ahead of the consumer it still reads `.idle`
+    /// before the job's first event has been processed, so it can look "settled" before the job
+    /// has even started.
+    private func waitForSettle(in store: FakeTranscriptStore) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if await store.snapshot(1)?.header.status == .incomplete { return }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        Issue.record("Timed out waiting for the transcript row to settle")
+    }
+
+    // MARK: - Quitting
+
+    /// Quitting mid-job: the job is cancelled *and awaited*, and its row reads exactly as if
+    /// the app had been killed — the reason launch maintenance writes — so `Resume` offers the
+    /// same continuation.
+    @Test func shutdownStopsTheJobAndMarksTheRowAsQuit() async {
+        let gate = AsyncGate()
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 10,
+                                                        chunks: [Self.chunk(seconds: 2)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0),
+                                                                       Self.segment(start: 5)]]))
+        rig.provider.gate = gate
+
+        rig.controller.transcribe(fileAt: Self.fileURL)
+        await waitFor("the first segment to reach the provider") { gate.waiterCount == 1 }
+
+        let shutdown = Task { await rig.controller.shutdown() }
+        // The bookkeeping lands while the producing task is still inside the provider…
+        await waitForSettle(in: rig.store)
+
+        gate.open()
+        await shutdown.value
+
+        #expect(rig.controller.state == .idle)
+        let stored = await rig.store.snapshot(1)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == TranscriptLibraryController.abandonedJobReason)
+        #expect(stored?.segments.isEmpty == true)
+        // The provider is no longer in use: the chunk's second segment never reached it.
+        #expect(rig.provider.received.count == 1)
+    }
+
+    /// The pipeline's producing task holds the provider — and, with it, the local model's
+    /// native whisper context — until it ends. `shutdown()` waits for that end, so by the time
+    /// it returns the job's own reference is gone and `LocalTranscriptionProviderCache`'s
+    /// `removeAll()` (which `AppModel.shutdown()` calls next) can free the context before the
+    /// process exits.
+    @Test func shutdownReleasesTheJobsReferenceToTheProvider() async {
+        let gate = AsyncGate()
+        let box = WeakProviderBox()
+        let decoder = ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)])
+        let segmenter = ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]])
+        // The provider exists only inside this closure: the weak box is the one way to see it
+        // deallocate, which makes it the proof that nothing on the job's side still holds it.
+        let pipeline = LongAudioPipeline(decoder: decoder, segmenter: segmenter,
+                                         transcriber: {
+                                             let provider = FakeTranscriptionProvider()
+                                             provider.gate = gate
+                                             box.provider = provider
+                                             return provider
+                                         },
+                                         language: nil, sleep: { _ in })
+        let rig = makeRig(decoder: decoder, segmenter: segmenter,
+                          pipelines: PipelineScript([pipeline]))
+
+        rig.controller.transcribe(fileAt: Self.fileURL)
+        await waitFor("the segment to reach the provider") { gate.waiterCount == 1 }
+
+        let shutdown = Task { await rig.controller.shutdown() }
+        await waitForSettle(in: rig.store)
+        gate.open()
+        await shutdown.value
+
+        #expect(box.provider == nil)
+    }
+
     // MARK: - Resume
 
     @Test func resumeContinuesFromTheLastSegmentEnd() async throws {
@@ -598,4 +677,10 @@ extension FakeTranscriptStore {
     /// Arms the next `appendSegment` to fail. The property is actor-isolated, so a test cannot
     /// assign it from outside the actor.
     func failNextAppendOnce(_ error: MacomprendoError) { failNextAppend = error }
+}
+
+/// Holds a weak reference to a provider a test cannot hold strongly — the provider lives only
+/// inside a pipeline's `transcriber` closure — so its deallocation is observable.
+private final class WeakProviderBox: @unchecked Sendable {
+    weak var provider: FakeTranscriptionProvider?
 }

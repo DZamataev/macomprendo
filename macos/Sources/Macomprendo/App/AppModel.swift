@@ -347,7 +347,24 @@ final class AppModel: ObservableObject {
     }
 
     /// Releases native local-ASR contexts before application termination is allowed to finish.
+    ///
+    /// Order matters: the running file job is stopped and awaited first, so the pipeline task
+    /// that holds the cached provider — and, with it, the whisper context — has released it
+    /// before the cache drops the model. An in-flight dictation is stopped the same way, for
+    /// the same reason: a context still alive at process exit aborts in whisper.cpp v1.9.2's
+    /// ggml-metal static destructor, and quitting mid-job must be a clean quit.
     func shutdown() async {
+        await fileTranscription.shutdown()
+        switch dictation.state {
+        case .recording, .transcribing, .inserting:
+            // `cancel()` clears `activeTask`, so hold onto it first to be able to wait for the
+            // transcription call it may still be inside.
+            let task = dictation.activeTask
+            dictation.cancel()
+            await task?.value
+        case .idle, .failed:
+            break
+        }
         env.localTranscriptionCache.removeAll()
     }
 
