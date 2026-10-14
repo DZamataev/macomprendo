@@ -299,6 +299,36 @@ import Testing
         #expect(rig.changes.value == 0)
     }
 
+    @Test func aJobCancelledWhileQueuedNeverOpensTheFile() async {
+        let gate = AsyncGate()
+        let firstProvider = FakeTranscriptionProvider()
+        firstProvider.gate = gate
+        let firstDecoder = ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)])
+        let secondDecoder = ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)])
+        let first = Self.pipeline(decoder: firstDecoder,
+                                  segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]]),
+                                  provider: firstProvider)
+        let second = Self.pipeline(decoder: secondDecoder,
+                                   segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]]),
+                                   provider: FakeTranscriptionProvider())
+        let rig = makeRig(decoder: secondDecoder, segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([first, second]))
+
+        rig.controller.transcribe(fileAt: URL(fileURLWithPath: "/files/first.mp3"))
+        await waitFor("the first job to reach the provider") { gate.waiterCount == 1 }
+
+        // The second job supersedes the first and queues behind it (its task awaits the first's
+        // settlement); cancel it before the first job has settled.
+        rig.controller.transcribe(fileAt: URL(fileURLWithPath: "/files/second.mp3"))
+        rig.controller.cancel()
+
+        gate.open()
+        await rig.controller.drain()
+
+        #expect(secondDecoder.requests.isEmpty)
+        #expect(rig.controller.state == .idle)
+    }
+
     // MARK: - Resume
 
     @Test func resumeContinuesFromTheLastSegmentEnd() async throws {
@@ -364,6 +394,32 @@ import Testing
 
         #expect(rig.controller.state == .failed(
             message: ErrorText.describe(MacomprendoError.sourceFileUnavailable), transcriptID: id))
+        #expect(rig.decoder.requests.isEmpty)
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == "Cancelled.")
+    }
+
+    @Test func resumeWithABackendThatIsNotReadyFailsWithoutTouchingTheRow() async throws {
+        let path = "/files/meeting.m4a"
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 60,
+                                                        chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(),
+                          readiness: { .notReady(reason: "This model has not been downloaded yet.",
+                                                 fix: .download(modelID: "large-v3-turbo")) })
+
+        let id = await rig.store.create(sourceKind: .file, title: "meeting.m4a",
+                                        sourceBookmark: Data(path.utf8), duration: 60,
+                                        run: TranscriptionRun.from(rig.settings.value.transcriptionSource,
+                                                                   language: nil),
+                                        at: Self.fixedNow)
+        try await rig.store.setStatus(.incomplete, reason: "Cancelled.", for: id)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .failed(message: "This model has not been downloaded yet.",
+                                                transcriptID: id))
         #expect(rig.decoder.requests.isEmpty)
         let stored = await rig.store.snapshot(id)
         #expect(stored?.header.status == .incomplete)

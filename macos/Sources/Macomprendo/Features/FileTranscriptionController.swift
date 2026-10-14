@@ -115,6 +115,12 @@ import Foundation
         var marked = false
         do {
             try Task.checkCancellation()
+            // `Resume` is a job like any other: a backend that is not ready fails it with the
+            // backend's reason before its row is touched, exactly as a fresh `transcribe` does.
+            if case let .notReady(reason, _) = readiness() {
+                fail(reason, transcriptID: id, generation: generation)
+                return
+            }
             guard let transcript = try await store.transcript(id: id) else {
                 fail(ErrorText.describe(MacomprendoError.transcriptStore(
                         "no transcript has identifier \(id)")),
@@ -157,6 +163,9 @@ import Foundation
         var duration: TimeInterval = 0
         var storedSegments = 0
         do {
+            // A job cancelled while it waited behind a superseded one must not even open the
+            // file: decoding starts only once this check has passed.
+            try Task.checkCancellation()
             // Best effort: a file that cannot be bookmarked still transcribes — only `Resume`
             // then loses its way back to the source.
             let bookmark = resuming == nil ? try? bookmarks.bookmark(for: url) : nil
