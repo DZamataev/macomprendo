@@ -256,6 +256,44 @@ import Testing
                 "retained \(maxRetained) samples, bound \(assembler.retentionBound)")
     }
 
+    /// A completed region does not switch the cap off. While the detector reports speech behind
+    /// an open span that a region already backs and no further region completes — speech over
+    /// music, the case this task exists for — the span is still cut at the cap and its pieces are
+    /// emitted during the run; otherwise the buffer would hold the whole recording.
+    @Test func aRegionBackedSpanIsStillCutAtTheCapWhileSpeechContinues() {
+        let assembler = SpeechSpanAssembler(sampleRate: rate)
+        var emitted: [SpeechSegment] = []
+        var maxRetained = 0
+
+        // One completed region [0, 20 s], then 580 s the detector reports as speech and never
+        // closes a region for.
+        emitted += assembler.accept(samples: loud(20), regions: [region(0, 20)],
+                                    speechInProgress: true)
+        maxRetained = max(maxRetained, assembler.retainedSampleCount)
+        for _ in 0..<580 {
+            emitted += assembler.accept(samples: loud(1), regions: [], speechInProgress: true)
+            maxRetained = max(maxRetained, assembler.retainedSampleCount)
+        }
+        let emittedBeforeFinish = emitted.count
+        emitted += assembler.accept(samples: [], regions: [], speechInProgress: false)
+        emitted += assembler.finish()
+
+        #expect(emittedBeforeFinish > 0,
+                "pieces must be emitted while the region-backed span is still open")
+        #expect(emitted.allSatisfy { $0.duration <= SpeechSegmentSplitter.maximumDuration })
+        for (previous, next) in zip(emitted, emitted.dropFirst()) {
+            #expect(abs(previous.end - next.start) < 1e-9)
+        }
+        let emittedSamples = emitted.map(\.samples.count).reduce(0, +)
+        let spanSamples = 600 * rate
+        // Every sample is conserved except the sub-minimum tail the drop rule takes.
+        #expect(spanSamples - emittedSamples < Int(SpeechSegmentSplitter.minimumDuration * Double(rate)))
+        // The bound is only meaningful if the workload really did fill the buffer.
+        #expect(maxRetained > Int(28 * rate), "retained \(maxRetained) samples — buffer never grew")
+        #expect(maxRetained <= assembler.retentionBound,
+                "retained \(maxRetained) samples, bound \(assembler.retentionBound)")
+    }
+
     /// A piece under the 0.3 s floor never reaches the recogniser: neither a remainder behind a
     /// cap cut nor a span the stream end clamps short.
     @Test func aSubMinimumRemainderIsDropped() throws {

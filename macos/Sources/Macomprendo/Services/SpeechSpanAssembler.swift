@@ -19,19 +19,20 @@ import Foundation
 ///   `finish()`;
 /// - a span longer than `SpeechSegmentSplitter.maximumDuration` is cut early at the quietest frame
 ///   of the last `SpeechSegmentSplitter.searchWindow` seconds before the cap, keeping only the
-///   remainder open. A run the detector is still reporting is a *provisional span*, cut the same
-///   way, so a region the detector never closes (speech over music) cannot grow the buffer either;
-///   when its region finally arrives the span continues after what was already handed out — no
-///   overlap, no gap. Pieces shorter than `SpeechSegmentSplitter.minimumDuration` are dropped.
+///   remainder open. Every open span is cut, whether a completed region backs it or the detector is
+///   still reporting it (a *provisional* span), so a region the detector never closes (speech over
+///   music) cannot grow the buffer either; when its region finally arrives the span continues after
+///   what was already handed out — no overlap, no gap. Pieces shorter than
+///   `SpeechSegmentSplitter.minimumDuration` are dropped.
 ///
-/// Memory bound: while a region is still being reported the buffer holds the provisional span's
-/// remainder (under one `maximumDuration` after a cut) plus the lookback — at most
-/// `retentionBound` ≈ 36 s at 16 kHz. Once a completed region backs the span it additionally
-/// holds the join gap and the one region the detector is still accumulating: just over 50 s for
-/// the 20 s regions with 1 s gaps of the memory-bound test, because a remainder close to the cap
-/// can meet a whole next region. The sherpa detector keeps its own copy of the open region (a
-/// 60 s circular buffer), so the process holds roughly that much again; `retainedSampleCount`
-/// exposes the assembler's copy so a test can assert it directly.
+/// Memory bound: while the detector is inside speech the open span is cut at the cap from `accept`,
+/// whatever backs it, so `retainedSampleCount` never exceeds `retentionBound` = one
+/// `maximumDuration` + the splitter's search window + the lookback ≈ 36 s at 16 kHz (plus at most
+/// one chunk of overshoot); a span stays open for at most `joinGap` past its end, so no more than
+/// that of silence is retained on top. The sherpa detector keeps its own copy of the open region:
+/// v1.13.4's `CircularBuffer::Push` *doubles* its capacity when it overflows ("No data loss!"), so
+/// that copy grows with the region and the app cannot bound it without resetting the detector.
+/// `retainedSampleCount` exposes the assembler's copy so a test can assert it directly.
 final class SpeechSpanAssembler {
     /// A completed VAD region, in samples from the start of the stream.
     struct Region: Equatable, Sendable {
@@ -48,10 +49,10 @@ final class SpeechSpanAssembler {
     /// start they let sherpa backdate (see `lookbackSamples`).
     static let detectorWindowSize = 512
     static let detectorMinSpeechDuration: TimeInterval = 0.25
-    /// Samples kept while no span is open and the detector is not inside speech: enough for the
-    /// next region's leading padding *and* its backdated start (`lookbackSamples`, under 1 s at
-    /// 16 kHz), plus the chunk that reports it. A region starting further back could only exist
-    /// if the detector was inside speech while its audio streamed, which is the other branch.
+    /// Samples kept while no span is open: enough for the next region's leading padding *and* its
+    /// backdated start (`lookbackSamples`, under 1 s at 16 kHz), plus the chunk that reports it. A
+    /// region starting further back could only exist if the detector was inside speech while its
+    /// audio streamed — which is the branch that opens a span, so nothing older is needed.
     static let idleRetention: TimeInterval = 1
 
     private let sampleRate: Int
@@ -65,7 +66,9 @@ final class SpeechSpanAssembler {
     /// How far sherpa v1.13.4 can backdate a region's start behind the chunk in which `Detected`
     /// first turns true: `start = max(Tail − 2·WindowSize − MinSpeechDurationSamples, Head)` at
     /// the first window the model calls speech (`voice-activity-detector.cc`, `AcceptWaveform`),
-    /// i.e. `2 · detectorWindowSize + detectorMinSpeechDuration` samples ≈ 0.31 s at 16 kHz.
+    /// i.e. `2 · detectorWindowSize + detectorMinSpeechDuration` samples — 5,024 samples (≈ 0.31 s)
+    /// with the bundled v4 model, whose `window_overlap` is 0, and with these constants, which the
+    /// session configures the model from.
     private let backdateSamples: Int
     /// Audio kept behind the current speech run: the leading padding plus `backdateSamples`.
     private let lookbackSamples: Int
@@ -82,12 +85,13 @@ final class SpeechSpanAssembler {
     private struct Span {
         /// Where the next piece begins: the padded span start at first, a cut point after a cut.
         var startSample: Int
-        /// End of the last completed region in the span, in stream samples; the live edge while
-        /// the span is provisional.
+        /// End of the last completed region in the span, in stream samples. While the detector is
+        /// inside speech it is the span's live edge — the position the stream has reached — so the
+        /// audio of a region that is still being accumulated belongs to the span and can be cut.
         var endSample: Int
-        /// True while the span is a run the detector is still reporting and no completed region
-        /// has arrived for it yet. Provisional spans are cut at the cap from `accept` so such a
-        /// run cannot grow the buffer; a completed region turns the span into a region-backed one.
+        /// True while no completed region has arrived for the span's run yet. It only decides the
+        /// span's start when the region does arrive (`apply` drops the lookback the run needed);
+        /// the cap cut applies to every open span.
         var provisional: Bool
     }
 
@@ -108,8 +112,8 @@ final class SpeechSpanAssembler {
     /// Samples currently held for spans that are not finished yet.
     var retainedSampleCount: Int { buffer.count }
 
-    /// The stated bound on `retainedSampleCount` while a region is still being reported (see the
-    /// class doc): one span, the splitter's search window and the lookback.
+    /// The stated bound on `retainedSampleCount` while a span is open (see the class doc): one
+    /// span, the splitter's search window and the lookback.
     var retentionBound: Int { capSamples + windowSamples + lookbackSamples }
 
     /// Appends `samples` to the stream and applies the regions the detector completed while
@@ -127,18 +131,18 @@ final class SpeechSpanAssembler {
         }
         if speechInProgress {
             if speechRunStart == nil { speechRunStart = previousTotal }
-            // A run the detector is reporting and has not closed: a provisional span. It is cut
-            // at the cap like any other, so a region that never closes cannot grow the buffer.
             if openSpan == nil, let runStart = speechRunStart {
                 openSpan = Span(startSample: max(bufferStart, runStart - lookbackSamples),
                                 endSample: totalSamples,
                                 provisional: true)
-            } else if openSpan?.provisional == true {
+            } else {
+                // The detector is inside speech, so everything up to here belongs to the span
+                // whether or not a completed region backs it yet: this is the span's live edge. A
+                // region the detector never closes (speech over music) would otherwise keep the
+                // buffer growing — the cap cut below is not limited to a provisional span.
                 openSpan?.endSample = totalSamples
             }
-            if openSpan?.provisional == true {
-                segments += cutToCap()
-            }
+            segments += cutToCap()
         } else {
             if let span = openSpan, totalSamples > span.endSample + joinGapSamples {
                 segments += flush(span)
@@ -241,15 +245,12 @@ final class SpeechSpanAssembler {
     // MARK: - Memory
 
     /// Drops samples nothing can need any more: while a span is open, everything before its next
-    /// piece; otherwise everything older than the current speech run's lookback (a region being
-    /// accumulated can start `backdateSamples` behind it) or a short idle tail the next region
-    /// may want padding from.
+    /// piece; otherwise a short idle tail the next region may want padding from (a region can only
+    /// start behind the stream position if the detector was inside speech, which opens a span).
     private func trim() {
         let keepFrom: Int
         if let span = openSpan {
             keepFrom = span.startSample
-        } else if let runStart = speechRunStart {
-            keepFrom = max(0, runStart - lookbackSamples)
         } else {
             keepFrom = max(0, totalSamples - idleRetentionSamples)
         }
