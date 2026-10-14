@@ -413,7 +413,7 @@ import Testing
 
         #expect(row.detailText == "1 term")
         #expect(row.warningText?.contains("1 line") == true)
-        #expect(row.warningText?.contains("1 term is") == true)
+        #expect(row.warningText?.contains("1 term or form is") == true)
     }
 
     @Test func revealAsksTheRevealerForTheVocabularyDirectory() {

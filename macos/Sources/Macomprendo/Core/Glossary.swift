@@ -52,16 +52,17 @@ struct Glossary: Sendable {
         var manualLosses = 0
 
         func insert(_ canonical: String, packName: String?) {
-            insert(canonical, spokenAs: canonical, packName: packName)
+            insert(canonical, spokenAs: canonical, packName: packName, isForm: false)
         }
 
         /// Adds `spelling` as a key for `canonical`. A form of a term is another spelling of it:
         /// a form that keys the same as its own term, or as a sibling form, is redundant rather
         /// than a lost term.
-        func insert(_ canonical: String, spokenAs spelling: String, packName: String?) {
+        func insert(_ canonical: String, spokenAs spelling: String, packName: String?,
+                    isForm: Bool) {
             let key = Self.key(for: spelling)
             guard !key.isEmpty else { return }
-            if let existing = entries[key], spelling != canonical, existing.canonical == canonical {
+            if let existing = entries[key], isForm, existing.canonical == canonical {
                 return
             }
             guard entries[key] == nil else {
@@ -80,7 +81,7 @@ struct Glossary: Sendable {
             for term in pack.terms {
                 insert(term.canonical, packName: pack.name)
                 for form in term.cyrillicForms {
-                    insert(term.canonical, spokenAs: form, packName: pack.name)
+                    insert(term.canonical, spokenAs: form, packName: pack.name, isForm: true)
                 }
             }
         }

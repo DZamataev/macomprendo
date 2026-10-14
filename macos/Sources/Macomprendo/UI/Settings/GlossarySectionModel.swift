@@ -42,8 +42,8 @@ struct GlossaryPackRow: Identifiable, Equatable, Sendable {
         }
         if inertTermCount > 0 {
             parts.append(inertTermCount == 1
-                ? "1 term is spelled differently in a pack above it and does nothing"
-                : "\(inertTermCount) terms are spelled differently in a pack above them "
+                ? "1 term or form is already claimed by an earlier entry and does nothing"
+                : "\(inertTermCount) terms or forms are already claimed by earlier entries "
                     + "and do nothing")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
