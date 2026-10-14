@@ -1,11 +1,16 @@
 import Foundation
-import SwiftUI
 
 /// The transcript library: the list of stored transcripts, the one the user has open, and the
 /// actions the list offers — reload, select, delete, copy and export.
 ///
 /// Every store failure lands in `error` as `ErrorText.describe(error)`; nothing throws to the
 /// view. Transcript text is never logged.
+///
+/// Only the newest operation may write: `reload`, `select` and `delete` each bump a generation
+/// before their first `await`, and a read that started earlier can no longer overwrite
+/// `selected`/`headers`/`error` once a newer one has begun. Without it, a slow `select(A)` that
+/// finishes after `select(B)` leaves A open, and one that finishes after `delete(A)` resurrects
+/// the deleted row.
 @MainActor
 final class TranscriptLibraryController: ObservableObject {
     /// The reason an `inProgress` row carries when launch maintenance finds it: no job can be
@@ -19,6 +24,10 @@ final class TranscriptLibraryController: ObservableObject {
     private let store: any TranscriptStoring
     private let pasteboard: any PasteboardProtocol
 
+    /// Bumped by every store-facing operation. A read writes its result only while the
+    /// generation it started with is still current.
+    private var generation = 0
+
     init(store: any TranscriptStoring, pasteboard: any PasteboardProtocol) {
         self.store = store
         self.pasteboard = pasteboard
@@ -27,39 +36,55 @@ final class TranscriptLibraryController: ObservableObject {
     /// Loads the list, newest first, and re-reads the open transcript so a segment a running
     /// job appended shows up. A selection that no longer exists is dropped.
     func reload() async {
+        generation += 1
+        let token = generation
         do {
-            headers = try await store.headers()
+            let headers = try await store.headers()
+            guard token == generation else { return }
+            self.headers = headers
             if let id = selected?.id {
-                selected = try await store.transcript(id: id)
+                let transcript = try await store.transcript(id: id)
+                guard token == generation else { return }
+                selected = transcript
             }
             error = nil
         } catch {
+            guard token == generation else { return }
             self.error = ErrorText.describe(error)
         }
     }
 
     /// Opens `id`, or clears the selection with `nil`.
     func select(_ id: Int64?) async {
+        generation += 1
+        let token = generation
         guard let id else {
             selected = nil
             return
         }
         do {
-            selected = try await store.transcript(id: id)
+            let transcript = try await store.transcript(id: id)
+            guard token == generation else { return }
+            selected = transcript
             error = nil
         } catch {
+            guard token == generation else { return }
             self.error = ErrorText.describe(error)
         }
     }
 
     /// Removes `id`. A selection on the deleted transcript is cleared.
     func delete(_ id: Int64) async {
+        generation += 1
+        let token = generation
         do {
             try await store.delete(id: id)
+            guard token == generation else { return }
             headers.removeAll { $0.id == id }
             if selected?.id == id { selected = nil }
             error = nil
         } catch {
+            guard token == generation else { return }
             self.error = ErrorText.describe(error)
         }
     }

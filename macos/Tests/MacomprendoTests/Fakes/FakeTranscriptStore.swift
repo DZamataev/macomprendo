@@ -8,6 +8,12 @@ actor FakeTranscriptStore: TranscriptStoring {
     var failNextAppend: MacomprendoError?
     /// Armed by a test to make the next read — `headers()` or `transcript(id:)` — fail once.
     var failNextRead: MacomprendoError?
+    /// Armed by a test to hold the next `transcript(id:)` read until the gate opens, then clear
+    /// itself so later reads run unblocked. The value is captured first, so the held read
+    /// delivers a snapshot taken before whatever the test does while it waits — the window in
+    /// which a stale result can land after a newer operation finished. `nil` (the default)
+    /// never waits: reads behave exactly as before.
+    var readGate: AsyncGate?
     private(set) var createCount = 0
 
     func create(sourceKind: TranscriptSourceKind, title: String, sourceBookmark: Data?,
@@ -65,9 +71,14 @@ actor FakeTranscriptStore: TranscriptStoring {
         return transcripts.values.map(\.header).sorted { $0.id > $1.id }
     }
 
-    func transcript(id: Int64) throws -> Transcript? {
+    func transcript(id: Int64) async throws -> Transcript? {
         try consumeReadFailure()
-        return transcripts[id]
+        let transcript = transcripts[id]
+        if let gate = readGate {
+            readGate = nil
+            await gate.wait()
+        }
+        return transcript
     }
 
     /// Throws and disarms `failNextRead` when a test armed it.

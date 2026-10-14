@@ -213,10 +213,64 @@ import Testing
                 == ErrorText.describe(MacomprendoError.transcriptStore("the disk is full")))
         #expect(controller.headers.isEmpty)
     }
+
+    // MARK: - Races
+
+    @Test func aStaleSelectDoesNotOverwriteANewerSelection() async throws {
+        let store = FakeTranscriptStore()
+        let first = try await self.store(store, title: "first")
+        let second = try await self.store(store, title: "second")
+        let controller = makeController(store: store)
+        let gate = AsyncGate()
+        await store.gateNextRead(on: gate)
+
+        // The first select is held inside its store read.
+        let stale = Task { await controller.select(first) }
+        await waitFor("the first select to reach the store read") { gate.waiterCount == 1 }
+
+        // A newer selection lands and completes while the first read is still in flight.
+        await controller.select(second)
+        #expect(controller.selected?.id == second)
+
+        gate.open()
+        await stale.value
+
+        // The stale read must not resurrect the older selection.
+        #expect(controller.selected?.id == second)
+    }
+
+    @Test func aStaleSelectDoesNotResurrectADeletedTranscript() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "talk.m4a")
+        let controller = makeController(store: store)
+        await controller.reload()
+        #expect(controller.headers.map(\.id) == [id])
+        let gate = AsyncGate()
+        await store.gateNextRead(on: gate)
+
+        // A select for `id` is held inside its store read.
+        let stale = Task { await controller.select(id) }
+        await waitFor("the select to reach the store read") { gate.waiterCount == 1 }
+
+        // The transcript is deleted while that read is still in flight.
+        await controller.delete(id)
+        #expect(controller.selected == nil)
+        #expect(controller.headers.isEmpty)
+
+        gate.open()
+        await stale.value
+
+        // The stale read must not resurrect the deleted row.
+        #expect(controller.selected == nil)
+    }
 }
 
 extension FakeTranscriptStore {
     /// Arms the next read (`headers()` or `transcript(id:)`) to fail. The property is
     /// actor-isolated, so a test cannot assign it from outside the actor.
     func failNextReadOnce(_ error: MacomprendoError) { failNextRead = error }
+
+    /// Arms the next `transcript(id:)` read to suspend on `gate`. The property is
+    /// actor-isolated, so a test cannot assign it from outside the actor.
+    func gateNextRead(on gate: AsyncGate) { readGate = gate }
 }
