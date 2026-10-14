@@ -1,6 +1,6 @@
 # Replacement rules: rewriting listed forms to their term
 
-Status: **approved 2026-09-28.**
+Status: **approved 2026-09-28; implemented 2026-10-14.**
 
 Builds on: `2026-09-17-glossary-packs-and-normalisation.md` (the pack format and the normaliser
 this spec extends), `ADR-0013-glossary-reaches-each-backend-differently` (mechanism 3, which this

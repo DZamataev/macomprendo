@@ -39,6 +39,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it, so a pack that is not doing what you expect is visible rather than silent. A pack
   file, the folder or `packs.json` that cannot be read is named in the section instead of
   quietly shortening the list, and dictation keeps working throughout.
+- **Replacement rules** in glossary packs: a line such as `pytest = пайтест, пайтеста` now
+  rewrites each listed form to the term, so a word the recogniser wrote by ear is pasted the way
+  you spell it. Forms match whole — list every ending you want caught — and the ending is
+  dropped. The target may be Cyrillic too, to fix a garbled word (`ранбуке = рамбуке`). A term
+  such as `jQuery` or `iOS` at the start of a sentence now keeps its own spelling instead of
+  becoming `JQuery`.
 - After a dictation the glossary corrected, a floating panel shows the inserted text with each
   rewritten term underlined in green; hovering one reveals what the recogniser originally
   produced, and a caption names the packs that fired. It never takes focus from the app the

@@ -81,7 +81,8 @@ Packs are plain text files in `~/Library/Application Support/Macomprendo/Vocabul
 (ADR-0012); `packs.json` beside them lists the enabled ones. `GlossaryStoring` owns that
 directory — seeding the six factory packs from the bundle, reading, writing and reporting files
 it cannot parse. `Glossary` flattens the enabled packs plus the manual list into one key →
-canonical-spelling map; `Normalizer.normalise` rewrites matching windows of a transcript and
+canonical-spelling map, where a term's listed forms (`pytest = пайтест`) are extra keys for the
+same spelling, matched whole; `Normalizer.normalise` rewrites matching windows of a transcript and
 reports every rewrite with its range in the *final* text. Both are pure Core types.
 
 `DictationController` and `DictationCapture` normalise at the same two commit points that write

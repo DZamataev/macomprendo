@@ -104,7 +104,12 @@ enum Normalizer {
                 // Only a capital the window already had is protected. A lowercase `swift`
                 // opening a sentence against a pack holding `Swift` is still raised — there the
                 // canonical spelling and the sentence's capital want the same letter.
+                // …unless the canonical spelling carries a capital of its own after the first
+                // letter: `jQuery`, `iOS`, `macOS` are brand spellings, and raising their first
+                // letter produces `JQuery`, which nobody writes.
+                let hasInteriorCapital = entry.canonical.dropFirst().contains(where: \.isUppercase)
                 let replacement = startsSentence && (original.first?.isUppercase ?? false)
+                    && !hasInteriorCapital
                     ? capitalisingFirstLetter(entry.canonical)
                     : entry.canonical
 
