@@ -52,10 +52,15 @@ private final class SherpaSileroSession: SpeechSegmentingSession {
                 config.silero_vad.model = model
                 config.silero_vad.threshold = 0.5
                 config.silero_vad.min_silence_duration = 0.5
-                config.silero_vad.min_speech_duration = 0.25
+                // The window and the minimum speech duration are shared with the assembler: it
+                // keeps a lookback sized from them, because sherpa backdates a region's start by
+                // `2 · window_size + min_speech_duration` behind the moment it first sees speech
+                // (`voice-activity-detector.cc`, `AcceptWaveform`).
+                config.silero_vad.min_speech_duration =
+                    Float(SpeechSpanAssembler.detectorMinSpeechDuration)
                 // The detector only *encourages* a split here; SpeechSpanAssembler enforces it.
                 config.silero_vad.max_speech_duration = Float(SpeechSegmentSplitter.maximumDuration)
-                config.silero_vad.window_size = 512
+                config.silero_vad.window_size = Int32(SpeechSpanAssembler.detectorWindowSize)
                 config.sample_rate = Int32(SherpaSileroSegmenter.sampleRate)
                 config.num_threads = 1
                 config.provider = provider
