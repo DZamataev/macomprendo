@@ -8,10 +8,10 @@ groupSections: true
 
 ## Your voice into text
 
-- Offline models: Whisper.cpp and GigaAM. Parakeet is coming soon.
+- Offline models: Whisper.cpp, GigaAM and NVIDIA Parakeet.
 - Or your own OpenAI-compatible transcription endpoint, such as OpenAI API.
-- Whisper supports 90+ languages, including English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Turkish, Chinese, Japanese and Korean. Multilingual GigaAM also covers Kazakh, Kyrgyz and Uzbek.
-- Coming soon: custom vocabulary, hotwords and algorithmic correction.
+- Whisper supports 90+ languages, including English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Turkish, Chinese, Japanese and Korean. Parakeet covers 25 European languages with punctuation, and multilingual GigaAM also covers Kazakh, Kyrgyz and Uzbek.
+- Glossary: switchable packs of your jargon, so `tsconfig json` is pasted as `tsconfig.json` and a word heard as `пайтест` as `pytest`.
 - AI refinement: use your own prompts to polish dictation before you paste. Connect Ollama, OpenAI API, OpenRouter or another compatible chat provider.
 
 ## Text into speech

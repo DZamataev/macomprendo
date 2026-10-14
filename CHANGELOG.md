@@ -58,6 +58,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lossless (ALAC, ~1.11 MB/min) instead of compressed (AAC, ~0.35 MB/min). Compressed stays
   the default, the file extension stays `.m4a` for both, and the choice applies to the next
   dictation.
+- A security policy (`SECURITY.md`) with GitHub private vulnerability reporting, and bug and
+  feature issue forms that ask for the app and macOS versions and warn against pasting API keys.
 - `npm run sync-graph` carries the git-ignored graphify knowledge graph from the main
   checkout into a worktree and refreshes it with the free AST-only `graphify update`, so a
   fresh worktree is not blind to the graph and nobody has to rebuild it. `npm run
