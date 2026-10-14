@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
@@ -40,6 +41,23 @@ struct MenuBarView: View {
         Button("Dictation History…") {
             NSApp.activate(ignoringOtherApps: true)
             openWindow(id: WindowID.dictationHistory)
+        }
+        // Same activation reason as "Dictation History…": a `LSUIElement` app must activate
+        // itself or the window opens behind everything else.
+        Button("Transcribe File…") {
+            NSApp.activate(ignoringOtherApps: true)
+            let panel = NSOpenPanel()
+            panel.allowedContentTypes = [.audiovisualContent]
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.allowsMultipleSelection = false
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            openWindow(id: WindowID.transcripts)
+            model.fileTranscription.transcribe(fileAt: url)
+        }
+        Button("Transcripts…") {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: WindowID.transcripts)
         }
 
         Divider()
