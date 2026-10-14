@@ -45,6 +45,26 @@ import Testing
         #expect(tab.holder.settings.transcriptionSource == .local(modelID: "large-v3-turbo"))
     }
 
+    @Test func eachLocalTabNamesItsRuntimeVersionAndRepository() throws {
+        let whisper = try #require(DictationBackendTab.whisperCpp.runtime)
+        #expect(whisper.name == "whisper.cpp")
+        #expect(whisper.version == WhisperRuntime.version())
+        #expect(whisper.repository.absoluteString == "https://github.com/ggml-org/whisper.cpp")
+
+        let sherpa = try #require(DictationBackendTab.sherpaOfflineASR.runtime)
+        #expect(sherpa.name == "sherpa-onnx")
+        #expect(sherpa.version == SherpaRuntime.version())
+        #expect(sherpa.repository.absoluteString == "https://github.com/k2-fsa/sherpa-onnx")
+
+        #expect(DictationBackendTab.endpoint.runtime == nil)
+    }
+
+    @Test func theStorageCaptionSaysTheSizeIsForEveryDownloadedModel() {
+        #expect(ModelsViewModel.storageCaption(diskUsageText: "2.1 GB")
+                == "All models are stored in ~/Library/Application Support/Macomprendo/models. "
+                    + "The dictation models downloaded there take 2.1 GB in total.")
+    }
+
     @Test func eachTabListsOnlyItsOwnEnginesModels() {
         let tab = tabModel()
         #expect(tab.rows(for: .sherpaOfflineASR).allSatisfy { $0.engine == .sherpaOfflineASR })

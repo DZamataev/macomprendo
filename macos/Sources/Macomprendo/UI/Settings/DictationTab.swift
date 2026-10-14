@@ -30,6 +30,7 @@ struct DictationTab: View {
     @ObservedObject var models: ModelsViewModel
     @ObservedObject var glossary: GlossarySectionModel
     @FocusState private var endpointModelFocused: Bool
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,6 +50,10 @@ struct DictationTab: View {
             .padding([.horizontal, .top])
 
             Form {
+                if let runtime = tab.viewedTab.runtime {
+                    runtimeSection(runtime)
+                }
+
                 switch tab.viewedTab {
                 case .whisperCpp, .sherpaOfflineASR:
                     modelsSection
@@ -148,21 +153,37 @@ struct DictationTab: View {
         .disabled(tab.isProbing)
     }
 
+    // MARK: - Runtime
+
+    private func runtimeSection(_ runtime: LocalRuntime) -> some View {
+        Section {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Runtime")
+                Spacer(minLength: 8)
+                Text("\(runtime.name) \(runtime.version)")
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Button("GitHub") { openURL(runtime.repository) }
+            }
+        }
+    }
+
     // MARK: - Models
 
     private var modelsSection: some View {
         Section("Models") {
-            ForEach(tab.rows(for: tab.viewedTab)) { entry in
-                modelRow(entry)
-            }
-
+            // Above the list, so the total reads as the folder's rather than the last row's.
             HStack(alignment: .firstTextBaseline) {
-                Text("Stored in ~/Library/Application Support/Macomprendo/models. "
-                     + "Disk usage: \(models.diskUsageText)")
+                Text(ModelsViewModel.storageCaption(diskUsageText: models.diskUsageText))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Button("Refresh") { Task { await models.refresh() } }
+            }
+
+            ForEach(tab.rows(for: tab.viewedTab)) { entry in
+                modelRow(entry)
             }
         }
     }

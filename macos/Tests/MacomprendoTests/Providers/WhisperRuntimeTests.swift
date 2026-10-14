@@ -7,3 +7,8 @@ import Testing
     // whisper >= 1.9 labels the Metal backend "MTL" in system info
     #expect(info.contains("MTL"))
 }
+
+@Test func whisperReportsTheVendoredReleaseVersion() {
+    // Pinned to the xcframework in Packages/WhisperBinary: an upgrade updates both (invariant 13).
+    #expect(WhisperRuntime.version() == "1.9.2")
+}
