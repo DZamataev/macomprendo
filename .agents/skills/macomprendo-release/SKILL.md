@@ -24,11 +24,10 @@ shell scripts. Full prose runbook: `DISTRIBUTING.md`. Manual checklist: `docs/SM
   `macomprendo-notary`. The password is typed into a muted prompt and reaches `notarytool`
   only through its stdin — never a command-line argument — so it never appears in `ps`, shell
   history, or this repository.
-- The whisper model catalog's `sha256` fields
-  (`macos/Sources/Macomprendo/Services/ModelCatalog.swift`) are still empty. Model downloads
-  work today but are not checksum-verified. Before a release ships checksum-verified model
-  downloads, run `npm run fetch-model-hashes -- --download` (downloads ~6 GB to compute the
-  digests) and commit the rewritten catalog.
+- Every catalog model file pins a `sha256`, and `ModelCatalogTests` fails on an empty one. For
+  a new entry, take the digest from the publisher (Hugging Face `lfs.oid`, a GitHub release
+  asset's `digest`) rather than `npm run fetch-model-hashes -- --download`, which downloads the
+  whole catalog — several GB — to compute it.
 
 ## Commands
 
