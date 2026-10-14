@@ -37,6 +37,11 @@ struct AboutView: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
+            if let copyright = model.copyright {
+                Text(copyright)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
 
             // The copyleft disclosure sits at the top rather than under the licence list:
             // it is the one thing a reader must not have to scroll to find. Hidden
@@ -52,8 +57,12 @@ struct AboutView: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
             }
 
-            Button("Privacy statement") { model.openPrivacyStatement() }
-                .buttonStyle(.link)
+            HStack(spacing: 16) {
+                ForEach(model.links, id: \.url) { link in
+                    Button(link.title) { model.open(link) }
+                        .buttonStyle(.link)
+                }
+            }
         }
         .padding(16)
     }
