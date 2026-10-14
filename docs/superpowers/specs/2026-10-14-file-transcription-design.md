@@ -62,8 +62,8 @@ store.
 5. **Normalise.** Each segment's text passes through the glossary `Normalizer` exactly as a
    dictation does, when the glossary is enabled. A segment whose text is empty after trimming
    is not stored.
-6. **Store.** The transcript row is created at step 1 with status `inProgress`; each segment is
-   appended as soon as it is transcribed. When the last segment lands the status becomes
+6. **Store.** The transcript row is created with status `inProgress` once the file has opened
+   (so an unreadable file leaves no row); each segment is appended as soon as it is transcribed. When the last segment lands the status becomes
    `complete`.
 
 A source with no speech at all fails as `noSpeechFound`, and the empty transcript is deleted.
@@ -178,7 +178,7 @@ Unit tests (swift-testing, written first), with fakes for every new protocol:
 - `FileTranscriptionController`: state order and progress; normalisation per segment; cancel
   keeps segments and marks `incomplete`; a new job cancels the running one; retry twice then
   `incomplete`; resume starts from the last segment end; `noSpeechFound` deletes the transcript;
-  missing VAD model stops in preflight.
+  a backend that is not ready stops in preflight, for a new job and for `Resume`.
 - `SQLiteTranscriptStore`: incremental append, status transitions, `inProgress` → `incomplete`
   at open, cascade delete, newest-first listing.
 - `TranscriptSummaryController`: one request below the limit, map then reduce above it,
