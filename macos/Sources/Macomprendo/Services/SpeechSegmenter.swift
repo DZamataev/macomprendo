@@ -87,7 +87,15 @@ private final class SherpaSileroSession: SpeechSegmentingSession {
         while SherpaOnnxVoiceActivityDetectorEmpty(detector) == 0 {
             guard let front = SherpaOnnxVoiceActivityDetectorFront(detector) else { break }
             let segment = front.pointee
-            let samples = Array(UnsafeBufferPointer(start: segment.samples, count: Int(segment.n)))
+            let count = Int(segment.n)
+            // Drop a degenerate segment (no samples) rather than build a buffer from a null
+            // pointer or an empty one.
+            guard let samplesPointer = segment.samples, count > 0 else {
+                SherpaOnnxDestroySpeechSegment(front)
+                SherpaOnnxVoiceActivityDetectorPop(detector)
+                continue
+            }
+            let samples = Array(UnsafeBufferPointer(start: samplesPointer, count: count))
             SherpaOnnxDestroySpeechSegment(front)
             SherpaOnnxVoiceActivityDetectorPop(detector)
             segments += SpeechSegmentSplitter.split(
