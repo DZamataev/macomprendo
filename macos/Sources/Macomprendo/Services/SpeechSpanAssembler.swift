@@ -17,19 +17,21 @@ import Foundation
 ///   advanced more than `joinGap` past its end with no new region *and the detector is not inside
 ///   speech* — while it is, an unreported region may still start inside the join window; or at
 ///   `finish()`;
-/// - a span longer than `SpeechSegmentSplitter.maximumDuration` is cut early at the quietest frame
-///   of the last `SpeechSegmentSplitter.searchWindow` seconds before the cap, keeping only the
-///   remainder open. Every open span is cut, whether a completed region backs it or the detector is
-///   still reporting it (a *provisional* span), so a region the detector never closes (speech over
-///   music) cannot grow the buffer either; when its region finally arrives the span continues after
-///   what was already handed out — no overlap, no gap. Pieces shorter than
+/// - a span is cut early only when it is longer than
+///   `SpeechSegmentSplitter.maximumDuration + SpeechSegmentSplitter.minimumRemainder` (35 s), at
+///   the quietest frame of the last `SpeechSegmentSplitter.searchWindow` seconds before the cap,
+///   keeping only the remainder open. Every open span is cut, whether a completed region backs it
+///   or the detector is still reporting it (a *provisional* span), so a region the detector never
+///   closes (speech over music) cannot grow the buffer either; when its region finally arrives the
+///   span continues after what was already handed out — no overlap, no gap. Pieces shorter than
 ///   `SpeechSegmentSplitter.minimumDuration` are dropped.
 ///
-/// Memory bound: while the detector is inside speech the open span is cut at the cap from `accept`,
-/// whatever backs it, so `retainedSampleCount` never exceeds `retentionBound` = one
-/// `maximumDuration` + the splitter's search window + the lookback ≈ 36 s at 16 kHz (plus at most
-/// one chunk of overshoot); a span stays open for at most `joinGap` past its end, so no more than
-/// that of silence is retained on top. The sherpa detector keeps its own copy of the open region:
+/// Memory bound: while the detector is inside speech the open span is cut at the split threshold
+/// from `accept`, whatever backs it, so `retainedSampleCount` never exceeds `retentionBound` = one
+/// span at the 35 s split threshold (`maximumDuration + minimumRemainder`) plus the splitter's
+/// search window and the lookback ≈ 41 s at 16 kHz (plus at most one chunk of overshoot); a span
+/// stays open for at most `joinGap` past its end, so no more than that of silence is retained on
+/// top. The sherpa detector keeps its own copy of the open region:
 /// v1.13.4's `CircularBuffer::Push` *doubles* its capacity when it overflows ("No data loss!"), so
 /// that copy grows with the region and the app cannot bound it without resetting the detector.
 /// `retainedSampleCount` exposes the assembler's copy so a test can assert it directly.
@@ -59,6 +61,7 @@ final class SpeechSpanAssembler {
     private let joinGapSamples: Int
     private let paddingSamples: Int
     private let capSamples: Int
+    private let remainderSamples: Int
     private let frameSamples: Int
     private let windowSamples: Int
     private let minimumSamples: Int
@@ -100,6 +103,7 @@ final class SpeechSpanAssembler {
         joinGapSamples = Int(Self.joinGap * Double(sampleRate))
         paddingSamples = Int(Self.padding * Double(sampleRate))
         capSamples = Int(SpeechSegmentSplitter.maximumDuration * Double(sampleRate))
+        remainderSamples = Int(SpeechSegmentSplitter.minimumRemainder * Double(sampleRate))
         frameSamples = max(1, Int(SpeechSegmentSplitter.frameDuration * Double(sampleRate)))
         windowSamples = Int(SpeechSegmentSplitter.searchWindow * Double(sampleRate))
         minimumSamples = Int(SpeechSegmentSplitter.minimumDuration * Double(sampleRate))
@@ -113,10 +117,11 @@ final class SpeechSpanAssembler {
     var retainedSampleCount: Int { buffer.count }
 
     /// The stated bound on `retainedSampleCount` while the detector is inside speech (see the
-    /// class doc): one capped span, the splitter's search window and the lookback. A span the
-    /// detector has left but that no later region closes is not cut again, so it holds its samples
-    /// and the `joinGap` it waits before closing: `capSamples + joinGapSamples` there.
-    var retentionBound: Int { capSamples + windowSamples + lookbackSamples }
+    /// class doc): one span at the 35 s split threshold (`maximumDuration + minimumRemainder`),
+    /// the splitter's search window and the lookback. A span the detector has left but that no
+    /// later region closes is not cut again, so it holds its samples and the `joinGap` it waits
+    /// before closing: `capSamples + joinGapSamples` there.
+    var retentionBound: Int { capSamples + remainderSamples + windowSamples + lookbackSamples }
 
     /// Appends `samples` to the stream and applies the regions the detector completed while
     /// accepting them, in order. Returns the segments this call flushed.
@@ -141,7 +146,7 @@ final class SpeechSpanAssembler {
                 // The detector is inside speech, so everything up to here belongs to the span
                 // whether or not a completed region backs it yet: this is the span's live edge. A
                 // region the detector never closes (speech over music) would otherwise keep the
-                // buffer growing — the cap cut below is not limited to a provisional span.
+                // buffer growing — the split below is not limited to a provisional span.
                 openSpan?.endSample = totalSamples
             }
             segments += cutToCap()
@@ -205,7 +210,7 @@ final class SpeechSpanAssembler {
         let end = min(totalSamples, span.endSample + paddingSamples)
         var segments: [SpeechSegment] = []
         var start = span.startSample
-        while end - start > capSamples {
+        while end - start > capSamples + remainderSamples {
             let cut = cutPoint(from: start)
             if let piece = makeSegment(from: start, to: cut) { segments.append(piece) }
             start = cut
@@ -214,12 +219,14 @@ final class SpeechSpanAssembler {
         return segments
     }
 
-    /// Cuts the open span down whenever it has grown past the cap, keeping only the remainder
-    /// open. The cut follows the splitter's rule, measured from the span that is still open.
-    /// Called from `apply` for a region-backed span and from `accept` for a provisional one.
+    /// Cuts the open span down whenever it has grown past the split threshold, keeping only the
+    /// remainder open. The cut follows the splitter's rule — only above
+    /// `maximumDuration + minimumRemainder`, at the quietest frame of the last search-window
+    /// seconds before the cap — measured from the span that is still open. Called from `apply`
+    /// for a region-backed span and from `accept` for a provisional one.
     private func cutToCap() -> [SpeechSegment] {
         var segments: [SpeechSegment] = []
-        while let span = openSpan, span.endSample - span.startSample > capSamples {
+        while let span = openSpan, span.endSample - span.startSample > capSamples + remainderSamples {
             let cut = cutPoint(from: span.startSample)
             if let piece = makeSegment(from: span.startSample, to: cut) { segments.append(piece) }
             openSpan?.startSample = cut

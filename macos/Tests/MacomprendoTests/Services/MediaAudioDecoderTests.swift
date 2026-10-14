@@ -153,7 +153,10 @@ import Testing
         // `say` itself leads with ~0.7 s of silence, so speech begins near 3.7 s.
         #expect(first.start > 2.5)
         #expect(first.start < 4.5)
-        #expect(segments.allSatisfy { $0.duration <= SpeechSegmentSplitter.maximumDuration })
+        #expect(segments.allSatisfy {
+            $0.duration <= SpeechSegmentSplitter.maximumDuration
+                + SpeechSegmentSplitter.minimumRemainder
+        })
         let last = try #require(segments.last)
         #expect(last.end < Double(stream.count) / 16_000)
     }
