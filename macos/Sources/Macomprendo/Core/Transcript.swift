@@ -49,6 +49,9 @@ struct Transcript: Sendable, Equatable {
     let run: TranscriptionRun
     /// A bookmark to the source file, so `Resume` can reopen it after the file moved.
     let sourceBookmark: Data?
+    /// The stored LLM summary. Dormant: nothing writes it since `Summarize` opens the Quick
+    /// Panel, where the summary is shown and not kept; the column, `setSummary` and the
+    /// Markdown export's Summary section stay for call recording.
     let summary: String?
     let segments: [TranscriptSegment]
 

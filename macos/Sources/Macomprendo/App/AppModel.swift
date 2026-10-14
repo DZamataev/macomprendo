@@ -101,19 +101,6 @@ final class AppModel: ObservableObject {
         })
     lazy var transcriptLibrary = TranscriptLibraryController(store: env.transcriptStore,
                                                              pasteboard: env.pasteboard)
-    lazy var transcriptSummary = TranscriptSummaryController(
-        store: env.transcriptStore,
-        llm: { [unowned self] in try self.llmTarget(for: .summarize) },
-        preset: { [unowned self] in
-            self.settings.defaultPreset(for: .summarize,
-                                        language: self.settings.promptLanguage)
-        },
-        language: { RefineController.uiLanguageName() },
-        chosenLanguage: { [unowned self] in
-            self.settings.translationTarget.resolvedName(
-                promptLanguage: self.settings.promptLanguage,
-                systemLanguageCode: TranslationTarget.currentSystemLanguageCode)
-        })
     /// The About window's content, owned here so the view never constructs a service
     /// (invariant 1). Not actually deferred to first open: SwiftUI evaluates every `Scene`'s
     /// content `ViewBuilder` — including this one's `AboutView(model: model.aboutModel)` —

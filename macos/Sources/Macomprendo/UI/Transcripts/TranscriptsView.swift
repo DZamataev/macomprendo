@@ -12,7 +12,6 @@ struct TranscriptsView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var library: TranscriptLibraryController
     @ObservedObject var transcription: FileTranscriptionController
-    @ObservedObject var summary: TranscriptSummaryController
 
     @State private var isDeleteConfirmationPresented = false
     /// A failure from writing an export. Export is the one action whose failure belongs to no
@@ -39,11 +38,9 @@ struct TranscriptsView: View {
             await model.modelsViewModel.refresh()
             model.dictationTabModel.adopt(model.modelsViewModel.rows)
             await library.reload()
-            summary.show(library.selected)
         }
         .onChange(of: library.selected?.id) { _, _ in
             actionError = nil
-            summary.show(library.selected)
         }
         .onChange(of: transcription.state) { _, state in
             // The list learns about a job's segments from `transcriptsChanged`, but the job's
@@ -153,9 +150,6 @@ struct TranscriptsView: View {
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    if summaryVisible {
-                        summaryBlock
-                    }
                     if !transcript.segments.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(Array(transcript.segments.enumerated()), id: \.offset) { _, segment in
@@ -205,11 +199,12 @@ struct TranscriptsView: View {
             exportMenu
 
             Button {
-                summary.summarize(transcript)
+                model.textFeatures?.summarize.start(text: transcript.plainText,
+                                                    canReplaceSelection: false)
             } label: {
                 Label { Text("Summarize") } icon: { Icon(.summarize, size: 14) }
             }
-            .help("Summarize with the LLM configured for Summarize")
+            .help("Summarize in the Quick Panel with the LLM configured for Summarize")
 
             if transcript.header.status == .incomplete {
                 Button {
@@ -256,37 +251,6 @@ struct TranscriptsView: View {
             Button("Cancel") { transcription.cancel() }
         }
         .padding(10)
-    }
-
-    private var summaryVisible: Bool {
-        !summary.text.isEmpty || summary.isRunning || summary.error != nil
-    }
-
-    private var summaryBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("Summary")
-                    .font(.headline)
-                if summary.isRunning {
-                    ProgressView()
-                        .controlSize(.small)
-                    if let progress = summary.progress {
-                        Text(progress)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Button("Stop") { summary.cancel() }
-                }
-            }
-            if !summary.text.isEmpty {
-                Text(summary.text)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let error = summary.error {
-                errorBanner(error)
-            }
-        }
     }
 
     private func segmentRow(_ segment: TranscriptSegment) -> some View {

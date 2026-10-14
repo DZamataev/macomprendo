@@ -76,36 +76,6 @@ import Testing
     }
 }
 
-@Suite struct TranscriptChunkerTests {
-
-    private func segments(_ texts: [String]) -> [TranscriptSegment] {
-        texts.enumerated().map { index, text in
-            TranscriptSegment(start: Double(index), end: Double(index) + 1, text: text)
-        }
-    }
-
-    @Test func aShortTranscriptIsOnePart() {
-        #expect(TranscriptChunker.parts(of: segments(["a", "b", "c"]), limit: 100) == ["a\nb\nc"])
-    }
-
-    @Test func partsNeverSplitASegment() {
-        // "aaaa\nbbbb" is 9 characters; adding "\ncccc" would make 14 > 10.
-        let parts = TranscriptChunker.parts(of: segments(["aaaa", "bbbb", "cccc"]), limit: 10)
-        #expect(parts == ["aaaa\nbbbb", "cccc"])
-        #expect(parts.allSatisfy { $0.count <= 10 })
-    }
-
-    @Test func aSegmentLongerThanTheLimitIsItsOwnPart() {
-        let long = String(repeating: "x", count: 25)
-        #expect(TranscriptChunker.parts(of: segments(["a", long, "b"]), limit: 10)
-                == ["a", long, "b"])
-    }
-
-    @Test func noSegmentsGiveNoParts() {
-        #expect(TranscriptChunker.parts(of: []).isEmpty)
-    }
-}
-
 @Suite struct TranscriptTests {
     @Test func resumeStartsAtTheLastSegmentEnd() {
         let header = TranscriptHeader(id: 1, createdAt: .now, sourceKind: .file, title: "t",

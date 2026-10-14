@@ -222,4 +222,25 @@ import Testing
         await rig.controller.drain()
         #expect(rig.recorder.calls.count == runs)
     }
+
+    /// The Transcripts window opens the panel with a transcript's text: no other app holds a
+    /// selection, so the footer must not offer Replace selection. The hotkey path keeps it.
+    @Test func aWindowStartedRunHidesReplaceSelection() async {
+        let rig = makeRig()
+        rig.controller.start(text: "a transcript", canReplaceSelection: false)
+        #expect(!rig.controller.canReplaceSelection)
+        #expect(rig.panel.isVisible)
+        #expect(rig.panel.layout == .summary)
+
+        await rig.controller.drain()
+
+        #expect(rig.controller.summary == "Short summary")
+    }
+
+    @Test func theHotkeyPathKeepsReplaceSelection() async {
+        let rig = makeRig()
+        #expect(rig.controller.canReplaceSelection)     // safe before any run
+        rig.controller.start(text: "an article")
+        #expect(rig.controller.canReplaceSelection)
+    }
 }
