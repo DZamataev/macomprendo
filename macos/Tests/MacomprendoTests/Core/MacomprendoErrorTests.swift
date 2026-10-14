@@ -28,7 +28,8 @@ import Testing
     .noSpeechFound,
     .sourceFileUnavailable,
     .transcriptStore("database is read-only"),
-    .speechDetector("model file missing")
+    .speechDetector("model file missing"),
+    .exportFailed("the disk is full")
 ])
 func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
     #expect(error.errorDescription?.isEmpty == false)

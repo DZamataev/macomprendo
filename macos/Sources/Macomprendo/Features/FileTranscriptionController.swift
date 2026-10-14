@@ -104,6 +104,13 @@ import Foundation
         return message == ErrorText.describe(MacomprendoError.sourceFileUnavailable)
     }
 
+    /// Drops a shown failure. The window calls it when the user moves to another transcript;
+    /// a job's own state writes replace `.failed` when one starts. Any other state is left
+    /// alone — a finished job's selection must survive.
+    func clearFailure() {
+        if case .failed = state { state = .idle }
+    }
+
     // MARK: - Jobs
 
     /// Cancels the running job and makes `generation` belong to the next one.

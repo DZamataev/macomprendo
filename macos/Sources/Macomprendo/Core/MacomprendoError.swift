@@ -34,6 +34,7 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case sourceFileUnavailable
     case transcriptStore(String)
     case speechDetector(String)
+    case exportFailed(String)
     case cancelled
 
     var errorDescription: String? {
@@ -92,6 +93,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Transcripts are unavailable: \(reason)"
         case .speechDetector(let reason):
             return "The speech detector could not start: \(reason)"
+        case .exportFailed(let reason):
+            return "The transcript could not be saved: \(reason)"
         case .cancelled:
             return "Cancelled."
         }
@@ -153,6 +156,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Check that the disk has free space and that Macomprendo can write to Application Support."
         case .speechDetector:
             return "Reinstall Macomprendo: the bundled speech detector model is missing or damaged."
+        case .exportFailed:
+            return "Choose another folder, or check that the disk has free space."
         case .cancelled:
             return nil
         }

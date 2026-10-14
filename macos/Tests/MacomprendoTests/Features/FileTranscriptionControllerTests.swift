@@ -526,6 +526,39 @@ import Testing
         #expect(!rig.controller.canChooseSourceFile)
     }
 
+    // MARK: - The shown failure
+
+    /// The window clears the failure when the user moves to another transcript.
+    @Test func clearFailureDropsAFailureAndLeavesOtherStatesAlone() async {
+        let rig = makeRig(decoder: ScriptedMediaDecoder(
+                              openError: MacomprendoError.mediaUnreadable("no audio track")),
+                          segmenter: ScriptedSegmenter())
+
+        rig.controller.clearFailure()
+        #expect(rig.controller.state == .idle)          // nothing shown: a no-op
+
+        rig.controller.transcribe(fileAt: Self.fileURL)
+        await rig.controller.drain()
+
+        rig.controller.clearFailure()
+        #expect(rig.controller.state == .idle)
+        rig.controller.clearFailure()                   // and it stays cleared
+        #expect(rig.controller.state == .idle)
+    }
+
+    @Test func clearFailureLeavesAFinishedJobAsItIs() async {
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 10,
+                                                        chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]]))
+
+        rig.controller.transcribe(fileAt: Self.fileURL)
+        await rig.controller.drain()
+        #expect(rig.controller.state == .finished(transcriptID: 1))
+
+        rig.controller.clearFailure()
+        #expect(rig.controller.state == .finished(transcriptID: 1))
+    }
+
     // MARK: - Normalisation
 
     @Test func rawTextIsKeptOnlyWhenNormalisationRewrote() async {

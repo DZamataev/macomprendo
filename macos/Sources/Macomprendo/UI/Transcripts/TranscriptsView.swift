@@ -41,17 +41,24 @@ struct TranscriptsView: View {
         }
         .onChange(of: library.selected?.id) { _, _ in
             actionError = nil
+            // A failure belongs to the job it came from; moving to another transcript takes
+            // its banner away.
+            transcription.clearFailure()
         }
         .onChange(of: transcription.state) { _, state in
-            // The list learns about a job's segments from `transcriptsChanged`, but the job's
-            // settle — complete, incomplete, cancelled — lands after the last append. Reload
-            // once it is no longer running, so the row's badge and reason, and the Resume
-            // button for a cancelled job, are current.
-            switch state {
-            case .running:
+            // The list learns about a job's segments from `transcriptsChanged`, but a job's
+            // first `.running` may arrive before any segment, and its settle lands after the
+            // last append. `listEffect` decides what each state asks of the list.
+            switch Self.listEffect(for: state, headers: library.headers) {
+            case .none:
                 break
-            case .idle, .finished, .failed:
+            case .reload:
                 Task { await library.reload() }
+            case .reloadAndSelect(let id):
+                Task {
+                    await library.reload()
+                    await library.select(id)
+                }
             }
         }
         .confirmationDialog("Delete this transcript?",
@@ -133,8 +140,11 @@ struct TranscriptsView: View {
         if let actionError {
             errorBanner(actionError)
         }
-        // `State.failed` already carries `ErrorText.describe(_:)` of the failure.
-        if case let .failed(message, _) = transcription.state {
+        // `State.failed` already carries `ErrorText.describe(_:)` of the failure. Shown only
+        // for the open transcript — or a job with no row yet — so a failure that belongs to
+        // another transcript never sits over this one; selecting another transcript clears it.
+        if case let .failed(message, transcriptID) = transcription.state,
+           transcriptID == nil || transcriptID == library.selected?.id {
             errorBanner(message, chooseSourceFileFor: chooseFileTarget)
         }
     }
@@ -347,11 +357,35 @@ struct TranscriptsView: View {
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
         } catch {
-            actionError = ErrorText.describe(error)
+            actionError = ErrorText.describe(
+                MacomprendoError.exportFailed(error.localizedDescription))
         }
     }
 
     // MARK: - Pure labels
+
+    /// What a change of the transcription state asks of the list. A job's row is created
+    /// before its first segment, so the first `.running` state of a brand-new job may arrive
+    /// before any `transcriptsChanged` reload has run: reload once so the row shows. A job
+    /// that settles reloads — its badge and reason land after the last append — and a
+    /// finished job is also opened.
+    enum ListEffect: Equatable {
+        case none
+        case reload
+        case reloadAndSelect(Int64)
+    }
+
+    nonisolated static func listEffect(for state: FileTranscriptionController.State,
+                                       headers: [TranscriptHeader]) -> ListEffect {
+        switch state {
+        case let .running(transcriptID, _, _, _):
+            return headers.contains { $0.id == transcriptID } ? .none : .reload
+        case let .finished(transcriptID):
+            return .reloadAndSelect(transcriptID)
+        case .idle, .failed:
+            return .reload
+        }
+    }
 
     /// `Transcribing — 12:40 / 58:03`.
     nonisolated static func progressText(position: TimeInterval, duration: TimeInterval) -> String {
