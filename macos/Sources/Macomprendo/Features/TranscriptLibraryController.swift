@@ -11,9 +11,12 @@ import Foundation
 /// `listToken` guards the list (`headers`), `selectionToken` guards the open transcript
 /// (`selected`). A `reload` bumps only `listToken`, so it cannot invalidate a concurrent
 /// `select`; a `select` bumps only `selectionToken`. A completed `delete` applies its effects
-/// unconditionally — the deletion is the truth — then bumps both, so a read that started before
-/// it cannot re-add the row or re-open it. Without the split, a slow `select(A)` finishing after
-/// `select(B)` leaves A open, and a reload started during a delete drops the delete's pruning.
+/// unconditionally — the deletion is the truth — then bumps `listToken` always, so no read that
+/// started before it can re-add the row, and `selectionToken` only when it cancelled the
+/// in-flight `select` for the deleted row: any other select must still land, and a stale re-read
+/// of the deleted id is stopped by its own id guard. Without the split, a slow `select(A)`
+/// finishing after `select(B)` leaves A open, and a reload started during a delete drops the
+/// delete's pruning.
 @MainActor
 final class TranscriptLibraryController: ObservableObject {
     /// The reason an `inProgress` row carries when launch maintenance finds it: no job can be
@@ -32,16 +35,17 @@ final class TranscriptLibraryController: ObservableObject {
     /// list read that started before a completed delete cannot re-add the deleted row.
     private var listToken = 0
 
-    /// Guards the open transcript: bumped when `select()` starts and when a `delete()` completes.
-    /// A `select()` and a `reload()`'s refresh of `selected` write only while the value they
-    /// started with is still current. `reload()` does not bump it, so a reload never invalidates
-    /// a concurrent select.
+    /// Guards the open transcript: bumped when `select()` starts and when a `delete()` cancels
+    /// the in-flight `select()` for the row it deletes. A `select()` and a `reload()`'s refresh
+    /// of `selected` write only while the value they started with is still current. `reload()`
+    /// does not bump it, so a reload never invalidates a concurrent select.
     private var selectionToken = 0
 
     /// The id an in-flight `select()` is loading, or `nil` when none is. `delete()` bumps
-    /// `selectionToken` only when it deletes this id (or the open transcript): deleting an
-    /// unrelated row must not drop the selection the user is opening. Set when `select()` starts
-    /// and cleared when it finishes while still current.
+    /// `selectionToken` only when it deletes this id: deleting an unrelated row — even the open
+    /// transcript — must not drop the selection the user is opening. Set when `select()` starts;
+    /// cleared when that select finishes while still current, or by the `delete()` that cancels
+    /// it (the cancelled select fails its token guard and never gets to clear it itself).
     private var pendingSelectionID: Int64?
 
     init(store: any TranscriptStoring, pasteboard: any PasteboardProtocol) {
@@ -61,10 +65,13 @@ final class TranscriptLibraryController: ObservableObject {
             self.headers = headers
             if let id = selected?.id {
                 let transcript = try await store.transcript(id: id)
-                // Stale if the selection moved on while this read waited: either a newer
-                // operation bumped the token, or `selected` is no longer the id we re-read (a
-                // `select` that started before this reload and finished during the read).
-                guard selection == selectionToken, selected?.id == id else { return }
+                // Stale if the selection or the list moved on while this read waited: a newer
+                // operation bumped the token; `selected` is no longer the id we re-read (a
+                // `select` that started before this reload and finished during the read); or a
+                // newer list operation (another reload, a completed delete) took over, whose
+                // content is newer than this snapshot. None may be reverted by this write.
+                guard selection == selectionToken, selected?.id == id, list == listToken
+                else { return }
                 selected = transcript
             }
             // Re-guard before clearing: a newer list operation may have taken over while the
@@ -119,10 +126,15 @@ final class TranscriptLibraryController: ObservableObject {
         error = nil
         // Any read that started before this deletion can no longer re-add the row.
         listToken += 1
-        // Only a delete that touches the open transcript — or the one an in-flight `select` is
-        // opening — may invalidate a selection read. Deleting an unrelated row must leave an
-        // in-flight select's result standing.
-        if clearsSelection || cancelsPendingSelect { selectionToken += 1 }
+        // Only cancelling the in-flight `select` for this row invalidates a selection read: that
+        // select can no longer deliver (its token guard will fail), and its pending id must be
+        // cleared here because it never reaches its own clearing. A delete that merely clears the
+        // open transcript must leave a concurrent select of another row alone; a stale re-read of
+        // the deleted id is stopped by the reload re-read's `selected?.id == id` guard instead.
+        if cancelsPendingSelect {
+            selectionToken += 1
+            pendingSelectionID = nil
+        }
     }
 
     /// Puts the open transcript's text on the pasteboard: one segment per line, no timestamps.

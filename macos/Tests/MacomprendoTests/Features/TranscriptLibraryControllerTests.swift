@@ -400,6 +400,60 @@ import Testing
                 == ErrorText.describe(MacomprendoError.transcriptStore("the disk is full")))
     }
 
+    @Test func anOlderReloadDoesNotRevertANewerReloadsSelection() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "talk.m4a",
+                                      segments: [TranscriptSegment(start: 0, end: 1, text: "One.")])
+        let controller = makeController(store: store)
+        await controller.select(id)
+        #expect(controller.selected?.segments.count == 1)
+
+        // The first reload's re-read of the open transcript is held.
+        let rereadGate = AsyncGate()
+        await store.gateNextRead(of: id, on: rereadGate)
+        let stale = Task { await controller.reload() }
+        await waitFor("the first reload to reach the re-read") { rereadGate.waiterCount == 1 }
+
+        // A segment lands while that re-read is in flight; a second reload picks it up and
+        // completes.
+        try await store.appendSegment(TranscriptSegment(start: 1, end: 2, text: "Two."), to: id)
+        await controller.reload()
+        #expect(controller.selected?.segments.count == 2)
+
+        // The older reload resumes last; its stale snapshot must not revert the newer reload's.
+        rereadGate.open()
+        await stale.value
+        #expect(controller.selected?.segments.count == 2)
+        #expect(controller.selected?.segments.last?.text == "Two.")
+    }
+
+    @Test func deletingTheOpenRowDoesNotDropASelectOfAnotherRow() async throws {
+        let store = FakeTranscriptStore()
+        let open = try await self.store(store, title: "open")
+        let wanted = try await self.store(store, title: "wanted")
+        let controller = makeController(store: store)
+        await controller.reload()
+        await controller.select(open)
+        #expect(controller.selected?.id == open)
+
+        // A select of `wanted` is held inside its store read.
+        let gate = AsyncGate()
+        await store.gateNextRead(on: gate)
+        let selection = Task { await controller.select(wanted) }
+        await waitFor("the select to reach the store read") { gate.waiterCount == 1 }
+
+        // Deleting the *open* row must not drop the select that is opening another row; the
+        // deleted row must not come back either.
+        await controller.delete(open)
+        #expect(controller.selected == nil)
+
+        gate.open()
+        await selection.value
+
+        #expect(controller.selected?.id == wanted)
+        #expect(controller.headers.map(\.id) == [wanted])
+    }
+
     @Test func aDeleteOfAnotherRowDoesNotDropAnInFlightSelect() async throws {
         let store = FakeTranscriptStore()
         let open = try await self.store(store, title: "open")
