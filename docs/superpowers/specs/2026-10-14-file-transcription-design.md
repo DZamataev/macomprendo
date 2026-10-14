@@ -39,6 +39,9 @@ store.
   for `inProgress` or `incomplete`. Right: the selected transcript.
 - The detail shows segments as rows `[hh:mm:ss] text`, the `TranscriptionRun` (model, engine,
   language) and, while a job runs, progress `Transcribing — 12:40 / 58:03` with a Cancel button.
+- A failure is shown only for the job it belongs to (or a job with no row yet) and clears when
+  another transcript is selected. A new job's row appears as soon as it starts; a finished job is
+  selected.
 - Actions on the selected transcript: `Copy` (plain text without timestamps), `Export…` with
   `.txt`, `.srt`, `.md`, `Summarize`, `Resume` (only when `incomplete`), `Delete` (confirmed).
 - With no transcripts, the detail is a drop zone: `Drop an audio or video file here`.
@@ -95,29 +98,31 @@ dictation.
   keys or transcript text.
 - The transcript stores a bookmark to its source file. `Resume` re-decodes the source from the
   `end` of the last stored segment and appends. If the bookmark no longer resolves, `Resume`
-  reports `sourceFileUnavailable` and offers to pick the file again.
+  reports `sourceFileUnavailable` and shows **Choose File…**; the chosen file resumes from the same
+  position and becomes the transcript's new bookmark.
 - At launch, before any job can start, every transcript still `inProgress` (the app was
   killed) becomes `incomplete` with the reason `Macomprendo quit before it finished.`
 
 ### Summary
 
-- `Summarize` uses the LLM configured for Summarize (Settings ▸ Refine & Summarize) and that
-  feature's default preset for the current prompt language, streaming into the detail pane like
-  `SummarizeController` does. No new preset kind: a `PresetKind` case would ripple through the
-  Prompts tab, seeding and the LLM selection for no behaviour the existing preset lacks.
-- Transcript text up to 12,000 characters is summarised in one request. Longer text is split on
-  segment boundaries into parts of at most 12,000 characters; each part is summarised, then the
-  part summaries are summarised into one.
-- The finished summary is stored with the transcript and shown above the segments;
-  `Summarize` on a transcript that has one regenerates it. Cancelling leaves the previous
-  summary.
+- `Summarize` opens the ordinary Summarize Quick Panel — the one the hotkey opens — with the
+  transcript's plain text (no timestamps): the Summarize feature's LLM (Settings ▸ Refine &
+  Summarize), its presets and preset picker, rerun and Copy. **Replace selection** is hidden for a
+  panel opened this way, since no other app holds a selection.
+- The whole text goes in one request. Measured on Ollama 0.40.3 with `qwen2.5:1.5b`, 78k
+  characters of Russian (~10.6k words, 28,299 tokens) were accepted whole at the default context.
+  Splitting long text into parts belongs to the panel itself, not to this window
+  (issue #24).
+- Summaries are not stored. The store keeps its `summary` column and the Markdown export its
+  Summary section, dormant, for call recording.
 
 ### Export
 
 - `.txt` — segment texts joined by newlines, no timestamps.
 - `.srt` — one cue per segment, numbered from 1, `HH:MM:SS,mmm --> HH:MM:SS,mmm`.
-- `.md` — a `#` title with the file name, a metadata line (date, duration, model), the summary
-  under `## Summary` when present, then `## Transcript` with `**[hh:mm:ss]** text` lines.
+- `.md` — a `#` title with the file name, a metadata line (date, duration, model), a stored
+  summary under `## Summary` when present (none is stored today), then `## Transcript` with
+  `**[hh:mm:ss]** text` lines.
 
 ### Errors
 
@@ -128,6 +133,7 @@ New `MacomprendoError` cases, each with `errorDescription` and `recoverySuggesti
 - `noSpeechFound` — VAD found no speech in the whole source.
 - `sourceFileUnavailable` — `Resume` cannot resolve the stored bookmark.
 - `transcriptStore` — the transcripts database cannot be opened or written.
+- `exportFailed` — an export could not be written.
 - `speechDetector` — the bundled VAD model is missing or sherpa-onnx rejects it.
 
 ## Architecture
@@ -139,7 +145,6 @@ service is built in `AppEnvironment`.
 |---|---|---|
 | Core | `Transcript`, `TranscriptSegment`, `TranscriptSource`, `TranscriptStatus` | Value types; reuse `TranscriptionRun` |
 | Core | `TranscriptExporter` | Pure `Transcript` → txt / srt / md |
-| Core | `TranscriptChunker` | Pure split of transcript text into ≤ 12,000-character parts on segment boundaries |
 | Services | `MediaAudioDecoding` / `AVAssetMediaDecoder` | File → `AsyncThrowingStream` of 16 kHz mono PCM + duration |
 | Services | `SpeechSegmenting` / `SherpaSileroSegmenter` | PCM stream → segments; the 30 s split rule lives in a pure helper |
 | Services | `TranscriptStoring` / `SQLiteTranscriptStore` | Actor; `~/Library/Application Support/Macomprendo/transcripts.sqlite3` |
@@ -149,7 +154,6 @@ service is built in `AppEnvironment`.
 | Features | `LongAudioPipeline` | Decode → segment → transcribe with retries, as a stream of events |
 | Features | `FileTranscriptionController` | `@MainActor`; `idle → running(progress) → finished(id) / failed(message)` |
 | Features | `TranscriptLibraryController` | `@MainActor`; list, selection, delete, copy, export text |
-| Features | `TranscriptSummaryController` | `@MainActor`; single or multi-part summary, one in-flight task |
 | UI | `TranscriptsView`, menu item | List, detail, drop zone, progress, actions |
 
 ### Store schema
