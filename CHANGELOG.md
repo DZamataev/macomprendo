@@ -39,8 +39,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reset to the version that shipped — editing a pack keeps its comments and layout exactly
   as they were. Drop a file into the folder yourself, press **Reload**, and it appears in
   the list, switched off until you tick it. Each pack says how many terms it holds, how many
-  lines it could not read, and how many of its terms are being overridden by a pack above
-  it, so a pack that is not doing what you expect is visible rather than silent. A pack
+  lines it could not read, and how many of its terms or forms are already claimed by an
+  earlier entry, so a pack that is not doing what you expect is visible rather than silent. A pack
   file, the folder or `packs.json` that cannot be read is named in the section instead of
   quietly shortening the list, and dictation keeps working throughout.
 - **Replacement rules** in glossary packs: a line such as `pytest = пайтест, пайтеста` now

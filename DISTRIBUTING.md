@@ -1,8 +1,8 @@
 # Distributing Macomprendo
 
 Macomprendo is distributed outside the Mac App Store as a Developer ID signed, notarized,
-stapled ZIP. It is not sandboxed (see `docs/adr/0003-not-sandboxed.md`), so the
-Mac App Store is not an option.
+stapled ZIP. It is not sandboxed, and the Mac App Store is out of scope by choice rather than
+impossibility — `docs/adr/0003-not-sandboxed.md` records why and what reopening it would take.
 
 Everything below runs through Node scripts; there are no shell scripts in this repository.
 

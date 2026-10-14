@@ -82,6 +82,18 @@ struct ReplacementRuleProvenanceTests {
         #expect(glossary.inertTermCountsByPack["c"] == 1)
     }
 
+    @Test func aFormSpelledExactlyLikeItsOwnTermIsNotCounted() {
+        let glossary = Glossary(packs: [GlossaryPack.parse("redis = redis, редис", name: "p")])
+        #expect(glossary.collisionCount == 0)
+        #expect(glossary.termCount == 2)
+    }
+
+    @Test func aTermRepeatedInALaterPackIsStillCounted() {
+        let glossary = Glossary(packs: [GlossaryPack.parse("Redis", name: "a"),
+                                        GlossaryPack.parse("Redis", name: "b")])
+        #expect(glossary.inertTermCountsByPack["b"] == 1)
+    }
+
     @Test func aFormRedundantWithItsOwnTermOrASiblingIsNotCounted() {
         let glossary = Glossary(packs: [GlossaryPack.parse(
             "TextEditor = text editor, текст-эдитор, текстэдитор", name: "p")])
