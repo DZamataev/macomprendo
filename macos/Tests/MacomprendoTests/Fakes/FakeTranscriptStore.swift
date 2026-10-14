@@ -14,6 +14,17 @@ actor FakeTranscriptStore: TranscriptStoring {
     /// which a stale result can land after a newer operation finished. `nil` (the default)
     /// never waits: reads behave exactly as before.
     var readGate: AsyncGate?
+    /// Armed by a test to hold the next `headers()` read until the gate opens, then clear itself
+    /// so later reads run unblocked. The list is captured first, so the held read delivers the
+    /// snapshot taken before whatever the test does while it waits — the window in which a stale
+    /// list can land after a newer operation finished. `nil` (the default) never waits: list
+    /// reads behave exactly as before.
+    var headersGate: AsyncGate?
+    /// Armed by a test to hold the next `delete(id:)` until the gate opens, then clear itself so
+    /// later deletes run unblocked. The row is removed only after the gate opens, so a delete
+    /// held here is genuinely in flight — the store has not committed the removal yet. `nil`
+    /// (the default) never waits: deletes behave exactly as before.
+    var deleteGate: AsyncGate?
     private(set) var createCount = 0
 
     func create(sourceKind: TranscriptSourceKind, title: String, sourceBookmark: Data?,
@@ -66,9 +77,14 @@ actor FakeTranscriptStore: TranscriptStoring {
                                      summary: summary, segments: transcript.segments)
     }
 
-    func headers() throws -> [TranscriptHeader] {
+    func headers() async throws -> [TranscriptHeader] {
         try consumeReadFailure()
-        return transcripts.values.map(\.header).sorted { $0.id > $1.id }
+        let headers = transcripts.values.map(\.header).sorted { $0.id > $1.id }
+        if let gate = headersGate {
+            headersGate = nil
+            await gate.wait()
+        }
+        return headers
     }
 
     func transcript(id: Int64) async throws -> Transcript? {
@@ -93,7 +109,11 @@ actor FakeTranscriptStore: TranscriptStoring {
         transcripts[id]
     }
 
-    func delete(id: Int64) {
+    func delete(id: Int64) async {
+        if let gate = deleteGate {
+            deleteGate = nil
+            await gate.wait()
+        }
         transcripts.removeValue(forKey: id)
     }
 

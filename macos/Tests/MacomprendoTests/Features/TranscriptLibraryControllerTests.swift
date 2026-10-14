@@ -263,6 +263,83 @@ import Testing
         // The stale read must not resurrect the deleted row.
         #expect(controller.selected == nil)
     }
+
+    @Test func aReloadDuringDeleteDoesNotKeepTheDeletedRow() async throws {
+        let store = FakeTranscriptStore()
+        let doomed = try await self.store(store, title: "doomed")
+        let controller = makeController(store: store)
+        await controller.reload()
+        #expect(controller.headers.map(\.id) == [doomed])
+
+        // The delete is held inside the store before it commits the removal.
+        let deleteGate = AsyncGate()
+        await store.gateNextDelete(on: deleteGate)
+        let deletion = Task { await controller.delete(doomed) }
+        await waitFor("the delete to reach the store") { deleteGate.waiterCount == 1 }
+
+        // A reload starts while the delete is in flight; its headers read captures the list with
+        // the row still present, then holds before delivering it.
+        let headersGate = AsyncGate()
+        await store.gateNextHeadersRead(on: headersGate)
+        let reload = Task { await controller.reload() }
+        await waitFor("the reload to reach the headers read") { headersGate.waiterCount == 1 }
+
+        // The delete commits first, then the stale reload read is released.
+        deleteGate.open()
+        await deletion.value
+        headersGate.open()
+        await reload.value
+
+        // The reload that started during the delete must not undo its pruning.
+        #expect(controller.headers.map(\.id) == [])
+    }
+
+    @Test func aSelectDuringReloadKeepsItsResult() async throws {
+        let store = FakeTranscriptStore()
+        let first = try await self.store(store, title: "first")
+        let second = try await self.store(store, title: "second")
+        let controller = makeController(store: store)
+        await controller.select(first)
+        #expect(controller.selected?.id == first)
+
+        // A select for the second transcript is held inside its store read.
+        let gate = AsyncGate()
+        await store.gateNextRead(on: gate)
+        let selection = Task { await controller.select(second) }
+        await waitFor("the select to reach the store read") { gate.waiterCount == 1 }
+
+        // A reload runs to completion while that select is still in flight.
+        await controller.reload()
+
+        gate.open()
+        await selection.value
+
+        // The reload must not have invalidated the concurrent select.
+        #expect(controller.selected?.id == second)
+    }
+
+    @Test func aDeleteStartedDuringASelectStillPrunesTheList() async throws {
+        let store = FakeTranscriptStore()
+        let doomed = try await self.store(store, title: "doomed")
+        let kept = try await self.store(store, title: "kept")
+        let controller = makeController(store: store)
+        await controller.reload()
+        #expect(controller.headers.map(\.id) == [kept, doomed])
+
+        // A select is held inside its store read while the other row is deleted.
+        let gate = AsyncGate()
+        await store.gateNextRead(on: gate)
+        let selection = Task { await controller.select(kept) }
+        await waitFor("the select to reach the store read") { gate.waiterCount == 1 }
+
+        await controller.delete(doomed)
+
+        // The delete must prune its row even though a select is in flight.
+        #expect(controller.headers.map(\.id) == [kept])
+
+        gate.open()
+        await selection.value
+    }
 }
 
 extension FakeTranscriptStore {
@@ -273,4 +350,12 @@ extension FakeTranscriptStore {
     /// Arms the next `transcript(id:)` read to suspend on `gate`. The property is
     /// actor-isolated, so a test cannot assign it from outside the actor.
     func gateNextRead(on gate: AsyncGate) { readGate = gate }
+
+    /// Arms the next `headers()` read to suspend on `gate`. The property is actor-isolated, so a
+    /// test cannot assign it from outside the actor.
+    func gateNextHeadersRead(on gate: AsyncGate) { headersGate = gate }
+
+    /// Arms the next `delete(id:)` to suspend on `gate`, before it commits the removal. The
+    /// property is actor-isolated, so a test cannot assign it from outside the actor.
+    func gateNextDelete(on gate: AsyncGate) { deleteGate = gate }
 }
