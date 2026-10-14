@@ -89,3 +89,16 @@ struct ReplacementRuleProvenanceTests {
         #expect(glossary.termCount == 2)
     }
 }
+
+@Suite("Replacement rules — the sentence capital")
+struct ReplacementRuleSentenceCapitalTests {
+    @Test func aTermWithAnInteriorCapitalKeepsItsOwnSpellingAtASentenceStart() {
+        #expect(replaced("Джейкьюери. Всё сломалось", "jQuery = джейкьюери")
+            == "jQuery. Всё сломалось")
+        #expect(replaced("Всё. IOS упал", "iOS") == "Всё. iOS упал")
+    }
+
+    @Test func aLowercaseTermStillTakesTheSentenceCapital() {
+        #expect(replaced("Пайтест упал", "pytest = пайтест") == "Pytest упал")
+    }
+}
