@@ -135,6 +135,7 @@ See [PRIVACY.md](PRIVACY.md) for the full statement.
 - [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md) — the manual checklist run before every release
 - [docs/adr/](docs/adr/) — architecture decision records
 - [CHANGELOG.md](CHANGELOG.md)
+- [SECURITY.md](SECURITY.md) — reporting a vulnerability privately
 
 ## License
 

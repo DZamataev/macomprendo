@@ -1,0 +1,72 @@
+name: Bug report
+description: Something in Macomprendo does not work as it should.
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste API keys**, settings exports or logs that may contain an endpoint key or
+        private dictation text. Describe where the problem appears instead. Security problems
+        go through [private reporting](https://github.com/DZamataev/macomprendo/security/advisories/new),
+        not here.
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: About Macomprendo… in the menubar menu shows it, e.g. `0.3.0 (12)`.
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: Apple menu ▸ About This Mac, e.g. `15.4` on Apple silicon.
+    validations:
+      required: true
+  - type: dropdown
+    id: action
+    attributes:
+      label: Which action misbehaved
+      options:
+        - Dictate
+        - Dictate & Refine
+        - Speak selection
+        - Summarize selection
+        - Refine selection
+        - Settings or onboarding
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Transcription or speech source
+      description: Where the audio or text was processed, if the action uses one.
+      options:
+        - Local model (whisper.cpp, GigaAM, Parakeet, Piper, Kokoro)
+        - macOS system voice
+        - OpenAI-compatible endpoint
+        - Ollama
+        - Not applicable
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: The model name shown in Settings, if the action uses one.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true

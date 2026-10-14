@@ -12,6 +12,8 @@ Describe what you expected and what happened. Never include API keys in an issue
 
 ## Private contact
 
-Email **dz_app_support** at **icloud.com** for security reports, licence questions or problems that involve private text. Report security issues privately and include the steps needed to reproduce them.
+Report security issues through [GitHub private vulnerability reporting](https://github.com/DZamataev/macomprendo/security/advisories/new), or by email, and include the steps needed to reproduce them. The [security policy](https://github.com/DZamataev/macomprendo/blob/main/SECURITY.md) says what is in scope.
+
+Email **dz_app_support** at **icloud.com** for security reports, licence questions or problems that involve private text.
 
 The [privacy statement]({{root}}privacy/) explains what the app stores and sends. The [terms of use]({{root}}terms/) cover licences, providers and permissions. You can find the changelog and architecture notes in the [repository](https://github.com/DZamataev/macomprendo).
