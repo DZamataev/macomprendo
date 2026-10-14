@@ -14,7 +14,8 @@ store.
   (`file` now, `call` later), a status, segments and an optional summary. Distinct from a
   *dictation history entry*: transcripts live in their own store.
 - **Segment** — one stretch of speech found by the VAD, with `start`/`end` offsets in seconds
-  from the start of the source, its `rawText` and its normalised `text`.
+  from the start of the source, its normalised `text`, and `rawText` — the recogniser's own
+  words, kept only when normalisation rewrote them (`nil` otherwise, as in dictation history).
 - **VAD** — voice activity detection: Silero VAD running through the vendored sherpa-onnx C API
   (`SherpaOnnxVoiceActivityDetector`). It decides where speech is, so silence and music are
   never sent to the recogniser.
@@ -44,20 +45,23 @@ store.
 
 ### Pipeline
 
-1. **Preflight.** The controller checks transcription readiness via `BackendReadiness`, and that
-   the VAD model is installed. A missing VAD model shows the download offer before any decoding
-   starts; the job begins once the download finishes.
+1. **Preflight.** The controller checks transcription readiness via `BackendReadiness`; a
+   backend that is not ready fails the job with its reason before any decoding starts. The VAD
+   model is bundled, so there is nothing to download.
 2. **Decode.** `MediaAudioDecoding` reads the first audio track with `AVAssetReader`, converts it
    to 16 kHz mono `Float` PCM and yields it in chunks, together with the asset duration. The
    whole file is never held in memory.
 3. **Segment.** `SpeechSegmenting` consumes the PCM stream and yields segments of at most
-   30 seconds. A longer stretch of continuous speech is split at the quietest point of its last
-   5 seconds. Segments shorter than 0.3 s are dropped.
+   30 seconds. A longer stretch of continuous speech is split at the quietest 20 ms frame of
+   its last 5 seconds before the cap (the latest such frame on a tie). Segments shorter than
+   0.3 s are dropped. Silero's own `max_speech_duration` does not do this: probed on 70 s of
+   continuous speech it returned one 70 s segment with the limit at 25 s and at 10 s.
 4. **Transcribe.** Each segment goes, in order, to the existing `TranscriptionProvider` — the
    protocol does not change. Remote endpoints receive each segment as its own WAV request, so the
    OpenAI 25 MB upload limit is never approached.
 5. **Normalise.** Each segment's text passes through the glossary `Normalizer` exactly as a
-   dictation does; `rawText` keeps the recogniser output.
+   dictation does, when the glossary is enabled. A segment whose text is empty after trimming
+   is not stored.
 6. **Store.** The transcript row is created at step 1 with status `inProgress`; each segment is
    appended as soon as it is transcribed. When the last segment lands the status becomes
    `complete`.
@@ -80,13 +84,15 @@ dictation.
 - The transcript stores a bookmark to its source file. `Resume` re-decodes the source from the
   `end` of the last stored segment and appends. If the bookmark no longer resolves, `Resume`
   reports `sourceFileUnavailable` and offers to pick the file again.
-- A transcript found `inProgress` at launch (the app was killed) is shown as `incomplete`.
+- At launch, before any job can start, every transcript still `inProgress` (the app was
+  killed) becomes `incomplete` with the reason `Macomprendo quit before it finished.`
 
 ### Summary
 
-- `Summarize` uses the configured LLM through the existing `LLMProvider`, streaming into the
-  detail pane like `SummarizeController` does, with a new prompt preset `transcriptSummary` in
-  every factory language.
+- `Summarize` uses the LLM configured for Summarize (Settings ▸ Refine & Summarize) and that
+  feature's default preset for the current prompt language, streaming into the detail pane like
+  `SummarizeController` does. No new preset kind: a `PresetKind` case would ripple through the
+  Prompts tab, seeding and the LLM selection for no behaviour the existing preset lacks.
 - Transcript text up to 12,000 characters is summarised in one request. Longer text is split on
   segment boundaries into parts of at most 12,000 characters; each part is summarised, then the
   part summaries are summarised into one.
@@ -107,9 +113,10 @@ New `MacomprendoError` cases, each with `errorDescription` and `recoverySuggesti
 
 - `mediaUnreadable` — AVFoundation cannot open the file or it is DRM-protected.
 - `noAudioTrack` — the file has no audio track.
-- `vadModelMissing` — the VAD model is not installed; recovery offers the download.
 - `noSpeechFound` — VAD found no speech in the whole source.
 - `sourceFileUnavailable` — `Resume` cannot resolve the stored bookmark.
+- `transcriptStore` — the transcripts database cannot be opened or written.
+- `speechDetector` — the bundled VAD model is missing or sherpa-onnx rejects it.
 
 ## Architecture
 
@@ -124,12 +131,14 @@ service is built in `AppEnvironment`.
 | Services | `MediaAudioDecoding` / `AVAssetMediaDecoder` | File → `AsyncThrowingStream` of 16 kHz mono PCM + duration |
 | Services | `SpeechSegmenting` / `SherpaSileroSegmenter` | PCM stream → segments; the 30 s split rule lives in a pure helper |
 | Services | `TranscriptStoring` / `SQLiteTranscriptStore` | Actor; `~/Library/Application Support/Macomprendo/transcripts.sqlite3` |
-| Services | `ModelCatalog` | New `ModelKind.vad`, engine `sherpaSileroVAD`, file role `vadModel` |
-| Providers | `LocalTranscriptionProviderCache` | Gains the priority hand-off between dictation and file segments |
-| Features | `FileTranscriptionController` | `@MainActor`; `idle → preflight → transcribing(progress) → finished(id) / failed(error)` |
+| Services | `SpeechSegmentSplitter` | Pure 30 s cap and 0.3 s floor |
+| Services | `FileBookmarking` / `FoundationFileBookmarks` | Bookmark a source file, resolve it on `Resume` |
+| Providers | `TranscriptionLane` | Serialises local-model calls; a waiting dictation goes before a waiting file segment |
+| Features | `LongAudioPipeline` | Decode → segment → transcribe with retries, as a stream of events |
+| Features | `FileTranscriptionController` | `@MainActor`; `idle → running(progress) → finished(id) / failed(message)` |
+| Features | `TranscriptLibraryController` | `@MainActor`; list, selection, delete, copy, export text |
 | Features | `TranscriptSummaryController` | `@MainActor`; single or multi-part summary, one in-flight task |
-| Features | `FactoryPresets` | `transcriptSummary` preset per language |
-| UI | `TranscriptsWindow`, menu item | List, detail, drop zone, progress, actions |
+| UI | `TranscriptsView`, menu item | List, detail, drop zone, progress, actions |
 
 ### Store schema
 
@@ -142,10 +151,13 @@ Transcripts are kept until the user deletes them; dictation-history retention do
 
 ### VAD model
 
-The Silero VAD ONNX model from the sherpa-onnx `asr-models` release, downloaded on demand through
-`ModelManager` like every other model, with its SHA-256 recorded in the catalog. It is not
-bundled. Silero VAD is MIT-licensed; it gets an entry in `LicenseRegistry` and its text in
-`Resources/Licenses` because the app downloads and runs it.
+`silero_vad.onnx` from the sherpa-onnx `asr-models` release (643,854 bytes, SHA-256
+`9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6`), **bundled** in
+`Resources/SpeechDetection`. Bundling replaced the first draft's on-demand download: a catalog
+entry would have needed a third `ModelKind`, which every `ModelCatalog.all` consumer and the
+exhaustive engine switches in `ProviderFactory`, `SherpaTTSService` and `DictationTabModel`
+would have had to learn, for a file smaller than one app icon set. Silero VAD is MIT; it gets a
+`LicenseRegistry` entry, its text in `Resources/Licenses`, and a `NOTICE` row.
 
 ## Privacy
 
@@ -180,7 +192,7 @@ each of the three transcription backends; resume after quitting mid-job.
 
 ## Documents
 
-- ADR `0015-long-audio-segmentation-with-silero-vad.md`.
+- ADR `0015-long-audio-segmentation-with-silero-vad.md` (bundled model, own 30 s cap).
 - ADR `0016-transcripts-store-separate-from-dictation-history.md`.
 - `docs/ARCHITECTURE.md` gains a *Long-audio transcription* section.
 - `CHANGELOG.md` `Unreleased`: file transcription, Transcripts window, summary.
