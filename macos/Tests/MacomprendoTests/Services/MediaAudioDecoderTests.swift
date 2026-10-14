@@ -11,7 +11,11 @@ import Testing
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("decoder-\(UUID().uuidString).wav")
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2))
-        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        // The file must be interleaved: AVAudioFile ignores a non-interleaved file format (and
+        // warns), while the decoder's resample/downmix path is what these tests exercise.
+        var settings = format.settings
+        settings[AVLinearPCMIsNonInterleaved] = false
+        let file = try AVAudioFile(forWriting: url, settings: settings)
         let frames = AVAudioFrameCount(seconds * 44_100)
         let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
         buffer.frameLength = frames
@@ -69,6 +73,30 @@ import Testing
             if case .mediaUnreadable = error { return true }
             return error == .noAudioTrack
         }
+    }
+
+    /// The stream must decode only when the consumer asks: reading one chunk reads one source
+    /// buffer, not the whole file. Otherwise a slow consumer (transcribing chunk by chunk) would
+    /// end up with the entire file buffered in memory.
+    @Test func theStreamIsPullBasedSoOneChunkReadsOneBuffer() async throws {
+        let url = try writeTone(seconds: 20)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let audio = try await AVAssetMediaDecoder().open(url, from: 0)
+
+        var chunksRead = 0
+        var firstChunkCount = 0
+        for try await chunk in audio.chunks {
+            chunksRead += 1
+            firstChunkCount = chunk.count
+            break  // Drop the iterator: the rest of the file must not have been decoded.
+        }
+
+        #expect(chunksRead == 1)
+        #expect(firstChunkCount > 0)
+        // One buffer pulled, and it is a fraction of the 20 s (320 000 samples) file.
+        #expect(audio.buffersPulled() == 1)
+        #expect(firstChunkCount < 320_000)
     }
 }
 

@@ -5,9 +5,24 @@ import Foundation
 struct DecodedAudio: Sendable {
     /// Seconds of the whole file, regardless of where decoding starts.
     let duration: TimeInterval
-    /// Where `chunks` begins, in seconds from the start of the file.
+    /// The requested start, in seconds from the start of the file. For compressed sources the
+    /// first decoded sample may sit slightly before it: `AVAssetReader` begins at a sync point.
     let startOffset: TimeInterval
+    /// 16 kHz mono samples, pulled from the file one buffer at a time. Nothing is decoded until
+    /// the consumer asks for the next chunk, so a slow consumer never buffers the whole file.
     let chunks: AsyncThrowingStream<[Float], Error>
+    /// Test-only (internal): how many source buffers the decoder has pulled so far. Lets a test
+    /// prove the stream is pull-based without exposing anything publicly.
+    let buffersPulled: @Sendable () -> Int
+
+    init(duration: TimeInterval, startOffset: TimeInterval,
+         chunks: AsyncThrowingStream<[Float], Error>,
+         buffersPulled: @escaping @Sendable () -> Int = { 0 }) {
+        self.duration = duration
+        self.startOffset = startOffset
+        self.chunks = chunks
+        self.buffersPulled = buffersPulled
+    }
 }
 
 protocol MediaAudioDecoding: Sendable {
@@ -60,43 +75,53 @@ struct AVAssetMediaDecoder: MediaAudioDecoding {
         }
 
         let box = ReaderBox(reader: reader, output: output)
-        let chunks = AsyncThrowingStream<[Float], Error> { continuation in
-            let task = Task.detached {
-                do {
-                    while let samples = try box.next() {
-                        try Task.checkCancellation()
-                        if !samples.isEmpty { continuation.yield(samples) }
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in
-                task.cancel()
-                box.cancel()
-            }
-        }
+        // Pull-based: the unfolding closure runs only when the consumer asks for the next chunk,
+        // so decoding never races ahead of a slow consumer. Empty buffers are skipped inside the
+        // box and `nil` ends the stream. Cancellation is checked on every pull, and the reader is
+        // cancelled when the box goes away (the consumer dropping the iterator releases it). No
+        // dropping buffering policy is used: losing audio would be worse.
+        let chunks = AsyncThrowingStream<[Float], Error>(unfolding: {
+            try Task.checkCancellation()
+            return try box.nextNonEmpty()
+        })
         let seconds = duration.seconds
         return DecodedAudio(duration: seconds.isFinite ? seconds : 0,
                             startOffset: max(0, start),
-                            chunks: chunks)
+                            chunks: chunks,
+                            buffersPulled: { box.buffersPulled })
     }
 }
 
-/// `AVAssetReader` is not `Sendable`; this box is only touched by the decoding task and by
-/// `cancel()`, which `AVAssetReader.cancelReading()` documents as safe from another thread.
+/// `AVAssetReader` is not `Sendable`; this box is only touched by the stream's unfolding closure
+/// and by `deinit`, which `AVAssetReader.cancelReading()` documents as safe from another thread.
 private final class ReaderBox: @unchecked Sendable {
     private let reader: AVAssetReader
     private let output: AVAssetReaderTrackOutput
+    /// Test-only observable of how far decoding has advanced.
+    private(set) var buffersPulled = 0
 
     init(reader: AVAssetReader, output: AVAssetReaderTrackOutput) {
         self.reader = reader
         self.output = output
     }
 
+    deinit {
+        // Stops decoding as soon as nothing can pull from the stream any more.
+        reader.cancelReading()
+    }
+
+    /// The next non-empty buffer's samples; `nil` at the end of the file. Buffers that carry no
+    /// samples are skipped here rather than yielded, so consumers never see an empty chunk.
+    func nextNonEmpty() throws -> [Float]? {
+        while true {
+            guard let samples = try next() else { return nil }
+            if !samples.isEmpty { return samples }
+        }
+    }
+
     /// The next buffer's samples; `nil` at the end of the file.
-    func next() throws -> [Float]? {
+    private func next() throws -> [Float]? {
+        buffersPulled += 1
         guard let buffer = output.copyNextSampleBuffer() else {
             if reader.status == .failed {
                 throw MacomprendoError.mediaUnreadable(
@@ -115,9 +140,5 @@ private final class ReaderBox: @unchecked Sendable {
             throw MacomprendoError.mediaUnreadable("a decoded buffer could not be read")
         }
         return samples
-    }
-
-    func cancel() {
-        reader.cancelReading()
     }
 }
