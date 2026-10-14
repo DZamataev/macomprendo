@@ -140,9 +140,13 @@ struct GlossarySection: View {
             TextEditor(text: $model.manualTermsText)
                 .font(.body.monospaced())
                 .frame(minHeight: 60, maxHeight: 90)
-            Text("One term per line, in the spelling you want pasted. A line such as "
-                 + "LOOKY = луки, луке also rewrites those forms to the term. These outrank "
-                 + "every pack.")
+            // One literal, not a concatenation, so it is a LocalizedStringKey and the
+            // backticks render as code rather than as characters.
+            Text("""
+                One term per line, in the spelling you want pasted. `SQL = sequel, sequels` \
+                rewrites each listed form to the term — forms match whole words only, so list \
+                every ending you want caught. These outrank every pack.
+                """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
