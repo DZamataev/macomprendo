@@ -187,8 +187,6 @@ Unit tests (swift-testing, written first), with fakes for every new protocol:
 
 - `TranscriptExporter`: SRT numbering and `HH:MM:SS,mmm` formatting past one hour, empty
   transcript, Markdown with and without a summary.
-- `TranscriptChunker`: short text is one part, parts never split a segment, a single segment
-  longer than the limit becomes its own part.
 - Segment rule: regions closer than 10 s join with the gap audio kept, spans are padded 0.3 s,
   non-speech over 10 s is dropped, ≤ 30 s passes through, longer spans split at the quietest
   frame of the last 5 s, sub-0.3 s pieces drop, offsets are seconds from the source start.
@@ -202,10 +200,10 @@ Unit tests (swift-testing, written first), with fakes for every new protocol:
   a backend that is not ready stops in preflight, for a new job and for `Resume`.
 - `SQLiteTranscriptStore`: incremental append, status transitions, `inProgress` → `incomplete`
   at open, cascade delete, newest-first listing.
-- `TranscriptSummaryController`: one request below the limit, map then reduce above it,
-  cancellation keeps the previous summary.
 - Priority hand-off: with a file job running, a dictation request is served before the next
   file segment.
+- `SummarizeController` opened from the window hides Replace selection; the hotkey path keeps it.
+- `Resume` with a newly chosen file resumes from the stored position and replaces the bookmark.
 
 `docs/SMOKE_TEST.md` gains: mp3, m4a and an mp4 with video; a video without an audio track; a
 one-hour podcast (memory stays flat, progress advances); dictating while a file transcribes;
