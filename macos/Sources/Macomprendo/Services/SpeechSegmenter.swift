@@ -37,8 +37,12 @@ struct SherpaSileroSegmenter: SpeechSegmenting {
     }
 }
 
+/// One recording's detector — and one `SpeechSpanAssembler` that turns its regions into padded,
+/// joined segments: every accepted chunk goes to both, each completed region goes to the
+/// assembler, and the assembler's segments are returned (spec: Pipeline step 3).
 private final class SherpaSileroSession: SpeechSegmentingSession {
     private let detector: OpaquePointer
+    private let assembler: SpeechSpanAssembler
     private let rate = SherpaSileroSegmenter.sampleRate
 
     init(modelPath: String) throws {
@@ -49,7 +53,7 @@ private final class SherpaSileroSession: SpeechSegmentingSession {
                 config.silero_vad.threshold = 0.5
                 config.silero_vad.min_silence_duration = 0.5
                 config.silero_vad.min_speech_duration = 0.25
-                // The detector only *encourages* a split here; SpeechSegmentSplitter enforces it.
+                // The detector only *encourages* a split here; SpeechSpanAssembler enforces it.
                 config.silero_vad.max_speech_duration = Float(SpeechSegmentSplitter.maximumDuration)
                 config.silero_vad.window_size = 512
                 config.sample_rate = Int32(SherpaSileroSegmenter.sampleRate)
@@ -63,6 +67,7 @@ private final class SherpaSileroSession: SpeechSegmentingSession {
             throw MacomprendoError.speechDetector("sherpa-onnx rejected the model")
         }
         detector = created
+        assembler = SpeechSpanAssembler(sampleRate: rate)
     }
 
     deinit {
@@ -74,34 +79,38 @@ private final class SherpaSileroSession: SpeechSegmentingSession {
             SherpaOnnxVoiceActivityDetectorAcceptWaveform(detector, buffer.baseAddress,
                                                          Int32(buffer.count))
         }
-        return drain()
+        let regions = drainRegions()
+        // While the detector is inside speech it may still report a region starting inside the
+        // assembler's join window, so the assembler must not close a span by time yet.
+        let speechInProgress = SherpaOnnxVoiceActivityDetectorDetected(detector) != 0
+        return assembler.accept(samples: samples, regions: regions,
+                                speechInProgress: speechInProgress)
     }
 
     func finish() -> [SpeechSegment] {
         SherpaOnnxVoiceActivityDetectorFlush(detector)
-        return drain()
+        // Everything completed is known by now, so all regions are applied before the assembler
+        // closes what is left.
+        var segments = assembler.accept(samples: [], regions: drainRegions(),
+                                        speechInProgress: false)
+        segments += assembler.finish()
+        return segments
     }
 
-    private func drain() -> [SpeechSegment] {
-        var segments: [SpeechSegment] = []
+    /// Completed regions, in stream samples. A degenerate segment (no samples) is dropped rather
+    /// than treated as a region.
+    private func drainRegions() -> [SpeechSpanAssembler.Region] {
+        var regions: [SpeechSpanAssembler.Region] = []
         while SherpaOnnxVoiceActivityDetectorEmpty(detector) == 0 {
             guard let front = SherpaOnnxVoiceActivityDetectorFront(detector) else { break }
             let segment = front.pointee
+            let start = Int(segment.start)
             let count = Int(segment.n)
-            // Drop a degenerate segment (no samples) rather than build a buffer from a null
-            // pointer or an empty one.
-            guard let samplesPointer = segment.samples, count > 0 else {
-                SherpaOnnxDestroySpeechSegment(front)
-                SherpaOnnxVoiceActivityDetectorPop(detector)
-                continue
-            }
-            let samples = Array(UnsafeBufferPointer(start: samplesPointer, count: count))
             SherpaOnnxDestroySpeechSegment(front)
             SherpaOnnxVoiceActivityDetectorPop(detector)
-            segments += SpeechSegmentSplitter.split(
-                SpeechSegment(start: Double(segment.start) / Double(rate),
-                              samples: samples, sampleRate: rate))
+            guard count > 0 else { continue }
+            regions.append(SpeechSpanAssembler.Region(startSample: start, endSample: start + count))
         }
-        return segments
+        return regions
     }
 }

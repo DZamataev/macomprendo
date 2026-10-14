@@ -38,23 +38,8 @@ enum SpeechSegmentSplitter {
         var offset = 0
         let samples = segment.samples
         while samples.count - offset > cap {
-            let searchStart = offset + cap - window
-            var quietest = offset + cap
-            var quietestEnergy = Float.greatestFiniteMagnitude
-            var frameStart = searchStart
-            while frameStart + frame <= offset + cap {
-                var energy: Float = 0
-                for index in frameStart..<(frameStart + frame) {
-                    energy += samples[index] * samples[index]
-                }
-                // `<=`: among equally quiet frames take the latest, so uniform speech is cut
-                // as close to the cap as possible rather than five seconds early.
-                if energy <= quietestEnergy {
-                    quietestEnergy = energy
-                    quietest = frameStart + frame / 2
-                }
-                frameStart += frame
-            }
+            let quietest = quietestCut(in: samples, offset: offset, cap: cap, frame: frame,
+                                       window: window)
             pieces.append(SpeechSegment(start: segment.start + Double(offset) / rate,
                                         samples: Array(samples[offset..<quietest]),
                                         sampleRate: segment.sampleRate))
@@ -64,5 +49,31 @@ enum SpeechSegmentSplitter {
                                     samples: Array(samples[offset...]),
                                     sampleRate: segment.sampleRate))
         return pieces.filter { $0.duration >= minimumDuration }
+    }
+
+    /// The cut point a piece starting at `offset` should take when it reaches the cap: the middle
+    /// of the quietest `frame`-sample frame in the last `window` samples before `offset + cap`,
+    /// or `offset + cap` itself when no frame fits.
+    ///
+    /// Among equally quiet frames the latest wins (`<=`), so uniform speech is cut as close to
+    /// the cap as possible rather than a window early.
+    static func quietestCut(in samples: [Float], offset: Int, cap: Int, frame: Int,
+                            window: Int) -> Int {
+        let searchStart = offset + cap - window
+        var quietest = offset + cap
+        var quietestEnergy = Float.greatestFiniteMagnitude
+        var frameStart = searchStart
+        while frameStart + frame <= offset + cap {
+            var energy: Float = 0
+            for index in frameStart..<(frameStart + frame) {
+                energy += samples[index] * samples[index]
+            }
+            if energy <= quietestEnergy {
+                quietestEnergy = energy
+                quietest = frameStart + frame / 2
+            }
+            frameStart += frame
+        }
+        return quietest
     }
 }
