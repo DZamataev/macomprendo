@@ -15,8 +15,11 @@ enum LongAudioEvent: Sendable, Equatable {
 
 /// Turns one file into a stream of events for a controller to consume: it opens the file, decodes
 /// it chunk by chunk, finds the speech in each chunk, transcribes every segment (retrying a
-/// transient failure), and reports how far it has got. Nothing is decoded ahead of the consumer —
-/// the decoder's stream is pull-based — so a slow transcriber never buffers the whole file.
+/// transient failure), and reports how far it has got. Audio is held one chunk at a time — a chunk
+/// is transcribed before the next is pulled — but the events it yields are buffered without bound,
+/// so a slow consumer never slows the producer: decoding and transcription run at the provider's
+/// pace regardless. The producing task stops when the stream is terminated (the consumer's task
+/// cancelled), at the next segment.
 struct LongAudioPipeline: Sendable {
     /// Three attempts in total: the first call plus two retries.
     private static let attempts = 3
@@ -64,6 +67,8 @@ struct LongAudioPipeline: Sendable {
                         try Task.checkCancellation()
                         decodedSeconds += Double(chunk.count) / rate
                         for segment in session.accept(chunk) {
+                            // A terminated stream stops at the next segment, not the next chunk.
+                            try Task.checkCancellation()
                             if provider == nil { provider = try await transcriber() }
                             guard let provider else { continue }
                             try await emit(segment, from: provider, offset: offset,
@@ -74,6 +79,8 @@ struct LongAudioPipeline: Sendable {
                     // The decoder's stream is over; whatever speech was still open is drained
                     // exactly like a chunk's segments.
                     for segment in session.finish() {
+                        // A terminated stream stops at the next segment, not the next chunk.
+                        try Task.checkCancellation()
                         if provider == nil { provider = try await transcriber() }
                         guard let provider else { continue }
                         try await emit(segment, from: provider, offset: offset, into: continuation)

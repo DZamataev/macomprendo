@@ -80,6 +80,26 @@ import Testing
         }
     }
 
+    /// A decoder whose chunk stream reports the moment the pipeline stops pulling from it: the
+    /// deterministic signal that the producing task has ended. The stream is never finished, so
+    /// it ends only when the pipeline drops it and the termination handler fires exactly then.
+    private final class TerminatingDecoder: MediaAudioDecoding, @unchecked Sendable {
+        let stopped = AsyncGate()
+        private let chunks: [[Float]]
+
+        init(chunks: [[Float]]) { self.chunks = chunks }
+
+        func open(_ url: URL, from start: TimeInterval) async throws -> DecodedAudio {
+            let chunks = self.chunks
+            let stopped = self.stopped
+            let stream = AsyncThrowingStream<[Float], Error> { continuation in
+                continuation.onTermination = { _ in stopped.open() }
+                for chunk in chunks { continuation.yield(chunk) }
+            }
+            return DecodedAudio(duration: 10, startOffset: start, chunks: stream)
+        }
+    }
+
     // MARK: - Tests
 
     @Test func emitsOpenedSegmentsAndPositionsInOrder() async throws {
@@ -184,6 +204,63 @@ import Testing
         #expect(provider.received.count == 1)
         #expect(sleeper.durations.isEmpty)
         #expect(result.error is CancellationError)
+    }
+
+    /// `MacomprendoError.cancelled` is the provider's own "I was cancelled", so it is never
+    /// retried either — one call, no sleep, and the error reaches the consumer.
+    @Test func providerCancellationIsNotRetried() async throws {
+        let decoder = ScriptedMediaDecoder(duration: 5, chunks: [Self.second()])
+        let segmenter = ScriptedSegmenter(acceptScript: [[Self.segment(at: 0)]])
+        let provider = FakeTranscriptionProvider()
+        provider.result = .failure(MacomprendoError.cancelled)
+        let sleeper = SleepSpy()
+
+        let result = await outcome(of: make(decoder: decoder, segmenter: segmenter,
+                                            transcriber: { provider },
+                                            sleep: { try await sleeper.sleep($0) })
+            .run(Self.url, from: 0))
+
+        #expect(provider.received.count == 1)
+        #expect(sleeper.durations.isEmpty)
+        #expect(result.error as? MacomprendoError == .cancelled)
+    }
+
+    /// Terminating the stream stops the work at the *next segment*, not the next chunk boundary:
+    /// after the first of two segments in a chunk is in flight, termination must stop the second
+    /// from ever reaching the provider.
+    @Test @MainActor func terminatingTheStreamStopsTranscribing() async throws {
+        let decoder = TerminatingDecoder(chunks: [Self.second(), Self.second()])
+        let segmenter = ScriptedSegmenter(acceptScript: [
+            [Self.segment(at: 0), Self.segment(at: 1)],
+            [Self.segment(at: 2)],
+        ])
+        let provider = FakeTranscriptionProvider()
+        let gate = AsyncGate()
+        provider.gate = gate
+
+        let stream = LongAudioPipeline(decoder: decoder, segmenter: segmenter,
+                                       transcriber: { provider }, language: "en")
+            .run(Self.url, from: 0)
+
+        let consumer = Task { () -> [LongAudioEvent] in
+            var events: [LongAudioEvent] = []
+            do { for try await event in stream { events.append(event) } } catch {}
+            return events
+        }
+
+        // `.opened` is out; the first segment's transcription is now held at the gate.
+        await waitFor("the first segment to reach the provider") { gate.waiterCount == 1 }
+        consumer.cancel()
+        let consumed = await consumer.value
+        #expect(consumed.first == LongAudioEvent.opened(duration: 10))
+
+        // Let the held transcription finish. The terminated stream must stop before the next
+        // segment, so the provider never sees it — and the producing task must end (it drops the
+        // decoder's stream), which is the deterministic point to assert from.
+        gate.open()
+        await waitFor("the producing task to stop pulling") { decoder.stopped.opened }
+
+        #expect(provider.received.count == 1)
     }
 
     @Test func aDecoderOpenErrorIsThrownBeforeAnyEvent() async throws {
