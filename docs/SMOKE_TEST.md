@@ -806,3 +806,100 @@ sherpa-onnx recognizer and ONNX decode path.
 10. Make a downloaded GigaAM model active, delete it from its row while it remains selected,
    then press the dictation hotkey: the failure names the missing model rather than failing
    opaquely.
+
+## File transcription
+
+The decoder is `AVAssetReader` and the VAD model is bundled, so nothing here is reachable from a
+headless test. Use the signed `npm run install-app:signed` build and real files.
+
+- [ ] **mp3, m4a and an mp4 with video all transcribe.** For each, use **Transcribe File…**, pick
+      the file: the Transcripts window opens, a row appears as soon as the job starts, the detail
+      shows `Transcribing — mm:ss / mm:ss` with a **Cancel** button, segments land as
+      `[hh:mm:ss] text`, and the finished row loses its badge and is selected.
+- [ ] **A video with no audio track fails cleanly.** Try a video that has no audio: the job fails
+      with **This file has no audio track.** and its recovery text, and no transcript row is left
+      behind.
+- [ ] **An hour-long file keeps memory flat and progress moving.** Transcribe a long podcast and
+      watch Activity Monitor: memory stays flat (the file is decoded one chunk at a time; peak
+      memory tracks the model, not the length) and the progress line advances to the end without
+      jumping backwards.
+- [ ] **A dropped file starts a job.** With no transcript selected, drop an audio or video file on
+      the window body: the job starts, the drop zone shows the file name and its progress, and the
+      row appears as segments land.
+- [ ] **Starting a job while one runs cancels the first.** Start a long file, then start another:
+      the first row becomes **Incomplete** with reason **Cancelled.**, keeps the segments it had,
+      and the new job runs.
+- [ ] **Dictating while a file transcribes.** Start a file job on a long file, then dictate a
+      sentence: the dictation inserts as usual while the file job keeps going. The dictation waits
+      at most for the segment in flight; the file job is not cancelled.
+- [ ] **Each of the three backends transcribes a file.** Run the same short file with a local
+      whisper model, a sherpa-onnx model, and an OpenAI-compatible endpoint: all three write
+      segments. With a backend that is not ready, the job fails before any decoding with the
+      backend's reason, and no row appears.
+- [ ] **Quit mid-job, relaunch, Incomplete and Resume.** With the local whisper model selected,
+      start a long file and quit Macomprendo from the menu while it runs. The app quits without a
+      crash report (Console ▸ Crash Reports), pausing at most a second or two while the in-flight
+      segment finishes. Relaunch: the transcript is **Incomplete** with reason **Macomprendo quit
+      before it finished.** Click **Resume**: it continues from the last stored segment and
+      completes.
+- [ ] **Resume after the source moved or was deleted.** Make an `incomplete` transcript, then move
+      or delete its source file. Click **Resume**: the window reports **The original file can no
+      longer be found.** and offers **Choose File…**. Choose the file — at its new location, or a
+      fresh copy: the job resumes from the same position and the chosen file becomes the bookmark,
+      so a later **Resume** finds it.
+- [ ] **Summarize opens the Quick Panel without Replace selection.** Select a completed transcript
+      and click **Summarize**: the Summarize Quick Panel opens with the transcript's plain text (no
+      timestamps), the Summarize feature's model and presets, and no **Replace selection**. Copy
+      pastes the summary, and the panel closes without changing the transcript. Then press ⌥M
+      (Summarize selection) and confirm **Replace selection** is back for the hotkey path.
+- [ ] **Export writes all three formats.** For a completed transcript use **Export… ▸ Plain text
+      (.txt)**, **Subtitles (.srt)** and **Markdown (.md)**: the `.txt` holds the segment lines with
+      no timestamps; the `.srt` numbers cues from 1 with `HH:MM:SS,mmm --> HH:MM:SS,mmm` and opens
+      in a player; the `.md` has a `#` title, a metadata line (date, duration, model) and
+      `**[hh:mm:ss]**` lines under `## Transcript`. Export to a folder you cannot write to: an error
+      banner names the failure and the window stays open.
+- [ ] **A WebM file fails as unreadable.** Try the same recording as WebM/Opus: the job fails with
+      **Macomprendo cannot read this file…** (AVFoundation cannot open WebM), the recovery text
+      suggests QuickTime Player, and no row is left behind.
+- [ ] **Delete removes the transcript and keeps the source.** Delete a transcript and confirm: the
+      row and its segments go, the source file on disk is untouched, and the confirmation says so.
+- [ ] **No transcript text in the log.** With Console.app filtered on subsystem
+      `com.dzamataev.macomprendo`, transcribe a file and Summarize it: no log line contains segment
+      or summary text.
+
+### Opt-in long-audio tests
+
+Two suites run only when their environment variables point at real recordings, and they are skipped
+in the default `swift test` run. Recordings and benchmark output live in the gitignored `.media/`.
+
+- [ ] **Real-recording regression test.** Point it at a recording and a UTF-8 file holding one
+      expected phrase per line, then run:
+
+```bash
+MACOMPRENDO_LONG_AUDIO_FIXTURE=<recording> \
+MACOMPRENDO_LONG_AUDIO_EXPECT=<phrases file> \
+MACOMPRENDO_LONG_AUDIO_LANGUAGE=ru \
+swift test --package-path macos --filter LongAudioRecordingTests
+```
+
+      Every phrase must appear in the joined, normalised transcript. `MACOMPRENDO_LONG_AUDIO_MODEL`
+      overrides the whisper model (default
+      `~/Library/Application Support/Macomprendo/models/ggml-large-v3-turbo.bin`). Segment
+      boundaries drift a little between decodes of the same file; a missing phrase is a failure,
+      the drift is not.
+
+- [ ] **Benchmark gym.** Run one recording through the production pipeline once per catalog model:
+
+```bash
+MACOMPRENDO_BENCH_FIXTURE=<recording> \
+MACOMPRENDO_BENCH_OUT=.media/bench/<date> \
+MACOMPRENDO_BENCH_MODELS=large-v3-turbo,gigaam-v3-e2e-rnnt,parakeet-tdt-0.6b-v3 \
+MACOMPRENDO_BENCH_LANGUAGE=ru \
+MACOMPRENDO_BENCH_REFERENCE=<.txt or .srt reference> \
+swift test --package-path macos --filter LongAudioBenchmarkTests
+```
+
+      It writes `<out>/<model>.txt`, `<out>/<model>.srt` and merges RTF, wall time, peak memory and
+      WER/CER into `<out>/report.json`, releasing each model before the next. It fails only on
+      errors, never on quality. `MACOMPRENDO_BENCH_LIMIT_SECONDS` stops a run early, and the models
+      are read from `~/Library/Application Support/Macomprendo/models` — never downloaded.

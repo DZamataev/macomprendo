@@ -55,6 +55,15 @@ struct AppEnvironment {
     /// nil in tests: no NSPanel is created and the Quick Panel controller stays headless.
     var quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)?
     var activationPolicy: any ActivationPolicyControlling
+    /// File transcription's own database and services — transcripts live apart from
+    /// dictation history (ADR-0016).
+    var transcriptStore: any TranscriptStoring
+    var mediaDecoder: any MediaAudioDecoding
+    var speechSegmenter: any SpeechSegmenting
+    var fileBookmarks: any FileBookmarking
+    /// One lane for every caller of the local speech model, so an interactive dictation
+    /// overtakes the file segments already waiting behind it.
+    var transcriptionLane: TranscriptionLane
 
     @MainActor
     static func live() -> AppEnvironment {
@@ -115,6 +124,13 @@ struct AppEnvironment {
                                                 keychain: keychain,
                                                 player: AVAudioPlayerPlayer())),
             quickPanelHost: { view in FloatingPanelHost(rootView: view) },
-            activationPolicy: NSAppActivationPolicy())
+            activationPolicy: NSAppActivationPolicy(),
+            transcriptStore: SQLiteTranscriptStore(
+                databaseURL: applicationSupportDirectory
+                    .appendingPathComponent("transcripts.sqlite3")),
+            mediaDecoder: AVAssetMediaDecoder(),
+            speechSegmenter: SherpaSileroSegmenter(),
+            fileBookmarks: FoundationFileBookmarks(),
+            transcriptionLane: TranscriptionLane())
     }
 }

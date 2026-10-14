@@ -11,6 +11,10 @@ import Foundation
     @Published var selectedPresetID: UUID?
     @Published var instruction: String = ""
     @Published var error: String?
+    /// Whether the footer offers **Replace selection**. The hotkey path can: the selection is
+    /// still selected in the source app. The Transcripts window cannot — it opens this panel
+    /// for a transcript, and no other app holds a selection to replace.
+    @Published private(set) var canReplaceSelection = true
 
     private let llm: @MainActor () throws -> LLMTarget
     private let panel: QuickPanelController
@@ -40,9 +44,10 @@ import Foundation
         self.holder = holder
     }
 
-    func start(text: String) {
+    func start(text: String, canReplaceSelection: Bool = true) {
         target = tracker.capture()
         source = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.canReplaceSelection = canReplaceSelection
         summary = ""
         error = nil
         refreshSelectedPreset()

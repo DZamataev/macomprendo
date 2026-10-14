@@ -158,6 +158,15 @@ enum LicenseRegistry {
             isCopyleft: false,
             note: nil
         ),
+        LicenseEntry(
+            component: "Silero VAD",
+            spdx: "MIT",
+            origin: "Bundled model file (Resources/SpeechDetection/silero_vad.onnx)",
+            homepage: URL(string: "https://github.com/snakers4/silero-vad")!,
+            resourceName: "silero-vad",
+            isCopyleft: false,
+            note: nil
+        ),
     ]
 
     /// Entries whose licence terms reach the whole combined binary.

@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Transcribe File…** and a **Transcripts** window: transcribe any audio or video file — a
+  podcast, a lecture, a recorded meeting — with the transcription source already configured in
+  Settings ▸ Dictation, read the result with per-segment timestamps, and keep it in the new window.
+  The window also accepts a dropped file. While a job runs its row shows
+  `Transcribing — mm:ss / mm:ss` with a **Cancel** button; starting another job cancels the running
+  one, which keeps the segments it had and becomes **Incomplete**.
+- Export a transcript as **Plain text (.txt)**, **Subtitles (.srt)** or **Markdown (.md)**.
+- **Summarize** a transcript from the window: it opens the Summarize panel with the whole
+  transcript and the model and presets configured for Summarize.
+- **Resume** an unfinished transcript: it continues from the last stored segment, and if the source
+  file has moved or was deleted it asks for the file again with **Choose File…** and carries on
+  from the same position.
+- Transcripts are kept until you delete them, separately from dictation history.
+
+### Changed
+- Settings ▸ Refine & Summarize labels each feature's model picker **Model for Refine** and
+  **Model for Summarize**, so the two models are told apart at a glance.
+
 ## [0.3.0] - 2026-10-14
 
 ### Added

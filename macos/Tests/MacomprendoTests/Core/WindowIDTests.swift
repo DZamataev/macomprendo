@@ -7,4 +7,10 @@ import Testing
         #expect(WindowID.dictationHistory == "dictation-history")
         #expect(WindowID.about != WindowID.dictationHistory)
     }
+
+    @Test func transcriptsWindowHasAStableDistinctID() {
+        #expect(WindowID.transcripts == "transcripts")
+        #expect(WindowID.transcripts != WindowID.about)
+        #expect(WindowID.transcripts != WindowID.dictationHistory)
+    }
 }

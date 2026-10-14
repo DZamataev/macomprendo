@@ -44,3 +44,6 @@ macos/AppBundle/AppIcon.iconset/
 # wiring (README with the rebuild command) is committed.
 graphify-out/*
 !graphify-out/README.md
+
+# Local recordings for long-audio debugging and opt-in benchmarks: large media, never committed.
+.media/

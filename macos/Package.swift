@@ -24,6 +24,7 @@ let package = Package(
             resources: [
                 .copy("Resources/Icons"),
                 .copy("Resources/Licenses"),
+                .copy("Resources/SpeechDetection"),
                 .copy("Resources/Vocabulary")
             ],
             swiftSettings: [.swiftLanguageMode(.v6)],

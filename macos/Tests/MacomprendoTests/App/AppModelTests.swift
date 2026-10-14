@@ -377,6 +377,73 @@ import Testing
         #expect(cache.isEmpty)
     }
 
+    /// Quitting mid-job: the running file job is stopped — and its pipeline's references to the
+    /// local provider are gone — before the cache drops the model, so the whisper context can
+    /// actually be freed before the process exits. Clearing the cache under a live job was how
+    /// quitting mid-job could abort in whisper.cpp's Metal teardown (ggml-metal-device.m:657).
+    @Test func shutdownStopsARunningFileJobBeforeClearingTheCache() async throws {
+        let models = StubModelManager()
+        models.resolvedFiles["base"] = [.ggml: URL(fileURLWithPath: "/models/ggml-base.bin")]
+        let cache = LocalTranscriptionProviderCache()
+        let store = FakeTranscriptStore()
+        let gate = AsyncGate()
+        let chunk = [Float](repeating: 0, count: 16_000)
+        let decoder = ScriptedMediaDecoder(duration: 10, chunks: [chunk])
+        let segmenter = ScriptedSegmenter(
+            acceptScript: [[SpeechSegment(start: 0, samples: chunk, sampleRate: 16_000)]])
+        let model = AppModel(
+            store: InMemorySettingsStore(),
+            keychain: InMemoryKeychainStore(),
+            env: .fake(models: models, localTranscriptionCache: cache,
+                       transcriptStore: store, mediaDecoder: decoder,
+                       speechSegmenter: segmenter))
+        model.settings.transcriptionSource = .local(modelID: "base")
+        model.settings.localModelIdleTimeout = .never
+        model.dictationTabModel.modelStates = ["base": .downloaded]
+
+        // The provider the file job will lease. Created in a scope of its own, so the cache is
+        // its only strong reference and its deallocation is observable.
+        weak var weakProvider: FakeTranscriptionProvider?
+        do {
+            let provider = FakeTranscriptionProvider()
+            provider.gate = gate
+            weakProvider = provider
+            _ = cache.provider(provider,
+                               configuration: .init(
+                                   source: .local(modelID: "base"),
+                                   whisper: WhisperOptions(
+                                       threads: model.settings.whisperThreads,
+                                       translate: model.settings.whisperTranslate)))
+        }
+
+        model.fileTranscription.transcribe(fileAt: URL(fileURLWithPath: "/files/podcast.m4a"))
+        await waitFor("the first segment to reach the provider") { gate.waiterCount == 1 }
+
+        let shutdown = Task { await model.shutdown() }
+        // The row's bookkeeping lands while the job's pipeline task is still inside the
+        // provider. Wait on the store, not on `fileTranscription.state`: that reads `.idle`
+        // before the job's first event is processed, so it can look settled before the quit
+        // was even seen.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline,
+              await store.snapshot(1)?.header.status != .incomplete {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await store.snapshot(1)?.header.status == .incomplete)
+        // The cache is untouched: `shutdown()` is still waiting for the job's pipeline task,
+        // which holds the provider — and the whisper context behind it — until it ends.
+        #expect(cache.isEmpty == false)
+
+        gate.open()
+        await shutdown.value
+
+        #expect(cache.isEmpty)
+        #expect(weakProvider == nil)
+        let row = await store.snapshot(1)
+        #expect(row?.header.status == .incomplete)
+        #expect(row?.header.statusReason == TranscriptLibraryController.abandonedJobReason)
+    }
+
     // MARK: - Persistence at init
 
     @Test func appModelStartsFromDefaultsWhenTheStoreIsEmpty() {
@@ -554,5 +621,88 @@ import Testing
         model.glossarySectionModel.reveal()
 
         #expect(revealer.revealed == [store.directoryURL])
+    }
+
+    // MARK: - Transcription lane and file jobs
+
+    /// A local source is one speech context, so its provider goes through the environment's
+    /// lane at interactive priority: a dictation overtakes file segments already queued.
+    @Test func dictationTranscriberGoesThroughTheLaneAtInteractivePriority() async throws {
+        let models = StubModelManager()
+        models.resolvedFiles["base"] = [.ggml: URL(fileURLWithPath: "/models/ggml-base.bin")]
+        let lane = TranscriptionLane()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(models: models, transcriptionLane: lane))
+        model.settings.transcriptionSource = .local(modelID: "base")
+
+        let provider = try await model.transcriberProvider()
+
+        let wrapped = try #require(provider as? LaneTranscriptionProvider)
+        #expect(wrapped.lane === lane)
+        guard case .interactive = wrapped.priority else {
+            Issue.record("expected interactive priority, got \(wrapped.priority)")
+            return
+        }
+    }
+
+    /// A file job's segments must wait behind dictation: the same lane, background priority.
+    @Test func fileTranscriberUsesBackgroundPriority() async throws {
+        let models = StubModelManager()
+        models.resolvedFiles["base"] = [.ggml: URL(fileURLWithPath: "/models/ggml-base.bin")]
+        let lane = TranscriptionLane()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(models: models, transcriptionLane: lane))
+        model.settings.transcriptionSource = .local(modelID: "base")
+
+        let provider = try await model.backgroundTranscriberProvider()
+
+        let wrapped = try #require(provider as? LaneTranscriptionProvider)
+        #expect(wrapped.lane === lane)
+        guard case .background = wrapped.priority else {
+            Issue.record("expected background priority, got \(wrapped.priority)")
+            return
+        }
+    }
+
+    /// Concurrent remote requests are fine, so an endpoint provider is handed out unwrapped.
+    @Test func anEndpointSourceIsNotWrapped() async throws {
+        let endpoint = Endpoint(name: "Test", kind: .openAICompatible,
+                                baseURL: URL(string: "https://example.test")!)
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake())
+        model.settings.endpoints = [endpoint]
+        model.settings.transcriptionSource = .endpoint(id: endpoint.id, model: "whisper-1")
+
+        let provider = try await model.transcriberProvider()
+
+        #expect(!(provider is LaneTranscriptionProvider))
+    }
+
+    /// No job can be running at launch, so an `inProgress` row is a job the app did not
+    /// finish; `start()` repairs it before anything else can begin a job.
+    @Test func startMarksAbandonedTranscriptsIncomplete() async throws {
+        let store = FakeTranscriptStore()
+        let id = await store.create(sourceKind: .file, title: "interrupted.m4a",
+                                    sourceBookmark: nil, duration: nil,
+                                    run: TranscriptionRun.from(.local(modelID: "base"),
+                                                               language: nil),
+                                    at: Date())
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(transcriptStore: store))
+
+        model.start()
+
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if await store.snapshot(id)?.header.status == .incomplete { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        let marked = try #require(await store.snapshot(id))
+        #expect(marked.header.status == .incomplete)
+        #expect(marked.header.statusReason == TranscriptLibraryController.abandonedJobReason)
     }
 }

@@ -6,6 +6,16 @@ import SwiftUI
         are still red — anyway can you tell marta and also book the room
         """
 
+    /// The LLM pickers' labels name the selected feature: "Endpoint" and "Model" alone read
+    /// as one shared pair — the operator mistook Refine's model for Summarize's.
+    nonisolated static func endpointLabel(for kind: PresetKind) -> String {
+        "Endpoint for \(kind.displayName)"
+    }
+
+    nonisolated static func modelLabel(for kind: PresetKind) -> String {
+        "Model for \(kind.displayName)"
+    }
+
     @Published var kind: PresetKind = .refine {
         didSet { if kind != oldValue { select(presets.first?.id) } }
     }
@@ -276,14 +286,14 @@ struct PromptsTab: View {
 
     private var endpointControls: some View {
         HStack {
-            Picker("Endpoint", selection: endpointBinding) {
+            Picker(PromptsTabModel.endpointLabel(for: model.kind), selection: endpointBinding) {
                 ForEach(app.settings.endpoints) { endpoint in
                     Text(endpoint.name).tag(Optional(endpoint.id))
                 }
             }
             .frame(maxWidth: 240)
 
-            Picker("Model", selection: modelBinding) {
+            Picker(PromptsTabModel.modelLabel(for: model.kind), selection: modelBinding) {
                 ForEach(model.availableModels, id: \.self) { name in
                     Text(name).tag(name)
                 }

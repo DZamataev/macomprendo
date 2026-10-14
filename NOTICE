@@ -48,6 +48,7 @@ statically linked components do not appear in `otool -L` output at all.
 | [OpenFst](https://www.openfst.org) | Apache-2.0 | Statically linked inside `SherpaOnnxC.framework` |
 | [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) 2.4.0 | MIT | Swift package |
 | [Phosphor Icons](https://phosphoricons.com) | MIT | Vendored SVGs |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | MIT | Bundled model file (`silero_vad.onnx`) |
 
 The full text of each licence is in
 [`macos/Sources/Macomprendo/Resources/Licenses/`](macos/Sources/Macomprendo/Resources/Licenses),

@@ -77,6 +77,15 @@ struct MacomprendoApp: App {
         }
         .defaultSize(width: 720, height: 560)
 
+        Window("Transcripts", id: WindowID.transcripts) {
+            TranscriptsView(library: model.transcriptLibrary,
+                            transcription: model.fileTranscription)
+                .environmentObject(model)
+                .onAppear { model.dockIcon.open(.transcripts) }
+                .onDisappear { model.dockIcon.close(.transcripts) }
+        }
+        .defaultSize(width: 880, height: 620)
+
         Window("About Macomprendo", id: WindowID.about) {
             AboutView(model: model.aboutModel)
                 .onAppear { model.dockIcon.open(.about) }

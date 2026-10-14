@@ -96,12 +96,16 @@ struct SummaryLayout: View {
                     Icon(.copy, size: 14)
                 }
             }
-            Button { Task { await controller.replaceSelection() } } label: {
-                Label { Text("Replace selection") } icon: {
-                    Icon(.insert, size: 14)
+            // Hidden for a panel opened from the Transcripts window: there is no selection in
+            // another app to replace.
+            if controller.canReplaceSelection {
+                Button { Task { await controller.replaceSelection() } } label: {
+                    Label { Text("Replace selection") } icon: {
+                        Icon(.insert, size: 14)
+                    }
                 }
+                .keyboardShortcut(.defaultAction)
             }
-            .keyboardShortcut(.defaultAction)
         }
         .padding(10)
     }

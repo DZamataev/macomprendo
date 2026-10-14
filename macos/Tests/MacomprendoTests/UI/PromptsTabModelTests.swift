@@ -156,6 +156,15 @@ import Testing
         #expect(model.modelsError == nil)
     }
 
+    /// "Endpoint" and "Model" alone read as one shared pair for both features — the operator
+    /// mistook Refine's model for Summarize's — so each picker names the feature it configures.
+    @Test func theLLMPickersNameTheirFeature() {
+        #expect(PromptsTabModel.endpointLabel(for: .summarize) == "Endpoint for Summarize")
+        #expect(PromptsTabModel.modelLabel(for: .summarize) == "Model for Summarize")
+        #expect(PromptsTabModel.endpointLabel(for: .refine) == "Endpoint for Refine")
+        #expect(PromptsTabModel.modelLabel(for: .refine) == "Model for Refine")
+    }
+
     @Test func selectionReadsAndWritesThePerFeatureLLMChoice() {
         let (model, holder, _) = make()
         let endpointID = holder.settings.endpoints[0].id
