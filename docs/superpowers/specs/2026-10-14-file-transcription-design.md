@@ -52,10 +52,22 @@ store.
    to 16 kHz mono `Float` PCM and yields it in chunks, together with the asset duration. The
    whole file is never held in memory.
 3. **Segment.** `SpeechSegmenting` consumes the PCM stream and yields segments of at most
-   30 seconds. A longer stretch of continuous speech is split at the quietest 20 ms frame of
-   its last 5 seconds before the cap (the latest such frame on a tie). Segments shorter than
-   0.3 s are dropped. Silero's own `max_speech_duration` does not do this: probed on 70 s of
-   continuous speech it returned one 70 s segment with the limit at 25 s and at 10 s.
+   30 seconds. VAD does not filter speech; it decides only what to drop and where to cut:
+   - speech regions closer than 10 s are joined into one span **with the audio between them**,
+     so speech the detector misses (a phrase over music) and a word at a short pause still reach
+     the recogniser with its context;
+   - each span is padded by 0.3 s on both sides (clamped to the stream);
+   - non-speech longer than 10 s is dropped, so silence or music alone never reaches the
+     recogniser and cannot make it invent words;
+   - a span longer than 30 s is split at the quietest 20 ms frame of its last 5 seconds before
+     the cap (the latest such frame on a tie); pieces shorter than 0.3 s are dropped.
+   Silero's own `max_speech_duration` does not cap length: probed on 70 s of continuous speech it
+   returned one 70 s segment with the limit at 25 s and at 10 s.
+
+   Measured on a 78 s Russian voice-over with music (whisper large-v3-turbo): passing VAD
+   regions alone lost "Да, как вы поняли" (spoken over music, outside every region) and
+   "сторону" (a 0.17 s pause split the phrase); the joined, padded spans recovered both.
+   Cost: subtitle cues in `.srt` are as long as segments, up to 30 s.
 4. **Transcribe.** Each segment goes, in order, to the existing `TranscriptionProvider` — the
    protocol does not change. Remote endpoints receive each segment as its own WAV request, so the
    OpenAI 25 MB upload limit is never approached.
@@ -173,8 +185,13 @@ Unit tests (swift-testing, written first), with fakes for every new protocol:
   transcript, Markdown with and without a summary.
 - `TranscriptChunker`: short text is one part, parts never split a segment, a single segment
   longer than the limit becomes its own part.
-- Segment split rule: ≤ 30 s passes through, longer speech splits at the quietest point of its
-  last 5 s, sub-0.3 s segments drop, offsets are seconds from the source start.
+- Segment rule: regions closer than 10 s join with the gap audio kept, spans are padded 0.3 s,
+  non-speech over 10 s is dropped, ≤ 30 s passes through, longer spans split at the quietest
+  frame of the last 5 s, sub-0.3 s pieces drop, offsets are seconds from the source start.
+- An opt-in regression test on a real recording (`MACOMPRENDO_LONG_AUDIO_FIXTURE` = audio path,
+  `MACOMPRENDO_LONG_AUDIO_EXPECT` = a file of phrases, one per line) runs the real decoder,
+  segmenter and local whisper model and requires every phrase in the transcript. The recording
+  stays outside the repository.
 - `FileTranscriptionController`: state order and progress; normalisation per segment; cancel
   keeps segments and marks `incomplete`; a new job cancels the running one; retry twice then
   `incomplete`; resume starts from the last segment end; `noSpeechFound` deletes the transcript;
