@@ -112,7 +112,9 @@ final class TranscriptSummaryController: ObservableObject {
 
         let parts = TranscriptChunker.parts(of: transcript.segments, limit: partLimit)
         guard !parts.isEmpty else {
-            text = previousSummary
+            if generation == self.generation {
+                text = previousSummary
+            }
             return
         }
 

@@ -154,4 +154,35 @@ import Testing
         let stored = await rig.store.snapshot(transcript.id)?.summary
         #expect(stored == nil)
     }
+
+    @Test func emptyTranscriptKeepsStoredSummaryWithoutCallingLLM() async {
+        let rig = makeRig()
+        let transcript = await storedTranscript(in: rig.store, segments: [], summary: "Existing summary")
+
+        rig.controller.summarize(transcript)
+        await rig.controller.drain()
+
+        #expect(rig.controller.text == "Existing summary")
+        #expect(!rig.controller.isRunning)
+        #expect(rig.recorder.calls.isEmpty)
+        let stored = await rig.store.snapshot(transcript.id)?.summary
+        #expect(stored == "Existing summary")
+    }
+
+    @Test func supersededEmptyTranscriptDoesNotOverwriteShownSummary() async {
+        let rig = makeRig()
+        let empty = await storedTranscript(in: rig.store, segments: [], summary: "Empty summary")
+        let shown = await storedTranscript(in: rig.store, segments: [segment("Shown")],
+                                           summary: "Newly shown summary")
+
+        rig.controller.summarize(empty)
+        rig.controller.show(shown)
+        // Let the queued run reach the empty-parts guard after show() supersedes it.
+        for _ in 0..<10 { await Task.yield() }
+
+        #expect(rig.controller.text == "Newly shown summary")
+        #expect(rig.recorder.calls.isEmpty)
+        let emptyStored = await rig.store.snapshot(empty.id)?.summary
+        #expect(emptyStored == "Empty summary")
+    }
 }
