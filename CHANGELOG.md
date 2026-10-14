@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-14
+
 ### Added
 - **Microphone** picker (Settings ▸ General ▸ Microphone): record from a chosen input
   device instead of whatever macOS has as the default. **System default** stays the default
