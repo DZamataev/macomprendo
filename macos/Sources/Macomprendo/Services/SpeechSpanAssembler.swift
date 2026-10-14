@@ -112,8 +112,10 @@ final class SpeechSpanAssembler {
     /// Samples currently held for spans that are not finished yet.
     var retainedSampleCount: Int { buffer.count }
 
-    /// The stated bound on `retainedSampleCount` while a span is open (see the class doc): one
-    /// span, the splitter's search window and the lookback.
+    /// The stated bound on `retainedSampleCount` while the detector is inside speech (see the
+    /// class doc): one capped span, the splitter's search window and the lookback. A span the
+    /// detector has left but that no later region closes is not cut again, so it holds its samples
+    /// and the `joinGap` it waits before closing: `capSamples + joinGapSamples` there.
     var retentionBound: Int { capSamples + windowSamples + lookbackSamples }
 
     /// Appends `samples` to the stream and applies the regions the detector completed while

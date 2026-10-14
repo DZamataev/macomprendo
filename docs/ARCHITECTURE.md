@@ -127,8 +127,9 @@ with fakes:
 - `MediaAudioDecoding` (`AVAssetMediaDecoder`) opens the first audio track with `AVAssetReader`
   and yields 16 kHz mono `Float` chunks. The stream is pull-based: nothing is decoded until the
   consumer asks for the next chunk, so the whole file is never in memory and a slow consumer
-  never buffers it. `open(_:from:)` reports the asset duration and the offset decoding actually
-  started at.
+  never buffers it. `open(_:from:)` reports the asset duration and the start offset it was asked
+  to decode from — for a compressed source the first decoded sample may sit slightly before it,
+  because `AVAssetReader` begins at a sync point.
 - `SpeechSegmenting` (`SherpaSileroSegmenter`) feeds each chunk to the bundled Silero detector and
   turns its regions into segments through `SpeechSpanAssembler` (ADR-0015). A session is built per
   job, because the detector keeps state between chunks.

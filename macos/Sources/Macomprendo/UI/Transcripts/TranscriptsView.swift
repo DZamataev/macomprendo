@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The Transcripts window: the stored transcripts on the left, the open one on the right —
-/// its progress, summary, segments, run and actions — and a drop zone that starts a job.
+/// its progress, segments, run and actions — and a drop zone that starts a job.
 ///
 /// All state lives on the controllers; the view is a thin rendering of them (invariant 1).
 /// The only state it owns is the export failure the AppKit save panel can produce, which no
