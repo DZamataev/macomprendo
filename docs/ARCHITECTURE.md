@@ -163,16 +163,21 @@ mid-job would otherwise crash the app instead of exiting. A job stopped this way
 `incomplete` with the reason launch maintenance also writes, so `Resume` continues it either way.
 
 Measured on 2026-10-14 on an M4 Max: decoding and transcribing a 74.9-minute Russian interview
-took 198.4 s with whisper large-v3-turbo (RTF 0.044) and peaked at 2.0 GB; the same model peaked at
-2.0 GB on a 78 s clip, so peak memory tracks the model, not the file. The decoder's own retention
-is a chunk; the segmenter's peaked at 30.0 s, inside its 35.6 s bound.
+took 77.2 s with whisper large-v3-turbo (RTF 0.017) over 162 segments and peaked at 2.1 GB; the
+same model peaked at 2.0 GB on a 78 s clip, so peak memory tracks the model, not the file. (A run
+of the same interview earlier that day took 198.4 s, RTF 0.044, on a busier machine — segments and
+boundaries were all but identical, so that spread is the host, not the pipeline.) The decoder's
+own retention is a chunk; a span is split only above 35 s, so pieces are 5–35 s and the
+segmenter's retained span stays inside its 41 s bound.
 
 Not yet:
 
-- `.srt` cues are as long as segments, up to 30 s. Shorter cues would need the recogniser's word
+- `.srt` cues are as long as segments, up to 35 s. Shorter cues would need the recogniser's word
   timestamps, which `TranscriptionProvider` does not return.
-- whisper can hallucinate a trailing phrase over music or silence: one run ended a 74.9-minute file
-  with `Субтитры сделал DimaTorzok`, which is not in the recording.
+- whisper can still hallucinate; the trailing-credit case is guarded — a span is split only above
+  35 s, so a tail of padding and music never becomes a segment of its own — and the benchmark gym
+  reports known phantom phrases per model (the 2026-10-14 interview run: none, where whisper
+  large-v3-turbo previously ended it with `Субтитры сделал DimaTorzok`).
 - A Dictate & Refine capture is not cancelled or awaited on quit, so it can hold the local model's
   lease for one more `whisper_full` call (the Dictate path is stopped).
 - The Summarize panel sends the whole transcript in one request and does not split long text

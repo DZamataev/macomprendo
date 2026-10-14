@@ -55,7 +55,7 @@ store.
    to 16 kHz mono `Float` PCM and yields it in chunks, together with the asset duration. The
    whole file is never held in memory.
 3. **Segment.** `SpeechSegmenting` consumes the PCM stream and yields segments of at most
-   30 seconds. VAD does not filter speech; it decides only what to drop and where to cut:
+   35 seconds. VAD does not filter speech; it decides only what to drop and where to cut:
    - speech regions closer than 10 s are joined into one span **with the audio between them**,
      so speech the detector misses (a phrase over music) and a word at a short pause still reach
      the recogniser with its context;
@@ -78,7 +78,7 @@ store.
    Measured on a 78 s Russian voice-over with music (whisper large-v3-turbo): passing VAD
    regions alone lost "Да, как вы поняли" (spoken over music, outside every region) and
    "сторону" (a 0.17 s pause split the phrase); the joined, padded spans recovered both.
-   Cost: subtitle cues in `.srt` are as long as segments, up to 30 s.
+   Cost: subtitle cues in `.srt` are as long as segments, up to 35 s.
 4. **Transcribe.** Each segment goes, in order, to the existing `TranscriptionProvider` — the
    protocol does not change. Remote endpoints receive each segment as its own WAV request, so the
    OpenAI 25 MB upload limit is never approached.
@@ -154,7 +154,7 @@ service is built in `AppEnvironment`.
 | Core | `Transcript`, `TranscriptSegment`, `TranscriptSource`, `TranscriptStatus` | Value types; reuse `TranscriptionRun` |
 | Core | `TranscriptExporter` | Pure `Transcript` → txt / srt / md |
 | Services | `MediaAudioDecoding` / `AVAssetMediaDecoder` | File → `AsyncThrowingStream` of 16 kHz mono PCM + duration |
-| Services | `SpeechSegmenting` / `SherpaSileroSegmenter` | PCM stream → segments; the 30 s split rule lives in a pure helper |
+| Services | `SpeechSegmenting` / `SherpaSileroSegmenter` | PCM stream → segments; the split rule (cut at 30 s, split above 35 s) lives in a pure helper |
 | Services | `TranscriptStoring` / `SQLiteTranscriptStore` | Actor; `~/Library/Application Support/Macomprendo/transcripts.sqlite3` |
 | Services | `SpeechSegmentSplitter` | Pure 30 s cut point, 35 s split threshold, 0.3 s floor |
 | Services | `FileBookmarking` / `FoundationFileBookmarks` | Bookmark a source file, resolve it on `Resume` |
@@ -219,7 +219,8 @@ each of the three transcription backends; resume after quitting mid-job.
 
 ## Documents
 
-- ADR `0015-long-audio-segmentation-with-silero-vad.md` (bundled model, own 30 s cap).
+- ADR `0015-long-audio-segmentation-with-silero-vad.md` (bundled model, own split rule: cut at
+  30 s, split above 35 s).
 - ADR `0016-transcripts-store-separate-from-dictation-history.md`.
 - `docs/ARCHITECTURE.md` gains a *Long-audio transcription* section.
 - `CHANGELOG.md` `Unreleased`: file transcription, Transcripts window, summary.

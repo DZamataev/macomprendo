@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted — 2026-10-14.
+Accepted — 2026-10-14. Amended 2026-10-14: a span is split only above 35 s (see *Amendment*
+below); the 30 s cut itself is unchanged.
 
 ## Context
 
@@ -83,3 +84,28 @@ without resetting the detector.
   opt-in `LongAudioRecordingTests`.
 - Subtitle cues are segment-length, not word-length, because the recogniser's timestamps are not
   exposed through `TranscriptionProvider`.
+
+## Amendment — 2026-10-14 (issue #25)
+
+The rule above cut **every** span longer than 30 s, and the remainder could be arbitrarily short.
+The measurement that forced this amendment: at the end of the 74.9-minute interview a 32.6 s span
+was cut at 29.7 s; the 2.9 s remainder held only span padding, outro music and a 0.84 s VAD blip,
+and whisper large-v3-turbo wrote **«Субтитры сделал DimaTorzok»** for it — a credit line that is
+not in the recording. whisper.cpp v1.9.2 reported a no-speech probability of 0.000 for that
+segment and for every real one, so no no-speech threshold separates them, and `suppress_nst`
+changed nothing. The fix therefore lives in segmentation, not in whisper's knobs.
+
+**A span is split only when it is longer than `maximumDuration + minimumRemainder` — 30 s + 5 s =
+35 s**, with `minimumRemainder` a named constant next to the cap in `SpeechSegmentSplitter`. The
+cut point is unchanged (the quietest 20 ms frame of the last 5 s before 30 s), so every piece is
+5–35 s, except a whole span that was short to begin with, which is never split. The 32.6 s tail
+now reaches the recogniser whole — whisper slides its own 30 s window over the longer input — so
+no mostly-non-speech tail is ever cut loose. The threshold applies in `SpeechSegmentSplitter.split`,
+in the assembler's early cut of an open span, and in its closing flush; the session still passes
+30 s to Silero as `max_speech_duration`, which only *encourages* a split.
+
+Two figures in the original text change accordingly: a subtitle cue can now be as long as 35 s,
+and the memory bound under *Memory* rises from about 35.6 s to about 41 s — one span at the 35 s
+threshold plus the 5 s search window and the lookback (`retentionBound` states the new figure).
+The benchmark gym now also flags known phantom phrases per model, so a regression shows up in its
+report.
