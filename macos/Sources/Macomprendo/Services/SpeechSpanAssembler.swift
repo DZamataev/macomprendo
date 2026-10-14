@@ -120,7 +120,7 @@ final class SpeechSpanAssembler {
     /// class doc): one span at the 35 s split threshold (`maximumDuration + minimumRemainder`),
     /// the splitter's search window and the lookback. A span the detector has left but that no
     /// later region closes is not cut again, so it holds its samples and the `joinGap` it waits
-    /// before closing: `capSamples + joinGapSamples` there.
+    /// before closing: `capSamples + remainderSamples + joinGapSamples` there.
     var retentionBound: Int { capSamples + remainderSamples + windowSamples + lookbackSamples }
 
     /// Appends `samples` to the stream and applies the regions the detector completed while

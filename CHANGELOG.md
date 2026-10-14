@@ -25,9 +25,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Settings ▸ Refine & Summarize labels each feature's model picker **Model for Refine** and
   **Model for Summarize**, so the two models are told apart at a glance.
 
-### Fixed
-- Long transcripts no longer end with an invented credit line when the recording ends in music.
-
 ## [0.3.0] - 2026-10-14
 
 ### Added

@@ -63,7 +63,7 @@ jobs:
         run: npm run audit
 
   macos:
-    name: Swift tests and unsigned build
+    name: Unsigned build
     runs-on: macos-15
     steps:
       - name: Check out repository
