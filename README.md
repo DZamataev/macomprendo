@@ -36,11 +36,17 @@ Other things it does:
 - **Offline Local TTS** with downloadable Piper voices and the multilingual Kokoro model.
   After download, synthesis stays on the Mac.
 - **Remote transcription** through any `/v1/audio/transcriptions` endpoint, if you prefer.
+- **Glossary** for jargon: switchable packs of terms (six ship with the app, all off by default)
+  plus your own list rewrite what the recogniser heard into your spelling — `tsconfig json`
+  becomes `tsconfig.json`. After a dictation it corrected, a small panel underlines what changed.
+- **Microphone choice** in Settings ▸ General. A headset that is switched off or goes silent
+  mid-recording is abandoned for a working microphone, and a recording with no sound at all is
+  never sent to the model.
 - **Optional local dictation history** for Dictate and Dictate & Refine transcripts, browsed
   newest-first in a paged window and capped at 100,000 entries. With **Save the original
-  recording** additionally on, each entry keeps its microphone recording as an AAC `.m4a` file
-  you can play back from the history window; both are deleted once they pass the retention age
-  you choose (90 days by default).
+  recording** additionally on, each entry keeps its microphone recording as an `.m4a` file
+  (compressed AAC or lossless ALAC) you can play back from the history window; both are
+  deleted once they pass the retention age you choose (90 days by default).
 - **Editable prompt presets** for both refine and summarize: Clean up, Formal, Casual,
   Shorten, Expand, Fix grammar, Translate, Brief, Bullets, TL;DR, and Key actions. You can
   rename, rewrite, reorder, delete, or add to.

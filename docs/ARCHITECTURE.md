@@ -5,11 +5,13 @@
 ```
 ┌────────────────────────────────────────────────────────────┐
 │ UI            MenuBar · Settings · QuickPanel · HUD         │
-│               Onboarding · History · Components             │
+│               CorrectionReview · Onboarding · History       │
+│               About · Components                            │
 └───────────────────────────┬────────────────────────────────┘
                             │ observes / calls
 ┌───────────────────────────▼────────────────────────────────┐
-│ Features      DictationController · DictationHistory…       │
+│ Features      DictationController · DictationCapture        │
+│               DictationHistoryController                    │
 │               RefineController · SummarizeController        │
 │               SpeakController                               │
 │               Prompts (PromptPreset, Renderer, Factory)     │
@@ -19,24 +21,31 @@
 ┌─────────────▼──────────────┐ ┌───────────▼─────────────────┐
 │ Services                   │ │ Providers                   │
 │ HotkeyServicing            │ │ HTTPClient                  │
-│ AudioRecording             │ │ LLMProvider                 │
-│ SelectedTextReading        │ │  · OllamaProvider           │
-│ TextInserting              │ │  · OpenAICompatibleLLM…     │
-│ FrontmostAppTracking       │ │ TranscriptionProvider       │
-│ SpeechSynthesizing         │ │  · WhisperCppTranscriber    │
-│ ModelManaging              │ │  · OpenAICompatible…        │
+│ MiddleMouseMonitoring      │ │ LLMProvider                 │
+│ AudioRecording             │ │  · OllamaProvider           │
+│ AudioInputDeviceListing    │ │  · OpenAICompatibleLLM…     │
+│ SelectedTextReading        │ │ TranscriptionProvider       │
+│ TextInserting              │ │  · WhisperCppTranscriber    │
+│ FrontmostAppTracking       │ │  · GigaAMTranscriber        │
+│ SpeechSynthesizing         │ │  · OpenAICompatible…        │
+│ ModelManaging              │ │ DictationAudioEncoding      │
 │ PermissionsChecking        │ │ Streaming (SSE, NDJSON)     │
 │ LanguageDetecting          │ │                             │
 │ ActivationPolicyControlling│ │                             │
 │ DictationHistoryStoring    │ │                             │
+│ GlossaryStoring            │ │                             │
 └─────────────┬──────────────┘ └───────────┬─────────────────┘
               │                            │
 ┌─────────────▼────────────────────────────▼─────────────────┐
 │ Core          Settings · DictationHistoryEntry · Endpoint   │
+│               Glossary · Normalizer · CorrectionReview      │
 │               SettingsStore · KeychainStore                 │
 │               MacomprendoError · Log · Pasteboard           │
 └────────────────────────────────────────────────────────────┘
 ```
+
+The diagram names the main seams, not every protocol: `rg 'protocol \w+' macos/Sources` lists
+them all.
 
 Factory prompt presets (`Features/Prompts/FactoryPresets.swift`) are the cross product of
 `FactoryPresets.Role` (eight refine roles, four summarize roles) and `PromptLanguage` (seven
@@ -61,6 +70,49 @@ without purging existing records. `DictationHistoryView` is the UI consumer in t
 window; the menu opens that single SwiftUI window only while the preference is enabled, and
 the existing `DockIconCoordinator` keeps the Dock icon visible while the window is open.
 This preserves the UI → Features → Services → Core dependency direction.
+
+Each row also carries the transcript before normalisation (`rawText`), a `TranscriptionRun` —
+model, engine, language and app version that produced it — and, while **Save the original
+recording** is on, an `.m4a` file written by `DictationAudioEncoding` (AAC or ALAC, ADR-0011).
+
+### Glossary and normalisation
+
+Packs are plain text files in `~/Library/Application Support/Macomprendo/Vocabulary/`
+(ADR-0012); `packs.json` beside them lists the enabled ones. `GlossaryStoring` owns that
+directory — seeding the six factory packs from the bundle, reading, writing and reporting files
+it cannot parse. `Glossary` flattens the enabled packs plus the manual list into one key →
+canonical-spelling map; `Normalizer.normalise` rewrites matching windows of a transcript and
+reports every rewrite with its range in the *final* text. Both are pure Core types.
+
+`DictationController` and `DictationCapture` normalise at the same two commit points that write
+history, reading the glossary when the transcript arrives. Normalisation comes before biasing
+(ADR-0013); biasing the recogniser itself is not implemented.
+
+### Post-dictation review
+
+When normalisation rewrote something, `DictationController` hands a `CorrectionReview` — a
+projection of the normalisation result, never a second match — to `CorrectionReviewPresenting`.
+The presenter owns a non-activating `FloatingPanel` placed below the HUD band, so the panel never
+takes focus from the app the text was pasted into. It hides after two seconds, holds while
+hovered, and is dismissed at the next dictation boundary.
+
+### Audio capture
+
+`AVAudioEngineRecorder` binds the input node to a device explicitly — the chosen
+`Settings.preferredInputDeviceUID`, else the system default — so a device appearing, vanishing
+or becoming the default mid-recording moves the recording instead of stranding it.
+`AudioInputDeviceListing` reads devices and change notifications from the Core Audio HAL; the
+engine itself sits behind `AudioInputEngine`, so device handling is unit-tested against a fake.
+
+Two silence checks with different jobs:
+
+- **Dead device.** A device delivering digital zeros (below −100 dBFS) for two seconds is
+  excluded for the rest of the recording; the recorder moves to the system default, then the
+  built-in microphone, and publishes an `InputFallback` the HUD and the refine toast show.
+- **Silent capture.** A whole recording whose peak stays under −60 dBFS
+  (`AudioMath.silenceThresholdDB`) is never sent to the transcriber: a model handed silence
+  invents a word. It fails as `MacomprendoError.silentCapture`. The HUD warns after three
+  seconds without input while recording continues.
 
 ## Rules
 
@@ -107,9 +159,11 @@ Two manifests describe one source tree:
 - `macos/project.yml` — XcodeGen. Generates `macos/Macomprendo.xcodeproj` for IDE work and
   the unsigned CI compile check.
 
-Both declare the same two dependencies. `macos/Packages/WhisperBinary` wraps the prebuilt
-`whisper.xcframework` published with each whisper.cpp release, because whisper.cpp itself
-no longer ships a `Package.swift`.
+Both declare the same three dependencies: `KeyboardShortcuts`, and two local wrappers around
+vendored binaries. `macos/Packages/WhisperBinary` wraps the prebuilt `whisper.xcframework`
+published with each whisper.cpp release, because whisper.cpp itself no longer ships a
+`Package.swift`; `macos/Packages/SherpaOnnxBinary` wraps sherpa-onnx, which runs GigaAM and
+local TTS (ADR-0009).
 
 ## Icons
 

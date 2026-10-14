@@ -9,7 +9,7 @@ struct MicrophoneOption: Identifiable, Equatable, Sendable {
     var id: String { uid ?? "" }
 }
 
-/// The microphone picker in Settings ▸ Dictation ▸ Recording. Lists the connected input
+/// The microphone picker in Settings ▸ General ▸ Microphone. Lists the connected input
 /// devices live, behind a "System default" row that names the device it currently means,
 /// and keeps a chosen-but-disconnected device listed — a switched-off headset comes back,
 /// and silently resetting the user's choice to the default is worse than showing it with
