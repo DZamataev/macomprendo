@@ -1,7 +1,8 @@
 import Foundation
 
-/// One glossary entry: the spelling the term must be pasted in, plus the optional Cyrillic
-/// forms a later spec will rewrite. Parsed and stored here; nothing reads the forms yet.
+/// One glossary entry: the spelling the term must be pasted in, plus the forms the recogniser
+/// writes instead, each rewritten to the term when matched whole. The field keeps its original
+/// name although a form may be written in any script.
 struct GlossaryTerm: Equatable, Sendable {
     /// How the term must appear in pasted text — `auto-till-dry`, not `Auto-Till-Dry`.
     let canonical: String
