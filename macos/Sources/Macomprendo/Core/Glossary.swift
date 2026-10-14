@@ -76,14 +76,19 @@ struct Glossary: Sendable {
             entries[key] = Entry(canonical: canonical, packName: packName)
         }
 
-        for term in manualTerms { insert(term, packName: nil) }
-        for pack in packs {
-            for term in pack.terms {
-                insert(term.canonical, packName: pack.name)
-                for form in term.cyrillicForms {
-                    insert(term.canonical, spokenAs: form, packName: pack.name, isForm: true)
-                }
+        func insert(_ term: GlossaryTerm, packName: String?) {
+            insert(term.canonical, packName: packName)
+            for form in term.cyrillicForms {
+                insert(term.canonical, spokenAs: form, packName: packName, isForm: true)
             }
+        }
+
+        // One manual line per term, read with the pack syntax so `term = form` works there too.
+        for line in manualTerms {
+            for term in GlossaryPack.parse(line, name: "").terms { insert(term, packName: nil) }
+        }
+        for pack in packs {
+            for term in pack.terms { insert(term, packName: pack.name) }
         }
 
         self.entriesByKey = entries

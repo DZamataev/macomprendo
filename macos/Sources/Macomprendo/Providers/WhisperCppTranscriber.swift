@@ -7,6 +7,11 @@ enum WhisperRuntime {
     static func systemInfo() -> String {
         String(cString: whisper_print_system_info())
     }
+
+    /// e.g. "1.9.2".
+    static func version() -> String {
+        String(cString: whisper_version())
+    }
 }
 
 /// The whisper.cpp parameters the Dictation tab offers. Kept apart from `WhisperParams`,

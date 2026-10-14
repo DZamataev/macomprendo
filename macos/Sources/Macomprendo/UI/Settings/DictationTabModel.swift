@@ -1,6 +1,13 @@
 import Foundation
 import SwiftUI
 
+/// The library a local sub-tab's models run on, as the tab's header names it.
+struct LocalRuntime: Equatable, Sendable {
+    let name: String
+    let version: String
+    let repository: URL
+}
+
 /// One backend's sub-tab in the Dictation settings.
 enum DictationBackendTab: String, CaseIterable, Identifiable, Sendable {
     case whisperCpp
@@ -23,6 +30,21 @@ enum DictationBackendTab: String, CaseIterable, Identifiable, Sendable {
         case .whisperCpp: .whisperCpp
         case .sherpaOfflineASR: .sherpaOfflineASR
         case .endpoint: nil
+        }
+    }
+
+    /// Read from the linked library rather than written down, so the header cannot drift from
+    /// the binary that actually ships. `nil` for the endpoint tab, which runs nothing locally.
+    var runtime: LocalRuntime? {
+        switch self {
+        case .whisperCpp:
+            LocalRuntime(name: "whisper.cpp", version: WhisperRuntime.version(),
+                         repository: URL(string: "https://github.com/ggml-org/whisper.cpp")!)
+        case .sherpaOfflineASR:
+            LocalRuntime(name: "sherpa-onnx", version: SherpaRuntime.version(),
+                         repository: URL(string: "https://github.com/k2-fsa/sherpa-onnx")!)
+        case .endpoint:
+            nil
         }
     }
 

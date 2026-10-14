@@ -74,6 +74,12 @@ final class ModelsViewModel: ObservableObject {
         recomputeDiskUsage()
     }
 
+    /// Says the size is a total, so it is not read as one model's.
+    nonisolated static func storageCaption(diskUsageText: String) -> String {
+        "All models are stored in ~/Library/Application Support/Macomprendo/models. "
+            + "The dictation models downloaded there take \(diskUsageText) in total."
+    }
+
     var diskUsageText: String {
         ByteCountFormatter.string(fromByteCount: diskUsage, countStyle: .file)
     }

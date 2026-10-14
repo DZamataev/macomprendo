@@ -46,7 +46,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Replacement rules** in glossary packs: a line such as `pytest = пайтест, пайтеста` now
   rewrites each listed form to the term, so a word the recogniser wrote by ear is pasted the way
   you spell it. Forms match whole — list every ending you want caught — and the ending is
-  dropped. The target may be Cyrillic too, to fix a garbled word (`ранбуке = рамбуке`). A term
+  dropped. The target may be Cyrillic too, to fix a garbled word (`ранбуке = рамбуке`). The same
+  syntax works in **Your own terms**, where such a rule outranks every pack. A term
   such as `jQuery` or `iOS` at the start of a sentence now keeps its own spelling instead of
   becoming `JQuery`.
 - After a dictation the glossary corrected, a floating panel shows the inserted text with each
@@ -88,6 +89,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   counts from the moment you pressed.
 
 ### Changed
+- Each local backend on the Dictation tab now names its runtime and version (whisper.cpp,
+  sherpa-onnx) with a **GitHub** button, and the models folder and the total size of the
+  downloaded dictation models are shown above the model list rather than below it.
 - The Dictation settings sub-tab that held the GigaAM models is now called **sherpa-onnx**, after
   the recognizer that runs them, since it also holds Parakeet.
 - The About window now links to the website, the source code and the support page beside the

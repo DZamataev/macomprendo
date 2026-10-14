@@ -68,7 +68,7 @@ form must not care which one it got. This applies to the key, and therefore to n
 Latin terms too — harmlessly, since no Latin letter is involved.
 
 **Collisions follow the existing order.** A form enters the keyed set at its term's position: the
-manual list first (which has no forms), then packs in `packs.json` order, and within a pack each
+manual list first (its lines use the same `term = form` syntax since 2026-10-14), then packs in `packs.json` order, and within a pack each
 term's own spelling before its forms. A form losing to a *different* term counts as an inert term
 for its pack, exactly as a losing term does. A form that keys the same as its own term, or as
 another form of the same term, is redundant and counted as nothing.
