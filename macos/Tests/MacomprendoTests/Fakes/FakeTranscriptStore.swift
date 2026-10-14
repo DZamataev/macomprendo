@@ -6,6 +6,8 @@ actor FakeTranscriptStore: TranscriptStoring {
     private var transcripts: [Int64: Transcript] = [:]
 
     var failNextAppend: MacomprendoError?
+    /// Armed by a test to make the next read — `headers()` or `transcript(id:)` — fail once.
+    var failNextRead: MacomprendoError?
     private(set) var createCount = 0
 
     func create(sourceKind: TranscriptSourceKind, title: String, sourceBookmark: Data?,
@@ -58,12 +60,22 @@ actor FakeTranscriptStore: TranscriptStoring {
                                      summary: summary, segments: transcript.segments)
     }
 
-    func headers() -> [TranscriptHeader] {
-        transcripts.values.map(\.header).sorted { $0.id > $1.id }
+    func headers() throws -> [TranscriptHeader] {
+        try consumeReadFailure()
+        return transcripts.values.map(\.header).sorted { $0.id > $1.id }
     }
 
-    func transcript(id: Int64) -> Transcript? {
-        transcripts[id]
+    func transcript(id: Int64) throws -> Transcript? {
+        try consumeReadFailure()
+        return transcripts[id]
+    }
+
+    /// Throws and disarms `failNextRead` when a test armed it.
+    private func consumeReadFailure() throws {
+        if let error = failNextRead {
+            failNextRead = nil
+            throw error
+        }
     }
 
     func snapshot(_ id: Int64) -> Transcript? {
