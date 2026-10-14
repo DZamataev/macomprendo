@@ -22,6 +22,7 @@ import Testing
             "OpenFst",
             "KeyboardShortcuts",
             "Phosphor Icons",
+            "Silero VAD",
         ])
     }
 
