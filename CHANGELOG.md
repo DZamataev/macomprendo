@@ -42,7 +42,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - After a dictation the glossary corrected, a floating panel shows the inserted text with each
   rewritten term underlined in green; hovering one reveals what the recogniser originally
   produced, and a caption names the packs that fired. It never takes focus from the app the
-  text went into, sits clear of the status HUD, hovering holds it open, and it fades four
+  text went into, sits clear of the status HUD, hovering holds it open, and it fades two
   seconds after the pointer leaves or the moment the next dictation begins.
 - **Recording quality** (Settings ▸ General): saved dictation recordings can now be kept
   lossless (ALAC, ~1.11 MB/min) instead of compressed (AAC, ~0.35 MB/min). Compressed stays
@@ -76,8 +76,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   counts from the moment you pressed.
 
 ### Changed
-- The corrected-text panel that follows a dictation with glossary corrections now hides
-  after two seconds instead of four. Hovering it still holds it open.
 - Redesigned the GitHub Pages site around the new app icon, with an outcome-led landing
   page, feature overview, accessible FAQ, and refreshed support and policy pages.
 - Added an animated dictation/refinement example with pause, replay and reduced-motion support.

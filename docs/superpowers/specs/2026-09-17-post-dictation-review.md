@@ -61,8 +61,8 @@ the owning pack per rewrite, so this costs nothing to render and makes a misbeha
 identifiable without opening Settings. Terms from the manual list report no pack and are captioned
 `manual`.
 
-**How long.** Auto-hides after 4 seconds, the timing `HUDController.autoHideDuration` already uses
-for `.error`, because this is text to read rather than a status to glance at. The timer pauses
+**How long.** Auto-hides after 2 seconds (`CorrectionReviewController.autoHideDuration`): long
+enough to read a line of corrected text, short enough not to linger. The timer pauses
 while the pointer is over the panel and restarts on exit. A new dictation replaces the content
 immediately: the previous correction is no longer interesting.
 
@@ -146,7 +146,8 @@ Smoke (`docs/SMOKE_TEST.md`), because `NSPanel` behaviour is not unit-testable:
 
 ## Open questions
 
-1. *(decided 2026-09-17)* 4 seconds, tuned later if it reads short. The hover pause covers a user
+1. *(decided 2026-09-17, retuned 2026-09-28)* 4 seconds at first, cut to 2 after use
+   (`b5d4b91`). The hover pause covers a user
    who is looking; a duration proportional to the number of corrections is a one-line change once
    the panel exists, and there is no point guessing at it before using the thing.
 2. *(resolved 2026-09-17)* The panel names the packs that fired. The normalisation spec now
