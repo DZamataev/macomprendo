@@ -340,6 +340,91 @@ import Testing
         gate.open()
         await selection.value
     }
+
+    @Test func aReloadReReadDoesNotRevertANewerSelection() async throws {
+        let store = FakeTranscriptStore()
+        let first = try await self.store(store, title: "first")
+        let second = try await self.store(store, title: "second")
+        let controller = makeController(store: store)
+        await controller.select(first)
+        #expect(controller.selected?.id == first)
+
+        // The select of `second` starts first and is held inside its store read.
+        let selectGate = AsyncGate()
+        await store.gateNextRead(on: selectGate)
+        let selection = Task { await controller.select(second) }
+        await waitFor("the select to reach the store read") { selectGate.waiterCount == 1 }
+
+        // A reload starts while that select is in flight; it re-reads the *current* selection
+        // (`first`) and that re-read is held, so the reload resumes only after the select lands.
+        let rereadGate = AsyncGate()
+        await store.gateNextRead(of: first, on: rereadGate)
+        let reload = Task { await controller.reload() }
+        await waitFor("the reload to reach the transcript re-read") { rereadGate.waiterCount == 1 }
+
+        selectGate.open()
+        await selection.value
+        #expect(controller.selected?.id == second)
+
+        rereadGate.open()
+        await reload.value
+
+        // The reload's stale re-read of `first` must not revert the newer selection.
+        #expect(controller.selected?.id == second)
+    }
+
+    @Test func aStaleReloadDoesNotClearANewerReloadsError() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "talk.m4a")
+        let controller = makeController(store: store)
+        await controller.select(id)
+        #expect(controller.selected?.id == id)
+
+        // The first reload's re-read of the open transcript is held.
+        let rereadGate = AsyncGate()
+        await store.gateNextRead(of: id, on: rereadGate)
+        let stale = Task { await controller.reload() }
+        await waitFor("the first reload to reach the re-read") { rereadGate.waiterCount == 1 }
+
+        // A second reload starts and fails while the first is still in flight. Its failure is
+        // the newest word on the list and must stand.
+        await store.failNextReadOnce(.transcriptStore("the disk is full"))
+        await controller.reload()
+        #expect(controller.error
+                == ErrorText.describe(MacomprendoError.transcriptStore("the disk is full")))
+
+        // The stale reload resumes; clearing `error` here would drop the newer failure.
+        rereadGate.open()
+        await stale.value
+        #expect(controller.error
+                == ErrorText.describe(MacomprendoError.transcriptStore("the disk is full")))
+    }
+
+    @Test func aDeleteOfAnotherRowDoesNotDropAnInFlightSelect() async throws {
+        let store = FakeTranscriptStore()
+        let open = try await self.store(store, title: "open")
+        let wanted = try await self.store(store, title: "wanted")
+        let doomed = try await self.store(store, title: "doomed")
+        let controller = makeController(store: store)
+        await controller.reload()
+        await controller.select(open)
+        #expect(controller.selected?.id == open)
+
+        // A select of `wanted` is held inside its store read.
+        let gate = AsyncGate()
+        await store.gateNextRead(on: gate)
+        let selection = Task { await controller.select(wanted) }
+        await waitFor("the select to reach the store read") { gate.waiterCount == 1 }
+
+        // Deleting an unrelated row must not invalidate the selection being opened.
+        await controller.delete(doomed)
+
+        gate.open()
+        await selection.value
+
+        #expect(controller.selected?.id == wanted)
+        #expect(controller.headers.map(\.id) == [wanted, open])
+    }
 }
 
 extension FakeTranscriptStore {
@@ -350,6 +435,11 @@ extension FakeTranscriptStore {
     /// Arms the next `transcript(id:)` read to suspend on `gate`. The property is
     /// actor-isolated, so a test cannot assign it from outside the actor.
     func gateNextRead(on gate: AsyncGate) { readGate = gate }
+
+    /// Arms the next `transcript(id:)` read *for `id`* to suspend on `gate`, so one transcript's
+    /// read can be held while another's runs unblocked. The property is actor-isolated, so a test
+    /// cannot assign it from outside the actor.
+    func gateNextRead(of id: Int64, on gate: AsyncGate) { readGatesByID[id] = gate }
 
     /// Arms the next `headers()` read to suspend on `gate`. The property is actor-isolated, so a
     /// test cannot assign it from outside the actor.

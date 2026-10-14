@@ -14,6 +14,13 @@ actor FakeTranscriptStore: TranscriptStoring {
     /// which a stale result can land after a newer operation finished. `nil` (the default)
     /// never waits: reads behave exactly as before.
     var readGate: AsyncGate?
+    /// Armed by a test to hold the next `transcript(id:)` read *for one id* until the gate opens,
+    /// then clear itself so later reads run unblocked. Unlike `readGate` (which holds the next
+    /// read whatever its id), this holds one id's read while another id's read runs unblocked —
+    /// the deterministic ordering a reload's re-read of one transcript needs while a select of
+    /// another is in flight. The value is captured first, as with `readGate`. An id absent from
+    /// the map never waits.
+    var readGatesByID: [Int64: AsyncGate] = [:]
     /// Armed by a test to hold the next `headers()` read until the gate opens, then clear itself
     /// so later reads run unblocked. The list is captured first, so the held read delivers the
     /// snapshot taken before whatever the test does while it waits — the window in which a stale
@@ -90,6 +97,10 @@ actor FakeTranscriptStore: TranscriptStoring {
     func transcript(id: Int64) async throws -> Transcript? {
         try consumeReadFailure()
         let transcript = transcripts[id]
+        if let gate = readGatesByID[id] {
+            readGatesByID[id] = nil
+            await gate.wait()
+        }
         if let gate = readGate {
             readGate = nil
             await gate.wait()

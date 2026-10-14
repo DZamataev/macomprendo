@@ -38,6 +38,12 @@ final class TranscriptLibraryController: ObservableObject {
     /// a concurrent select.
     private var selectionToken = 0
 
+    /// The id an in-flight `select()` is loading, or `nil` when none is. `delete()` bumps
+    /// `selectionToken` only when it deletes this id (or the open transcript): deleting an
+    /// unrelated row must not drop the selection the user is opening. Set when `select()` starts
+    /// and cleared when it finishes while still current.
+    private var pendingSelectionID: Int64?
+
     init(store: any TranscriptStoring, pasteboard: any PasteboardProtocol) {
         self.store = store
         self.pasteboard = pasteboard
@@ -55,9 +61,15 @@ final class TranscriptLibraryController: ObservableObject {
             self.headers = headers
             if let id = selected?.id {
                 let transcript = try await store.transcript(id: id)
-                guard selection == selectionToken else { return }
+                // Stale if the selection moved on while this read waited: either a newer
+                // operation bumped the token, or `selected` is no longer the id we re-read (a
+                // `select` that started before this reload and finished during the read).
+                guard selection == selectionToken, selected?.id == id else { return }
                 selected = transcript
             }
+            // Re-guard before clearing: a newer list operation may have taken over while the
+            // transcript re-read was in flight, and its result (or failure) must stand.
+            guard list == listToken else { return }
             error = nil
         } catch {
             guard list == listToken else { return }
@@ -69,17 +81,21 @@ final class TranscriptLibraryController: ObservableObject {
     func select(_ id: Int64?) async {
         selectionToken += 1
         let token = selectionToken
+        pendingSelectionID = id
         guard let id else {
             selected = nil
+            pendingSelectionID = nil
             return
         }
         do {
             let transcript = try await store.transcript(id: id)
             guard token == selectionToken else { return }
             selected = transcript
+            pendingSelectionID = nil
             error = nil
         } catch {
             guard token == selectionToken else { return }
+            pendingSelectionID = nil
             self.error = ErrorText.describe(error)
         }
     }
@@ -97,11 +113,16 @@ final class TranscriptLibraryController: ObservableObject {
         // The deletion is the truth: apply its effects unconditionally, so an operation that
         // started while it was in flight cannot drop the pruning or the clearing.
         headers.removeAll { $0.id == id }
-        if selected?.id == id { selected = nil }
+        let clearsSelection = selected?.id == id
+        let cancelsPendingSelect = pendingSelectionID == id
+        if clearsSelection { selected = nil }
         error = nil
-        // Any read that started before this deletion can no longer re-add the row or re-open it.
+        // Any read that started before this deletion can no longer re-add the row.
         listToken += 1
-        selectionToken += 1
+        // Only a delete that touches the open transcript — or the one an in-flight `select` is
+        // opening — may invalidate a selection read. Deleting an unrelated row must leave an
+        // in-flight select's result standing.
+        if clearsSelection || cancelsPendingSelect { selectionToken += 1 }
     }
 
     /// Puts the open transcript's text on the pasteboard: one segment per line, no timestamps.
