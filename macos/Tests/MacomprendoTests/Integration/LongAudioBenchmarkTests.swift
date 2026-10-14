@@ -18,7 +18,9 @@ import Testing
 ///     MACOMPRENDO_BENCH_LIMIT_SECONDS=<N>                             (optional, quick runs)
 ///
 /// It writes `<out>/<model>.txt`, `<out>/<model>.srt` and merges this run's numbers into
-/// `<out>/report.json` (rerunning with more models keeps the earlier entries). The models are
+/// `<out>/report.json` (rerunning with more models keeps the earlier entries). The report also
+/// lists, per model, the segments that match a known whisper phantom phrase (`phantoms`), and the
+/// printed table carries their count — the check reports, it never fails the run. The models are
 /// read from `~/Library/Application Support/Macomprendo/models` — never downloaded — through
 /// `LocalModelManager`, and the test fails only on errors, never on quality.
 @Suite struct LongAudioBenchmarkTests {
@@ -75,6 +77,57 @@ import Testing
         }
         print(rows.joined(separator: "\n"))
         print("LongAudioBenchmark report: \(out.appending(path: "report.json").path)")
+    }
+
+    /// The phantom check is deliberately testable without a model: it is a pure match over the
+    /// WER normalisation, so a regression in the phrase list or the matcher shows up here rather
+    /// than only in a 25-minute benchmark run. A plain "спасибо" is not a phantom — only the
+    /// whole phrase is.
+    @Test func knownPhantomPhrasesAreDetectedAfterNormalisation() throws {
+        let segments = [
+            TranscriptSegment(start: 0, end: 29.9,
+                              text: "Ну, это уж всегда бывает, в принципе. Спасибо, Дмитрий!"),
+            TranscriptSegment(start: 4466.0, end: 4469.4, text: "Субтитры сделал DimaTorzok"),
+            TranscriptSegment(start: 4470.0, end: 4473.0, text: "СПАСИБО ЗА ПРОСМОТР!"),
+            TranscriptSegment(start: 4474.0, end: 4476.0, text: "Продолжение следует…"),
+            TranscriptSegment(start: 4477.0, end: 4479.0, text: "www.Amara.org"),
+        ]
+        let phantoms = Self.phantomSegments(in: segments)
+
+        #expect(phantoms.map(\.segmentIndex) == [1, 2, 3, 4])
+        let first = try #require(phantoms.first)
+        #expect(first.start == 4466.0)
+        #expect(first.text == "Субтитры сделал DimaTorzok")
+    }
+
+    // MARK: - Phantoms
+
+    /// Phrases whisper.cpp has been caught inventing over a trailing stretch of music or silence
+    /// — text that is not in the recording. Matched after `WordErrorRate`'s normalisation, so
+    /// case and punctuation do not matter. Reported per model in `report.json` and as a table
+    /// column; the benchmark still never fails on quality, only reports.
+    static let phantomPhrases = [
+        "субтитры сделал", "субтитры создавал", "редактор субтитров", "корректор",
+        "продолжение следует", "спасибо за просмотр", "подписывайтесь на канал", "amara.org",
+    ]
+
+    /// One segment that matched a known phantom phrase.
+    struct Phantom: Equatable {
+        let segmentIndex: Int
+        let start: TimeInterval
+        let text: String
+    }
+
+    /// The segments whose text matches a known phantom phrase, in order. The index is the
+    /// segment's position in the model's own list, so the tail of a long transcript can be
+    /// checked at a glance.
+    static func phantomSegments(in segments: [TranscriptSegment]) -> [Phantom] {
+        let phrases = phantomPhrases.map(WordErrorRate.normalisedText)
+        return segments.enumerated().compactMap { index, segment in
+            let normalised = WordErrorRate.normalisedText(segment.text)
+            guard phrases.contains(where: normalised.contains) else { return nil }
+            return Phantom(segmentIndex: index, start: segment.start, text: segment.text)
+        }
     }
 
     // MARK: - One model's run
@@ -158,7 +211,8 @@ import Testing
             werPercent: reference.map({ WordErrorRate.wer(reference: $0.text, hypothesis: hypothesis) * 100 }),
             cerPercent: reference.map({ WordErrorRate.cer(reference: $0.text, hypothesis: hypothesis) * 100 }),
             referenceWordCount: reference.map({ WordErrorRate.words($0.text).count }),
-            hypothesisWordCount: WordErrorRate.words(hypothesis).count)
+            hypothesisWordCount: WordErrorRate.words(hypothesis).count,
+            phantoms: Self.phantomSegments(in: segments))
     }
 
     // MARK: - Output
@@ -216,6 +270,9 @@ import Testing
             "load_average_start": outcome.loadAverageStart,
             "load_average_end": outcome.loadAverageEnd,
             "hypothesis_words": outcome.hypothesisWordCount,
+            "phantoms": outcome.phantoms.map {
+                ["segmentIndex": $0.segmentIndex, "start": $0.start, "text": $0.text] as [String: Any]
+            },
         ]
         // WER/CER only when a reference was given — and always reported, never asserted on.
         if let wer = outcome.werPercent { value["wer_percent"] = wer }
@@ -245,7 +302,7 @@ import Testing
     private static func tableHeader(hasReference: Bool) -> String {
         var header = pad("model", 32)
             + " " + pad("audio_s", 8) + " " + pad("wall_s", 8) + " " + pad("rtf", 6)
-            + " " + pad("segs", 6) + " " + pad("peak_mb", 9)
+            + " " + pad("segs", 6) + " " + pad("peak_mb", 9) + " " + pad("phantoms", 9)
         if hasReference {
             header += " " + pad("wer_%", 7) + " " + pad("cer_%", 7)
         }
@@ -257,6 +314,7 @@ import Testing
         row += String(format: " %8.1f %8.1f %6.2f %6d %9.1f",
                       outcome.audioSeconds, outcome.wallSeconds, outcome.realTimeFactor,
                       outcome.segments.count, outcome.peakFootprintMegabytes)
+        row += String(format: " %9d", outcome.phantoms.count)
         if let wer = outcome.werPercent, let cer = outcome.cerPercent {
             row += String(format: " %7.2f %7.2f", wer, cer)
         }
@@ -291,6 +349,7 @@ import Testing
         let cerPercent: Double?
         let referenceWordCount: Int?
         let hypothesisWordCount: Int
+        let phantoms: [Phantom]
 
         var realTimeFactor: Double { audioSeconds > 0 ? wallSeconds / audioSeconds : 0 }
         var peakFootprintMegabytes: Double { Double(peakFootprintBytes) / 1_048_576 }
