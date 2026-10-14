@@ -81,9 +81,8 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ hashFiles('macos/Package.resolved', 'macos/Packages/WhisperBinary/Package.swift', 'macos/Packages/SherpaOnnxBinary/Package.swift') }}
           restore-keys: swiftpm-${{ runner.os }}-
 
-      - name: Run Swift package tests
-        run: swift test --package-path macos
-
+      # Swift tests run locally (`npm run test:swift`, Definition of done in AGENTS.md), not here:
+      # the hosted macOS runners are too CPU-starved for the timing-sensitive suites.
       - name: Install XcodeGen
         run: brew install xcodegen
 
