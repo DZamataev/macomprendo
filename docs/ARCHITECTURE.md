@@ -115,6 +115,70 @@ Two silence checks with different jobs:
   invents a word. It fails as `MacomprendoError.silentCapture`. The HUD warns after three
   seconds without input while recording continues.
 
+### Long-audio transcription
+
+`Transcribe File…` in the menubar, or a file dropped on the Transcripts window, transcribes any
+audio or video file with the transcription source the user already configured. Audio leaves the
+machine only to that endpoint.
+
+The pipeline runs in one direction, each stage behind a protocol so the controllers are testable
+with fakes:
+
+- `MediaAudioDecoding` (`AVAssetMediaDecoder`) opens the first audio track with `AVAssetReader`
+  and yields 16 kHz mono `Float` chunks. The stream is pull-based: nothing is decoded until the
+  consumer asks for the next chunk, so the whole file is never in memory and a slow consumer
+  never buffers it. `open(_:from:)` reports the asset duration and the offset decoding actually
+  started at.
+- `SpeechSegmenting` (`SherpaSileroSegmenter`) feeds each chunk to the bundled Silero detector and
+  turns its regions into segments through `SpeechSpanAssembler` (ADR-0015). A session is built per
+  job, because the detector keeps state between chunks.
+- `LongAudioPipeline` drives both: it opens the file, decodes it chunk by chunk, transcribes each
+  segment in order through the existing `TranscriptionProvider` (retrying a transient failure
+  twice), and yields `.opened`, `.segment` and `.position` events. It obtains the provider on first
+  use, so a file with no speech never builds a model. The producing task holds that provider until
+  it ends, and `stop()` / `awaitCompletion()` are how a consumer stops it and waits for the
+  reference to go.
+- `FileTranscriptionController` (`@MainActor`) consumes the events: it creates the `inProgress`
+  row once the file has opened, appends each segment as it lands (normalised through the glossary
+  exactly as a dictation), reports `idle → running(progress) → finished / failed`, and on a
+  failure, a cancellation or a newer job leaves the row `incomplete` with a reason that holds no
+  transcript text. `TranscriptLibraryController` owns the list, the open transcript, delete, copy
+  and export.
+- `TranscriptsView` is the window: the list on the left, the open transcript on the right, a drop
+  zone when nothing is selected, and the `Copy`, `Export…`, `Summarize`, `Resume` and `Delete`
+  actions. `Summarize` opens the ordinary Summarize Quick Panel with the transcript's plain text
+  and **Replace selection** hidden, because no other app holds a selection to replace.
+
+Dictation outranks file transcription. Both local-model callers go through `TranscriptionLane`,
+which serialises calls and serves an interactive waiter before a background one: a dictation waits
+for at most the one segment in flight, never for the file, and a file job is not cancelled by a
+dictation.
+
+Quitting is ordered. `AppModel.shutdown()` stops the file job and waits for its pipeline task to
+release the provider, cancels and waits for an in-flight dictation, and only then drops the
+local-model cache. A native speech context still alive at process exit aborts in whisper.cpp
+v1.9.2's ggml-metal static destructor (`GGML_ASSERT([rsets->data count] == 0)`), so quitting
+mid-job would otherwise crash the app instead of exiting. A job stopped this way is left
+`incomplete` with the reason launch maintenance also writes, so `Resume` continues it either way.
+
+Measured on 2026-10-14 on an M4 Max: decoding and transcribing a 74.9-minute Russian interview
+took 198.4 s with whisper large-v3-turbo (RTF 0.044) and peaked at 2.0 GB; the same model peaked at
+2.0 GB on a 78 s clip, so peak memory tracks the model, not the file. The decoder's own retention
+is a chunk; the segmenter's peaked at 30.0 s, inside its 35.6 s bound.
+
+Not yet:
+
+- `.srt` cues are as long as segments, up to 30 s. Shorter cues would need the recogniser's word
+  timestamps, which `TranscriptionProvider` does not return.
+- whisper can hallucinate a trailing phrase over music or silence: one run ended a 74.9-minute file
+  with `Субтитры сделал DimaTorzok`, which is not in the recording.
+- A Dictate & Refine capture is not cancelled or awaited on quit, so it can hold the local model's
+  lease for one more `whisper_full` call (the Dictate path is stopped).
+- The Summarize panel sends the whole transcript in one request and does not split long text
+  (issue #24).
+- WebM/Opus input is not decoded. `AVAssetReader` cannot open it and the job fails as
+  `mediaUnreadable`.
+
 ## Rules
 
 1. **Dependencies point downward only.** Core never imports Services, Providers,
