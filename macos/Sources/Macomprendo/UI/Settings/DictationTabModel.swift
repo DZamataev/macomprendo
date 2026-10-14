@@ -33,7 +33,7 @@ enum DictationBackendTab: String, CaseIterable, Identifiable, Sendable {
             ""
         case .sherpaOfflineASR:
             "No settings. The Russian models take no language hint, the multilingual models "
-                + "detect their own language, and decoding is greedy."
+                + "and Parakeet detect their own language, and decoding is greedy."
         }
     }
 }

@@ -52,8 +52,8 @@ private final class SherpaRecognizerBox: @unchecked Sendable {
     }
 }
 
-/// Local transcription through sherpa-onnx: Russian for the v3 entries, and Russian, English,
-/// Kazakh, Kyrgyz and Uzbek for the multilingual ones.
+/// Local transcription through sherpa-onnx's offline recognizer: the GigaAM CTC and RNN-T
+/// entries and NVIDIA's Parakeet TDT transducer.
 ///
 /// The recognizer is created lazily on the first `transcribe` and stays resident, because
 /// loading a 225 MB ONNX graph costs a couple of seconds. Serialisation is free: the type is
@@ -69,8 +69,8 @@ actor SherpaOfflineTranscriber: TranscriptionProvider {
         self.plan = plan
     }
 
-    /// GigaAM models take no language parameter: the v3 entries are Russian-only and the
-    /// multilingual entries decode character-wise across their languages with no hint. The
+    /// These models take no language parameter: the GigaAM v3 entries are Russian-only, and the
+    /// multilingual GigaAM entries and Parakeet detect the language themselves. The
     /// argument is accepted and ignored rather than rejected — failing a dictation over a
     /// setting the UI does not offer would be worse than simply transcribing.
     func transcribe(_ pcm: [Float], sampleRate: Int, language: String?) async throws -> String {
@@ -127,9 +127,10 @@ actor SherpaOfflineTranscriber: TranscriptionProvider {
     /// when `SherpaOnnxCreateOfflineRecognizer` runs — hence the nesting rather than an array
     /// of pointers built up and released beforehand.
     ///
-    /// `feat_config.feature_dim` is deliberately left at zero: sherpa recognises a GigaAM graph
-    /// from its ONNX metadata and forces the 64 mel bins and the window settings GigaAM's own
-    /// preprocessing uses, overriding whatever is passed in.
+    /// `feat_config.feature_dim` is deliberately left at zero: sherpa reads the feature size from
+    /// the encoder's ONNX metadata, and for a GigaAM graph forces the 64 mel bins and window
+    /// settings GigaAM's own preprocessing uses. Parakeet's metadata carries its own size and
+    /// marks it TDT, so the same zero-initialised config serves both.
     private func makeRecognizer() throws -> OpaquePointer {
         var config = SherpaOnnxOfflineRecognizerConfig()
         config.feat_config.sample_rate = 16_000

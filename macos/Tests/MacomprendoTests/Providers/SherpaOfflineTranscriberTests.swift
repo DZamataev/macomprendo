@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import Macomprendo
@@ -63,6 +64,48 @@ import Testing
         let transcriber = try SherpaOfflineTranscriber(files: [.ctcModel: model, .tokens: tokens])
         await #expect(throws: MacomprendoError.modelMissing("m.onnx")) {
             _ = try await transcriber.transcribe([0.1], sampleRate: 16_000, language: nil)
+        }
+    }
+
+    // MARK: - Integration (skipped without a real model)
+
+    /// Runs only when `MACOMPRENDO_PARAKEET_DIR` holds the four Parakeet files as sherpa names
+    /// them (`encoder.int8.onnx`, `decoder.int8.onnx`, `joiner.int8.onnx`, `tokens.txt`) and
+    /// 16 kHz mono WAVs under `test_wavs/`. Prints each transcript so a person can judge it;
+    /// asserts only what a TDT-decoded transcript must have — words, and Parakeet's own
+    /// punctuation. A TDT joiner decoded as a plain transducer produces neither.
+    @Test func parakeetTranscribesRealSpeechWithPunctuation() async throws {
+        guard let path = ProcessInfo.processInfo.environment["MACOMPRENDO_PARAKEET_DIR"] else {
+            return
+        }
+        let directory = URL(fileURLWithPath: path)
+        let transcriber = try SherpaOfflineTranscriber(files: [
+            .encoder: directory.appendingPathComponent("encoder.int8.onnx"),
+            .decoder: directory.appendingPathComponent("decoder.int8.onnx"),
+            .joiner: directory.appendingPathComponent("joiner.int8.onnx"),
+            .tokens: directory.appendingPathComponent("tokens.txt"),
+        ])
+        let wavs = try FileManager.default
+            .contentsOfDirectory(at: directory.appendingPathComponent("test_wavs"),
+                                 includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "wav" }
+        try #require(!wavs.isEmpty)
+
+        for wav in wavs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let file = try AVAudioFile(forReading: wav, commonFormat: .pcmFormatFloat32,
+                                       interleaved: false)
+            guard file.processingFormat.sampleRate == 16_000,
+                  file.processingFormat.channelCount == 1 else { continue }
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+                                                       frameCapacity: AVAudioFrameCount(file.length)))
+            try file.read(into: buffer)
+            let pcm = Array(UnsafeBufferPointer(start: buffer.floatChannelData![0],
+                                                count: Int(buffer.frameLength)))
+
+            let text = try await transcriber.transcribe(pcm, sampleRate: 16_000, language: nil)
+            print("PARAKEET \(wav.lastPathComponent): \(text)")
+            #expect(text.split(separator: " ").count >= 3, "\(wav.lastPathComponent): \(text)")
+            #expect(text.contains { ".,?!".contains($0) }, "\(wav.lastPathComponent): \(text)")
         }
     }
 }

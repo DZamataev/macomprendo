@@ -48,7 +48,7 @@ import Testing
     @Test func eachTabListsOnlyItsOwnEnginesModels() {
         let tab = tabModel()
         #expect(tab.rows(for: .sherpaOfflineASR).allSatisfy { $0.engine == .sherpaOfflineASR })
-        #expect(tab.rows(for: .sherpaOfflineASR).count == 4)
+        #expect(tab.rows(for: .sherpaOfflineASR).count == 5)
         #expect(tab.rows(for: .whisperCpp).count == 9)
         #expect(tab.rows(for: .endpoint).isEmpty)
     }
