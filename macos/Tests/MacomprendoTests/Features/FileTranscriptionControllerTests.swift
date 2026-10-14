@@ -426,6 +426,106 @@ import Testing
         #expect(stored?.header.statusReason == "Cancelled.")
     }
 
+    /// The window's **Choose File…**: `Resume` was told which file to use because the stored
+    /// bookmark no longer resolves, so the chosen file is decoded and becomes the row's source.
+    @Test func resumeWithANewlyChosenFileUsesItAndReplacesTheBookmark() async throws {
+        let gate = AsyncGate()
+        let chosen = "/files/renamed.m4a"
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 60,
+                                                        chunks: [Self.chunk(seconds: 1),
+                                                                 Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)],
+                                                                      [Self.segment(start: 10)]]),
+                          bookmarks: FakeFileBookmarks(missing: ["/files/gone.m4a"]))
+        rig.provider.gate = gate
+
+        let id = await rig.store.create(sourceKind: .file, title: "meeting.m4a",
+                                        sourceBookmark: Data("/files/gone.m4a".utf8), duration: 60,
+                                        run: TranscriptionRun.from(rig.settings.value.transcriptionSource,
+                                                                   language: nil),
+                                        at: Self.fixedNow)
+        try await rig.store.appendSegment(TranscriptSegment(start: 0, end: 12, text: "earlier"),
+                                          to: id)
+        try await rig.store.setStatus(.incomplete, reason: "Cancelled.", for: id)
+
+        rig.controller.resume(transcriptID: id, fileAt: URL(fileURLWithPath: chosen))
+        await waitFor("the resumed job to be running") {
+            if case let .running(transcriptID, _, _, _) = rig.controller.state {
+                return transcriptID == id
+            }
+            return false
+        }
+        gate.open()
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .finished(transcriptID: id))
+        // The chosen file, not the stored bookmark — which by itself cannot be resolved here.
+        #expect(rig.decoder.requests.map(\.url) == [URL(fileURLWithPath: chosen)])
+        #expect(rig.decoder.requests.map(\.start) == [12])
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .complete)
+        #expect(stored?.sourceBookmark == Data(chosen.utf8))
+        #expect(stored?.segments == [
+            TranscriptSegment(start: 0, end: 12, text: "earlier"),
+            TranscriptSegment(start: 12, end: 13, text: "hello"),
+            TranscriptSegment(start: 22, end: 23, text: "hello"),
+        ])
+    }
+
+    @Test func resumeWithANewlyChosenFileForAMissingTranscriptFails() async {
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 10,
+                                                        chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter())
+
+        rig.controller.resume(transcriptID: 42, fileAt: URL(fileURLWithPath: "/files/choice.m4a"))
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .failed(
+            message: ErrorText.describe(MacomprendoError.transcriptStore(
+                "no transcript has identifier 42")),
+            transcriptID: nil))
+        #expect(rig.decoder.requests.isEmpty)
+    }
+
+    /// The window shows **Choose File…** for exactly one failure: a `Resume` whose stored
+    /// bookmark no longer resolves.
+    @Test func onlyAMissingStoredBookmarkOffersChoosingTheFile() async throws {
+        let gone = "/files/gone.m4a"
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 10,
+                                                        chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(),
+                          bookmarks: FakeFileBookmarks(missing: [gone]))
+        #expect(!rig.controller.canChooseSourceFile)     // idle
+
+        let id = await rig.store.create(sourceKind: .file, title: "gone.m4a",
+                                        sourceBookmark: Data(gone.utf8), duration: 10,
+                                        run: TranscriptionRun.from(rig.settings.value.transcriptionSource,
+                                                                   language: nil),
+                                        at: Self.fixedNow)
+        try await rig.store.setStatus(.incomplete, reason: "Cancelled.", for: id)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .failed(
+            message: ErrorText.describe(MacomprendoError.sourceFileUnavailable), transcriptID: id))
+        #expect(rig.controller.canChooseSourceFile)
+    }
+
+    @Test func anotherFailureDoesNotOfferChoosingTheFile() async {
+        let rig = makeRig(decoder: ScriptedMediaDecoder(
+                              openError: MacomprendoError.mediaUnreadable("no audio track")),
+                          segmenter: ScriptedSegmenter())
+
+        rig.controller.transcribe(fileAt: Self.fileURL)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .failed(
+            message: ErrorText.describe(MacomprendoError.mediaUnreadable("no audio track")),
+            transcriptID: nil))
+        #expect(!rig.controller.canChooseSourceFile)
+    }
+
     // MARK: - Normalisation
 
     @Test func rawTextIsKeptOnlyWhenNormalisationRewrote() async {

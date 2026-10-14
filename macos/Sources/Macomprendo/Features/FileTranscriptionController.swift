@@ -21,7 +21,9 @@ import Foundation
 
     private enum Job: Sendable {
         case transcribe(url: URL)
-        case resume(transcriptID: Int64)
+        /// `fileAt` is the URL the user chose after the stored bookmark stopped resolving;
+        /// `nil` means resolve the bookmark.
+        case resume(transcriptID: Int64, fileAt: URL?)
     }
 
     private let store: any TranscriptStoring
@@ -72,7 +74,16 @@ import Foundation
     /// any job already running.
     func resume(transcriptID: Int64) {
         let previous = supersede()
-        start(.resume(transcriptID: transcriptID), after: previous)
+        start(.resume(transcriptID: transcriptID, fileAt: nil), after: previous)
+    }
+
+    /// Continues an `incomplete` transcript from the end of its last stored segment, using
+    /// `url` as its source instead of the stored bookmark — the path the window offers when
+    /// the bookmark no longer resolves. A fresh bookmark for `url` replaces the stale one,
+    /// so the next `Resume` finds the file again.
+    func resume(transcriptID: Int64, fileAt url: URL) {
+        let previous = supersede()
+        start(.resume(transcriptID: transcriptID, fileAt: url), after: previous)
     }
 
     func cancel() {
@@ -82,6 +93,15 @@ import Foundation
     /// Awaits the in-flight job. Used by tests.
     func drain() async {
         _ = await jobTask?.value
+    }
+
+    /// `true` when the shown failure is a `Resume` whose stored bookmark no longer resolves —
+    /// the one failure the window answers with **Choose File…**. Derived from the message the
+    /// job failed with rather than kept as a fourth piece of state beside `state`, so the two
+    /// cannot drift apart.
+    var canChooseSourceFile: Bool {
+        guard case let .failed(message, _) = state else { return false }
+        return message == ErrorText.describe(MacomprendoError.sourceFileUnavailable)
     }
 
     // MARK: - Jobs
@@ -105,13 +125,13 @@ import Foundation
             switch job {
             case let .transcribe(url):
                 await self.run(url: url, from: 0, resuming: nil, generation: generation)
-            case let .resume(transcriptID):
-                await self.runResume(id: transcriptID, generation: generation)
+            case let .resume(transcriptID, fileAt):
+                await self.runResume(id: transcriptID, fileAt: fileAt, generation: generation)
             }
         }
     }
 
-    private func runResume(id: Int64, generation: Int) async {
+    private func runResume(id: Int64, fileAt chosenURL: URL?, generation: Int) async {
         var marked = false
         do {
             try Task.checkCancellation()
@@ -129,17 +149,26 @@ import Foundation
             }
             try Task.checkCancellation()
             let url: URL
-            do {
-                guard let bookmark = transcript.sourceBookmark else {
-                    throw MacomprendoError.sourceFileUnavailable
+            if let chosenURL {
+                // The user picked the source file again: it becomes the row's source before
+                // any decoding starts, so a job that fails later still leaves `Resume` a
+                // bookmark that resolves. A bookmark that cannot be made fails the job —
+                // without it the row would ask for the file again.
+                try await store.setSourceBookmark(try bookmarks.bookmark(for: chosenURL), for: id)
+                url = chosenURL
+            } else {
+                do {
+                    guard let bookmark = transcript.sourceBookmark else {
+                        throw MacomprendoError.sourceFileUnavailable
+                    }
+                    url = try bookmarks.resolve(bookmark)
+                } catch {
+                    // The row keeps the reason it stopped with; only the state reports that the
+                    // source cannot be found.
+                    fail(ErrorText.describe(MacomprendoError.sourceFileUnavailable),
+                         transcriptID: id, generation: generation)
+                    return
                 }
-                url = try bookmarks.resolve(bookmark)
-            } catch {
-                // The row keeps the reason it stopped with; only the state reports that the
-                // source cannot be found.
-                fail(ErrorText.describe(MacomprendoError.sourceFileUnavailable),
-                     transcriptID: id, generation: generation)
-                return
             }
             try Task.checkCancellation()
             try await store.setStatus(.inProgress, reason: nil, for: id)

@@ -135,8 +135,18 @@ struct TranscriptsView: View {
         }
         // `State.failed` already carries `ErrorText.describe(_:)` of the failure.
         if case let .failed(message, _) = transcription.state {
-            errorBanner(message)
+            errorBanner(message, chooseSourceFileFor: chooseFileTarget)
         }
+    }
+
+    /// The id **Choose File…** would resume: the open transcript's `Resume` failed because its
+    /// stored bookmark no longer resolves.
+    private var chooseFileTarget: Int64? {
+        guard case let .failed(_, transcriptID) = transcription.state,
+              let id = transcriptID, id == library.selected?.id,
+              transcription.canChooseSourceFile
+        else { return nil }
+        return id
     }
 
     private func transcriptDetail(_ transcript: Transcript) -> some View {
@@ -288,17 +298,34 @@ struct TranscriptsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func errorBanner(_ message: String) -> some View {
+    private func errorBanner(_ message: String, chooseSourceFileFor id: Int64? = nil) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Icon(.warning, size: 14)
             Text(message)
                 .font(.callout)
                 .textSelection(.enabled)
             Spacer()
+            if let id {
+                Button("Choose File…") { chooseSourceFile(for: id) }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.primary)
+                    .fixedSize()
+            }
         }
         .foregroundStyle(.red)
         .padding(8)
         .background(Color.red.opacity(0.08))
+    }
+
+    /// Picks the source file again for a `Resume` whose stored bookmark no longer resolves.
+    /// The chosen file continues from the same position and becomes the row's bookmark.
+    private func chooseSourceFile(for id: Int64) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audiovisualContent]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        transcription.resume(transcriptID: id, fileAt: url)
     }
 
     // MARK: - Export

@@ -79,6 +79,23 @@ import Testing
         #expect(try await store.transcript(id: id)?.summary == nil)
     }
 
+    @Test func aSourceBookmarkCanBeReplacedAndMissingRowsAreAnError() async throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let id = try await store.create(sourceKind: .file, title: "a", sourceBookmark: Data([1]),
+                                        duration: 1, run: run, at: .now)
+
+        try await store.setSourceBookmark(Data([2, 3]), for: id)
+        #expect(try await store.transcript(id: id)?.sourceBookmark == Data([2, 3]))
+
+        try await store.setSourceBookmark(nil, for: id)
+        #expect(try await store.transcript(id: id)?.sourceBookmark == nil)
+
+        await #expect(throws: MacomprendoError.transcriptStore("no transcript has identifier 42")) {
+            try await store.setSourceBookmark(Data([1]), for: 42)
+        }
+    }
+
     @Test func deletingATranscriptDeletesItsSegments() async throws {
         let (store, directory) = makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }

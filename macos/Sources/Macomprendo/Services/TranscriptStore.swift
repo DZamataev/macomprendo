@@ -9,6 +9,9 @@ protocol TranscriptStoring: Sendable {
     /// `reason` is stored only for `incomplete`, and must hold no transcript text.
     func setStatus(_ status: TranscriptStatus, reason: String?, for id: Int64) async throws
     func setSummary(_ summary: String?, for id: Int64) async throws
+    /// Replaces the bookmark `Resume` resolves for the row: written when the user chose the
+    /// source file again because the stored bookmark no longer resolves.
+    func setSourceBookmark(_ bookmark: Data?, for id: Int64) async throws
     /// Every transcript, newest first.
     func headers() async throws -> [TranscriptHeader]
     func transcript(id: Int64) async throws -> Transcript?
@@ -85,6 +88,17 @@ actor SQLiteTranscriptStore: TranscriptStoring {
         let statement = try prepare("UPDATE transcripts SET summary = ?1 WHERE id = ?2", on: db)
         defer { sqlite3_finalize(statement) }
         try bind(summary, 1, statement, db)
+        try check(sqlite3_bind_int64(statement, 2, id), on: db)
+        try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)
+        try requireOneChange(id, on: db)
+    }
+
+    func setSourceBookmark(_ bookmark: Data?, for id: Int64) throws {
+        let db = try connection()
+        let statement = try prepare(
+            "UPDATE transcripts SET source_bookmark = ?1 WHERE id = ?2", on: db)
+        defer { sqlite3_finalize(statement) }
+        try bind(bookmark, 1, statement, db)
         try check(sqlite3_bind_int64(statement, 2, id), on: db)
         try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)
         try requireOneChange(id, on: db)

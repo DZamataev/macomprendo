@@ -84,6 +84,15 @@ actor FakeTranscriptStore: TranscriptStoring {
                                      summary: summary, segments: transcript.segments)
     }
 
+    func setSourceBookmark(_ bookmark: Data?, for id: Int64) throws {
+        guard let transcript = transcripts[id] else {
+            throw MacomprendoError.transcriptStore("no transcript has identifier \(id)")
+        }
+        transcripts[id] = Transcript(header: transcript.header, run: transcript.run,
+                                     sourceBookmark: bookmark, summary: transcript.summary,
+                                     segments: transcript.segments)
+    }
+
     func headers() async throws -> [TranscriptHeader] {
         try consumeReadFailure()
         let headers = transcripts.values.map(\.header).sorted { $0.id > $1.id }
