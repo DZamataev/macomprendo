@@ -28,6 +28,12 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case licenseTextMissing(String)
     case licenseTextUnreadable(String)
     case silentCapture
+    case mediaUnreadable(String)
+    case noAudioTrack
+    case noSpeechFound
+    case sourceFileUnavailable
+    case transcriptStore(String)
+    case speechDetector(String)
     case cancelled
 
     var errorDescription: String? {
@@ -74,6 +80,18 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "The licence text for \"\(component)\" is bundled but could not be read."
         case .silentCapture:
             return "No sound was captured."
+        case .mediaUnreadable(let reason):
+            return "Macomprendo cannot read this file: \(reason)"
+        case .noAudioTrack:
+            return "This file has no audio track."
+        case .noSpeechFound:
+            return "No speech was found in this file."
+        case .sourceFileUnavailable:
+            return "The original file can no longer be found."
+        case .transcriptStore(let reason):
+            return "Transcripts are unavailable: \(reason)"
+        case .speechDetector(let reason):
+            return "The speech detector could not start: \(reason)"
         case .cancelled:
             return "Cancelled."
         }
@@ -123,6 +141,18 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Read it at the component's homepage, or in macos/Sources/Macomprendo/Resources/Licenses in the project source."
         case .silentCapture:
             return "The microphone produced silence for the whole recording. Check that the right input device is selected and that no other app has taken it."
+        case .mediaUnreadable:
+            return "Check that the file opens in QuickTime Player. Files protected by DRM cannot be transcribed."
+        case .noAudioTrack:
+            return "Choose a recording or a video that has sound."
+        case .noSpeechFound:
+            return "The file contains only silence, music or noise. Check that it is the right file."
+        case .sourceFileUnavailable:
+            return "Choose the file again to continue transcribing it."
+        case .transcriptStore:
+            return "Check that the disk has free space and that Macomprendo can write to Application Support."
+        case .speechDetector:
+            return "Reinstall Macomprendo: the bundled speech detector model is missing or damaged."
         case .cancelled:
             return nil
         }

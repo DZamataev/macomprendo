@@ -22,7 +22,13 @@ import Testing
     .glossaryPackNameTaken("typescript"),
     .licenseTextMissing("espeak-ng"),
     .licenseTextUnreadable("espeak-ng"),
-    .silentCapture
+    .silentCapture,
+    .mediaUnreadable("unsupported format"),
+    .noAudioTrack,
+    .noSpeechFound,
+    .sourceFileUnavailable,
+    .transcriptStore("database is read-only"),
+    .speechDetector("model file missing")
 ])
 func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
     #expect(error.errorDescription?.isEmpty == false)
