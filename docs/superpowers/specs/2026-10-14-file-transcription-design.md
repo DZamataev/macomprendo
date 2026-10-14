@@ -62,8 +62,16 @@ store.
    - each span is padded by 0.3 s on both sides (clamped to the stream);
    - non-speech longer than 10 s is dropped, so silence or music alone never reaches the
      recogniser and cannot make it invent words;
-   - a span longer than 30 s is split at the quietest 20 ms frame of its last 5 seconds before
-     the cap (the latest such frame on a tie); pieces shorter than 0.3 s are dropped.
+   - a span is split only when it is longer than 35 s (the 30 s cap plus a 5 s minimum
+     remainder); the cut is the quietest 20 ms frame of the last 5 seconds before 30 s (the latest
+     such frame on a tie), so neither piece is shorter than 5 s and no piece is longer than 35 s.
+     Pieces shorter than 0.3 s are dropped. whisper.cpp slides its own 30 s window over longer
+     input; the sherpa-onnx models take any length.
+   - Why the 5 s remainder: a 32.6 s span at the end of a 75-minute interview was cut at 29.7 s;
+     the 2.9 s remainder held only padding, outro music and a 0.84 s VAD blip, and whisper
+     large-v3-turbo wrote "Субтитры сделал DimaTorzok" for it. whisper.cpp v1.9.2 reported a
+     no-speech probability of 0.000 for that segment and for every real one, so a no-speech
+     threshold cannot catch it; `suppress_nst` did not change the output.
    Silero's own `max_speech_duration` does not cap length: probed on 70 s of continuous speech it
    returned one 70 s segment with the limit at 25 s and at 10 s.
 
@@ -148,7 +156,7 @@ service is built in `AppEnvironment`.
 | Services | `MediaAudioDecoding` / `AVAssetMediaDecoder` | File → `AsyncThrowingStream` of 16 kHz mono PCM + duration |
 | Services | `SpeechSegmenting` / `SherpaSileroSegmenter` | PCM stream → segments; the 30 s split rule lives in a pure helper |
 | Services | `TranscriptStoring` / `SQLiteTranscriptStore` | Actor; `~/Library/Application Support/Macomprendo/transcripts.sqlite3` |
-| Services | `SpeechSegmentSplitter` | Pure 30 s cap and 0.3 s floor |
+| Services | `SpeechSegmentSplitter` | Pure 30 s cut point, 35 s split threshold, 0.3 s floor |
 | Services | `FileBookmarking` / `FoundationFileBookmarks` | Bookmark a source file, resolve it on `Resume` |
 | Providers | `TranscriptionLane` | Serialises local-model calls; a waiting dictation goes before a waiting file segment |
 | Features | `LongAudioPipeline` | Decode → segment → transcribe with retries, as a stream of events |
@@ -188,8 +196,8 @@ Unit tests (swift-testing, written first), with fakes for every new protocol:
 - `TranscriptExporter`: SRT numbering and `HH:MM:SS,mmm` formatting past one hour, empty
   transcript, Markdown with and without a summary.
 - Segment rule: regions closer than 10 s join with the gap audio kept, spans are padded 0.3 s,
-  non-speech over 10 s is dropped, ≤ 30 s passes through, longer spans split at the quietest
-  frame of the last 5 s, sub-0.3 s pieces drop, offsets are seconds from the source start.
+  non-speech over 10 s is dropped, ≤ 35 s passes through, longer spans split at the quietest
+  frame of the 5 s before 30 s (both pieces ≥ 5 s), sub-0.3 s pieces drop, offsets are seconds from the source start.
 - An opt-in regression test on a real recording (`MACOMPRENDO_LONG_AUDIO_FIXTURE` = audio path,
   `MACOMPRENDO_LONG_AUDIO_EXPECT` = a file of phrases, one per line) runs the real decoder,
   segmenter and local whisper model and requires every phrase in the transcript. The recording
