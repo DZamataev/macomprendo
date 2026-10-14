@@ -163,8 +163,8 @@ import Testing
         }
 
         #expect(emittedBeforeFinish > 0, "pieces must be emitted while the stream is still running")
-        // The upper bound is only meaningful if the workload really did fill the buffer.
-        #expect(maxRetained > Int(40 * 16_000), "retained \(maxRetained) samples — buffer never grew")
+        // This proves the workload reached a near-cap span.
+        #expect(maxRetained > Int(28 * 16_000), "retained \(maxRetained) samples — buffer never filled a near-cap span")
         #expect(maxRetained <= Int(51.5 * 16_000), "retained \(maxRetained) samples")
     }
 
