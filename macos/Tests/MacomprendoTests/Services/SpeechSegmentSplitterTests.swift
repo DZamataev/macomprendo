@@ -18,6 +18,32 @@ import Testing
         #expect(SpeechSegmentSplitter.split(segment) == [segment])
     }
 
+    @Test func aSpanUpTo35SecondsIsNotSplit() {
+        // 32.6 s, the interview's tail span: cut at the old 30 s cap it left a 2.9 s remainder
+        // of padding, outro music and a 0.84 s VAD blip, and whisper large-v3-turbo wrote
+        // "Субтитры сделал DimaTorzok" for it. A span is now split only above 35 s.
+        let segment = SpeechSegment(start: 12, samples: loud(32.6), sampleRate: rate)
+        #expect(SpeechSegmentSplitter.split(segment) == [segment])
+    }
+
+    @Test func aSplitNeverLeavesARemainderUnderFiveSeconds() {
+        for seconds in [36.0, 61.0] {
+            let samples = loud(seconds)
+            let pieces = SpeechSegmentSplitter.split(
+                SpeechSegment(start: 0, samples: samples, sampleRate: rate))
+            #expect(pieces.allSatisfy { $0.duration >= SpeechSegmentSplitter.minimumRemainder },
+                    "pieces: \(pieces.map(\.duration))")
+            #expect(pieces.allSatisfy {
+                $0.duration <= SpeechSegmentSplitter.maximumDuration
+                    + SpeechSegmentSplitter.minimumRemainder
+            }, "pieces: \(pieces.map(\.duration))")
+            #expect(pieces.map(\.samples.count).reduce(0, +) == samples.count)
+            for (previous, next) in zip(pieces, pieces.dropFirst()) {
+                #expect(abs(previous.end - next.start) < 1e-9)
+            }
+        }
+    }
+
     @Test func aSegmentShorterThanTheMinimumIsDropped() {
         let segment = SpeechSegment(start: 0, samples: loud(0.29), sampleRate: rate)
         #expect(SpeechSegmentSplitter.split(segment).isEmpty)
@@ -36,11 +62,14 @@ import Testing
         #expect(pieces.map(\.samples.count).reduce(0, +) == samples.count)
     }
 
-    @Test func everyPieceFitsTheCapWhateverTheInput() {
+    @Test func everyPieceFitsTheSplitRuleWhateverTheInput() {
         let pieces = SpeechSegmentSplitter.split(
             SpeechSegment(start: 0, samples: loud(95), sampleRate: rate))
         #expect(pieces.count == 4)
-        #expect(pieces.allSatisfy { $0.duration <= SpeechSegmentSplitter.maximumDuration })
+        #expect(pieces.allSatisfy {
+            $0.duration <= SpeechSegmentSplitter.maximumDuration
+                + SpeechSegmentSplitter.minimumRemainder
+        })
         #expect(pieces.map(\.samples.count).reduce(0, +) == 95 * rate)
     }
 

@@ -10,7 +10,8 @@ protocol SpeechSegmenting: Sendable {
 
 protocol SpeechSegmentingSession: AnyObject {
     /// Feeds samples; returns the segments completed by them, each at most
-    /// `SpeechSegmentSplitter.maximumDuration` long.
+    /// `SpeechSegmentSplitter.maximumDuration + SpeechSegmentSplitter.minimumRemainder` long —
+    /// the splitter never cuts a remainder under `minimumRemainder`.
     func accept(_ samples: [Float]) -> [SpeechSegment]
     /// Ends the stream and returns whatever speech was still open.
     func finish() -> [SpeechSegment]

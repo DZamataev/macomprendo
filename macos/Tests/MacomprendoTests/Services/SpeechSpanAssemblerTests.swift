@@ -3,8 +3,9 @@ import Testing
 @testable import Macomprendo
 
 /// The pure span rules: regions closer than `joinGap` join with the audio between them, spans are
-/// padded, non-speech over `joinGap` is dropped, spans are cut to `maximumDuration` at a quiet
-/// frame, and the buffer stays bounded while speech streams in.
+/// padded, non-speech over `joinGap` is dropped, spans are split only above
+/// `maximumDuration + minimumRemainder` at a quiet frame, and the buffer stays bounded while
+/// speech streams in.
 @Suite struct SpeechSpanAssemblerTests {
     private let rate = 16_000
 
@@ -123,7 +124,10 @@ import Testing
         emitted += assembler.finish()
 
         #expect(emitted.count == 4)
-        #expect(emitted.allSatisfy { $0.duration <= SpeechSegmentSplitter.maximumDuration })
+        #expect(emitted.allSatisfy {
+            $0.duration <= SpeechSegmentSplitter.maximumDuration
+                + SpeechSegmentSplitter.minimumRemainder
+        })
         for (previous, next) in zip(emitted, emitted.dropFirst()) {
             #expect(abs(previous.end - next.start) < 1e-9)
         }
@@ -134,10 +138,25 @@ import Testing
         #expect(firstPiece.duration < 28.7)
     }
 
+    /// The interview's phantom tail: a 32.6 s region-backed span ending at the stream end. Cut at
+    /// the old 30 s cap it left a 2.9 s remainder of padding, outro music and a 0.84 s VAD blip,
+    /// and whisper large-v3-turbo wrote "Субтитры сделал DimaTorzok" for it. Under the 35 s rule
+    /// it reaches the recogniser whole.
+    @Test func aSpanUpTo35SecondsClosingAtTheStreamEndStaysOnePiece() throws {
+        let assembler = SpeechSpanAssembler(sampleRate: rate)
+        let segments = assembler.accept(samples: loud(32.6), regions: [region(0, 32.6)],
+                                        speechInProgress: false) + assembler.finish()
+
+        #expect(segments.count == 1)
+        let piece = try #require(segments.first)
+        #expect(abs(piece.duration - 32.6) < 1e-9)
+    }
+
     /// The buffer must stay bounded however long the speech runs: the open span is cut down to a
-    /// remainder as regions arrive, so retention is at most the open span's remainder (under one
-    /// `maximumDuration`), plus the join gap and the one region the detector is still reporting.
-    /// With 20 s regions 1 s apart that is about 50 s; 51.5 s is the stated bound with headroom.
+    /// remainder as regions arrive, so retention is at most one span at the 35 s split threshold
+    /// (`maximumDuration + minimumRemainder`) plus at most one chunk of overshoot. With 20 s
+    /// regions 1 s apart the retained span peaks at about 35 s; 36.5 s is the stated bound with
+    /// headroom.
     @Test func continuousSpeechNeverRetainsMoreThanTheStatedBound() {
         let assembler = SpeechSpanAssembler(sampleRate: rate)
         var regions: [(start: Double, end: Double)] = []
@@ -165,7 +184,7 @@ import Testing
         #expect(emittedBeforeFinish > 0, "pieces must be emitted while the stream is still running")
         // This proves the workload reached a near-cap span.
         #expect(maxRetained > Int(28 * 16_000), "retained \(maxRetained) samples — buffer never filled a near-cap span")
-        #expect(maxRetained <= Int(51.5 * 16_000), "retained \(maxRetained) samples")
+        #expect(maxRetained <= Int(36.5 * 16_000), "retained \(maxRetained) samples")
     }
 
     /// sherpa backdates a region's start behind the chunk in which it first calls speech
@@ -240,7 +259,10 @@ import Testing
         emitted += assembler.finish()
 
         #expect(emittedBeforeFinish > 0, "pieces must be emitted while the region is still open")
-        #expect(emitted.allSatisfy { $0.duration <= SpeechSegmentSplitter.maximumDuration })
+        #expect(emitted.allSatisfy {
+            $0.duration <= SpeechSegmentSplitter.maximumDuration
+                + SpeechSegmentSplitter.minimumRemainder
+        })
         for (previous, next) in zip(emitted, emitted.dropFirst()) {
             #expect(abs(previous.end - next.start) < 1e-9)
         }
@@ -280,7 +302,10 @@ import Testing
 
         #expect(emittedBeforeFinish > 0,
                 "pieces must be emitted while the region-backed span is still open")
-        #expect(emitted.allSatisfy { $0.duration <= SpeechSegmentSplitter.maximumDuration })
+        #expect(emitted.allSatisfy {
+            $0.duration <= SpeechSegmentSplitter.maximumDuration
+                + SpeechSegmentSplitter.minimumRemainder
+        })
         for (previous, next) in zip(emitted, emitted.dropFirst()) {
             #expect(abs(previous.end - next.start) < 1e-9)
         }
@@ -294,21 +319,12 @@ import Testing
                 "retained \(maxRetained) samples, bound \(assembler.retentionBound)")
     }
 
-    /// A piece under the 0.3 s floor never reaches the recogniser: neither a remainder behind a
-    /// cap cut nor a span the stream end clamps short.
-    @Test func aSubMinimumRemainderIsDropped() throws {
-        // 29.95 s of speech plus a longer tail: padded to 30.25 s, cut at the cap's quietest
-        // frame (29.99 s) and the 0.26 s remainder dropped.
-        let afterCut = SpeechSpanAssembler(sampleRate: rate)
-        let stream = loud(29.95) + quiet(0.32)
-        let cut = afterCut.accept(samples: stream, regions: [region(0, 29.95)],
-                                  speechInProgress: false) + afterCut.finish()
-
-        #expect(cut.count == 1)
-        let piece = try #require(cut.first)
-        #expect(piece.samples.count == 479_840)
-        #expect(abs(piece.end - 29.99) < 1e-9)
-
+    /// A piece under the 0.3 s floor never reaches the recogniser. Under the 35 s rule a cut
+    /// cannot leave one — every cut leaves at least `minimumRemainder` — so the floor is only
+    /// reached by a span the stream end clamps short. (The old first case here, 29.95 s of speech
+    /// plus a tail, used to be cut at the 30 s cap and drop the 0.26 s remainder; it now passes
+    /// through as one padded piece, like the 32.6 s span above.)
+    @Test func aSubMinimumPieceIsDropped() throws {
         // 0.2 s of speech at the very end of the stream: the clamped span is under the floor.
         let atEnd = SpeechSpanAssembler(sampleRate: rate)
         let tiny = atEnd.accept(samples: loud(0.2), regions: [region(0, 0.2)],
