@@ -350,8 +350,8 @@ final class AppModel: ObservableObject {
         callRecording.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
-        // System sleep stops the recording exactly as Stop does — the finalised recording is
-        // transcribed on the next launch, through `Resume` or launch recovery.
+        // System sleep stops the recording exactly as Stop does: the recording is finalised and
+        // its transcription job starts immediately, not on the next launch.
         NSWorkspace.shared.notificationCenter
             .publisher(for: NSWorkspace.willSleepNotification)
             .receive(on: DispatchQueue.main)

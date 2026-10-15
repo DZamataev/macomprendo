@@ -37,17 +37,18 @@ consolidates the fragments at stop.
   "status": "recording",
   "tracks": {
     "me":     { "file": "rec 2026-10-15 16-42-07 Me.m4a",     "startOffset": 0.000 },
-    "others": { "file": "rec 2026-10-15 16-42-07 Others.m4a", "startOffset": 0.184 }
+    "others": { "file": "rec 2026-10-15 16-42-07 Others.m4a", "startOffset": null }
   }
 }
 ```
 
 `status` is `recording` until Stop or quit finalises it as `finished`. `startOffset` is the seconds
 from the session start to the track's first sample, on the **mach host clock** both tracks are
-placed on (`HostClock`, the same reference `AVAudioTime` uses for tap timestamps). The manifest is
-written atomically (temp file + rename) and rewritten as soon as each track's offset is known,
-while the status stays `recording`, so a crash — which no `finished` write ever follows — still
-tells launch recovery where each track starts.
+placed on (`HostClock`, the same reference `AVAudioTime` uses for tap timestamps); it is `null`
+until that track's first sample arrives — a system-audio tap can start a fraction of a second after
+the microphone. The manifest is written atomically (temp file + rename) and rewritten as soon as
+each track's offset is known, while the status stays `recording`, so a crash — which no `finished`
+write ever follows — still tells launch recovery where each track starts.
 
 **Gaps are padded on the host clock.** Every gap — a tap rebuild, a device change, a stalled
 callback — is filled with silence measured on the session clock, so second *t* of either file is

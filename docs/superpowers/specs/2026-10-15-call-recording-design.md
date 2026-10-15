@@ -148,7 +148,8 @@ transcribes it.
 - After Stop, `FileTranscriptionController` starts a call job. As with files, a newer job
   cancels the running one, which becomes `incomplete` and resumable.
 - The transcript: `source_kind = call`, title `Call 2026-10-15 16:42`, `source_bookmark` = a
-  bookmark to the recording folder, `duration_s` = the longer track's end on the session clock.
+  bookmark to the recording folder, `duration_s` = the recording's elapsed wall-clock time (the
+  stop instant minus the start instant).
 - The **Me** track is transcribed first, then **Others**, each through `LongAudioPipeline`
   unchanged. Every segment is shifted by its track's `startOffset` and stored with its
   `speaker`. Queries already order segments by `start_s`, which interleaves the two sides.
@@ -171,10 +172,10 @@ transcribes it.
 
 ### Live transcription later
 
-Capture pushes every converted buffer, with its track and session-clock time, to an array of
-`CallAudioSink`s. This stage has one sink per track, the writer. A later stage adds a segmenter
-sink per track and appends segments while recording; the capture, the files and the store do not
-change.
+Capture pushes every converted buffer, with its track and session-clock time, to its track's
+writer. This stage has one capture handler per track feeding one `CallAudioSink`; the fan-out to
+an array of sinks does not exist yet. A later stage adds it, with a segmenter sink per track
+appending segments while recording; the capture, the files and the store do not change.
 
 ### Errors
 

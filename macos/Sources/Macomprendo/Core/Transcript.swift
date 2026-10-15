@@ -1,7 +1,7 @@
 import Foundation
 
-/// Where a transcript's audio came from. `call` is reserved for call recording, which stores
-/// into the same table; nothing produces it yet.
+/// Where a transcript's audio came from. Call recording produces `call` rows in the same table
+/// as file transcripts; everything else is `file`.
 enum TranscriptSourceKind: String, Sendable, Equatable, CaseIterable {
     case file
     case call

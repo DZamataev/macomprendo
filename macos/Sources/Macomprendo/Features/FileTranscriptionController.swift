@@ -259,9 +259,10 @@ import Foundation
                 folder = transcript.sourceBookmark.flatMap { try? bookmarks.resolve($0) }
             }
             // A folder that will not resolve, a `recording.json` that will not read, a track the
-            // manifest names but the disk no longer has: all the same failure to the user. The
-            // chosen folder replaces the stale bookmark only once it has proven it is one this
-            // build can resume, so choosing badly cannot cost a bookmark that still works.
+            // manifest names but the disk no longer has: all the same failure to the user. A
+            // chosen folder replaces the stale bookmark as soon as its manifest reads — before
+            // the track check below — which is safe: the bookmark it replaces had already
+            // stopped resolving, and the user chose this folder by hand.
             let unavailable = ErrorText.describe(MacomprendoError.callRecordingUnavailable)
             guard let folder, let manifest = try? CallRecordingManifest.read(from: folder) else {
                 await failCallBeforeMarking(unavailable, row: transcript, generation: generation)

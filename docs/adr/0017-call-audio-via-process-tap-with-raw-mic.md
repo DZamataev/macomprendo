@@ -75,8 +75,8 @@ calls are already serialised by `TranscriptionLane`.
   system capture stopped rather than recording the wrong route. A change of the chosen input device
   restarts the microphone engine the same way.
 - **macOS 14.2 is the minimum**, the first release with process taps. `MACOSX_DEPLOYMENT_TARGET`,
-  both `deploymentTarget` entries in `macos/project.yml`, `platforms` in `macos/Package.swift` and
-  `LSMinimumSystemVersion` all say 14.2.
+  all three `deploymentTarget` entries in `macos/project.yml`, `platforms` in `macos/Package.swift`
+  and `LSMinimumSystemVersion` all say 14.2.
 - **A declined System Audio Recording grant is silent.** There is no public preflight for it. If the
   user declines, the tap delivers silence: the recording continues, the **Others** level row stays
   empty, and the transcript has no Others segments. Nothing else reports it.
