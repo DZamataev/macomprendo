@@ -39,6 +39,10 @@ private struct UnbookmarkableFileBookmarks: FileBookmarking {
         let bookmarks: FakeFileBookmarks
         let settings: SettingsHolder
         let nowValue: Box<Date>
+        /// When the process that runs the recovery is taken to have launched — between the
+        /// folders the other tests leave behind (an earlier process's) and the ones a recording
+        /// made by *this* process would carry.
+        let launchDate: Date
         let recovery: CallRecordingRecovery
 
         init() throws {
@@ -49,9 +53,10 @@ private struct UnbookmarkableFileBookmarks: FileBookmarking {
             let bookmarks = FakeFileBookmarks()
             let settings = SettingsHolder()
             let nowValue = Box(Date(timeIntervalSince1970: 1_792_071_999))
+            let launchDate = Date(timeIntervalSince1970: 1_792_071_900)
             let recovery = CallRecordingRecovery(
                 folders: folders, store: storeCreateFailure, bookmarks: bookmarks,
-                settings: { settings.value }, now: { nowValue.value })
+                settings: { settings.value }, now: { nowValue.value }, launchDate: launchDate)
             settings.value.callRecordingsDirectory = root.path
 
             self.root = root
@@ -61,6 +66,7 @@ private struct UnbookmarkableFileBookmarks: FileBookmarking {
             self.bookmarks = bookmarks
             self.settings = settings
             self.nowValue = nowValue
+            self.launchDate = launchDate
             self.recovery = recovery
         }
 
@@ -106,6 +112,26 @@ private struct UnbookmarkableFileBookmarks: FileBookmarking {
         #expect(await rig.recovery.recover() == 0)
 
         #expect(await rig.store.createCount == 1)
+    }
+
+    /// A folder started at or after this process launched belongs to a recording this process
+    /// is still making: finalising it mid-recording would split one call into two transcripts.
+    /// The comparison is at whole-second precision, the precision `.iso8601` stores.
+    @Test func aRecordingStartedByThisLaunchIsLeftAlone() async throws {
+        let rig = try Rig()
+        let before = try rig.makeUnfinishedFolder(startedAt: startedAt)
+        let atLaunch = try rig.makeUnfinishedFolder(startedAt: rig.launchDate)
+        let after = try rig.makeUnfinishedFolder(startedAt: rig.launchDate.addingTimeInterval(60))
+        rig.folders.unfinished = [before, atLaunch, after]
+
+        let created = await rig.recovery.recover()
+
+        #expect(created == 1)
+        #expect(try CallRecordingManifest.read(from: before).status == .finished)
+        #expect(try CallRecordingManifest.read(from: atLaunch).status == .recording)
+        #expect(try CallRecordingManifest.read(from: after).status == .recording)
+        #expect(await rig.store.createCount == 1)
+        #expect(await rig.store.snapshot(1)?.header.sourceKind == .call)
     }
 
     /// The window the row-before-manifest ordering exists for: a crash between the row and the

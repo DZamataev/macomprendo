@@ -159,6 +159,9 @@ final class AppModel: ObservableObject {
     private let snapshot: SettingsSnapshot
     private let glossaryBox = GlossaryBox()
     private let enablement: HotkeyEnablementStore
+    /// Captured here, in the init that runs before any hotkey can start a recording: launch
+    /// recovery must never finalise a recording this process started.
+    private let processLaunchDate = ProcessLaunch.date
     private var hotkeyTask: Task<Void, Never>?
     private var middleMouseTask: Task<Void, Never>?
     private var historyMaintenanceTask: Task<Void, Never>?
@@ -310,7 +313,8 @@ final class AppModel: ObservableObject {
                     folders: self.env.callRecordingFolders,
                     store: self.env.transcriptStore,
                     bookmarks: self.env.fileBookmarks,
-                    settings: { [weak self] in self?.settings ?? .default }).recover()
+                    settings: { [weak self] in self?.settings ?? .default },
+                    launchDate: self.processLaunchDate).recover()
                 // Recovery creates a row per recovered recording; the list has to be read
                 // again so those rows show up.
                 await self.transcriptLibrary.reload()

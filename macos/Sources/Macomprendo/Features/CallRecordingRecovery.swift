@@ -1,14 +1,22 @@
 import Foundation
 
+/// The moment this process launched, captured at first access. `AppModel` reads it in its init
+/// — before any hotkey can start a recording — and hands it to `CallRecordingRecovery`, which
+/// must never finalise a recording this process started.
+enum ProcessLaunch {
+    static let date = Date()
+}
+
 /// Launch recovery for call recordings a crash, a force-quit or a power loss cut short: every
 /// folder whose `recording.json` still says `recording` is finalised, and each one the library
 /// does not already know gets an `incomplete` call transcript, so it shows up in Transcripts and
 /// `Resume` transcribes it.
 ///
-/// Runs once at launch, after abandoned jobs are marked and before any job can start, so a
-/// folder still marked `recording` can only belong to a session the app did not finish. One
-/// folder's failure never stops the rest: it is logged without the folder's or the title's name
-/// and skipped.
+/// Runs once at launch, after abandoned jobs are marked and before any job can start. A folder
+/// still marked `recording` and started before this process launched can only belong to a
+/// session the app did not finish; one started at or after the launch belongs to a recording
+/// this process is still making, and is left alone. One folder's failure never stops the rest:
+/// it is logged without the folder's or the title's name and skipped.
 @MainActor
 struct CallRecordingRecovery {
     private let folders: any CallRecordingFolderManaging
@@ -16,15 +24,18 @@ struct CallRecordingRecovery {
     private let bookmarks: any FileBookmarking
     private let settings: @MainActor () -> Settings
     private let now: () -> Date
+    private let launchDate: Date
 
     init(folders: any CallRecordingFolderManaging, store: any TranscriptStoring,
          bookmarks: any FileBookmarking, settings: @escaping @MainActor () -> Settings,
-         now: @escaping () -> Date = Date.init) {
+         now: @escaping () -> Date = Date.init,
+         launchDate: Date = ProcessLaunch.date) {
         self.folders = folders
         self.store = store
         self.bookmarks = bookmarks
         self.settings = settings
         self.now = now
+        self.launchDate = launchDate
     }
 
     /// Finalises every `.recording` folder and gives each one without a transcript an
@@ -63,6 +74,14 @@ struct CallRecordingRecovery {
             manifest = try CallRecordingManifest.read(from: folder)
         } catch {
             Log.app.error("Call recording recovery could not read a recording")
+            return false
+        }
+        // A folder started at or after this process launched is this process's own recording —
+        // finalising it mid-recording would split one call into two transcripts. The manifest's
+        // `startedAt` is `.iso8601`, whole seconds, so compare at that precision.
+        guard Int(manifest.startedAt.timeIntervalSince1970) < Int(launchDate.timeIntervalSince1970)
+        else {
+            Log.app.info("Call recording recovery left a recording this launch started")
             return false
         }
         if known.contains(folder.standardizedFileURL.path) {
