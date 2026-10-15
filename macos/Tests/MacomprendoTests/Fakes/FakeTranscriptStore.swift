@@ -6,6 +6,9 @@ actor FakeTranscriptStore: TranscriptStoring {
     private var transcripts: [Int64: Transcript] = [:]
 
     var failNextAppend: MacomprendoError?
+    /// Armed by a test to make the next `setStatus` throw once — the per-folder store failure
+    /// launch recovery has to swallow so the next folder is still processed.
+    var failNextStatus: MacomprendoError?
     /// Armed by a test to make the next read — `headers()` or `transcript(id:)` — fail once.
     var failNextRead: MacomprendoError?
     /// Armed by a test to hold the next `transcript(id:)` read until the gate opens, then clear
@@ -62,6 +65,10 @@ actor FakeTranscriptStore: TranscriptStoring {
     }
 
     func setStatus(_ status: TranscriptStatus, reason: String?, for id: Int64) throws {
+        if let error = failNextStatus {
+            failNextStatus = nil
+            throw error
+        }
         guard let transcript = transcripts[id] else {
             throw MacomprendoError.transcriptStore("no transcript has identifier \(id)")
         }
