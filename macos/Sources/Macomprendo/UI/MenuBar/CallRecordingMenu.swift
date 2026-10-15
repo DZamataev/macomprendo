@@ -16,7 +16,8 @@ enum CallLevelMeter {
 /// The status item's label. It is deliberately an SF Symbol (invariant 12's one exception):
 /// a menu bar status item must be a template image, and the vendored `Icon(.case)` SVGs
 /// cannot be one. While a call is being recorded the elapsed time sits next to the symbol,
-/// so the menu bar itself is the recording indicator.
+/// so the menu bar itself is the recording indicator. The label carries the app's name —
+/// the symbol alone has none — and the recording state for VoiceOver.
 struct CallRecordingMenuLabel: View {
     @ObservedObject var controller: CallRecordingController
 
@@ -26,8 +27,11 @@ struct CallRecordingMenuLabel: View {
                 Image(systemName: "record.circle")
                 Text(TranscriptExporter.clock(controller.elapsed))
             }
+            .accessibilityLabel(
+                "Macomprendo — recording call, \(TranscriptExporter.clock(controller.elapsed))")
         } else {
             Image(systemName: "waveform")
+                .accessibilityLabel("Macomprendo")
         }
     }
 }
