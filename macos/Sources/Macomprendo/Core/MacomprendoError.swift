@@ -35,6 +35,10 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case transcriptStore(String)
     case speechDetector(String)
     case exportFailed(String)
+    case systemAudioCaptureFailed(String)
+    case callRecordingLocationUnavailable
+    case callRecordingWriteFailed(String)
+    case callRecordingUnavailable
     case cancelled
 
     var errorDescription: String? {
@@ -95,6 +99,14 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "The speech detector could not start: \(reason)"
         case .exportFailed(let reason):
             return "The transcript could not be saved: \(reason)"
+        case .systemAudioCaptureFailed(let reason):
+            return "System audio could not be recorded (\(reason))."
+        case .callRecordingLocationUnavailable:
+            return "The call recordings folder cannot be written."
+        case .callRecordingWriteFailed(let reason):
+            return "The call recording stopped because a file could not be written (\(reason))."
+        case .callRecordingUnavailable:
+            return "The call recording cannot be found."
         case .cancelled:
             return "Cancelled."
         }
@@ -158,6 +170,14 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Reinstall Macomprendo: the bundled speech detector model is missing or damaged."
         case .exportFailed:
             return "Choose another folder, or check that the disk has free space."
+        case .systemAudioCaptureFailed:
+            return "Check System Settings ▸ Privacy & Security ▸ Screen & System Audio Recording, then start the recording again."
+        case .callRecordingLocationUnavailable:
+            return "Choose another folder in Settings ▸ General ▸ Call recordings."
+        case .callRecordingWriteFailed:
+            return "Free some disk space or choose another folder in Settings ▸ General. What was recorded so far is kept."
+        case .callRecordingUnavailable:
+            return "Choose the recording's folder again, or restore it from the Trash."
         case .cancelled:
             return nil
         }

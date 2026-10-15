@@ -618,3 +618,20 @@ import Testing
         #expect(Settings.currentSchemaVersion == 2)
     }
 }
+
+@Suite struct CallRecordingSettingsTests {
+    @Test func aDocumentWithoutTheCallRecordingsDirectoryDecodesToNil() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+        #expect(try Settings.migrate(json).callRecordingsDirectory == nil)
+    }
+
+    @Test func theCallRecordingsDirectoryDefaultsToNilAndRoundTrips() throws {
+        #expect(Settings.default.callRecordingsDirectory == nil)
+
+        var settings = Settings.default
+        settings.callRecordingsDirectory = "/Users/x/Call Recordings"
+
+        #expect(try Settings.migrate(JSONEncoder().encode(settings)).callRecordingsDirectory
+                == "/Users/x/Call Recordings")
+    }
+}

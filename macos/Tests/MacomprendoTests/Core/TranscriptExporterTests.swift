@@ -76,7 +76,33 @@ import Testing
     }
 }
 
+extension Transcript {
+    /// A file transcript with no bookmark or summary, so speaker tests read for one thing.
+    static func fixture(segments: [TranscriptSegment]) -> Transcript {
+        Transcript(
+            header: TranscriptHeader(id: 1, createdAt: Date(timeIntervalSince1970: 0),
+                                     sourceKind: .file, title: "fixture", duration: nil,
+                                     status: .complete, statusReason: nil),
+            run: TranscriptionRun(modelID: nil, engine: nil, language: nil, appVersion: "1.0"),
+            sourceBookmark: nil,
+            summary: nil,
+            segments: segments)
+    }
+}
+
 @Suite struct TranscriptTests {
+    @Test func plainTextLabelsSpeakers() {
+        let t = Transcript.fixture(segments: [
+            TranscriptSegment(start: 0, end: 1, text: "Hi", speaker: .me),
+            TranscriptSegment(start: 1, end: 2, text: "Hello", speaker: .others)])
+        #expect(t.plainText == "Me: Hi\nOthers: Hello")
+    }
+
+    @Test func plainTextWithoutSpeakersIsUnchanged() {
+        let t = Transcript.fixture(segments: [TranscriptSegment(start: 0, end: 1, text: "Hi")])
+        #expect(t.plainText == "Hi")
+    }
+
     @Test func resumeStartsAtTheLastSegmentEnd() {
         let header = TranscriptHeader(id: 1, createdAt: .now, sourceKind: .file, title: "t",
                                       duration: 10, status: .incomplete, statusReason: "x")

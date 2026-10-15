@@ -29,7 +29,11 @@ import Testing
     .sourceFileUnavailable,
     .transcriptStore("database is read-only"),
     .speechDetector("model file missing"),
-    .exportFailed("the disk is full")
+    .exportFailed("the disk is full"),
+    .systemAudioCaptureFailed("the tap could not be started"),
+    .callRecordingLocationUnavailable,
+    .callRecordingWriteFailed("the disk is full"),
+    .callRecordingUnavailable
 ])
 func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
     #expect(error.errorDescription?.isEmpty == false)
