@@ -13,6 +13,9 @@ protocol CallRecordingFolderManaging: Sendable {
     func totalSize(of directory: URL) -> Int64
     /// Removes a folder this service created. Best effort.
     func remove(_ folder: URL)
+    /// Whether a file exists at `url`. The call job's track check, behind this protocol so no
+    /// `Features` controller touches the file system itself (invariant 2).
+    func fileExists(_ url: URL) -> Bool
 }
 
 struct FileSystemCallRecordingFolders: CallRecordingFolderManaging {
@@ -75,5 +78,9 @@ struct FileSystemCallRecordingFolders: CallRecordingFolderManaging {
 
     func remove(_ folder: URL) {
         try? FileManager.default.removeItem(at: folder)
+    }
+
+    func fileExists(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path)
     }
 }

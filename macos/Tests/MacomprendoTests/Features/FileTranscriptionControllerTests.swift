@@ -55,6 +55,7 @@ import Testing
                          segmenter: ScriptedSegmenter,
                          provider: FakeTranscriptionProvider = FakeTranscriptionProvider(),
                          bookmarks: FakeFileBookmarks = FakeFileBookmarks(),
+                         folders: FakeCallRecordingFolders = FakeCallRecordingFolders(),
                          readiness: @escaping @MainActor () -> BackendReadiness = { .ready },
                          glossary: @escaping @MainActor () -> Glossary = { Glossary() },
                          pipelines: PipelineScript? = nil) -> Rig {
@@ -65,6 +66,7 @@ import Testing
         let controller = FileTranscriptionController(
             store: store,
             bookmarks: bookmarks,
+            folders: folders,
             pipeline: {
                 if let pipelines { return pipelines.next() }
                 return Self.pipeline(decoder: decoder, segmenter: segmenter, provider: provider)

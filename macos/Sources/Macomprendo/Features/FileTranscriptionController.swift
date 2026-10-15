@@ -32,6 +32,9 @@ import Foundation
 
     private let store: any TranscriptStoring
     private let bookmarks: any FileBookmarking
+    /// The recording folders, for the one file-system question a call job asks — whether a
+    /// planned track file is there — so this controller never touches the file system itself.
+    private let folders: any CallRecordingFolderManaging
     private let pipeline: @MainActor () -> LongAudioPipeline
     private let settings: @MainActor () -> Settings
     private let glossary: @MainActor () -> Glossary
@@ -53,6 +56,7 @@ import Foundation
 
     init(store: any TranscriptStoring,
          bookmarks: any FileBookmarking,
+         folders: any CallRecordingFolderManaging,
          pipeline: @escaping @MainActor () -> LongAudioPipeline,
          settings: @escaping @MainActor () -> Settings,
          glossary: @escaping @MainActor () -> Glossary,
@@ -62,6 +66,7 @@ import Foundation
          callFinished: @escaping @MainActor (_ transcriptID: Int64, _ title: String) -> Void = { _, _ in }) {
         self.store = store
         self.bookmarks = bookmarks
+        self.folders = folders
         self.pipeline = pipeline
         self.settings = settings
         self.glossary = glossary
@@ -267,8 +272,8 @@ import Foundation
             }
             let steps = CallTranscriptionPlan.steps(manifest: manifest,
                                                     stored: transcript.segments)
-            guard steps.allSatisfy({ FileManager.default.fileExists(
-                atPath: folder.appendingPathComponent($0.file).path) }) else {
+            guard steps.allSatisfy({ folders.fileExists(folder.appendingPathComponent($0.file)) })
+            else {
                 await failCallBeforeMarking(unavailable, row: transcript, generation: generation)
                 return
             }

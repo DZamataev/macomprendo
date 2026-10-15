@@ -9,7 +9,8 @@ import Foundation
 /// suffixes a real recordings directory would give), so a controller under test can write and read
 /// a real `recording.json` there without a user folder being involved. Real-root mode delegates to
 /// `FileSystemCallRecordingFolders`, so it cannot disagree with the service; pass the same directory
-/// the controller will be given as `realDirectoryRoot`.
+/// the controller will be given as `realDirectoryRoot`. `fileExists` always answers from the real
+/// file system: the call-job tests put real track files in their folders.
 final class FakeCallRecordingFolders: CallRecordingFolderManaging, @unchecked Sendable {
     private let lock = NSLock()
     private let realDirectoryRoot: URL?
@@ -80,6 +81,12 @@ final class FakeCallRecordingFolders: CallRecordingFolderManaging, @unchecked Se
         lock.withLock { removedFolders.append(folder) }
         guard realDirectoryRoot != nil else { return }
         service.remove(folder)
+    }
+
+    /// Answers from the real file system: the call-job tests put real track files in real
+    /// folders, and only the disk knows which of them are there.
+    func fileExists(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path)
     }
 
     private var service: FileSystemCallRecordingFolders {

@@ -93,6 +93,7 @@ final class AppModel: ObservableObject {
     lazy var fileTranscription = FileTranscriptionController(
         store: env.transcriptStore,
         bookmarks: env.fileBookmarks,
+        folders: env.callRecordingFolders,
         pipeline: { [unowned self] in
             LongAudioPipeline(decoder: env.mediaDecoder,
                               segmenter: env.speechSegmenter,

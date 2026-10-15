@@ -117,6 +117,17 @@ import Testing
 
         folders.remove(folder) // best effort: a folder that is already gone is not a failure
     }
+
+    /// The call job's track check, so `Features` never touches the file system itself.
+    @Test func fileExistsAnswersFromTheFileSystem() throws {
+        let root = try tempDirectory()
+        let folders = FileSystemCallRecordingFolders(timeZone: moscow)
+        let file = root.appendingPathComponent("track.m4a")
+        try Data().write(to: file)
+
+        #expect(folders.fileExists(file))
+        #expect(!folders.fileExists(root.appendingPathComponent("missing.m4a")))
+    }
 }
 
 /// The fake stands in for the service in controller tests, so the part of it that touches real
