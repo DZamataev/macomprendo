@@ -705,4 +705,101 @@ import Testing
         #expect(marked.header.status == .incomplete)
         #expect(marked.header.statusReason == TranscriptLibraryController.abandonedJobReason)
     }
+
+    // MARK: - Call recording
+
+    private func callRecordingDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppModel-calls-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    /// The `recordCall` hotkey reaches the call controller and toggles it: a press starts,
+    /// the next stops, and the key-up is ignored.
+    @Test func routesTheRecordCallHotkeyToTheCallController() async throws {
+        let root = try callRecordingDirectory()
+        let microphone = ScriptedCallCapture()
+        let folders = FakeCallRecordingFolders(realDirectoryRoot: root)
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(callMicrophone: microphone,
+                                        callRecordingFolders: folders))
+        model.settings.callRecordingsDirectory = root.path
+        model.start()
+
+        model.route(.keyDown(.recordCall))
+        await model.callRecording.drain()
+        #expect(model.callRecording.isRecording)
+        #expect(microphone.startCount == 1)
+
+        model.route(.keyUp(.recordCall))
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(model.callRecording.isRecording)
+
+        model.route(.keyDown(.recordCall))
+        await model.callRecording.drain()
+        #expect(model.callRecording.state == .idle)
+        #expect(microphone.stopCount == 1)
+    }
+
+    /// The call recorder runs its own `AVAudioEngine` but follows the same microphone choice
+    /// as dictation: applied when routing starts, and on every change of the setting.
+    @Test func theCallMicrophoneFollowsThePreferredInputDevice() throws {
+        let microphone = ScriptedCallCapture()
+        var stored = Settings.default
+        stored.preferredInputDeviceUID = "MCHOSE-USB-0001"
+        let store = InMemorySettingsStore()
+        store.save(try JSONEncoder().encode(stored))
+        let model = AppModel(store: store, keychain: InMemoryKeychainStore(),
+                             env: .fake(callMicrophone: microphone))
+
+        model.start()
+        #expect(microphone.preferredInputDeviceUIDs == ["MCHOSE-USB-0001"])
+
+        model.settings.preferredInputDeviceUID = nil
+        model.settings.preferredInputDeviceUID = "BuiltInMicrophoneDevice"
+
+        #expect(microphone.preferredInputDeviceUIDs
+                == ["MCHOSE-USB-0001", nil, "BuiltInMicrophoneDevice"])
+    }
+
+    /// A recording a crash cut short is finalised and given an `incomplete` call transcript by
+    /// launch maintenance, and the list is read again so the row shows up.
+    @Test func startRecoversAnInterruptedCallRecordingIntoTheLibrary() async throws {
+        let root = try callRecordingDirectory()
+        let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let folder = try FileSystemCallRecordingFolders().create(in: root, startedAt: startedAt)
+        try CallRecordingManifest(startedAt: startedAt,
+                                  folderName: folder.lastPathComponent).write(to: folder)
+        let folders = FakeCallRecordingFolders(realDirectoryRoot: root)
+        folders.unfinished = [folder]
+        let store = FakeTranscriptStore()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(transcriptStore: store, callRecordingFolders: folders))
+        model.settings.callRecordingsDirectory = root.path
+
+        model.start()
+
+        var headers: [TranscriptHeader] = []
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            headers = (try? await store.headers()) ?? []
+            // The row is created before recovery marks it incomplete and finalises the
+            // manifest; wait for the settled state, not just for the row.
+            if headers.first?.status == .incomplete { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        let header = try #require(headers.first)
+        #expect(header.sourceKind == .call)
+        #expect(header.status == .incomplete)
+        #expect(header.statusReason == TranscriptLibraryController.abandonedJobReason)
+        #expect(header.title == CallRecordingLayout.transcriptTitle(startedAt: startedAt))
+        #expect(try CallRecordingManifest.read(from: folder).status == .finished)
+
+        await waitFor("the library to show the recovered recording") {
+            model.transcriptLibrary.headers.map(\.id) == [header.id]
+        }
+    }
 }

@@ -145,27 +145,36 @@ struct TranscriptsView: View {
         // another transcript never sits over this one; selecting another transcript clears it.
         if case let .failed(message, transcriptID) = transcription.state,
            transcriptID == nil || transcriptID == library.selected?.id {
-            errorBanner(message, chooseSourceFileFor: chooseFileTarget)
+            errorBanner(message, resume: resumeChoice)
         }
     }
 
-    /// The id **Choose File…** would resume: the open transcript's `Resume` failed because its
-    /// stored bookmark no longer resolves.
-    private var chooseFileTarget: Int64? {
+    /// Which source the banner offers to pick again for a failed `Resume`: the file for a file
+    /// transcript, the recording folder for a call one. `nil` when the failure has no picker
+    /// to offer here.
+    private enum ResumeChoice {
+        case sourceFile(Int64)
+        case recordingFolder(Int64)
+    }
+
+    /// The id a **Choose File…** / **Choose Folder…** would resume: the open transcript's
+    /// `Resume` failed because its stored source no longer resolves.
+    private var resumeChoice: ResumeChoice? {
         guard case let .failed(_, transcriptID) = transcription.state,
-              let id = transcriptID, id == library.selected?.id,
-              transcription.canChooseSourceFile
+              let id = transcriptID, id == library.selected?.id
         else { return nil }
-        return id
+        if transcription.canChooseSourceFile { return .sourceFile(id) }
+        if transcription.canChooseRecordingFolder { return .recordingFolder(id) }
+        return nil
     }
 
     private func transcriptDetail(_ transcript: Transcript) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             header(transcript)
             Divider()
-            if case let .running(id, _, position, duration, _) = transcription.state,
+            if case let .running(id, _, position, duration, speaker) = transcription.state,
                id == transcript.id {
-                progressRow(position: position, duration: duration)
+                progressRow(position: position, duration: duration, speaker: speaker)
                 Divider()
             }
             ScrollView {
@@ -235,6 +244,12 @@ struct TranscriptsView: View {
                 .help("Continue transcribing from the last stored segment")
             }
 
+            if transcript.header.sourceKind == .call {
+                // The folder's bookmark is resolved by the library, not here.
+                Button("Show Recording in Finder") { library.revealSelectedRecording() }
+                    .help("Show this call's recording folder in Finder")
+            }
+
             Spacer()
 
             Button {
@@ -262,11 +277,12 @@ struct TranscriptsView: View {
         .help("Write the transcript to a file")
     }
 
-    private func progressRow(position: TimeInterval, duration: TimeInterval) -> some View {
+    private func progressRow(position: TimeInterval, duration: TimeInterval,
+                             speaker: TranscriptSpeaker? = nil) -> some View {
         HStack(spacing: 8) {
             ProgressView()
                 .controlSize(.small)
-            Text(Self.progressText(position: position, duration: duration))
+            Text(Self.progressText(position: position, duration: duration, speaker: speaker))
             Spacer()
             Button("Cancel") { transcription.cancel() }
         }
@@ -287,13 +303,13 @@ struct TranscriptsView: View {
     /// (yet) in the list — the feedback a drop needs before its first segment lands.
     private var emptyState: some View {
         VStack(spacing: 0) {
-            if case let .running(_, title, position, duration, _) = transcription.state {
+            if case let .running(_, title, position, duration, speaker) = transcription.state {
                 VStack(spacing: 6) {
                     Text(title)
                         .font(.headline)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    progressRow(position: position, duration: duration)
+                    progressRow(position: position, duration: duration, speaker: speaker)
                 }
             }
             Spacer()
@@ -308,23 +324,32 @@ struct TranscriptsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func errorBanner(_ message: String, chooseSourceFileFor id: Int64? = nil) -> some View {
+    private func errorBanner(_ message: String, resume: ResumeChoice? = nil) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Icon(.warning, size: 14)
             Text(message)
                 .font(.callout)
                 .textSelection(.enabled)
             Spacer()
-            if let id {
-                Button("Choose File…") { chooseSourceFile(for: id) }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.primary)
-                    .fixedSize()
+            switch resume {
+            case .sourceFile(let id):
+                bannerButton("Choose File…") { chooseSourceFile(for: id) }
+            case .recordingFolder(let id):
+                bannerButton("Choose Folder…") { chooseRecordingFolder(for: id) }
+            case nil:
+                EmptyView()
             }
         }
         .foregroundStyle(.red)
         .padding(8)
         .background(Color.red.opacity(0.08))
+    }
+
+    private func bannerButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.borderless)
+            .foregroundStyle(.primary)
+            .fixedSize()
     }
 
     /// Picks the source file again for a `Resume` whose stored bookmark no longer resolves.
@@ -333,6 +358,18 @@ struct TranscriptsView: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.audiovisualContent]
         panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        transcription.resume(transcriptID: id, fileAt: url)
+    }
+
+    /// Picks the recording folder again for a call `Resume` whose stored bookmark or a track
+    /// file no longer resolves. The chosen folder continues the job and becomes the row's
+    /// bookmark.
+    private func chooseRecordingFolder(for id: Int64) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         transcription.resume(transcriptID: id, fileAt: url)
@@ -387,9 +424,13 @@ struct TranscriptsView: View {
         }
     }
 
-    /// `Transcribing — 12:40 / 58:03`.
-    nonisolated static func progressText(position: TimeInterval, duration: TimeInterval) -> String {
-        "Transcribing — \(TranscriptExporter.clock(position)) / \(TranscriptExporter.clock(duration))"
+    /// `Transcribing — 12:40 / 58:03`; a call job's two tracks name their speaker:
+    /// `Transcribing Me — 12:40 / 58:03`.
+    nonisolated static func progressText(position: TimeInterval, duration: TimeInterval,
+                                         speaker: TranscriptSpeaker? = nil) -> String {
+        let side = speaker.map { " \($0.label)" } ?? ""
+        return "Transcribing\(side) — "
+            + "\(TranscriptExporter.clock(position)) / \(TranscriptExporter.clock(duration))"
     }
 
     /// The badge the list shows for a status that is not simply finished; `nil` for `complete`.

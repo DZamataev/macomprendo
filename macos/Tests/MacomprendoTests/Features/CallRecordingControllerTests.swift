@@ -646,4 +646,45 @@ private func tempDirectory() throws -> URL {
 
         #expect(rig.controller.elapsed == 0)
     }
+
+    // MARK: - Hotkey handling
+
+    /// `recordCall` toggles, exactly as the menu item does: a press while idle starts, the
+    /// next press stops.
+    @Test func aRecordCallKeyDownTogglesTheRecording() async throws {
+        let rig = try Rig()
+
+        rig.controller.handle(.keyDown(.recordCall))
+        await rig.controller.drain()
+        #expect(rig.controller.state == .recording(startedAt: rig.nowValue.value))
+
+        rig.controller.handle(.keyDown(.recordCall))
+        await rig.controller.drain()
+        #expect(rig.controller.state == .idle)
+        #expect(rig.microphone.stopCount == 1)
+    }
+
+    /// The key-up and every other action are not this controller's: nothing starts, nothing
+    /// stops.
+    @Test func keyUpAndOtherActionsDoNothing() async throws {
+        let rig = try Rig()
+        await startRecording(rig)
+
+        rig.controller.handle(.keyUp(.recordCall))
+        rig.controller.handle(.keyDown(.dictate))
+        rig.controller.handle(.keyUp(.summarize))
+        rig.controller.handle(.keyDown(.speak))
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .recording(startedAt: rig.nowValue.value))
+        #expect(rig.microphone.stopCount == 0)
+
+        let idle = try Rig()
+        idle.controller.handle(.keyUp(.recordCall))
+        idle.controller.handle(.keyDown(.dictate))
+        await idle.controller.drain()
+        #expect(idle.controller.state == .idle)
+        #expect(idle.microphone.startCount == 0)
+        #expect(idle.folders.created.isEmpty)
+    }
 }

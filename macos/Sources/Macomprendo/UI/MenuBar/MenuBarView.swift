@@ -42,6 +42,7 @@ struct MenuBarView: View {
             NSApp.activate(ignoringOtherApps: true)
             openWindow(id: WindowID.dictationHistory)
         }
+        CallRecordingMenu(controller: model.callRecording)
         // Same activation reason as "Dictation History…": a `LSUIElement` app must activate
         // itself or the window opens behind everything else.
         Button("Transcribe File…") {

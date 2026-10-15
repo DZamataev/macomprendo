@@ -7,6 +7,9 @@ enum HotkeyAction: String, CaseIterable, Sendable {
     case speak
     case summarize
     case refineSelection
+    /// Records a call. A toggle: a press starts, the next stops. Never a middle-mouse or
+    /// text-feature action.
+    case recordCall
 
     var displayName: String {
         switch self {
@@ -15,6 +18,7 @@ enum HotkeyAction: String, CaseIterable, Sendable {
         case .speak: "Speak selection"
         case .summarize: "Summarize selection"
         case .refineSelection: "Refine selection"
+        case .recordCall: "Record Call"
         }
     }
 }
@@ -90,6 +94,9 @@ extension KeyboardShortcuts.Name {
     static let speak = Self("speak", default: .init(.s, modifiers: [.option]))
     static let summarize = Self("summarize", default: .init(.m, modifiers: [.option]))
     static let refineSelection = Self("refineSelection")
+    /// No default: a hotkey that starts a global recording is chosen deliberately, as with
+    /// Refine selection.
+    static let recordCall = Self("recordCall")
 
     static func forAction(_ action: HotkeyAction) -> Self {
         switch action {
@@ -98,6 +105,7 @@ extension KeyboardShortcuts.Name {
         case .speak: .speak
         case .summarize: .summarize
         case .refineSelection: .refineSelection
+        case .recordCall: .recordCall
         }
     }
 }

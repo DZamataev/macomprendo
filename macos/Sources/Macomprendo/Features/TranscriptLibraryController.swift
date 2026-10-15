@@ -29,6 +29,8 @@ final class TranscriptLibraryController: ObservableObject {
 
     private let store: any TranscriptStoring
     private let pasteboard: any PasteboardProtocol
+    private let bookmarks: any FileBookmarking
+    private let revealer: any FileRevealing
 
     /// Guards the list: bumped when `reload()` starts and when a `delete()` completes. A
     /// `reload()` writes `headers` only while the value it started with is still current, so a
@@ -48,9 +50,12 @@ final class TranscriptLibraryController: ObservableObject {
     /// it (the cancelled select fails its token guard and never gets to clear it itself).
     private var pendingSelectionID: Int64?
 
-    init(store: any TranscriptStoring, pasteboard: any PasteboardProtocol) {
+    init(store: any TranscriptStoring, pasteboard: any PasteboardProtocol,
+         bookmarks: any FileBookmarking, revealer: any FileRevealing) {
         self.store = store
         self.pasteboard = pasteboard
+        self.bookmarks = bookmarks
+        self.revealer = revealer
     }
 
     /// Loads the list, newest first, and re-reads the open transcript so a segment a running
@@ -147,6 +152,20 @@ final class TranscriptLibraryController: ObservableObject {
     func exportText(_ format: TranscriptExportFormat) -> String? {
         guard let selected else { return nil }
         return TranscriptExporter.render(selected, as: format)
+    }
+
+    /// Shows the open call transcript's recording folder in Finder. The folder's bookmark is
+    /// resolved here rather than in the window, and one that no longer resolves reports the
+    /// same failure `Resume` reports. A file transcript has no recording folder and does
+    /// nothing.
+    func revealSelectedRecording() {
+        guard let selected, selected.header.sourceKind == .call else { return }
+        guard let bookmark = selected.sourceBookmark,
+              let folder = try? bookmarks.resolve(bookmark) else {
+            error = ErrorText.describe(MacomprendoError.callRecordingUnavailable)
+            return
+        }
+        revealer.reveal(folder)
     }
 
     /// Marks every `inProgress` row the app did not finish, then refreshes the list so it shows

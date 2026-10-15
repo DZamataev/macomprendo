@@ -54,7 +54,10 @@ import Foundation
             }
 
         case .keyDown(.dictate), .keyUp(.dictate),
-             .keyUp(.speak), .keyUp(.summarize), .keyUp(.refineSelection):
+             .keyUp(.speak), .keyUp(.summarize), .keyUp(.refineSelection),
+             // `AppModel` routes the call action to its own controller; this one has no
+             // text-feature meaning for it.
+             .keyDown(.recordCall), .keyUp(.recordCall):
             break
         }
     }

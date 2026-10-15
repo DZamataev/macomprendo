@@ -102,6 +102,13 @@ final class CallRecordingController: ObservableObject {
 
     // MARK: - Commands
 
+    /// A press of the Record Call / Stop Recording hotkey: the same toggle the menu item
+    /// runs. The key-up and every other action are not this controller's.
+    func handle(_ event: HotkeyEvent) {
+        guard event == .keyDown(.recordCall) else { return }
+        toggle()
+    }
+
     /// A press of the Record Call / Stop Recording item: starts when idle or failed, stops
     /// while starting or recording. A press while already stopping is a stop in progress.
     func toggle() {

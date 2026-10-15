@@ -47,9 +47,11 @@ struct MacomprendoApp: App {
     var body: some Scene {
         // The status item is deliberately an SF Symbol template image (spec §2, §3.5).
         // `AppIcon` raw values are SVG file names and must not be used here.
-        MenuBarExtra("Macomprendo", systemImage: "waveform") {
+        MenuBarExtra {
             MenuBarView(dictation: model.dictationTabModel, models: model.modelsViewModel)
                 .environmentObject(model)
+        } label: {
+            CallRecordingMenuLabel(controller: model.callRecording)
         }
         .menuBarExtraStyle(.menu)
 

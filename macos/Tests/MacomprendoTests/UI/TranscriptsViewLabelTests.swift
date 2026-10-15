@@ -19,6 +19,17 @@ import Testing
                 == "Transcribing — 12:40 / 58:03")
     }
 
+    /// A call job runs its two tracks in turn, so the row has to say which side is being
+    /// transcribed; a file job keeps the speakerless wording.
+    @Test func progressTextNamesTheSpeakerOfACallTrack() {
+        #expect(TranscriptsView.progressText(position: 760, duration: 3483, speaker: nil)
+                == "Transcribing — 12:40 / 58:03")
+        #expect(TranscriptsView.progressText(position: 760, duration: 3483, speaker: .me)
+                == "Transcribing Me — 12:40 / 58:03")
+        #expect(TranscriptsView.progressText(position: 760, duration: 3483, speaker: .others)
+                == "Transcribing Others — 12:40 / 58:03")
+    }
+
     @Test func statusBadgeIsNilForAFinishedTranscript() {
         #expect(TranscriptsView.statusBadge(.inProgress) == "In progress")
         #expect(TranscriptsView.statusBadge(.incomplete) == "Incomplete")

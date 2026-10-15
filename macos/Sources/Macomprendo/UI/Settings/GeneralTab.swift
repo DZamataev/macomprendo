@@ -7,6 +7,7 @@ struct GeneralTab: View {
     /// `AppModel` republishes only the dictation controller, so watching it is not enough.
     @ObservedObject var history: DictationHistoryController
     @ObservedObject var microphone: MicrophonePickerModel
+    @ObservedObject var callRecordings: CallRecordingsSettingsModel
     @State private var viewModel: GeneralTabModel?
     @State private var launchAtLoginError: String?
     @State private var isDeleteAudioConfirmationPresented = false
@@ -38,6 +39,23 @@ struct GeneralTab: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            Section("Call recordings") {
+                Text(callRecordings.directory.path)
+                    .truncationMode(.middle)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button("Choose…") { chooseRecordingFolder() }
+                    Button("Show in Finder") { callRecordings.showInFinder() }
+                }
+
+                Text(callRecordings.totalSizeText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .task { await callRecordings.refreshSize() }
 
             Section("Dictation") {
                 Picker("Insert text by", selection: $model.settings.insertMethod) {
@@ -154,5 +172,17 @@ struct GeneralTab: View {
         let viewModel = GeneralTabModel(manager: model.env.launchAtLogin)
         self.viewModel = viewModel
         return viewModel
+    }
+
+    /// Picks the recordings folder. Directories only — the panel creates one on demand so a
+    /// new folder can be chosen in the same gesture.
+    private func chooseRecordingFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        callRecordings.choose(url)
     }
 }
