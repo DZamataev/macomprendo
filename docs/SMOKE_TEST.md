@@ -930,3 +930,35 @@ Audio Recording).
       under Privacy & Security ▸ Screen & System Audio Recording, or answer **Don't Allow** on a
       first run — record a call: **Me** fills in, **Others** stays empty (no level movement, no
       Others segments in the transcript), and the recording still stops and transcribes normally.
+- [ ] **Unplugging the chosen microphone mid-call.** Choose a USB or Bluetooth microphone in
+      Settings ▸ General ▸ Microphone, start a recording and keep talking, then unplug it (or switch
+      it off) while the call is still recording: the **Me** track continues on the fallback — the
+      system default, then the built-in microphone — with at most a short gap where the device went
+      away, and the recording does not stop. Plug it back in and the capture moves back to it; the
+      recording still finalises and transcribes.
+- [ ] **Dictating during a recording.** While a call is being recorded, press the dictation hotkey
+      and dictate a sentence into TextEdit: it transcribes and inserts as usual, and the call
+      recording keeps going — both level rows keep moving and the elapsed time keeps climbing. Stop
+      the call afterwards: the recording is complete and both tracks are there.
+- [ ] **The menu bar timer and level rows.** Start a recording and open the menu: the status item
+      shows `record.circle` with the elapsed time beside it (`12:04`, `1:02:04` past an hour), and
+      the menu opens with `Recording call — 12:04` above the two level rows `Me` and `Others`.
+      Talk and play something through the Mac to move each row. Leave the menu open: if a native
+      menu does not re-render while open, the rows show the levels as of opening — either is
+      acceptable — while the status item's timer keeps counting.
+- [ ] **Quit mid-recording, relaunch, Resume.** With the local whisper model selected, start a
+      recording, talk, then quit Macomprendo from the menubar. The app exits without a crash report
+      (Console ▸ Crash Reports). Relaunch: the recording is in the Transcripts window as
+      **Incomplete** with reason **Macomprendo quit before it finished.**, its folder's
+      `recording.json` now reads `finished`, and **Resume** transcribes both tracks.
+- [ ] **Killing the app mid-recording, then relaunching.** Start a recording, talk for at least ten
+      seconds, then kill the app outright (`pkill -9 Macomprendo`, or Force Quit): the two `.m4a`
+      files are playable up to the last second (open them in QuickTime — at most the final second is
+      lost), and `recording.json` still reads `recording`. Relaunch: the folder is finalised
+      `finished`, an **Incomplete** call transcript appears with reason **Macomprendo quit before it
+      finished.**, and **Resume** transcribes it. Launching once more creates no duplicate row.
+- [ ] **A one-hour call keeps memory flat and the files play.** Record a call for about an hour with
+      Activity Monitor open: memory stays flat — the encoder writes as it goes, and peak memory
+      tracks nothing but the two writers — while the menu's elapsed time keeps advancing. Stop: both
+      tracks finalise, play end to end in QuickTime without a gap, and the transcript covers the
+      whole call.

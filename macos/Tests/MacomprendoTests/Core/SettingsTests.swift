@@ -629,9 +629,9 @@ import Testing
         #expect(Settings.default.callRecordingsDirectory == nil)
 
         var settings = Settings.default
-        settings.callRecordingsDirectory = "/Users/x/Call Recordings"
+        settings.callRecordingsDirectory = "/Users/test/Call Recordings"
 
         #expect(try Settings.migrate(JSONEncoder().encode(settings)).callRecordingsDirectory
-                == "/Users/x/Call Recordings")
+                == "/Users/test/Call Recordings")
     }
 }

@@ -20,10 +20,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   file has moved or was deleted it asks for the file again with **Choose File…** and carries on
   from the same position.
 - Transcripts are kept until you delete them, separately from dictation history.
+- **Record calls**: microphone and system audio into two files, transcribed with **Me** / **Others**
+  labels. Start and stop from the menubar's **Record Call** / **Stop Recording** item or the
+  **Record Call** hotkey; while recording the status item shows the elapsed time and the menu
+  shows the two level meters. The call keeps playing while it is recorded, dictation still works
+  during a recording, and a recording cut short by a quit or a crash is finalised at the next
+  launch and can be **Resumed**. Recordings are kept in their own folder, apart from transcripts.
 
 ### Changed
 - Settings ▸ Refine & Summarize labels each feature's model picker **Model for Refine** and
   **Model for Summarize**, so the two models are told apart at a glance.
+- **Requires macOS 14.2 or later.** Call recording uses Core Audio process taps, which arrived in
+  14.2; the app no longer runs on 14.0 or 14.1.
 
 ## [0.3.0] - 2026-10-14
 

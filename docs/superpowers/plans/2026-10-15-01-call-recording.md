@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Repository root: `/Users/frenzy/dev/macomprendo`. Work on branch `call-recording` in that checkout (no worktree). Never push. Never commit to `main`.
+- Repository root: `~/dev/macomprendo`. Work on branch `call-recording` in that checkout (no worktree). Never push. Never commit to `main`.
 - Swift sources: `macos/Sources/Macomprendo/<Layer>/`; tests mirror them under `macos/Tests/MacomprendoTests/<Layer>/`; fakes in `macos/Tests/MacomprendoTests/Fakes/`.
 - Layers point downward only: UI → Features → Services/Providers → Core. Concrete services are constructed only in `App/AppEnvironment.swift`.
 - Everything OS-facing sits behind a protocol declared in the same file as its default implementation, with a fake in `Tests/…/Fakes`.
@@ -34,7 +34,7 @@
   - `Info.plist` key `NSAudioCaptureUsageDescription`.
 - Test command for one suite: `swift test --package-path macos --filter <SuiteOrTypeName>`. Full: `npm run test:swift`. Build: `swift build --package-path macos` (no new warnings).
 - Commit after each task with a conventional commit message (`feat(calls): …`, `test(calls): …`, `docs(calls): …`). Stage only the task's files.
-- Reference implementation for the process tap (read, do not copy verbatim): `/Users/frenzy/.hermes/cache/scratch/call-research/q_macos_Sources_quill_Audio_SystemAudioRecorder.swift` (quill, tap-only aggregate) and `/Users/frenzy/.hermes/cache/scratch/call-research/a_ProcessTap.swift` (AudioCap).
+- Reference implementation for the process tap (read, do not copy verbatim): `~/.hermes/cache/scratch/call-research/q_macos_Sources_quill_Audio_SystemAudioRecorder.swift` (quill, tap-only aggregate) and `~/.hermes/cache/scratch/call-research/a_ProcessTap.swift` (AudioCap).
 
 ## File map
 

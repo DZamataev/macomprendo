@@ -185,6 +185,75 @@ Not yet:
 - WebM/Opus input is not decoded. `AVAssetReader` cannot open it and the job fails as
   `mediaUnreadable`.
 
+### Call recording
+
+**Record Call** in the menubar — or the `recordCall` hotkey, which toggles — runs one `@MainActor`
+`CallRecordingController`: `idle → starting → recording(startedAt) → stopping → idle / failed(message)`.
+It owns the whole session — a `recording.json` manifest, the two track writers and the transcript
+row a later job transcribes — and nothing else does. A stop that arrives during `starting` is
+remembered and run as soon as capture is up, so a stop is never lost; system sleep stops the
+recording exactly as Stop does; quitting finalises it and leaves the row `incomplete` with
+`TranscriptLibraryController.abandonedJobReason` instead of starting a job.
+
+The two sides are captured independently, each behind a protocol (ADR-0017):
+
+- `ProcessTapSystemAudioCapture` (`CallAudioCapturing`) is a global Core Audio process tap
+  (`CATapDescription(stereoGlobalTapButExcludeProcesses:)` with this app's process object,
+  `muteBehavior = .unmuted`) read through a private aggregate device built around the tap and no
+  sub-device. It watches `kAudioHardwarePropertyDefaultOutputDevice`: a change tears the tap and its
+  aggregate down and rebuilds them on the new route, writing into the same file.
+- `EngineCallMicrophoneCapture` (`CallMicrophoneCapturing`) is a second `AVAudioEngine`, its input
+  node bound to the microphone dictation uses, converted to 48 kHz mono, following a device change
+  the way `AVAudioEngineRecorder` does — but with no silence fallback: both tracks are written as
+  they are, so nothing is swapped behind the user's back. Voice processing is never enabled.
+
+Both deliver a `CallAudioChunk` — 48 kHz mono `Float32` and the host-clock time of its first
+sample — to the same kind of sink. `CallAudioSink` receives one track's audio; the writer,
+`AssetCallTrackWriter` (`CallTrackWriting`), places each chunk on a `TrackTimeline` — a gap of
+50 ms or more is padded with silence, a shorter one is host-clock jitter and is not — and writes it
+as a fragmented AAC `.m4a` (48 kbit/s, 1 s `movieFragmentInterval`) on a private queue, so a slow
+encoder never blocks capture. Every `AVAssetWriter` interaction runs there; the capture handler only
+stores a level in a lock-guarded box and enqueues the samples.
+
+The capture handler runs inline on an audio thread under the capture's own lock, and that is the
+contract `CallAudioCapturing.start(_:)` states: it must return quickly and must never call back into
+the capture — `stop()`, `start(_:)` or `setPreferredInputDevice(uid:)` takes the same lock and would
+deadlock. The controller's handler captures nothing but the writer and the box, never the controller,
+so the rule holds by construction; the ticker copies the box into `levels` and `elapsed` on the main
+actor.
+
+`CallRecordingLayout` (Core) is the one place a recording folder, its two track files and the
+transcript title are named. `CallRecordingManifest` is `recording.json` as a value type, written
+atomically and rewritten as soon as each track's `startOffset` is known. `CallRecordingFolders`
+creates a folder, lists the ones a previous launch left `recording`, and measures the folder's size.
+The layout, the offsets and the gap arithmetic are pure and unit-tested; the tap, the engine and the
+writer's `AVAssetWriter` are the thin hardware glue `docs/SMOKE_TEST.md` covers (ADR-0018).
+
+Transcription runs after the stop, through the same `LongAudioPipeline` a file uses.
+`CallTranscriptionPlan` (Core) turns the manifest and the stored segments into the tracks still owed
+— **Me** before **Others**, the last track with segments resuming from the end of its last one — and
+`FileTranscriptionController` runs them in turn, shifting each track's segments by its `startOffset`
+and storing each with its `TranscriptSpeaker` (`transcript_segments.speaker`, schema v2). Queries
+already order by `start_s`, so the two sides interleave. A track with no speech is not an error; only
+when neither side has speech does the job fail as `noSpeechFound` and delete the empty transcript,
+leaving the recording. `Resume` continues a call the same way as a file, with **Choose Folder…** when
+the folder or a track file is gone. Dictation keeps working throughout: the two features own separate
+engines and neither enables voice processing, and local-model calls are serialised by
+`TranscriptionLane`.
+
+`CallRecordingRecovery` runs at launch, after `markAbandonedJobs` and before any job: every folder
+still marked `recording` is finalised and, if no transcript points at it, gains an `incomplete` call
+transcript, so it appears in Transcripts and `Resume` transcribes it. The row is created before the
+manifest is marked `finished`, so a failure in that window leaves the folder for the next launch to
+pick up rather than losing the call.
+
+On the UI side the menu bar label is the recording indicator — `record.circle` and the elapsed time,
+the status item remaining invariant 12's one SF Symbol exception — and the menu opens with the state
+line and the two ten-cell level rows. Settings ▸ General gains a **Call recordings** section and
+Settings ▸ Hotkeys **Record Call**; the Transcripts window labels a call segment `[00:12:04] Me: text`,
+offers **Show Recording in Finder**, and exports with the speaker prefix. Call recording requires
+**macOS 14.2**, the first release with process taps.
+
 ## Rules
 
 1. **Dependencies point downward only.** Core never imports Services, Providers,
