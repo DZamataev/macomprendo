@@ -116,12 +116,70 @@ import Testing
 
 @Suite struct MonoResamplerTests {
 
+    private func stereoBuffer(left: Float, right: Float, frames: AVAudioFrameCount,
+                              rate: Double = 44_100) -> AVAudioPCMBuffer {
+        let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        buffer.frameLength = frames
+        buffer.floatChannelData?[0].update(repeating: left, count: Int(frames))
+        buffer.floatChannelData?[1].update(repeating: right, count: Int(frames))
+        return buffer
+    }
+
+    private func monoBuffer(frames: AVAudioFrameCount, rate: Double) -> AVAudioPCMBuffer {
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate,
+                                   channels: 1, interleaved: false)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        buffer.frameLength = frames
+        buffer.floatChannelData?[0].update(repeating: 0.5, count: Int(frames))
+        return buffer
+    }
+
+    private func meanMagnitude(_ samples: [Float]) -> Float {
+        guard !samples.isEmpty else { return 0 }
+        return samples.reduce(0) { $0 + abs($1) } / Float(samples.count)
+    }
+
     @Test func stereo44kBecomesMono48k() throws {
-        let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100)!
-        buffer.frameLength = 44_100
-        let samples = MonoResampler().convert(buffer)
+        let samples = MonoResampler().convert(stereoBuffer(left: 1, right: 0, frames: 44_100))
         #expect(abs(samples.count - 48_000) <= 64)
+        // The track must hold audio, not silence: the frame count alone passes even when the
+        // converter is fed a channel it ignores.
+        #expect(meanMagnitude(samples) > 0.3,
+                "converted \(samples.count) frames, mean magnitude \(meanMagnitude(samples))")
+    }
+
+    /// The tap is stereo; a 2→1 conversion that merely remaps channels would deliver the left
+    /// channel of all system audio and drop the right one.
+    @Test func stereoDownmixKeepsBothChannels() throws {
+        let left = MonoResampler().convert(stereoBuffer(left: 1, right: 0, frames: 4_410))
+        let right = MonoResampler().convert(stereoBuffer(left: 0, right: 1, frames: 4_410))
+        #expect(meanMagnitude(left) > 0.3, "left-only input gave \(meanMagnitude(left))")
+        #expect(meanMagnitude(right) > 0.3, "right-only input gave \(meanMagnitude(right))")
+    }
+
+    /// One resampler serves a whole call, one buffer per capture callback. A converter left in its
+    /// end-of-stream state after the first buffer returns nothing for every later one.
+    @Test func repeatedSameFormatBuffersKeepConverting() throws {
+        let resampler = MonoResampler()
+        let counts = (0..<10).map { _ in
+            resampler.convert(stereoBuffer(left: 0.5, right: 0.5, frames: 4_410)).count
+        }
+        #expect(counts[0] > 0)
+        for (index, count) in counts.enumerated().dropFirst() {
+            #expect(abs(count - 4_800) <= 100, "buffer \(index) delivered \(count) frames")
+        }
+        #expect(abs(counts.reduce(0, +) - 48_000) <= 100,
+                "ten 0.1 s buffers delivered \(counts.reduce(0, +)) frames")
+    }
+
+    /// An input already at the target rate must not degrade after the first buffer either.
+    @Test func sameRateBuffersEachDeliverTheirFrames() throws {
+        let resampler = MonoResampler()
+        let counts = (0..<3).map { _ in resampler.convert(monoBuffer(frames: 4_800, rate: 48_000)).count }
+        for (index, count) in counts.enumerated() {
+            #expect(abs(count - 4_800) <= 64, "buffer \(index) delivered \(count) frames")
+        }
     }
 
     @Test func aChangedInputFormatGetsANewConverter() throws {

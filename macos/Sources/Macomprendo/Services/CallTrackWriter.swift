@@ -289,7 +289,11 @@ final class MonoResampler: @unchecked Sendable {
         guard let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: targetRate,
                                          channels: 1, interleaved: false) else { return nil }
         if converter == nil || !Self.matches(sourceFormat, buffer.format) {
-            converter = AVAudioConverter(from: buffer.format, to: target)
+            let fresh = AVAudioConverter(from: buffer.format, to: target)
+            // Without this, a 2→1 conversion remaps and copies input channel 0, so the system
+            // tap's right channel would never reach the mono track.
+            fresh?.downmix = true
+            converter = fresh
             sourceFormat = buffer.format
         }
         guard let converter else { return nil }
@@ -299,23 +303,52 @@ final class MonoResampler: @unchecked Sendable {
         guard let output = AVAudioPCMBuffer(pcmFormat: target,
                                             frameCapacity: AVAudioFrameCount(capacity)) else { return nil }
 
-        // The block is typed `@Sendable` but `convert` calls it synchronously, so the one buffer
-        // it is handed never crosses a thread.
+        // The block is typed `@Sendable` but `convert` calls it synchronously, so the frames it is
+        // handed never cross a thread.
         nonisolated(unsafe) let source = buffer
-        nonisolated(unsafe) var supplied = false
+        nonisolated(unsafe) var cursor = 0
         var error: NSError?
-        let status = converter.convert(to: output, error: &error) { _, inputStatus in
-            guard !supplied else {
-                inputStatus.pointee = .endOfStream
+        let status = converter.convert(to: output, error: &error) { requested, inputStatus in
+            // The converter pulls its own packet size (~4096 frames) per request and ignores
+            // whatever else a returned buffer holds, so hand it exactly the frames it asks for
+            // from the cursor. `.endOfStream` instead of `.noDataNow` would park the converter in
+            // its finished state, leaving every later same-format call silent.
+            guard requested > 0, cursor < Int(source.frameLength) else {
+                inputStatus.pointee = .noDataNow
                 return nil
             }
-            supplied = true
+            let count = min(Int(requested), Int(source.frameLength) - cursor)
+            guard let chunk = Self.slice(source, from: cursor, frames: count) else {
+                inputStatus.pointee = .noDataNow
+                return nil
+            }
+            cursor += count
             inputStatus.pointee = .haveData
-            return source
+            return chunk
         }
         guard status == .haveData || status == .inputRanDry,
               let channel = output.floatChannelData?[0] else { return nil }
         return Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
+    }
+
+    /// `frames` frames of `source` from `from` on, for one input block request. The converter
+    /// consumes only what it asked for, so the rest of `source` stays for the next request.
+    private static func slice(_ source: AVAudioPCMBuffer, from start: Int,
+                              frames: Int) -> AVAudioPCMBuffer? {
+        guard frames > 0, source.frameLength > 0, start + frames <= Int(source.frameLength),
+              let output = AVAudioPCMBuffer(pcmFormat: source.format,
+                                            frameCapacity: AVAudioFrameCount(frames)) else { return nil }
+        output.frameLength = AVAudioFrameCount(frames)
+        let sourceList = UnsafeMutableAudioBufferListPointer(source.mutableAudioBufferList)
+        let outputList = UnsafeMutableAudioBufferListPointer(output.mutableAudioBufferList)
+        guard sourceList.count == outputList.count else { return nil }
+        for index in 0..<sourceList.count {
+            let bytesPerFrame = Int(sourceList[index].mDataByteSize) / Int(source.frameLength)
+            guard bytesPerFrame > 0, let sourceData = sourceList[index].mData,
+                  let outputData = outputList[index].mData else { return nil }
+            memcpy(outputData, sourceData.advanced(by: start * bytesPerFrame), frames * bytesPerFrame)
+        }
+        return output
     }
 
     private static func matches(_ lhs: AVAudioFormat?, _ rhs: AVAudioFormat) -> Bool {
