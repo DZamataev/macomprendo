@@ -3,12 +3,17 @@ import Foundation
 
 /// In-memory `CallRecordingFolderManaging` for the controller and recovery tests.
 ///
-/// By default it touches no disk and hands back a synthetic `<directory>/<folder name>` URL. Pass
-/// `realDirectoryRoot` to have `create` make a real folder under that root instead, so a controller
-/// under test can write and read a real `recording.json` there without a user folder being involved.
+/// By default it touches no disk and hands back a synthetic `<directory>/<folder name>` URL — the
+/// same URL for two `create`s in the same second, since nothing is there to collide with. Pass
+/// `realDirectoryRoot` to have `create` make a real folder under that root instead (with the ` (2)`
+/// suffixes a real recordings directory would give), so a controller under test can write and read
+/// a real `recording.json` there without a user folder being involved. Real-root mode delegates to
+/// `FileSystemCallRecordingFolders`, so it cannot disagree with the service; pass the same directory
+/// the controller will be given as `realDirectoryRoot`.
 final class FakeCallRecordingFolders: CallRecordingFolderManaging, @unchecked Sendable {
     private let lock = NSLock()
     private let realDirectoryRoot: URL?
+    private let timeZone: TimeZone
 
     private var createdDirectories: [(directory: URL, startedAt: Date)] = []
     private var createdFolders: [URL] = []
@@ -17,8 +22,9 @@ final class FakeCallRecordingFolders: CallRecordingFolderManaging, @unchecked Se
     private var directorySize: Int64 = 0
     private var removedFolders: [URL] = []
 
-    init(realDirectoryRoot: URL? = nil) {
+    init(realDirectoryRoot: URL? = nil, timeZone: TimeZone = .current) {
         self.realDirectoryRoot = realDirectoryRoot
+        self.timeZone = timeZone
     }
 
     /// The `directory` each `create` was asked for, with its start date, in order.
@@ -49,10 +55,11 @@ final class FakeCallRecordingFolders: CallRecordingFolderManaging, @unchecked Se
         }
         let folder: URL
         if let root = realDirectoryRoot {
-            folder = try Self.createRealFolder(in: root, startedAt: startedAt)
+            folder = try service.create(in: root, startedAt: startedAt)
         } else {
             folder = directory.appendingPathComponent(
-                CallRecordingLayout.baseName(startedAt: startedAt), isDirectory: true)
+                CallRecordingLayout.baseName(startedAt: startedAt, timeZone: timeZone),
+                isDirectory: true)
         }
         lock.withLock {
             createdDirectories.append((directory, startedAt))
@@ -71,25 +78,11 @@ final class FakeCallRecordingFolders: CallRecordingFolderManaging, @unchecked Se
 
     func remove(_ folder: URL) {
         lock.withLock { removedFolders.append(folder) }
-        if realDirectoryRoot != nil {
-            try? FileManager.default.removeItem(at: folder)
-        }
+        guard realDirectoryRoot != nil else { return }
+        service.remove(folder)
     }
 
-    private static func createRealFolder(in root: URL, startedAt: Date) throws -> URL {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-        let base = CallRecordingLayout.baseName(startedAt: startedAt)
-        for attempt in 1...999 {
-            let folder = root.appendingPathComponent(
-                CallRecordingLayout.folderName(base: base, attempt: attempt), isDirectory: true)
-            do {
-                try fileManager.createDirectory(at: folder, withIntermediateDirectories: false)
-                return folder
-            } catch let error as NSError where error.code == NSFileWriteFileExistsError {
-                continue
-            }
-        }
-        throw MacomprendoError.callRecordingLocationUnavailable
+    private var service: FileSystemCallRecordingFolders {
+        FileSystemCallRecordingFolders(timeZone: timeZone)
     }
 }

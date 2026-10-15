@@ -39,7 +39,8 @@ struct FileSystemCallRecordingFolders: CallRecordingFolderManaging {
                 // `false`: an existing name must fail so the loop can try the next suffix.
                 try fileManager.createDirectory(at: folder, withIntermediateDirectories: false)
                 return folder
-            } catch let error as NSError where error.code == NSFileWriteFileExistsError {
+            } catch let error as NSError
+                where error.domain == NSCocoaErrorDomain && error.code == NSFileWriteFileExistsError {
                 continue
             } catch {
                 throw MacomprendoError.callRecordingLocationUnavailable
