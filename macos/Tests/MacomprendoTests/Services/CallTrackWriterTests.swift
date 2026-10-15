@@ -112,6 +112,32 @@ import Testing
                                          sessionStart: 0, onFailure: { _ in })
         }
     }
+
+    /// An encoder that never reports ready must not hang `finish()`: it is awaited on the stop
+    /// path and by `AppModel.shutdown()`, so a wedged encoder would block the stop and app
+    /// termination. The tail is dropped, the failure is reported once, and the file is still
+    /// finished.
+    @Test func finishGivesUpOnAnEncoderThatNeverBecomesReady() async throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let failures = Box<[MacomprendoError]>([])
+        let writer = try AssetCallTrackWriter(
+            url: url, sessionStart: 0,
+            onFailure: { failures.value.append($0) },
+            maximumFinishWait: 0.05,
+            encoderReady: { false })
+        writer.consume([Float](repeating: 0.1, count: 4_800), at: 0)
+
+        await #expect(throws: MacomprendoError.self) {
+            try await writer.finish()
+        }
+
+        #expect(failures.value.count == 1)
+        guard case .callRecordingWriteFailed? = failures.value.first else {
+            Issue.record("the writer reported \(String(describing: failures.value))")
+            return
+        }
+    }
 }
 
 @Suite struct MonoResamplerTests {

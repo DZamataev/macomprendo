@@ -60,6 +60,10 @@ typealias CallTrackWriterFactory = @Sendable (_ url: URL, _ sessionStart: TimeIn
 final class AssetCallTrackWriter: CallTrackWriting, @unchecked Sendable {
     static let sampleRate: Double = 48_000
     static let bitRate = 48_000
+    /// How long `finish()` waits for an encoder that has not reported ready before giving up on
+    /// the queued tail. `finish()` is awaited on the stop path and by `AppModel.shutdown()`, so
+    /// an encoder that never becomes ready must not hang them.
+    static let maximumFinishWait: TimeInterval = 5
 
     static let factory: CallTrackWriterFactory = { url, sessionStart, onFailure in
         try AssetCallTrackWriter(url: url, sessionStart: sessionStart, onFailure: onFailure)
@@ -68,6 +72,10 @@ final class AssetCallTrackWriter: CallTrackWriting, @unchecked Sendable {
     private let writer: AVAssetWriter
     private let input: AVAssetWriterInput
     private let onFailure: @Sendable (MacomprendoError) -> Void
+    private let maximumFinishWait: TimeInterval
+    /// Whether the encoder can take another buffer; `nil` asks the real `AVAssetWriterInput`.
+    /// A seam for the finish deadline test: a live encoder cannot be made to refuse data.
+    private let encoderReady: (@Sendable () -> Bool)?
     private let queue = DispatchQueue(label: "com.dzamataev.macomprendo.call-track-writer")
 
     private let lock = NSLock()
@@ -83,8 +91,12 @@ final class AssetCallTrackWriter: CallTrackWriting, @unchecked Sendable {
     private var pending: [CMSampleBuffer] = []
 
     init(url: URL, sessionStart: TimeInterval,
-         onFailure: @escaping @Sendable (MacomprendoError) -> Void) throws {
+         onFailure: @escaping @Sendable (MacomprendoError) -> Void,
+         maximumFinishWait: TimeInterval = AssetCallTrackWriter.maximumFinishWait,
+         encoderReady: (@Sendable () -> Bool)? = nil) throws {
         self.onFailure = onFailure
+        self.maximumFinishWait = maximumFinishWait
+        self.encoderReady = encoderReady
         timeline = TrackTimeline(sampleRate: Self.sampleRate, sessionStart: sessionStart)
 
         do {
@@ -126,15 +138,19 @@ final class AssetCallTrackWriter: CallTrackWriting, @unchecked Sendable {
     }
 
     func finish() async throws {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        let drainFailure = await withCheckedContinuation {
+            (continuation: CheckedContinuation<String?, Never>) in
             queue.async { [self] in
                 lock.withLock { closed = true }
-                drainPending(waitsForInput: true)
+                let drainFailure = drainPending(waitsForInput: true)
                 input.markAsFinished()
-                continuation.resume()
+                continuation.resume(returning: drainFailure)
             }
         }
         await writer.finishWriting()
+        if let drainFailure {
+            throw MacomprendoError.callRecordingWriteFailed(drainFailure)
+        }
         // A failed `AVAssetWriter` does not throw on its own.
         guard writer.status == .completed else {
             throw Self.failure(writer, fallback: "the track file could not be written")
@@ -174,26 +190,40 @@ final class AssetCallTrackWriter: CallTrackWriting, @unchecked Sendable {
     }
 
     /// Runs on `queue`. Appends from the FIFO while the encoder takes data; at `finish()` there is
-    /// no next append to retry on, so the tail waits for the encoder instead of being dropped.
-    private func drainPending(waitsForInput: Bool) {
+    /// no next append to retry on, so the tail waits for the encoder instead of being dropped —
+    /// but not past `maximumFinishWait`, because `finish()` is awaited on the stop path. Returns
+    /// the reason the tail was not written, already reported through `onFailure`; `nil` when
+    /// there is nothing to report — everything was written, or an append will retry next chunk.
+    @discardableResult
+    private func drainPending(waitsForInput: Bool) -> String? {
+        let deadline = waitsForInput ? Date().addingTimeInterval(maximumFinishWait) : nil
         while !pending.isEmpty {
             guard writer.status == .writing else {
                 pending.removeAll()
-                reportFailure(Self.reason(for: writer, fallback: "the track file could not be written"))
-                return
+                let reason = Self.reason(for: writer, fallback: "the track file could not be written")
+                reportFailure(reason)
+                return reason
             }
-            guard input.isReadyForMoreMediaData else {
-                guard waitsForInput else { return }
+            guard encoderReady?() ?? input.isReadyForMoreMediaData else {
+                guard let deadline else { return nil }
+                if Date() >= deadline {
+                    pending.removeAll()
+                    let reason = "the encoder did not accept the recording's remaining audio"
+                    reportFailure(reason)
+                    return reason
+                }
                 Thread.sleep(forTimeInterval: 0.005)
                 continue
             }
             let buffer = pending.removeFirst()
             guard input.append(buffer) else {
                 pending.removeAll()
-                reportFailure(Self.reason(for: writer, fallback: "the encoder rejected a sample buffer"))
-                return
+                let reason = Self.reason(for: writer, fallback: "the encoder rejected a sample buffer")
+                reportFailure(reason)
+                return reason
             }
         }
+        return nil
     }
 
     /// Runs on `queue`. The first failure is reported once; every later chunk is dropped by
