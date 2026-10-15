@@ -226,9 +226,15 @@ final class DictationController: ObservableObject {
         // it cancels this task (see `begin()`), but cancellation is cooperative — nothing
         // stops this task from resuming and reaching `recorder.start()` right alongside
         // the second task's own call unless checked explicitly after each one.
-        guard await ensurePermission(.microphone) else { return }
+        guard await permissions.ensureGranted(.microphone) else {
+            fail(MacomprendoError.permissionDenied(.microphone))
+            return
+        }
         guard !Task.isCancelled else { return }
-        guard await ensurePermission(.accessibility) else { return }
+        guard await permissions.ensureGranted(.accessibility) else {
+            fail(MacomprendoError.permissionDenied(.accessibility))
+            return
+        }
         guard !Task.isCancelled else { return }
         // A cancel() just before this begin() may still be stopping the recorder;
         // starting again before that stop lands can fail (or, worse, race) against it.
@@ -463,19 +469,6 @@ final class DictationController: ObservableObject {
         target = nil
         escapeMonitor.stop()
         hud.toast("Copied to clipboard")
-    }
-
-    private func ensurePermission(_ kind: PermissionKind) async -> Bool {
-        var status = await permissions.status(of: kind)
-        if status != .granted {
-            status = await permissions.request(kind)
-        }
-        guard status == .granted else {
-            permissions.openSystemSettings(for: kind)
-            fail(MacomprendoError.permissionDenied(kind))
-            return false
-        }
-        return true
     }
 
     private func onLevel(_ level: Float) {

@@ -89,6 +89,29 @@ private func tempDirectory() throws -> URL {
         }
     }
 
+    /// Holds `finish()` until the test opens the gate — an in-flight stop a concurrent
+    /// `shutdown()` has to reach while it is still `.stopping`.
+    private final class GatedFinishWriter: CallTrackWriting, @unchecked Sendable {
+        private let inner: any CallTrackWriting
+        private let gate: AsyncGate
+
+        init(_ inner: any CallTrackWriting, gate: AsyncGate) {
+            self.inner = inner
+            self.gate = gate
+        }
+
+        var startOffset: TimeInterval? { inner.startOffset }
+
+        func consume(_ samples: [Float], at time: TimeInterval) {
+            inner.consume(samples, at: time)
+        }
+
+        func finish() async throws {
+            await gate.wait()
+            try await inner.finish()
+        }
+    }
+
     @MainActor
     private final class Rig {
         let root: URL
@@ -107,7 +130,10 @@ private func tempDirectory() throws -> URL {
         let orderLog: Box<[Int]>
         let controller: CallRecordingController
 
-        init(orderLogging: Bool = false, tick: Duration = .milliseconds(1)) throws {
+        init(orderLogging: Bool = false,
+             finishGate: AsyncGate? = nil,
+             secondWriterError: MacomprendoError? = nil,
+             tick: Duration = .milliseconds(1)) throws {
             let root = try tempDirectory()
             let microphone = ScriptedCallCapture()
             let systemAudio = ScriptedCallCapture()
@@ -124,17 +150,26 @@ private func tempDirectory() throws -> URL {
             let orderLog = Box<[Int]>([])
 
             let factory: CallTrackWriterFactory = { url, sessionStart, onFailure in
+                // A factory whose second call fails: `abortStart` must still finish the
+                // writer the first call handed out.
+                if let secondWriterError, !writers.urls.isEmpty {
+                    throw secondWriterError
+                }
+                let product: any CallTrackWriting
                 if orderLogging {
                     let writer = OrderLoggingWriter(log: orderLog, microphone: microphone,
                                                     systemAudio: systemAudio)
                     writers.record(url: url, sessionStart: sessionStart, writer: writer.inner,
                                    onFailure: onFailure)
-                    return writer
+                    product = writer
+                } else {
+                    let writer = FakeCallTrackWriter()
+                    writers.record(url: url, sessionStart: sessionStart, writer: writer,
+                                   onFailure: onFailure)
+                    product = writer
                 }
-                let writer = FakeCallTrackWriter()
-                writers.record(url: url, sessionStart: sessionStart, writer: writer,
-                               onFailure: onFailure)
-                return writer
+                guard let finishGate else { return product }
+                return GatedFinishWriter(product, gate: finishGate)
             }
 
             controller = CallRecordingController(
@@ -316,6 +351,24 @@ private func tempDirectory() throws -> URL {
         #expect(!FileManager.default.fileExists(atPath: folder.path))
     }
 
+    @Test func aSecondWriterCreationFailureFinishesTheFirstWriter() async throws {
+        let rig = try Rig(secondWriterError: .callRecordingWriteFailed("second"))
+
+        rig.controller.toggle()
+        await rig.controller.drain()
+
+        let folder = try #require(rig.folders.folders.first)
+        #expect(rig.controller.state == .failed(
+            ErrorText.describe(MacomprendoError.callRecordingWriteFailed("second"))))
+        #expect(rig.writers.urls == [trackURL(folder, .me)])
+        #expect(rig.writers.writer(.me, in: folder)?.finished == true)
+        #expect(rig.microphone.startCount == 0)
+        #expect(rig.microphone.stopCount == 1)
+        #expect(rig.systemAudio.stopCount == 1)
+        #expect(rig.folders.removed == [folder])
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+    }
+
     // MARK: - Stopping
 
     @Test func stopFinalisesBothTracksWritesTheManifestAndStartsTheCallJob() async throws {
@@ -406,6 +459,54 @@ private func tempDirectory() throws -> URL {
         #expect(FileManager.default.fileExists(atPath: folder.path))
     }
 
+    @Test func aWriterFailureArrivingAfterTheStopChangesNothing() async throws {
+        let rig = try Rig()
+        await startRecording(rig)
+        let folder = try #require(rig.folders.folders.first)
+        await rig.controller.stop()
+        #expect(rig.controller.state == .idle)
+        #expect(rig.transcribes.value == [1])
+
+        // A finished writer's queue can still report a failure; it must land nowhere.
+        rig.writers.fail(.me, in: folder, with: MacomprendoError.callRecordingWriteFailed("late"))
+        await Task.yield() // let the failure's hop to the main actor run before asserting
+
+        #expect(rig.controller.state == .idle)
+        let stored = await rig.store.snapshot(1)
+        #expect(stored?.header.status == .inProgress)
+        #expect(rig.transcribes.value == [1])
+        #expect(rig.changes.value == 1)
+    }
+
+    @Test func aManifestRewriteFailureMidRecordingStopsWithAnError() async throws {
+        let rig = try Rig()
+        await startRecording(rig)
+        let folder = try #require(rig.folders.folders.first)
+
+        // The folder turns unwritable mid-recording: the next rewrite of the manifest fails.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500],
+                                              ofItemAtPath: folder.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                   ofItemAtPath: folder.path)
+        }
+        rig.meWriter?.startOffset = 0.25
+
+        await waitFor("the recording to stop with the location error") {
+            rig.controller.state == .failed(
+                ErrorText.describe(MacomprendoError.callRecordingLocationUnavailable))
+        }
+        #expect(rig.microphone.stopCount == 1)
+        #expect(rig.systemAudio.stopCount == 1)
+        #expect(rig.meWriter?.finished == true)
+        #expect(rig.othersWriter?.finished == true)
+        // A stop like any other: the files are kept and the job starts.
+        #expect(rig.transcribes.value == [1])
+        #expect(rig.changes.value == 1)
+        #expect(rig.folders.removed.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: folder.path))
+    }
+
     @Test func systemWillSleepStopsLikeStop() async throws {
         let rig = try Rig()
         await startRecording(rig)
@@ -440,6 +541,40 @@ private func tempDirectory() throws -> URL {
         #expect(stored?.header.status == .incomplete)
         #expect(stored?.header.statusReason == TranscriptLibraryController.abandonedJobReason)
         #expect(rig.transcribes.value.isEmpty)
+        #expect(rig.folders.removed.isEmpty)
+    }
+
+    @Test func shutdownDuringAnInFlightStopLeavesTheRowIncompleteAndStartsNoJob() async throws {
+        let gate = AsyncGate()
+        let rig = try Rig(finishGate: gate)
+        await startRecording(rig)
+        let folder = try #require(rig.folders.folders.first)
+
+        // A stop, held in flight inside the first track's `finish()`...
+        let stopTask = Task { await rig.controller.stop() }
+        await waitFor("the stop to suspend finishing the first track") { gate.waiterCount == 1 }
+        #expect(rig.controller.state == .stopping)
+
+        // ...and the quit landing on it. Both are main-actor jobs and the shutdown's was
+        // queued first, so its request lands before the gate releases the stop.
+        let shutdownTask = Task { await rig.controller.shutdown() }
+        gate.open()
+        await shutdownTask.value
+        await stopTask.value
+
+        #expect(rig.controller.state == .idle)
+        #expect(try CallRecordingManifest.read(from: folder).status == .finished)
+        #expect(rig.microphone.stopCount == 1)
+        #expect(rig.systemAudio.stopCount == 1)
+        #expect(rig.meWriter?.finished == true)
+        #expect(rig.othersWriter?.finished == true)
+        let createCount = await rig.store.createCount
+        #expect(createCount == 1)
+        let stored = await rig.store.snapshot(1)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == TranscriptLibraryController.abandonedJobReason)
+        #expect(rig.transcribes.value.isEmpty)
+        #expect(rig.changes.value == 1)
         #expect(rig.folders.removed.isEmpty)
     }
 

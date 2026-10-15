@@ -19,6 +19,23 @@ protocol PermissionsChecking: Sendable {
     func openSystemSettings(for kind: PermissionKind)
 }
 
+extension PermissionsChecking {
+    /// The full permission check every gated feature runs: take the current status, ask for the
+    /// prompt when it still can, and — on a refusal — take the user to the pane where they can
+    /// change it. `false` means the caller must stop and report `permissionDenied(kind)`.
+    func ensureGranted(_ kind: PermissionKind) async -> Bool {
+        var status = await status(of: kind)
+        if status != .granted {
+            status = await request(kind)
+        }
+        guard status == .granted else {
+            openSystemSettings(for: kind)
+            return false
+        }
+        return true
+    }
+}
+
 enum PrivacyPane {
     static func url(for kind: PermissionKind) -> URL {
         switch kind {

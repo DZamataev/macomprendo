@@ -657,7 +657,7 @@ import Testing
         #expect(h.controller.state == .recording)
     }
 
-    /// `startRecording()` has three suspension points (two `ensurePermission` awaits and
+    /// `startRecording()` has three suspension points (two `ensureGranted` awaits and
     /// `await pendingStopTask?.value`) with no `Task.isCancelled` check after any of them.
     /// Two `begin()`s racing through the mic-permission prompt could both reach
     /// `recorder.start()` — the second `begin()` cancels the first task, but if the first
@@ -669,7 +669,7 @@ import Testing
         let gate = AsyncGate()
         h.permissions.statusGate = gate
 
-        h.controller.handle(.keyDown(.dictate))   // task 1: suspends inside ensurePermission
+        h.controller.handle(.keyDown(.dictate))   // task 1: suspends inside ensureGranted
         await waitFor("task 1 waiting on the permission check") { gate.waiterCount > 0 }
         let firstTask = h.controller.activeTask
 

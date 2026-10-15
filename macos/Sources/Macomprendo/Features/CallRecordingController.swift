@@ -154,7 +154,10 @@ final class CallRecordingController: ObservableObject {
     }
 
     private func runStart() async {
-        guard await ensureMicrophonePermission() else { return }
+        guard await permissions.ensureGranted(.microphone) else {
+            fail(MacomprendoError.permissionDenied(.microphone))
+            return
+        }
         let startedAt = now()
         let directory = settings().callRecordingsDirectory.map { URL(fileURLWithPath: $0) }
             ?? CallRecordingLayout.defaultDirectory
@@ -173,11 +176,13 @@ final class CallRecordingController: ObservableObject {
                                                  folderName: folder.lastPathComponent)
             try manifest.write(to: folder)
             self.manifest = manifest
+            // Each writer is kept as soon as it exists: if the second factory call throws,
+            // `abortStart` must still finish the first, which has already started writing.
             let meWriter = try makeWriter(Self.trackURL(folder, .me), sessionStart,
                                           failureHandler())
+            self.meWriter = meWriter
             let othersWriter = try makeWriter(Self.trackURL(folder, .others), sessionStart,
                                               failureHandler())
-            self.meWriter = meWriter
             self.othersWriter = othersWriter
             levelBox = box
             try microphone.start(handler(writer: meWriter, speaker: .me, box: box))
@@ -194,19 +199,6 @@ final class CallRecordingController: ObservableObject {
         if pendingStop {
             await runStop()
         }
-    }
-
-    private func ensureMicrophonePermission() async -> Bool {
-        var status = await permissions.status(of: .microphone)
-        if status != .granted {
-            status = await permissions.request(.microphone)
-        }
-        guard status == .granted else {
-            permissions.openSystemSettings(for: .microphone)
-            fail(MacomprendoError.permissionDenied(.microphone))
-            return false
-        }
-        return true
     }
 
     /// A start that fails after the folder exists: close the writers, take the folder away
@@ -230,7 +222,11 @@ final class CallRecordingController: ObservableObject {
         case .recording:
             if quit { pendingQuit = true }
             beginStop()
-        case .stopping, .idle, .failed:
+        case .stopping:
+            // A quit that lands on a stop already in flight still has to reach its row:
+            // `runStop` reads the flag at the store decision, not when it starts.
+            if quit { pendingQuit = true }
+        case .idle, .failed:
             break
         }
     }
@@ -242,8 +238,6 @@ final class CallRecordingController: ObservableObject {
 
     private func runStop() async {
         pendingStop = false
-        let quit = pendingQuit
-        pendingQuit = false
         state = .stopping
         tickerTask?.cancel()
         tickerTask = nil
@@ -283,6 +277,10 @@ final class CallRecordingController: ObservableObject {
                 run: TranscriptionRun.from(settings().transcriptionSource,
                                            language: settings().transcriptionLanguage),
                 at: now())
+            // Read at the decision, not when the stop began: a `shutdown()` that landed on
+            // this stop while it was in flight must still leave the row incomplete.
+            let quit = pendingQuit
+            pendingQuit = false
             if quit {
                 try await store.setStatus(.incomplete,
                                           reason: TranscriptLibraryController.abandonedJobReason,
@@ -363,9 +361,7 @@ final class CallRecordingController: ObservableObject {
 
     private func writerFailed(_ error: MacomprendoError) {
         guard isRecording else { return }
-        if rememberedError == nil {
-            rememberedError = error
-        }
+        remember(error)
         requestStop(quit: false)
     }
 
