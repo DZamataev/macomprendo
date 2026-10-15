@@ -698,9 +698,11 @@ import Testing
     }
 
     /// The row Task 8's recorder leaves for the job: a `.call` transcript bookmarked to its
-    /// recording folder, `incomplete` once the job that created it stopped.
+    /// recording folder, `incomplete` once the job that created it stopped. `leaveInProgress`
+    /// keeps the row exactly as the recorder leaves it — `inProgress`, waiting for the job.
     private func makeCallRow(in rig: Rig, folder: URL,
-                             segments: [TranscriptSegment] = []) async throws -> Int64 {
+                             segments: [TranscriptSegment] = [],
+                             leaveInProgress: Bool = false) async throws -> Int64 {
         let id = await rig.store.create(sourceKind: .call, title: Self.callTitle,
                                         sourceBookmark: Data(folder.path.utf8), duration: 60,
                                         run: TranscriptionRun.from(
@@ -710,7 +712,9 @@ import Testing
         for segment in segments {
             try await rig.store.appendSegment(segment, to: id)
         }
-        try await rig.store.setStatus(.incomplete, reason: "Cancelled.", for: id)
+        if !leaveInProgress {
+            try await rig.store.setStatus(.incomplete, reason: "Cancelled.", for: id)
+        }
         return id
     }
 
@@ -875,6 +879,29 @@ import Testing
         #expect(!othersDecoder.requests.isEmpty)
     }
 
+    /// A plan with no steps — no track carries a `startOffset`, so nothing can be placed on the
+    /// call's clock. The recording holds audio, so the row must not be deleted as speechless:
+    /// it stays `incomplete` with the reason the window answers with **Choose Folder…**, the
+    /// only pointer back to the recording.
+    @Test func anEmptyPlanLeavesTheRowIncompleteAndOffersTheFolder() async throws {
+        let folder = try makeRecordingFolder(me: nil, others: nil)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter())
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        let expected = ErrorText.describe(MacomprendoError.callRecordingUnavailable)
+        #expect(rig.controller.state == .failed(message: expected, transcriptID: id))
+        #expect(rig.controller.canChooseRecordingFolder)
+        #expect(rig.decoder.requests.isEmpty)
+        #expect(rig.calls.value.isEmpty)
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == expected)
+    }
+
     @Test func aCallResumeContinuesTheHalfDoneTrackThenTheRest() async throws {
         let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -948,6 +975,50 @@ import Testing
         let stored = await rig.store.snapshot(id)
         #expect(stored?.header.status == .incomplete)
         #expect(stored?.header.statusReason == "Cancelled.")
+    }
+
+    /// The recorder creates the row `inProgress` and immediately runs the job. A backend that
+    /// is not ready fails the job before it marks the row — the fresh row must not stay
+    /// `inProgress` with no reason: nothing repairs it while the app runs, and the next launch
+    /// would call it a quit.
+    @Test func aFreshCallRowWhoseBackendIsNotReadyIsMarkedIncomplete() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          readiness: { .notReady(reason: "This model has not been downloaded yet.",
+                                                 fix: .download(modelID: "large-v3-turbo")) })
+        let id = try await makeCallRow(in: rig, folder: folder, leaveInProgress: true)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .failed(
+            message: "This model has not been downloaded yet.", transcriptID: id))
+        #expect(rig.decoder.requests.isEmpty)
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == "This model has not been downloaded yet.")
+    }
+
+    /// The same when the folder will not resolve: the row is the recorder's, still `inProgress`,
+    /// and the failure has to reach it with the reason the window shows.
+    @Test func aFreshCallRowWithAnUnavailableFolderIsMarkedIncomplete() async throws {
+        let missing = "/Volumes/gone/rec 2026-10-15 16-42-07"
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          bookmarks: FakeFileBookmarks(missing: [missing]))
+        let id = try await makeCallRow(in: rig, folder: URL(fileURLWithPath: missing),
+                                       leaveInProgress: true)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        let expected = ErrorText.describe(MacomprendoError.callRecordingUnavailable)
+        #expect(rig.controller.state == .failed(message: expected, transcriptID: id))
+        #expect(rig.controller.canChooseRecordingFolder)
+        #expect(rig.decoder.requests.isEmpty)
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == expected)
     }
 
     @Test func choosingTheRecordingFolderReplacesTheStaleBookmark() async throws {

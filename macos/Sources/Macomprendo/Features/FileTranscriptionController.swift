@@ -178,12 +178,6 @@ import Foundation
         var marked = false
         do {
             try Task.checkCancellation()
-            // `Resume` is a job like any other: a backend that is not ready fails it with the
-            // backend's reason before its row is touched, exactly as a fresh `transcribe` does.
-            if case let .notReady(reason, _) = readiness() {
-                fail(reason, transcriptID: id, generation: generation)
-                return
-            }
             guard let transcript = try await store.transcript(id: id) else {
                 fail(ErrorText.describe(MacomprendoError.transcriptStore(
                         "no transcript has identifier \(id)")),
@@ -191,6 +185,17 @@ import Foundation
                 return
             }
             try Task.checkCancellation()
+            // `Resume` is a job like any other: a backend that is not ready fails it with the
+            // backend's reason before its row is touched — except a call row the recorder just
+            // created `inProgress`, which no later pass repairs and which must not stay that way.
+            if case let .notReady(reason, _) = readiness() {
+                if transcript.header.sourceKind == .call {
+                    await failCallBeforeMarking(reason, row: transcript, generation: generation)
+                } else {
+                    fail(reason, transcriptID: id, generation: generation)
+                }
+                return
+            }
             switch transcript.header.sourceKind {
             case .file:
                 let url: URL
@@ -236,7 +241,8 @@ import Foundation
     /// transcribe and runs it. Until the row is marked `inProgress` the job can still fail
     /// without touching it — the folder, the manifest and every planned track file have to
     /// check out first — so a `Resume` whose recording is not there leaves the row exactly as
-    /// it was and reports the failure the window answers with **Choose Folder…**.
+    /// it was and reports the failure the window answers with **Choose Folder…**. A row the
+    /// recorder just created `inProgress` is the exception: the failure is written into it.
     private func resumeCall(_ transcript: Transcript, id: Int64, folderAt chosenURL: URL?,
                             generation: Int) async {
         var marked = false
@@ -251,8 +257,9 @@ import Foundation
             // manifest names but the disk no longer has: all the same failure to the user. The
             // chosen folder replaces the stale bookmark only once it has proven it is one this
             // build can resume, so choosing badly cannot cost a bookmark that still works.
+            let unavailable = ErrorText.describe(MacomprendoError.callRecordingUnavailable)
             guard let folder, let manifest = try? CallRecordingManifest.read(from: folder) else {
-                failCallRecordingUnavailable(id: id, generation: generation)
+                await failCallBeforeMarking(unavailable, row: transcript, generation: generation)
                 return
             }
             if chosenURL != nil {
@@ -262,7 +269,7 @@ import Foundation
                                                     stored: transcript.segments)
             guard steps.allSatisfy({ FileManager.default.fileExists(
                 atPath: folder.appendingPathComponent($0.file).path) }) else {
-                failCallRecordingUnavailable(id: id, generation: generation)
+                await failCallBeforeMarking(unavailable, row: transcript, generation: generation)
                 return
             }
             try Task.checkCancellation()
@@ -275,9 +282,15 @@ import Foundation
         }
     }
 
-    private func failCallRecordingUnavailable(id: Int64, generation: Int) {
-        fail(ErrorText.describe(MacomprendoError.callRecordingUnavailable), transcriptID: id,
-             generation: generation)
+    /// Fails a call job before it marked its row. A row the recorder just created is still
+    /// `inProgress`: left that way nothing repairs it while the app runs, and the next launch
+    /// would call it a quit. A row that was already `incomplete` keeps the reason it stopped
+    /// with — `Resume` must not overwrite it.
+    private func failCallBeforeMarking(_ message: String, row: Transcript, generation: Int) async {
+        if row.header.status == .inProgress {
+            try? await store.setStatus(.incomplete, reason: message, for: row.id)
+        }
+        fail(message, transcriptID: row.id, generation: generation)
     }
 
     /// Runs one file through the pipeline, creating its row as the file opens. `Resume` enters
@@ -331,10 +344,12 @@ import Foundation
     }
 
     /// Runs the tracks a call `Resume` still owes, each through its own pipeline and in the
-    /// plan's order. Zero segments in the whole transcript — this job's and any earlier run's —
-    /// means the recording held no speech worth keeping: the empty row goes away with the
-    /// failure, while the recording itself stays. Otherwise the row completes and `callFinished`
-    /// reports it, so the app can say the transcript is ready.
+    /// plan's order. An empty plan — no track has a `startOffset`, so nothing can be placed on
+    /// the call's clock — leaves the row `incomplete` with the `callRecordingUnavailable`
+    /// reason: the recording holds audio, and the row is its only pointer. Zero segments from
+    /// a plan that ran means the recording held no speech worth keeping: the empty row goes
+    /// away with the failure, while the recording itself stays. Otherwise the row completes and
+    /// `callFinished` reports it, so the app can say the transcript is ready.
     private func runCall(folder: URL, steps: [CallTranscriptionStep], resuming: Transcript,
                          generation: Int) async {
         let currentSettings = settings()
@@ -357,7 +372,13 @@ import Foundation
                 interrupted = nil
             }
             try Task.checkCancellation()
-            if resuming.segments.count + progress.storedSegments == 0 {
+            if steps.isEmpty {
+                // Nothing to transcribe and nothing to blame on speech: deleting the row here
+                // would drop the recording's only pointer, and its audio is still there.
+                let message = ErrorText.describe(MacomprendoError.callRecordingUnavailable)
+                try? await store.setStatus(.incomplete, reason: message, for: resuming.id)
+                fail(message, transcriptID: resuming.id, generation: generation)
+            } else if resuming.segments.count + progress.storedSegments == 0 {
                 try await store.delete(id: resuming.id)
                 fail(ErrorText.describe(MacomprendoError.noSpeechFound), transcriptID: nil,
                      generation: generation)
