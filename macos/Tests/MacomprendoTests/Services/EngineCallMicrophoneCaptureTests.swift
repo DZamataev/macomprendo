@@ -175,6 +175,26 @@ import Testing
         capture.stop()
     }
 
+    @Test func aStartThatThrowsDoesNotRetainTheHandler() throws {
+        let engine = FakeAudioInputEngine()
+        let capture = make(engine, devices: builtInDevices())
+        engine.startError = MacomprendoError.audio("gone")
+
+        // The token's only other reference is the scope below: if the capture kept the handler
+        // after the throw, it would outlive that scope.
+        weak var weakToken: HandlerRetentionToken?
+        do {
+            let token = HandlerRetentionToken()
+            weakToken = token
+            #expect(throws: MacomprendoError.self) {
+                try capture.start { _ in _ = token }
+            }
+        }
+
+        #expect(weakToken == nil)
+        #expect(engine.hasTap == false)
+    }
+
     @Test func aStoppedCaptureStartsAgainWithTheNewHandler() throws {
         let engine = FakeAudioInputEngine()
         let first = ChunkLog()
@@ -269,7 +289,40 @@ import Testing
         capture.setPreferredInputDevice(uid: nil)
         #expect(capture.preferredInputDeviceUIDs == [AudioInputDevice.builtIn.uid, nil])
     }
+
+    /// The real capture holds its state lock across the handler call, so a handler that calls
+    /// back into it deadlocks. The fake must report that rather than let a controller ship a
+    /// design that hangs the app.
+    @Test func aHandlerThatCallsStopSynchronouslyRecordsAnIssue() throws {
+        let capture = ScriptedCallCapture()
+        try capture.start { _ in
+            withKnownIssue("handler re-entered the capture synchronously") {
+                capture.stop()
+            }
+        }
+
+        capture.emit(CallAudioChunk(samples: [0.1], time: 1))
+
+        #expect(capture.isRunning == false)
+        #expect(capture.stopCount == 1)
+    }
+
+    @Test func aHandlerThatSwitchesDeviceSynchronouslyRecordsAnIssue() throws {
+        let capture = ScriptedCallCapture()
+        try capture.start { _ in
+            withKnownIssue("handler re-entered the capture synchronously") {
+                capture.setPreferredInputDevice(uid: nil)
+            }
+        }
+
+        capture.emit(CallAudioChunk(samples: [0.1], time: 1))
+
+        #expect(capture.preferredInputDeviceUIDs == [nil])
+    }
 }
+
+/// A token a test can watch through a weak reference, to prove a handler closure was released.
+private final class HandlerRetentionToken: @unchecked Sendable {}
 
 /// Collects the chunks a capture delivers, from whichever thread it delivers them on.
 final class ChunkLog: @unchecked Sendable {

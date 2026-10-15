@@ -8,15 +8,23 @@ struct CallAudioChunk: Sendable, Equatable {
 }
 
 /// One side of a call, delivering its audio as it arrives. Which thread that is depends on the
-/// source — the tap thread for the microphone — so handlers must be cheap and thread-safe.
+/// source — the tap thread for the microphone.
 protocol CallAudioCapturing: AnyObject, Sendable {
-    /// Starts delivering chunks to `handler` on an arbitrary thread. Throws a `MacomprendoError`.
+    /// Starts delivering chunks to `handler` on an audio thread. Throws a `MacomprendoError`.
+    ///
+    /// `handler` runs inline on that thread and must return quickly. It must never call back
+    /// into the capture — `stop()`, `start(_:)` or `setPreferredInputDevice(uid:)` —
+    /// synchronously: delivery holds a non-recursive lock, so the call deadlocks the app. Hop to
+    /// another queue or actor first (`ScriptedCallCapture` reports a violation as a test issue).
     func start(_ handler: @escaping @Sendable (CallAudioChunk) -> Void) throws
     /// Stops delivery. Idempotent. No chunk is delivered after it returns.
     func stop()
 }
 
 /// The microphone side: a capture that follows the chosen input device.
+///
+/// The handler contract of `CallAudioCapturing.start(_:)` covers `setPreferredInputDevice(uid:)`
+/// too: it takes the same lock, so calling it from inside the handler hangs just as surely.
 protocol CallMicrophoneCapturing: CallAudioCapturing {
     func setPreferredInputDevice(uid: String?)
 }
@@ -111,7 +119,11 @@ final class EngineCallMicrophoneCapture: CallMicrophoneCapturing, @unchecked Sen
             do {
                 try startEngineLocked(inputFormat)
             } catch {
-                lock.withLock { running = false }
+                // Both, so a failed start does not leave the controller's closure retained.
+                lock.withLock {
+                    running = false
+                    self.handler = nil
+                }
                 throw MacomprendoError.audio(
                     "Could not start the audio engine: \(error.localizedDescription)")
             }
@@ -226,9 +238,9 @@ final class EngineCallMicrophoneCapture: CallMicrophoneCapturing, @unchecked Sen
         }
     }
 
-    /// Delivers one captured buffer as a chunk. The handler runs with `lock` held: that is what
-    /// makes `stop()` unable to return while a chunk is mid-delivery, so it must not call back
-    /// into the capture — the lock is not recursive. It only enqueues, in any case.
+    /// Delivers one captured buffer as a chunk. The handler runs with `lock` held — that is what
+    /// makes `stop()` unable to return while a chunk is mid-delivery, at the price stated on
+    /// `CallAudioCapturing.start(_:)`: the handler must not call back into the capture.
     private func ingest(_ buffer: AVAudioPCMBuffer) {
         lock.withLock {
             guard running, let handler else { return }
