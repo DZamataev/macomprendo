@@ -64,6 +64,18 @@ import Testing
         #expect(TranscriptExporter.render(empty, as: .subRip) == "")
     }
 
+    @Test func callExports() {
+        let t = Transcript.fixture(segments: [
+            TranscriptSegment(start: 0, end: 1.5, text: "Hi", speaker: .me),
+            TranscriptSegment(start: 3_725, end: 3_726, text: "Hello", speaker: .others)])
+        #expect(TranscriptExporter.render(t, as: .plainText) == "Me: Hi\nOthers: Hello\n")
+        #expect(TranscriptExporter.render(t, as: .subRip) ==
+            "1\n00:00:00,000 --> 00:00:01,500\nMe: Hi\n\n2\n01:02:05,000 --> 01:02:06,000\nOthers: Hello\n")
+        let md = TranscriptExporter.render(t, as: .markdown)
+        #expect(md.contains("**[00:00] Me:** Hi\n"))
+        #expect(md.contains("**[1:02:05] Others:** Hello\n"))
+    }
+
     @Test func clockSwitchesToHoursAtOneHour() {
         #expect(TranscriptExporter.clock(0) == "00:00")
         #expect(TranscriptExporter.clock(59.9) == "00:59")

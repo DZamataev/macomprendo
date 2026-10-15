@@ -278,7 +278,7 @@ struct TranscriptsView: View {
             Text("[\(TranscriptExporter.clock(segment.start))]")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
-            Text(segment.text)
+            Text(TranscriptExporter.speakerPrefix(segment) + segment.text)
                 .textSelection(.enabled)
         }
     }
