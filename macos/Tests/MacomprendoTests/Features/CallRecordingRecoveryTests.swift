@@ -9,6 +9,18 @@ private func recoveryTempDirectory() throws -> URL {
     return url
 }
 
+/// `FileBookmarking` that can neither bookmark nor resolve anything — the folder launch recovery
+/// has to leave alone rather than give a row the next launch could not find again.
+private struct UnbookmarkableFileBookmarks: FileBookmarking {
+    func bookmark(for url: URL) throws -> Data {
+        throw MacomprendoError.sourceFileUnavailable
+    }
+
+    func resolve(_ bookmark: Data) throws -> URL {
+        throw MacomprendoError.sourceFileUnavailable
+    }
+}
+
 /// `CallRecordingRecovery`: the launch pass that finalises call recordings a crash left and
 /// gives each one without a transcript an `incomplete` call transcript.
 @MainActor
@@ -22,6 +34,8 @@ private func recoveryTempDirectory() throws -> URL {
         let root: URL
         let folders: FakeCallRecordingFolders
         let store: FakeTranscriptStore
+        /// What the recovery writes rows through, so a test can arm a failing `create`.
+        let storeCreateFailure: CreateFailingTranscriptStore
         let bookmarks: FakeFileBookmarks
         let settings: SettingsHolder
         let nowValue: Box<Date>
@@ -31,17 +45,19 @@ private func recoveryTempDirectory() throws -> URL {
             let root = try recoveryTempDirectory()
             let folders = FakeCallRecordingFolders(realDirectoryRoot: root)
             let store = FakeTranscriptStore()
+            let storeCreateFailure = CreateFailingTranscriptStore(wrapping: store)
             let bookmarks = FakeFileBookmarks()
             let settings = SettingsHolder()
             let nowValue = Box(Date(timeIntervalSince1970: 1_792_071_999))
             let recovery = CallRecordingRecovery(
-                folders: folders, store: store, bookmarks: bookmarks,
+                folders: folders, store: storeCreateFailure, bookmarks: bookmarks,
                 settings: { settings.value }, now: { nowValue.value })
             settings.value.callRecordingsDirectory = root.path
 
             self.root = root
             self.folders = folders
             self.store = store
+            self.storeCreateFailure = storeCreateFailure
             self.bookmarks = bookmarks
             self.settings = settings
             self.nowValue = nowValue
@@ -92,6 +108,9 @@ private func recoveryTempDirectory() throws -> URL {
         #expect(await rig.store.createCount == 1)
     }
 
+    /// The window the row-before-manifest ordering exists for: a crash between the row and the
+    /// `.finished` write leaves a still-`recording` folder a call row already points at. The pass
+    /// has to finalise it and create no second row.
     @Test func anExistingCallTranscriptPointingAtTheFolderIsNotDuplicated() async throws {
         let rig = try Rig()
         let folder = try rig.makeUnfinishedFolder(startedAt: startedAt)
@@ -122,7 +141,38 @@ private func recoveryTempDirectory() throws -> URL {
         #expect(await rig.store.createCount == 2)
     }
 
-    @Test func aStoreFailureOnOneFolderIsSwallowedAndTheNextIsStillRecovered() async throws {
+    /// A row that cannot be written must not cost the recording: the folder stays `recording`,
+    /// with nothing pointing at it, for the next launch to pick up again.
+    @Test func aCreateFailureLeavesTheFolderForTheNextLaunchToRecover() async throws {
+        let rig = try Rig()
+        let folder = try rig.makeUnfinishedFolder(startedAt: startedAt)
+        rig.folders.unfinished = [folder]
+        rig.storeCreateFailure.failNextCreateOnce(.transcriptStore("the disk is full"))
+
+        #expect(await rig.recovery.recover() == 0)
+        #expect(try CallRecordingManifest.read(from: folder).status == .recording)
+        #expect(await rig.store.snapshot(1) == nil)
+
+        #expect(await rig.recovery.recover() == 1)
+        #expect(try CallRecordingManifest.read(from: folder).status == .finished)
+        #expect(await rig.store.snapshot(1)?.header.status == .incomplete)
+    }
+
+    @Test func aFolderWhoseBookmarkCannotBeMadeIsLeftForTheNextLaunch() async throws {
+        let rig = try Rig()
+        let folder = try rig.makeUnfinishedFolder(startedAt: startedAt)
+        rig.folders.unfinished = [folder]
+        let recovery = CallRecordingRecovery(
+            folders: rig.folders, store: rig.storeCreateFailure,
+            bookmarks: UnbookmarkableFileBookmarks(), settings: { rig.settings.value },
+            now: { rig.nowValue.value })
+
+        #expect(await recovery.recover() == 0)
+        #expect(try CallRecordingManifest.read(from: folder).status == .recording)
+        #expect(await rig.store.snapshot(1) == nil)
+    }
+
+    @Test func aStatusFailureOnOneFolderStillCountsAndTheNextIsStillRecovered() async throws {
         let rig = try Rig()
         let first = try rig.makeUnfinishedFolder(startedAt: startedAt)
         let second = try rig.makeUnfinishedFolder(startedAt: startedAt.addingTimeInterval(60))
@@ -131,7 +181,9 @@ private func recoveryTempDirectory() throws -> URL {
 
         let created = await rig.recovery.recover()
 
-        #expect(created == 1)
+        // The row exists, so it counts even though its status write failed — the next launch's
+        // abandoned-job pass gives it the `incomplete` this pass could not write.
+        #expect(created == 2)
         #expect(try CallRecordingManifest.read(from: first).status == .finished)
         #expect(try CallRecordingManifest.read(from: second).status == .finished)
         #expect(await rig.store.createCount == 2)

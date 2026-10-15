@@ -159,8 +159,7 @@ final class CallRecordingController: ObservableObject {
             return
         }
         let startedAt = now()
-        let directory = settings().callRecordingsDirectory.map { URL(fileURLWithPath: $0) }
-            ?? CallRecordingLayout.defaultDirectory
+        let directory = CallRecordingLayout.directory(for: settings())
         let folder: URL
         do {
             folder = try folders.create(in: directory, startedAt: startedAt)
@@ -261,15 +260,13 @@ final class CallRecordingController: ObservableObject {
         if let offset = othersWriter.startOffset {
             manifest.setStartOffset(offset, for: .others)
         }
-        manifest.status = .finished
-        do {
-            try manifest.write(to: folder)
-        } catch {
-            remember(error)
-        }
 
+        // The row comes first, the `.finished` manifest second. The other order loses a call: a
+        // `create` that fails, or a crash in this window, would leave the folder finished with no
+        // transcript pointing at it, and nothing ever sweeps for those.
+        let id: Int64
         do {
-            let id = try await store.create(
+            id = try await store.create(
                 sourceKind: .call,
                 title: CallRecordingLayout.transcriptTitle(startedAt: startedAt),
                 sourceBookmark: try? bookmarks.bookmark(for: folder),
@@ -277,23 +274,38 @@ final class CallRecordingController: ObservableObject {
                 run: TranscriptionRun.from(settings().transcriptionSource,
                                            language: settings().transcriptionLanguage),
                 at: now())
-            // Read at the decision, not when the stop began: a `shutdown()` that landed on
-            // this stop while it was in flight must still leave the row incomplete.
-            let quit = pendingQuit
-            pendingQuit = false
-            if quit {
-                try await store.setStatus(.incomplete,
-                                          reason: TranscriptLibraryController.abandonedJobReason,
-                                          for: id)
-            } else {
-                transcribe(id)
-            }
-            transcriptsChanged()
         } catch {
-            // The recording is finalised and its files are kept; only the row is missing.
+            // The manifest is still `recording` on disk, so launch recovery picks the recording
+            // up: the row is what is missing, not the audio.
             endStop(error)
             return
         }
+
+        manifest.status = .finished
+        do {
+            try manifest.write(to: folder)
+        } catch {
+            // The row exists; the folder stays `recording` and launch recovery finalises it.
+            remember(error)
+        }
+
+        // Read at the decision, not when the stop began: a `shutdown()` that landed on
+        // this stop while it was in flight must still leave the row incomplete.
+        let quit = pendingQuit
+        pendingQuit = false
+        if quit {
+            do {
+                try await store.setStatus(.incomplete,
+                                          reason: TranscriptLibraryController.abandonedJobReason,
+                                          for: id)
+            } catch {
+                // The row is there; the next launch's abandoned-job pass repairs its status.
+                remember(error)
+            }
+        } else {
+            transcribe(id)
+        }
+        transcriptsChanged()
         endStop()
     }
 

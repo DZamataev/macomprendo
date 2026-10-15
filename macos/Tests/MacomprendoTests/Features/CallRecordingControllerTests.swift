@@ -120,6 +120,8 @@ private func tempDirectory() throws -> URL {
         let folders: FakeCallRecordingFolders
         let permissions: FakePermissions
         let store: FakeTranscriptStore
+        /// What the controller writes rows through, so a test can arm a failing `create`.
+        let storeCreateFailure: CreateFailingTranscriptStore
         let bookmarks: FakeFileBookmarks
         let settings: SettingsHolder
         let writers: WriterBook
@@ -133,6 +135,7 @@ private func tempDirectory() throws -> URL {
         init(orderLogging: Bool = false,
              finishGate: AsyncGate? = nil,
              secondWriterError: MacomprendoError? = nil,
+             createFailure: MacomprendoError? = nil,
              tick: Duration = .milliseconds(1)) throws {
             let root = try tempDirectory()
             let microphone = ScriptedCallCapture()
@@ -140,6 +143,8 @@ private func tempDirectory() throws -> URL {
             let folders = FakeCallRecordingFolders(realDirectoryRoot: root)
             let permissions = FakePermissions()
             let store = FakeTranscriptStore()
+            let storeCreateFailure = CreateFailingTranscriptStore(wrapping: store)
+            if let createFailure { storeCreateFailure.failNextCreateOnce(createFailure) }
             let bookmarks = FakeFileBookmarks()
             let settings = SettingsHolder()
             let writers = WriterBook()
@@ -178,7 +183,7 @@ private func tempDirectory() throws -> URL {
                 folders: folders,
                 makeWriter: factory,
                 permissions: permissions,
-                store: store,
+                store: storeCreateFailure,
                 bookmarks: bookmarks,
                 settings: { settings.value },
                 clock: { clockValue.value },
@@ -193,6 +198,7 @@ private func tempDirectory() throws -> URL {
             self.folders = folders
             self.permissions = permissions
             self.store = store
+            self.storeCreateFailure = storeCreateFailure
             self.bookmarks = bookmarks
             self.settings = settings
             self.writers = writers
@@ -523,6 +529,30 @@ private func tempDirectory() throws -> URL {
         let createCount = await rig.store.createCount
         #expect(createCount == 1)
         #expect(rig.transcribes.value == [1])
+    }
+
+    /// The row comes before the `.finished` manifest: a row that cannot be written must leave the
+    /// recording `recording` for launch recovery to pick up — never finished with nothing
+    /// pointing at it.
+    @Test func aFailedTranscriptRowLeavesTheRecordingForLaunchRecovery() async throws {
+        let rig = try Rig(createFailure: .transcriptStore("the disk is full"))
+        await startRecording(rig)
+        let folder = try #require(rig.folders.folders.first)
+
+        await rig.controller.stop()
+
+        #expect(rig.controller.state == .failed(
+            ErrorText.describe(MacomprendoError.transcriptStore("the disk is full"))))
+        #expect(rig.microphone.stopCount == 1)
+        #expect(rig.systemAudio.stopCount == 1)
+        #expect(rig.meWriter?.finished == true)
+        #expect(rig.othersWriter?.finished == true)
+        #expect(try CallRecordingManifest.read(from: folder).status == .recording)
+        let createCount = await rig.store.createCount
+        #expect(createCount == 0)
+        #expect(rig.transcribes.value.isEmpty)
+        #expect(rig.changes.value == 0)
+        #expect(rig.folders.removed.isEmpty)
     }
 
     @Test func shutdownLeavesAnIncompleteRowAndNoJob() async throws {

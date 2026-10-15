@@ -12,6 +12,12 @@ enum CallRecordingLayout {
             .appendingPathComponent("Recordings", isDirectory: true)
     }
 
+    /// The recordings directory `settings` names, else the default. The recorder and launch
+    /// recovery resolve it the same way, so they cannot drift apart.
+    static func directory(for settings: Settings) -> URL {
+        settings.callRecordingsDirectory.map { URL(fileURLWithPath: $0) } ?? defaultDirectory
+    }
+
     /// `rec 2026-10-15 16-42-07`, in local time. Hyphens where a clock has colons: a colon is
     /// shown as “/” by Finder and is illegal on some volumes (SMB, FAT).
     static func baseName(startedAt: Date, timeZone: TimeZone = .current) -> String {

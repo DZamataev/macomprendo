@@ -28,10 +28,11 @@ struct CallRecordingRecovery {
     }
 
     /// Finalises every `.recording` folder and gives each one without a transcript an
-    /// `incomplete` call transcript. Returns how many incomplete transcripts it created.
+    /// `incomplete` call transcript. Returns how many call transcripts it created.
     @discardableResult
     func recover() async -> Int {
-        let unfinished = folders.unfinishedRecordings(in: recordingsDirectory)
+        let unfinished = folders.unfinishedRecordings(
+            in: CallRecordingLayout.directory(for: settings()))
         guard !unfinished.isEmpty else { return 0 }
         // Creating a row means knowing which folders already have one. Without that list a row
         // could be duplicated, so leave every folder `recording` for a later launch to retry.
@@ -46,43 +47,75 @@ struct CallRecordingRecovery {
         return created
     }
 
-    private var recordingsDirectory: URL {
-        settings().callRecordingsDirectory.map { URL(fileURLWithPath: $0) }
-            ?? CallRecordingLayout.defaultDirectory
-    }
-
     /// Finalises one folder and, when no transcript points at it, gives it an `incomplete` row.
-    /// Returns whether an incomplete transcript was created.
+    /// Returns whether a call transcript was created: a row counts from the moment it exists, so
+    /// one whose status will not write is still counted and the next launch's abandoned-job pass
+    /// repairs it.
+    ///
+    /// The row comes first and the `.finished` manifest second, the same order the recorder uses.
+    /// The other order loses a recording for good: a `create` that fails, or a crash in that
+    /// window, would leave the folder `finished` with no transcript pointing at it, and nothing
+    /// sweeps for those. This way the folder stays `recording` and the next launch finalises it
+    /// and creates no second row.
     private func recover(_ folder: URL, knownTo known: Set<String>) async -> Bool {
         let manifest: CallRecordingManifest
         do {
             manifest = try CallRecordingManifest.read(from: folder)
-            var finished = manifest
-            finished.status = .finished
-            try finished.write(to: folder)
         } catch {
-            Log.app.error("Call recording recovery could not finalise a recording")
+            Log.app.error("Call recording recovery could not read a recording")
             return false
         }
-        guard !known.contains(folder.standardizedFileURL.path) else { return false }
+        if known.contains(folder.standardizedFileURL.path) {
+            finalise(manifest, in: folder)
+            return false
+        }
+        // A row whose bookmark cannot be made is one the library could not find again on the next
+        // launch either, so the folder would collect a second row. Leave it `recording` to retry.
+        let bookmark: Data
         do {
-            let id = try await store.create(
+            bookmark = try bookmarks.bookmark(for: folder)
+        } catch {
+            Log.app.error("Call recording recovery could not bookmark a recording")
+            return false
+        }
+        let id: Int64
+        do {
+            id = try await store.create(
                 sourceKind: .call,
                 title: CallRecordingLayout.transcriptTitle(startedAt: manifest.startedAt),
-                sourceBookmark: try? bookmarks.bookmark(for: folder),
+                sourceBookmark: bookmark,
                 duration: nil,
                 run: TranscriptionRun.from(settings().transcriptionSource,
                                            language: settings().transcriptionLanguage),
                 at: now())
+        } catch {
+            // Nothing points at the folder yet, so it stays `recording` and the next launch
+            // recovers it: the row is what is missing, not the audio.
+            Log.app.error("Call recording recovery could not store a transcript for a recording")
+            return false
+        }
+        do {
             try await store.setStatus(.incomplete,
                                       reason: TranscriptLibraryController.abandonedJobReason,
                                       for: id)
-            return true
         } catch {
-            // The folder is finalised and its files are kept; only the row is missing. A row this
-            // left `inProgress` is what the next launch's abandoned-job pass repairs.
-            Log.app.error("Call recording recovery could not store a transcript for a recording")
-            return false
+            // The row is there; a status left `inProgress` is what the next launch's
+            // abandoned-job pass repairs.
+            Log.app.error("Call recording recovery could not mark a transcript incomplete")
+        }
+        finalise(manifest, in: folder)
+        return true
+    }
+
+    /// Writes the manifest `.finished`. A failure leaves the folder `recording`, which is safe:
+    /// the row exists by now, so the next launch finalises it and creates no second one.
+    private func finalise(_ manifest: CallRecordingManifest, in folder: URL) {
+        var finished = manifest
+        finished.status = .finished
+        do {
+            try finished.write(to: folder)
+        } catch {
+            Log.app.error("Call recording recovery could not finalise a recording")
         }
     }
 
