@@ -35,6 +35,10 @@ final class FakeAudioInputEngine: AudioInputEngine, @unchecked Sendable {
     var selectedDevices: [AudioDeviceID] { lock.withLock { _selectedDevices } }
     var currentInputDevice: AudioDeviceID? { lock.withLock { _currentInputDevice } }
     var hasTap: Bool { lock.withLock { tap != nil } }
+    /// The installed tap block. Calling it directly replays a buffer that was already in
+    /// flight on the audio thread when a capture's `stop()` removed the tap — the case
+    /// `deliver(level:frames:)` cannot stage, because the engine is stopped by then.
+    var installedTap: ((AVAudioPCMBuffer) -> Void)? { lock.withLock { tap } }
 
     init(sampleRate: Double = 48_000) {
         _inputFormat = Self.monoFormat(sampleRate)
@@ -98,5 +102,12 @@ final class FakeAudioInputEngine: AudioInputEngine, @unchecked Sendable {
         buffer.frameLength = AVAudioFrameCount(frames)
         for frame in 0..<frames { buffer.floatChannelData![0][frame] = level }
         tap(buffer)
+    }
+
+    /// Feeds one prebuilt buffer through the tap in its own format — for a buffer the
+    /// engine-format builder above cannot make, such as a 44.1 kHz stereo one.
+    func deliver(_ buffer: AVAudioPCMBuffer) {
+        let tap: ((AVAudioPCMBuffer) -> Void)? = lock.withLock { _isRunning ? self.tap : nil }
+        tap?(buffer)
     }
 }
