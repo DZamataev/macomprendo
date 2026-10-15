@@ -56,7 +56,7 @@ import Testing
     /// arrive before any `transcriptsChanged` reload: the window reloads once so the row shows.
     @Test func aRunningJobWhoseRowIsMissingReloadsTheList() {
         let state = FileTranscriptionController.State.running(
-            transcriptID: 7, title: "lecture.mp3", position: 0, duration: 10)
+            transcriptID: 7, title: "lecture.mp3", position: 0, duration: 10, speaker: nil)
         #expect(TranscriptsView.listEffect(for: state, headers: []) == .reload)
         #expect(TranscriptsView.listEffect(for: state, headers: [header(id: 7)]) == .none)
         #expect(TranscriptsView.listEffect(for: state, headers: [header(id: 8)]) == .reload)

@@ -4,6 +4,12 @@ import Testing
 
 @MainActor
 @Suite struct FileTranscriptionControllerTests {
+    /// One `callFinished` the controller reported.
+    private struct CallFinished: Equatable {
+        let transcriptID: Int64
+        let title: String
+    }
+
     private struct Rig {
         let controller: FileTranscriptionController
         let store: FakeTranscriptStore
@@ -13,6 +19,8 @@ import Testing
         let settings: SettingsHolder
         /// How many times the controller said the transcript list changed.
         let changes: Box<Int>
+        /// Every `callFinished` the controller reported: the id and title of a completed call.
+        let calls: Box<[CallFinished]>
         let createdAt: Date
     }
 
@@ -53,6 +61,7 @@ import Testing
         let store = FakeTranscriptStore()
         let settings = SettingsHolder()
         let changes = Box(0)
+        let calls = Box<[CallFinished]>([])
         let controller = FileTranscriptionController(
             store: store,
             bookmarks: bookmarks,
@@ -64,10 +73,13 @@ import Testing
             glossary: glossary,
             readiness: readiness,
             now: { Self.fixedNow },
-            transcriptsChanged: { changes.value += 1 })
+            transcriptsChanged: { changes.value += 1 },
+            callFinished: { id, title in
+                calls.value.append(CallFinished(transcriptID: id, title: title))
+            })
         return Rig(controller: controller, store: store, decoder: decoder,
                    segmenter: segmenter, provider: provider, settings: settings,
-                   changes: changes, createdAt: Self.fixedNow)
+                   changes: changes, calls: calls, createdAt: Self.fixedNow)
     }
 
     // MARK: - A fresh job
@@ -117,7 +129,7 @@ import Testing
         rig.controller.transcribe(fileAt: Self.fileURL)
         await waitFor("the first chunk's position to reach the state") {
             rig.controller.state == .running(transcriptID: 1, title: "podcast.mp3",
-                                             position: 1, duration: 10)
+                                             position: 1, duration: 10, speaker: nil)
         }
 
         gate.open()
@@ -189,7 +201,7 @@ import Testing
         await waitFor("the first segment to land and the second to reach the provider") {
             gate.waiterCount == 1
                 && rig.controller.state == .running(transcriptID: 1, title: "podcast.mp3",
-                                                    position: 1, duration: 10)
+                                                    position: 1, duration: 10, speaker: nil)
         }
 
         rig.controller.cancel()
@@ -226,7 +238,7 @@ import Testing
         await waitFor("the first job to reach the provider") {
             gate.waiterCount == 1
                 && rig.controller.state == .running(transcriptID: 1, title: "first.mp3",
-                                                    position: 0, duration: 10)
+                                                    position: 0, duration: 10, speaker: nil)
         }
 
         rig.controller.transcribe(fileAt: URL(fileURLWithPath: "/files/second.mp3"))
@@ -259,7 +271,7 @@ import Testing
         await waitFor("the first job to reach the provider") {
             gate.waiterCount == 1
                 && rig.controller.state == .running(transcriptID: 1, title: "first.mp3",
-                                                    position: 0, duration: 10)
+                                                    position: 0, duration: 10, speaker: nil)
         }
 
         // The second job fails before it starts anything; the first job's cancellation lands
@@ -477,7 +489,7 @@ import Testing
 
         rig.controller.resume(transcriptID: id)
         await waitFor("the resumed job to be running") {
-            if case let .running(transcriptID, title, _, _) = rig.controller.state {
+            if case let .running(transcriptID, title, _, _, _) = rig.controller.state {
                 return transcriptID == id && title == "meeting.m4a"
             }
             return false
@@ -575,7 +587,7 @@ import Testing
 
         rig.controller.resume(transcriptID: id, fileAt: URL(fileURLWithPath: chosen))
         await waitFor("the resumed job to be running") {
-            if case let .running(transcriptID, _, _, _) = rig.controller.state {
+            if case let .running(transcriptID, _, _, _, _) = rig.controller.state {
                 return transcriptID == id
             }
             return false
@@ -635,6 +647,7 @@ import Testing
         #expect(rig.controller.state == .failed(
             message: ErrorText.describe(MacomprendoError.sourceFileUnavailable), transcriptID: id))
         #expect(rig.controller.canChooseSourceFile)
+        #expect(!rig.controller.canChooseRecordingFolder)
     }
 
     @Test func anotherFailureDoesNotOfferChoosingTheFile() async {
@@ -649,6 +662,381 @@ import Testing
             message: ErrorText.describe(MacomprendoError.mediaUnreadable("no audio track")),
             transcriptID: nil))
         #expect(!rig.controller.canChooseSourceFile)
+    }
+
+    // MARK: - Call jobs
+
+    private static let callTitle = "Call 2026-10-15 16:42"
+
+    /// A recording folder on disk: a manifest whose tracks start at `me`/`others` and — with
+    /// `tracks` — an empty file for each track it names. The audio is scripted; only the
+    /// folder's shape is real.
+    private func makeRecordingFolder(me: TimeInterval? = 0, others: TimeInterval? = 0,
+                                     tracks: Bool = true) throws -> URL {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macomprendo-call-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var manifest = CallRecordingManifest(startedAt: Self.fixedNow,
+                                             folderName: folder.lastPathComponent)
+        if let me { manifest.setStartOffset(me, for: .me) }
+        if let others { manifest.setStartOffset(others, for: .others) }
+        manifest.status = .finished
+        try manifest.write(to: folder)
+        if tracks {
+            for speaker in TranscriptSpeaker.allCases {
+                guard let file = manifest.track(speaker)?.file else { continue }
+                try Data().write(to: folder.appendingPathComponent(file))
+            }
+        }
+        return folder
+    }
+
+    private func trackURL(_ folder: URL, _ speaker: TranscriptSpeaker) -> URL {
+        folder.appendingPathComponent(
+            CallRecordingLayout.trackFileName(folderName: folder.lastPathComponent,
+                                              track: speaker))
+    }
+
+    /// The row Task 8's recorder leaves for the job: a `.call` transcript bookmarked to its
+    /// recording folder, `incomplete` once the job that created it stopped.
+    private func makeCallRow(in rig: Rig, folder: URL,
+                             segments: [TranscriptSegment] = []) async throws -> Int64 {
+        let id = await rig.store.create(sourceKind: .call, title: Self.callTitle,
+                                        sourceBookmark: Data(folder.path.utf8), duration: 60,
+                                        run: TranscriptionRun.from(
+                                            rig.settings.value.transcriptionSource,
+                                            language: nil),
+                                        at: Self.fixedNow)
+        for segment in segments {
+            try await rig.store.appendSegment(segment, to: id)
+        }
+        try await rig.store.setStatus(.incomplete, reason: "Cancelled.", for: id)
+        return id
+    }
+
+    @Test func aCallTranscribesMeThenOthers() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let decoder = ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)])
+        let segmenter = ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]])
+        let provider = FakeTranscriptionProvider()
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([
+                              Self.pipeline(decoder: decoder, segmenter: segmenter,
+                                            provider: provider),
+                              Self.pipeline(decoder: decoder, segmenter: segmenter,
+                                            provider: provider)]))
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .finished(transcriptID: id))
+        #expect(decoder.requests.map(\.url) == [trackURL(folder, .me),
+                                                trackURL(folder, .others)])
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.segments == [
+            TranscriptSegment(start: 0.2, end: 1.2, text: "hello", speaker: .me),
+            TranscriptSegment(start: 0.5, end: 1.5, text: "hello", speaker: .others),
+        ])
+    }
+
+    @Test func callSegmentsAreShiftedOntoTheCallsClockAndCarryTheirSpeaker() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let meProvider = FakeTranscriptionProvider()
+        meProvider.result = .success("me says")
+        let othersProvider = FakeTranscriptionProvider()
+        othersProvider.result = .success("they say")
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([
+                              Self.pipeline(
+                                  decoder: ScriptedMediaDecoder(
+                                      duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                                  segmenter: ScriptedSegmenter(
+                                      acceptScript: [[Self.segment(start: 0)]]),
+                                  provider: meProvider),
+                              Self.pipeline(
+                                  decoder: ScriptedMediaDecoder(
+                                      duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                                  segmenter: ScriptedSegmenter(
+                                      acceptScript: [[Self.segment(start: 10)]]),
+                                  provider: othersProvider)]))
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.segments == [
+            TranscriptSegment(start: 0.2, end: 1.2, text: "me says", speaker: .me),
+            TranscriptSegment(start: 10.5, end: 11.5, text: "they say", speaker: .others),
+        ])
+        #expect(stored?.header.status == .complete)
+    }
+
+    @Test func aCallJobReportsEachTrackThenFinishes() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let meGate = AsyncGate()
+        let meProvider = FakeTranscriptionProvider()
+        meProvider.gate = meGate
+        let othersGate = AsyncGate()
+        let othersProvider = FakeTranscriptionProvider()
+        othersProvider.gate = othersGate
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([
+                              Self.pipeline(
+                                  decoder: ScriptedMediaDecoder(
+                                      duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                                  segmenter: ScriptedSegmenter(
+                                      acceptScript: [[Self.segment(start: 0)]]),
+                                  provider: meProvider),
+                              Self.pipeline(
+                                  decoder: ScriptedMediaDecoder(
+                                      duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                                  segmenter: ScriptedSegmenter(
+                                      acceptScript: [[Self.segment(start: 0)]]),
+                                  provider: othersProvider)]))
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await waitFor("Me's track to be running") {
+            rig.controller.state == .running(transcriptID: id, title: Self.callTitle,
+                                             position: 0.2, duration: 10.2, speaker: .me)
+        }
+
+        meGate.open()
+        await waitFor("Others' track to be running") {
+            rig.controller.state == .running(transcriptID: id, title: Self.callTitle,
+                                             position: 0.5, duration: 10.5, speaker: .others)
+        }
+
+        othersGate.open()
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .finished(transcriptID: id))
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .complete)
+        #expect(rig.calls.value == [CallFinished(transcriptID: id, title: Self.callTitle)])
+    }
+
+    @Test func onlyOthersHavingSpeechStillCompletes() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([
+                              Self.pipeline(
+                                  decoder: ScriptedMediaDecoder(
+                                      duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                                  segmenter: ScriptedSegmenter(),
+                                  provider: FakeTranscriptionProvider()),
+                              Self.pipeline(
+                                  decoder: ScriptedMediaDecoder(
+                                      duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                                  segmenter: ScriptedSegmenter(
+                                      acceptScript: [[Self.segment(start: 0)]]),
+                                  provider: FakeTranscriptionProvider())]))
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .finished(transcriptID: id))
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .complete)
+        #expect(stored?.segments == [
+            TranscriptSegment(start: 0.5, end: 1.5, text: "hello", speaker: .others),
+        ])
+    }
+
+    @Test func noSpeechInEitherTrackDeletesTheTranscriptAndFails() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let meDecoder = ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)])
+        let othersDecoder = ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)])
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([
+                              Self.pipeline(decoder: meDecoder, segmenter: ScriptedSegmenter(),
+                                            provider: FakeTranscriptionProvider()),
+                              Self.pipeline(decoder: othersDecoder, segmenter: ScriptedSegmenter(),
+                                            provider: FakeTranscriptionProvider())]))
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .failed(
+            message: ErrorText.describe(MacomprendoError.noSpeechFound), transcriptID: nil))
+        #expect(await rig.store.snapshot(id) == nil)
+        #expect(rig.calls.value.isEmpty)
+        // Both tracks were transcribed: the recording holds no speech, and that is the failure.
+        #expect(!meDecoder.requests.isEmpty)
+        #expect(!othersDecoder.requests.isEmpty)
+    }
+
+    @Test func aCallResumeContinuesTheHalfDoneTrackThenTheRest() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let meDecoder = ScriptedMediaDecoder(duration: 60, chunks: [Self.chunk(seconds: 1)])
+        let othersDecoder = ScriptedMediaDecoder(duration: 60, chunks: [Self.chunk(seconds: 1)])
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([
+                              Self.pipeline(
+                                  decoder: meDecoder,
+                                  segmenter: ScriptedSegmenter(
+                                      acceptScript: [[Self.segment(start: 0)]]),
+                                  provider: FakeTranscriptionProvider()),
+                              Self.pipeline(
+                                  decoder: othersDecoder,
+                                  segmenter: ScriptedSegmenter(
+                                      acceptScript: [[Self.segment(start: 0)]]),
+                                  provider: FakeTranscriptionProvider())]))
+        let id = try await makeCallRow(in: rig, folder: folder, segments: [
+            TranscriptSegment(start: 11, end: 12, text: "earlier", speaker: .me),
+        ])
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        // Me ended at 12.0 on the call's clock, 0.2 into its own file: it resumes at 11.8.
+        #expect(meDecoder.requests.map(\.start) == [11.8])
+        #expect(othersDecoder.requests.map(\.start) == [0])
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.segments == [
+            TranscriptSegment(start: 11, end: 12, text: "earlier", speaker: .me),
+            TranscriptSegment(start: 12, end: 13, text: "hello", speaker: .me),
+            TranscriptSegment(start: 0.5, end: 1.5, text: "hello", speaker: .others),
+        ])
+        #expect(stored?.header.status == .complete)
+    }
+
+    @Test func aCallResumeWithAnUnresolvableBookmarkOffersTheFolder() async throws {
+        let missing = "/Volumes/gone/rec 2026-10-15 16-42-07"
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          bookmarks: FakeFileBookmarks(missing: [missing]))
+        let id = try await makeCallRow(in: rig, folder: URL(fileURLWithPath: missing))
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .failed(
+            message: ErrorText.describe(MacomprendoError.callRecordingUnavailable),
+            transcriptID: id))
+        #expect(rig.controller.canChooseRecordingFolder)
+        #expect(!rig.controller.canChooseSourceFile)
+        #expect(rig.decoder.requests.isEmpty)
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == "Cancelled.")
+    }
+
+    @Test func aCallResumeWithAMissingTrackFileFailsTheSameWay() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5, tracks: false)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter())
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .failed(
+            message: ErrorText.describe(MacomprendoError.callRecordingUnavailable),
+            transcriptID: id))
+        #expect(rig.controller.canChooseRecordingFolder)
+        #expect(rig.decoder.requests.isEmpty)
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == "Cancelled.")
+    }
+
+    @Test func choosingTheRecordingFolderReplacesTheStaleBookmark() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let stale = "/Volumes/gone/rec old"
+        let meDecoder = ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)])
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          bookmarks: FakeFileBookmarks(missing: [stale]),
+                          pipelines: PipelineScript([
+                              Self.pipeline(
+                                  decoder: meDecoder,
+                                  segmenter: ScriptedSegmenter(
+                                      acceptScript: [[Self.segment(start: 0)]]),
+                                  provider: FakeTranscriptionProvider()),
+                              Self.pipeline(
+                                  decoder: ScriptedMediaDecoder(
+                                      duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                                  segmenter: ScriptedSegmenter(),
+                                  provider: FakeTranscriptionProvider())]))
+        let id = try await makeCallRow(in: rig, folder: URL(fileURLWithPath: stale))
+
+        rig.controller.resume(transcriptID: id, fileAt: folder)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .finished(transcriptID: id))
+        #expect(meDecoder.requests.map(\.url) == [trackURL(folder, .me)])
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.sourceBookmark == Data(folder.path.utf8))
+        #expect(stored?.header.status == .complete)
+    }
+
+    @Test func choosingAFolderWithoutAManifestKeepsTheBookmarkAndFails() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let empty = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macomprendo-empty-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: empty) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter())
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id, fileAt: empty)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .failed(
+            message: ErrorText.describe(MacomprendoError.callRecordingUnavailable),
+            transcriptID: id))
+        #expect(rig.controller.canChooseRecordingFolder)
+        #expect(rig.decoder.requests.isEmpty)
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.sourceBookmark == Data(folder.path.utf8))
+        #expect(stored?.header.status == .incomplete)
+    }
+
+    @Test func cancellingACallJobMarksTheRowIncomplete() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let gate = AsyncGate()
+        let meProvider = FakeTranscriptionProvider()
+        meProvider.gate = gate
+        let othersDecoder = ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)])
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([
+                              Self.pipeline(
+                                  decoder: ScriptedMediaDecoder(
+                                      duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                                  segmenter: ScriptedSegmenter(
+                                      acceptScript: [[Self.segment(start: 0)]]),
+                                  provider: meProvider),
+                              Self.pipeline(
+                                  decoder: othersDecoder,
+                                  segmenter: ScriptedSegmenter(
+                                      acceptScript: [[Self.segment(start: 0)]]),
+                                  provider: FakeTranscriptionProvider())]))
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await waitFor("Me's track to reach the provider") { gate.waiterCount == 1 }
+
+        rig.controller.cancel()
+        gate.open()
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .idle)
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == "Cancelled.")
+        #expect(othersDecoder.requests.isEmpty)
     }
 
     // MARK: - The shown failure

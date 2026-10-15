@@ -1,7 +1,8 @@
 import Foundation
 
-/// Transcribes one audio or video file at a time through the long-audio pipeline, writing each
-/// segment into the transcript store as it lands and reporting progress as one `State`.
+/// Transcribes one source at a time through the long-audio pipeline, writing each segment into
+/// the transcript store as it lands and reporting progress as one `State`: a file in one run,
+/// a call recording as its two tracks in turn, shifted onto one clock and labelled by speaker.
 ///
 /// Only one job runs at a time: a new `transcribe` or `resume` cancels the running one and the
 /// cancelled job's row is left `incomplete` with the reason (`"Cancelled."` for a cancellation).
@@ -14,7 +15,7 @@ import Foundation
     enum State: Equatable {
         case idle
         case running(transcriptID: Int64, title: String, position: TimeInterval,
-                     duration: TimeInterval)
+                     duration: TimeInterval, speaker: TranscriptSpeaker?)
         case finished(transcriptID: Int64)
         case failed(message: String, transcriptID: Int64?)
     }
@@ -23,8 +24,9 @@ import Foundation
 
     private enum Job: Sendable {
         case transcribe(url: URL)
-        /// `fileAt` is the URL the user chose after the stored bookmark stopped resolving;
-        /// `nil` means resolve the bookmark.
+        /// `fileAt` is the source the user chose after the stored bookmark stopped resolving:
+        /// a file for a file transcript, a recording folder for a call one. `nil` means
+        /// resolve the bookmark.
         case resume(transcriptID: Int64, fileAt: URL?)
     }
 
@@ -36,6 +38,9 @@ import Foundation
     private let readiness: @MainActor () -> BackendReadiness
     private let now: () -> Date
     private let transcriptsChanged: @MainActor () -> Void
+    /// Reports a finished call transcript — both tracks landed and the row is `complete`, so
+    /// the two cannot be told apart by the row alone. File jobs never call it.
+    private let callFinished: @MainActor (_ transcriptID: Int64, _ title: String) -> Void
 
     private var jobTask: Task<Void, Never>?
     /// Bumped whenever a new job supersedes the running one. A job writes `state` only while its
@@ -53,7 +58,8 @@ import Foundation
          glossary: @escaping @MainActor () -> Glossary,
          readiness: @escaping @MainActor () -> BackendReadiness,
          now: @escaping () -> Date = Date.init,
-         transcriptsChanged: @escaping @MainActor () -> Void = {}) {
+         transcriptsChanged: @escaping @MainActor () -> Void = {},
+         callFinished: @escaping @MainActor (_ transcriptID: Int64, _ title: String) -> Void = { _, _ in }) {
         self.store = store
         self.bookmarks = bookmarks
         self.pipeline = pipeline
@@ -62,6 +68,7 @@ import Foundation
         self.readiness = readiness
         self.now = now
         self.transcriptsChanged = transcriptsChanged
+        self.callFinished = callFinished
     }
 
     /// Starts a job for `url`, cancelling any job already running. A backend that is not ready
@@ -77,18 +84,18 @@ import Foundation
         }
     }
 
-    /// Continues an `incomplete` transcript from the end of its last stored segment, cancelling
-    /// any job already running.
+    /// Continues an `incomplete` transcript from the end of its last stored segment — for a
+    /// call, the end of its last track's last segment — cancelling any job already running.
     func resume(transcriptID: Int64) {
         guard !isShuttingDown else { return }
         let previous = supersede()
         start(.resume(transcriptID: transcriptID, fileAt: nil), after: previous)
     }
 
-    /// Continues an `incomplete` transcript from the end of its last stored segment, using
-    /// `url` as its source instead of the stored bookmark — the path the window offers when
-    /// the bookmark no longer resolves. A fresh bookmark for `url` replaces the stale one,
-    /// so the next `Resume` finds the file again.
+    /// Continues an `incomplete` transcript, using `url` as its source instead of the stored
+    /// bookmark — the path the window offers when the bookmark no longer resolves: the source
+    /// file for a file transcript, the recording folder for a call one. A fresh bookmark for
+    /// `url` replaces the stale one, so the next `Resume` finds the source again.
     func resume(transcriptID: Int64, fileAt url: URL) {
         guard !isShuttingDown else { return }
         let previous = supersede()
@@ -123,6 +130,14 @@ import Foundation
     var canChooseSourceFile: Bool {
         guard case let .failed(message, _) = state else { return false }
         return message == ErrorText.describe(MacomprendoError.sourceFileUnavailable)
+    }
+
+    /// `true` when the shown failure is a call `Resume` whose recording folder or a track file
+    /// cannot be found or read — the one failure the window answers with **Choose Folder…**.
+    /// Derived from the message like `canChooseSourceFile`, for the same reason.
+    var canChooseRecordingFolder: Bool {
+        guard case let .failed(message, _) = state else { return false }
+        return message == ErrorText.describe(MacomprendoError.callRecordingUnavailable)
     }
 
     /// Drops a shown failure. The window calls it when the user moves to another transcript;
@@ -176,33 +191,40 @@ import Foundation
                 return
             }
             try Task.checkCancellation()
-            let url: URL
-            if let chosenURL {
-                // The user picked the source file again: it becomes the row's source before
-                // any decoding starts, so a job that fails later still leaves `Resume` a
-                // bookmark that resolves. A bookmark that cannot be made fails the job —
-                // without it the row would ask for the file again.
-                try await store.setSourceBookmark(try bookmarks.bookmark(for: chosenURL), for: id)
-                url = chosenURL
-            } else {
-                do {
-                    guard let bookmark = transcript.sourceBookmark else {
-                        throw MacomprendoError.sourceFileUnavailable
+            switch transcript.header.sourceKind {
+            case .file:
+                let url: URL
+                if let chosenURL {
+                    // The user picked the source file again: it becomes the row's source before
+                    // any decoding starts, so a job that fails later still leaves `Resume` a
+                    // bookmark that resolves. A bookmark that cannot be made fails the job —
+                    // without it the row would ask for the file again.
+                    try await store.setSourceBookmark(try bookmarks.bookmark(for: chosenURL),
+                                                      for: id)
+                    url = chosenURL
+                } else {
+                    do {
+                        guard let bookmark = transcript.sourceBookmark else {
+                            throw MacomprendoError.sourceFileUnavailable
+                        }
+                        url = try bookmarks.resolve(bookmark)
+                    } catch {
+                        // The row keeps the reason it stopped with; only the state reports that
+                        // the source cannot be found.
+                        fail(ErrorText.describe(MacomprendoError.sourceFileUnavailable),
+                             transcriptID: id, generation: generation)
+                        return
                     }
-                    url = try bookmarks.resolve(bookmark)
-                } catch {
-                    // The row keeps the reason it stopped with; only the state reports that the
-                    // source cannot be found.
-                    fail(ErrorText.describe(MacomprendoError.sourceFileUnavailable),
-                         transcriptID: id, generation: generation)
-                    return
                 }
+                try Task.checkCancellation()
+                try await store.setStatus(.inProgress, reason: nil, for: id)
+                marked = true
+                await run(url: url, from: transcript.resumePosition, resuming: transcript,
+                          generation: generation)
+
+            case .call:
+                await resumeCall(transcript, id: id, folderAt: chosenURL, generation: generation)
             }
-            try Task.checkCancellation()
-            try await store.setStatus(.inProgress, reason: nil, for: id)
-            marked = true
-            await run(url: url, from: transcript.resumePosition, resuming: transcript,
-                      generation: generation)
         } catch {
             // A cancellation before the row is marked must not touch it: `Resume` was never
             // under way. Once marked, the row is this job's to finish.
@@ -210,69 +232,85 @@ import Foundation
         }
     }
 
+    /// The `.call` half of `resume`: finds the recording folder, plans what is left to
+    /// transcribe and runs it. Until the row is marked `inProgress` the job can still fail
+    /// without touching it — the folder, the manifest and every planned track file have to
+    /// check out first — so a `Resume` whose recording is not there leaves the row exactly as
+    /// it was and reports the failure the window answers with **Choose Folder…**.
+    private func resumeCall(_ transcript: Transcript, id: Int64, folderAt chosenURL: URL?,
+                            generation: Int) async {
+        var marked = false
+        do {
+            let folder: URL?
+            if let chosenURL {
+                folder = chosenURL
+            } else {
+                folder = transcript.sourceBookmark.flatMap { try? bookmarks.resolve($0) }
+            }
+            // A folder that will not resolve, a `recording.json` that will not read, a track the
+            // manifest names but the disk no longer has: all the same failure to the user. The
+            // chosen folder replaces the stale bookmark only once it has proven it is one this
+            // build can resume, so choosing badly cannot cost a bookmark that still works.
+            guard let folder, let manifest = try? CallRecordingManifest.read(from: folder) else {
+                failCallRecordingUnavailable(id: id, generation: generation)
+                return
+            }
+            if chosenURL != nil {
+                try await store.setSourceBookmark(try bookmarks.bookmark(for: folder), for: id)
+            }
+            let steps = CallTranscriptionPlan.steps(manifest: manifest,
+                                                    stored: transcript.segments)
+            guard steps.allSatisfy({ FileManager.default.fileExists(
+                atPath: folder.appendingPathComponent($0.file).path) }) else {
+                failCallRecordingUnavailable(id: id, generation: generation)
+                return
+            }
+            try Task.checkCancellation()
+            try await store.setStatus(.inProgress, reason: nil, for: id)
+            marked = true
+            await runCall(folder: folder, steps: steps, resuming: transcript,
+                          generation: generation)
+        } catch {
+            await settle(error, transcriptID: marked ? id : nil, generation: generation)
+        }
+    }
+
+    private func failCallRecordingUnavailable(id: Int64, generation: Int) {
+        fail(ErrorText.describe(MacomprendoError.callRecordingUnavailable), transcriptID: id,
+             generation: generation)
+    }
+
+    /// Runs one file through the pipeline, creating its row as the file opens. `Resume` enters
+    /// here from the end of the last stored segment.
     private func run(url: URL, from start: TimeInterval, resuming: Transcript?,
                      generation: Int) async {
         let currentSettings = settings()
         let currentGlossary = currentSettings.glossaryEnabled ? glossary() : Glossary()
-        let currentPipeline = pipeline()
         let title = resuming?.header.title ?? url.lastPathComponent
-        var transcriptID = resuming?.id
-        var duration: TimeInterval = 0
-        var storedSegments = 0
+        let progress = JobProgress(transcriptID: resuming?.id)
+        let currentPipeline = pipeline()
         do {
-            // A job cancelled while it waited behind a superseded one must not even open the
-            // file: decoding starts only once this check has passed.
-            try Task.checkCancellation()
             // Best effort: a file that cannot be bookmarked still transcribes — only `Resume`
             // then loses its way back to the source.
             let bookmark = resuming == nil ? try? bookmarks.bookmark(for: url) : nil
-            // Cancelling this task — `cancel()`, a superseding job, `shutdown()` — must reach
-            // the pipeline as it happens, not when this code next runs: the producing task is
-            // what holds the provider, and it must not be free to start another segment in the
-            // gap between the cancellation and the loop unwinding.
-            try await withTaskCancellationHandler(operation: {
-                for try await event in currentPipeline.run(url, from: start) {
-                    try Task.checkCancellation()
-                    switch event {
-                    case let .opened(openedDuration):
-                        duration = openedDuration
-                        if resuming == nil {
-                            transcriptID = try await store.create(
-                                sourceKind: .file, title: url.lastPathComponent,
-                                sourceBookmark: bookmark, duration: openedDuration,
-                                run: TranscriptionRun.from(currentSettings.transcriptionSource,
-                                                           language: currentSettings.transcriptionLanguage),
-                                at: now())
-                        }
-                        guard generation == self.generation, let id = transcriptID else { continue }
-                        state = .running(transcriptID: id, title: title, position: start,
-                                         duration: openedDuration)
-
-                    case let .segment(segmentStart, segmentEnd, text):
-                        let normalised = currentSettings.glossaryEnabled
-                            ? Normalizer.normalise(text, with: currentGlossary)
-                            : NormalisationResult(text: text, rewrites: [])
-                        guard let id = transcriptID else { continue }
-                        try await store.appendSegment(
-                            TranscriptSegment(start: segmentStart, end: segmentEnd,
-                                              text: normalised.text,
-                                              rawText: normalised.rewrites.isEmpty ? nil : text),
-                            to: id)
-                        storedSegments += 1
-                        transcriptsChanged()
-
-                    case let .position(position):
-                        guard generation == self.generation, let id = transcriptID else { continue }
-                        state = .running(transcriptID: id, title: title, position: position,
-                                         duration: duration)
-                    }
-                }
-            }, onCancel: {
-                currentPipeline.stop()
-            })
+            try await consume(currentPipeline, url: url, from: start, title: title,
+                              progress: progress, generation: generation,
+                              settings: currentSettings, glossary: currentGlossary,
+                              createRow: resuming == nil
+                                  ? { openedDuration in
+                                      try await self.store.create(
+                                          sourceKind: .file, title: url.lastPathComponent,
+                                          sourceBookmark: bookmark,
+                                          duration: openedDuration,
+                                          run: TranscriptionRun.from(
+                                              currentSettings.transcriptionSource,
+                                              language: currentSettings.transcriptionLanguage),
+                                          at: self.now())
+                                    }
+                                  : nil)
             try Task.checkCancellation()
-            if let id = transcriptID {
-                if storedSegments == 0, resuming == nil {
+            if let id = progress.transcriptID {
+                if progress.storedSegments == 0, resuming == nil {
                     // Nothing worth keeping: the empty transcript goes away with the failure.
                     try await store.delete(id: id)
                     fail(ErrorText.describe(MacomprendoError.noSpeechFound), transcriptID: nil,
@@ -285,16 +323,156 @@ import Foundation
                 }
             }
         } catch {
-            await settle(error, transcriptID: transcriptID, generation: generation)
+            await settle(error, transcriptID: progress.transcriptID, generation: generation)
         }
-        // The job is not over when its event stream is: the pipeline's producing task holds the
-        // provider — and with it the local model's native context — until it ends. Stop it
-        // explicitly (the stream's own termination callback is not ordered against this point)
-        // and wait for it, so this job's task, and `shutdown()` waiting on it, end only once
-        // that reference is released. A superseding job therefore also cannot start while the
-        // job it replaced still holds the provider.
-        currentPipeline.stop()
-        await currentPipeline.awaitCompletion()
+        // A file job waits for its pipeline only once its row reads what it is going to read:
+        // settling must not be held up by a provider call still in flight.
+        await finish(currentPipeline)
+    }
+
+    /// Runs the tracks a call `Resume` still owes, each through its own pipeline and in the
+    /// plan's order. Zero segments in the whole transcript — this job's and any earlier run's —
+    /// means the recording held no speech worth keeping: the empty row goes away with the
+    /// failure, while the recording itself stays. Otherwise the row completes and `callFinished`
+    /// reports it, so the app can say the transcript is ready.
+    private func runCall(folder: URL, steps: [CallTranscriptionStep], resuming: Transcript,
+                         generation: Int) async {
+        let currentSettings = settings()
+        let currentGlossary = currentSettings.glossaryEnabled ? glossary() : Glossary()
+        let title = resuming.header.title
+        let progress = JobProgress(transcriptID: resuming.id)
+        var interrupted: LongAudioPipeline?
+        do {
+            for step in steps {
+                try Task.checkCancellation()
+                let pipeline = pipeline()
+                interrupted = pipeline
+                try await consume(pipeline, url: folder.appendingPathComponent(step.file),
+                                  from: step.from, timeShift: step.offset,
+                                  speaker: step.speaker, title: title, progress: progress,
+                                  generation: generation, settings: currentSettings,
+                                  glossary: currentGlossary)
+                // Each track's provider is released before the next track's pipeline starts.
+                await finish(pipeline)
+                interrupted = nil
+            }
+            try Task.checkCancellation()
+            if resuming.segments.count + progress.storedSegments == 0 {
+                try await store.delete(id: resuming.id)
+                fail(ErrorText.describe(MacomprendoError.noSpeechFound), transcriptID: nil,
+                     generation: generation)
+            } else {
+                try await store.setStatus(.complete, reason: nil, for: resuming.id)
+                if generation == self.generation {
+                    state = .finished(transcriptID: resuming.id)
+                    callFinished(resuming.id, title)
+                }
+            }
+        } catch {
+            await settle(error, transcriptID: progress.transcriptID, generation: generation)
+        }
+        // The interrupted track's provider is released only once the row's bookkeeping above
+        // has landed: settling must not be held up by a provider call still in flight.
+        if let interrupted {
+            await finish(interrupted)
+        }
+    }
+
+    /// The mutable bookkeeping of one running job, shared between the job's method and the
+    /// consumer that lands its events: the row it writes into, the current track's length on
+    /// its own clock, and how many segments this job has stored. A class, because the row a
+    /// file job creates mid-run has to reach the caller even when the consumer later throws —
+    /// that row is the job's to settle.
+    private final class JobProgress {
+        var transcriptID: Int64?
+        var duration: TimeInterval = 0
+        var storedSegments = 0
+
+        init(transcriptID: Int64?) {
+            self.transcriptID = transcriptID
+        }
+    }
+
+    /// Lands one pipeline run's events in the job's row: every segment is normalised and
+    /// appended, and the position is published as `.running`. A file job passes no shift and no
+    /// speaker; a call job a track's `startOffset` and speaker, so events land on the call's
+    /// clock. The caller stops and awaits the pipeline afterwards; on a throw this only stops
+    /// the producing task, so the row's bookkeeping is never held up by a provider call still
+    /// in flight.
+    private func consume(_ pipeline: LongAudioPipeline,
+                         url: URL, from start: TimeInterval,
+                         timeShift: TimeInterval = 0, speaker: TranscriptSpeaker? = nil,
+                         title: String, progress: JobProgress, generation: Int,
+                         settings: Settings, glossary: Glossary,
+                         createRow: ((TimeInterval) async throws -> Int64)? = nil) async throws {
+        do {
+            // A job cancelled while it waited behind a superseded one must not even open the
+            // file: decoding starts only once this check has passed.
+            try Task.checkCancellation()
+            // Cancelling this task — `cancel()`, a superseding job, `shutdown()` — must reach
+            // the pipeline as it happens, not when this code next runs: the producing task is
+            // what holds the provider, and it must not be free to start another segment in the
+            // gap between the cancellation and the loop unwinding.
+            try await withTaskCancellationHandler(operation: {
+                for try await event in pipeline.run(url, from: start) {
+                    try Task.checkCancellation()
+                    switch event {
+                    case let .opened(openedDuration):
+                        progress.duration = openedDuration
+                        if let createRow {
+                            progress.transcriptID = try await createRow(openedDuration)
+                        }
+                        guard generation == self.generation,
+                              let id = progress.transcriptID else { continue }
+                        state = .running(transcriptID: id, title: title,
+                                         position: start + timeShift,
+                                         duration: openedDuration + timeShift,
+                                         speaker: speaker)
+
+                    case let .segment(segmentStart, segmentEnd, text):
+                        let normalised = settings.glossaryEnabled
+                            ? Normalizer.normalise(text, with: glossary)
+                            : NormalisationResult(text: text, rewrites: [])
+                        guard let id = progress.transcriptID else { continue }
+                        try await store.appendSegment(
+                            TranscriptSegment(start: segmentStart + timeShift,
+                                              end: segmentEnd + timeShift,
+                                              text: normalised.text,
+                                              rawText: normalised.rewrites.isEmpty ? nil : text,
+                                              speaker: speaker),
+                            to: id)
+                        progress.storedSegments += 1
+                        transcriptsChanged()
+
+                    case let .position(position):
+                        guard generation == self.generation,
+                              let id = progress.transcriptID else { continue }
+                        state = .running(transcriptID: id, title: title,
+                                         position: position + timeShift,
+                                         duration: progress.duration + timeShift,
+                                         speaker: speaker)
+                    }
+                }
+            }, onCancel: {
+                pipeline.stop()
+            })
+            // A cancelled job's stream simply ends; without this it would go on to finish its
+            // row as if it had transcribed everything.
+            try Task.checkCancellation()
+        } catch {
+            pipeline.stop()
+            throw error
+        }
+    }
+
+    /// The job is not over when its event stream is: the pipeline's producing task holds the
+    /// provider — and with it the local model's native context — until it ends. Stop it
+    /// explicitly (the stream's own termination callback is not ordered against this point) and
+    /// wait for it, so this job's task, and `shutdown()` waiting on it, end only once that
+    /// reference is released; the next track's pipeline cannot start before this returns.
+    private func finish(_ pipeline: LongAudioPipeline) async {
+        pipeline.stop()
+        await pipeline.awaitCompletion()
     }
 
     // MARK: - Endings

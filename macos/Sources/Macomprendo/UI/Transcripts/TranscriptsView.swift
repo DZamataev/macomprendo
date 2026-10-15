@@ -163,7 +163,7 @@ struct TranscriptsView: View {
         VStack(alignment: .leading, spacing: 0) {
             header(transcript)
             Divider()
-            if case let .running(id, _, position, duration) = transcription.state,
+            if case let .running(id, _, position, duration, _) = transcription.state,
                id == transcript.id {
                 progressRow(position: position, duration: duration)
                 Divider()
@@ -287,7 +287,7 @@ struct TranscriptsView: View {
     /// (yet) in the list — the feedback a drop needs before its first segment lands.
     private var emptyState: some View {
         VStack(spacing: 0) {
-            if case let .running(_, title, position, duration) = transcription.state {
+            if case let .running(_, title, position, duration, _) = transcription.state {
                 VStack(spacing: 6) {
                     Text(title)
                         .font(.headline)
@@ -378,7 +378,7 @@ struct TranscriptsView: View {
     nonisolated static func listEffect(for state: FileTranscriptionController.State,
                                        headers: [TranscriptHeader]) -> ListEffect {
         switch state {
-        case let .running(transcriptID, _, _, _):
+        case let .running(transcriptID, _, _, _, _):
             return headers.contains { $0.id == transcriptID } ? .none : .reload
         case let .finished(transcriptID):
             return .reloadAndSelect(transcriptID)
