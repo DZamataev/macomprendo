@@ -41,14 +41,21 @@ final class ProcessTapSystemAudioCapture: CallAudioCapturing, @unchecked Sendabl
 
     init() {}
 
+    deinit {
+        // A capture dropped without `stop()` must not leak its tap, its aggregate and its IO
+        // proc, or leave the output listener pointing at a dead capture.
+        stop()
+    }
+
     func start(_ handler: @escaping @Sendable (CallAudioChunk) -> Void) throws {
-        // A second start would create a tap over a live one; failing here keeps that mistake
-        // visible, like the microphone capture does.
-        guard lock.withLock({ !running }) else {
-            throw MacomprendoError.systemAudioCaptureFailed(
-                "A system audio capture is already in progress.")
-        }
         try controlLock.withLock {
+            // A second start would create a tap over a live one; failing here keeps that mistake
+            // visible, like the microphone capture does. The check sits inside the serialising
+            // lock: two concurrent starts must not both pass it and create a second tap.
+            guard !lock.withLock({ running }) else {
+                throw MacomprendoError.systemAudioCaptureFailed(
+                    "A system audio capture is already in progress.")
+            }
             // Set before the device starts, so the first buffers are not dropped.
             lock.withLock {
                 self.handler = handler
@@ -82,7 +89,8 @@ final class ProcessTapSystemAudioCapture: CallAudioCapturing, @unchecked Sendabl
     /// Creates the tap, its aggregate device and the IO proc, starts the device and installs the
     /// output listener. Must be called with `controlLock` held; a throw leaves nothing behind.
     private func setup() throws {
-        let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [try ownProcessObject()])
+        let excluded = try ownProcessObject().map { [$0] } ?? []
+        let description = CATapDescription(stereoGlobalTapButExcludeProcesses: excluded)
         description.muteBehavior = .unmuted
         description.isPrivate = true
         description.name = "Macomprendo call"
@@ -130,8 +138,10 @@ final class ProcessTapSystemAudioCapture: CallAudioCapturing, @unchecked Sendabl
     }
 
     /// This app's Core Audio process object, for the tap's exclusion list — without it the tap
-    /// would record Macomprendo's own output too.
-    private func ownProcessObject() throws -> AudioObjectID {
+    /// would record Macomprendo's own output too. `nil` when the HAL names no object for this
+    /// process: `kAudioObjectUnknown` in the exclusion list fails tap creation outright, and
+    /// recording our own output is the smaller problem.
+    private func ownProcessObject() throws -> AudioObjectID? {
         var address = Self.address(kAudioHardwarePropertyTranslatePIDToProcessObject)
         var pid = getpid()
         var processObject = AudioObjectID(kAudioObjectUnknown)
@@ -142,7 +152,7 @@ final class ProcessTapSystemAudioCapture: CallAudioCapturing, @unchecked Sendabl
         guard status == noErr else {
             throw failure("finding this app's audio process failed", status)
         }
-        return processObject
+        return processObject == kAudioObjectUnknown ? nil : processObject
     }
 
     /// The tap's UID, which is what the aggregate's tap list refers to. The HAL returns it

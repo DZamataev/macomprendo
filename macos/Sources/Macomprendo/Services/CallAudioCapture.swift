@@ -97,13 +97,13 @@ final class EngineCallMicrophoneCapture: CallMicrophoneCapturing, @unchecked Sen
     }
 
     func start(_ handler: @escaping @Sendable (CallAudioChunk) -> Void) throws {
-        // A second start would swap the tap under a running engine; failing here, like the
-        // recorder does, keeps that mistake visible.
-        guard lock.withLock({ !running }) else {
-            throw MacomprendoError.audio("A call capture is already in progress.")
-        }
-
         let inputFormat: AVAudioFormat = try engineLock.withLock {
+            // A second start would swap the tap under a running engine; failing here, like the
+            // recorder does, keeps that mistake visible. The check sits inside the serialising
+            // lock: two concurrent starts must not both pass it and install a second tap.
+            guard !lock.withLock({ running }) else {
+                throw MacomprendoError.audio("A call capture is already in progress.")
+            }
             guard let device = resolvedDevice() else {
                 throw MacomprendoError.audio("No microphone input is available.")
             }
