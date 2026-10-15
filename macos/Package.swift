@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Macomprendo",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("14.2")],
     products: [
         .executable(name: "Macomprendo", targets: ["Macomprendo"])
     ],

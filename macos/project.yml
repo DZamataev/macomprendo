@@ -3,7 +3,7 @@ name: Macomprendo
 options:
   createIntermediateGroups: true
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "14.2"
 
 configs:
   Debug: debug
@@ -11,7 +11,7 @@ configs:
 
 settings:
   base:
-    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.2"
     SDKROOT: macosx
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: 68QJJA7HK9
@@ -29,7 +29,7 @@ targets:
   Macomprendo:
     type: application
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "14.2"
     productName: Macomprendo
     sources:
       - path: Sources/Macomprendo
@@ -93,7 +93,7 @@ targets:
   MacomprendoTests:
     type: bundle.unit-test
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "14.2"
     sources:
       - path: Tests/MacomprendoTests
     dependencies:

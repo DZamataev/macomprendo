@@ -903,3 +903,30 @@ swift test --package-path macos --filter LongAudioBenchmarkTests
       WER/CER into `<out>/report.json`, releasing each model before the next. It fails only on
       errors, never on quality. `MACOMPRENDO_BENCH_LIMIT_SECONDS` stops a run early, and the models
       are read from `~/Library/Application Support/Macomprendo/models` — never downloaded.
+
+## Call recording
+
+The system side is a global Core Audio process tap (`ProcessTapSystemAudioCapture`): it hears
+every process except Macomprendo, read through a private aggregate device built around the tap
+alone. The tap is unmuted — the call keeps playing while it is recorded — and the first tap
+raises the one-time **System Audio Recording** prompt (Privacy & Security ▸ Screen & System
+Audio Recording).
+
+- [ ] **Call over the built-in speakers.** Record a call playing through the Mac's speakers and
+      check the **Others** track: the remote side is there, complete enough to transcribe, and
+      the call itself kept playing.
+- [ ] **Call over wired headphones.** Repeat with wired headphones: the Others track still holds
+      the remote side.
+- [ ] **Call over AirPods using the Mac's microphone.** Repeat with AirPods and the Mac's own
+      microphone selected: the Others track holds the remote side while **Me** fills in.
+- [ ] **Call over AirPods using their own microphone.** Repeat with the AirPods' microphone
+      selected — the call runs in the hands-free profile: the Others track still holds the remote
+      side.
+- [ ] **Switching the output mid-call.** Start recording with the speakers, then switch the
+      system output to AirPods (or headphones) during the call: the recording continues, the tap
+      rebuilds on the new route within about a second, the Others track resumes with at most a
+      short gap, and the app does not need a restart.
+- [ ] **Declining System Audio Recording.** With the grant off or declined — turn Macomprendo off
+      under Privacy & Security ▸ Screen & System Audio Recording, or answer **Don't Allow** on a
+      first run — record a call: **Me** fills in, **Others** stays empty (no level movement, no
+      Others segments in the transcript), and the recording still stops and transcribes normally.
