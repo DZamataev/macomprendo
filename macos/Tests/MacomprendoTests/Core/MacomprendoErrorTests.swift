@@ -33,11 +33,18 @@ import Testing
     .systemAudioCaptureFailed("the tap could not be started"),
     .callRecordingLocationUnavailable,
     .callRecordingWriteFailed("the disk is full"),
-    .callRecordingUnavailable
+    .callRecordingUnavailable,
+    .transcriptPlaybackUnavailable("x")
 ])
 func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
     #expect(error.errorDescription?.isEmpty == false)
     #expect(error.recoverySuggestion?.isEmpty == false)
+}
+
+@Test func transcriptPlaybackUnavailableExplainsAndPointsAtChoose() {
+    let error = MacomprendoError.transcriptPlaybackUnavailable("the source file cannot be found")
+    #expect(error.errorDescription == "Can't play this transcript's audio: the source file cannot be found.")
+    #expect(error.recoverySuggestion == "If the file or the recording folder moved, choose it again with Choose File… or Choose Folder….")
 }
 
 @Test func cancelledHasNoRecoverySuggestion() {
