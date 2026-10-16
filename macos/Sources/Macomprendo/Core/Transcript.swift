@@ -49,6 +49,13 @@ struct TranscriptSegment: Sendable, Equatable {
     }
 }
 
+extension TranscriptHeader {
+    func retitled(_ title: String) -> TranscriptHeader {
+        TranscriptHeader(id: id, createdAt: createdAt, sourceKind: sourceKind, title: title,
+                         duration: duration, status: status, statusReason: statusReason)
+    }
+}
+
 /// A transcript as the list shows it, without its segments.
 struct TranscriptHeader: Identifiable, Sendable, Equatable {
     let id: Int64

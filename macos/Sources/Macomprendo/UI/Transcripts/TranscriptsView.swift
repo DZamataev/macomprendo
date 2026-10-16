@@ -17,6 +17,10 @@ struct TranscriptsView: View {
     /// A failure from writing an export. Export is the one action whose failure belongs to no
     /// controller, so the window reports it itself.
     @State private var actionError: String?
+    /// The list row being renamed from its context menu, and its draft title.
+    @State private var renamingID: Int64?
+    @State private var renameDraft = ""
+    @FocusState private var isRenameFieldFocused: Bool
 
     var body: some View {
         NavigationSplitView {
@@ -79,7 +83,11 @@ struct TranscriptsView: View {
     private var sidebar: some View {
         List(selection: selection) {
             ForEach(library.headers) { header in
-                row(header).tag(header.id)
+                row(header)
+                    .tag(header.id)
+                    .contextMenu {
+                        Button("Rename") { beginRename(header) }
+                    }
             }
         }
     }
@@ -94,9 +102,20 @@ struct TranscriptsView: View {
     private func row(_ header: TranscriptHeader) -> some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(header.title)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if renamingID == header.id {
+                    TextField("Title", text: $renameDraft)
+                        .textFieldStyle(.plain)
+                        .focused($isRenameFieldFocused)
+                        .onSubmit { commitRename() }
+                        .onExitCommand { renamingID = nil }
+                        .onChange(of: isRenameFieldFocused) { _, focused in
+                            if !focused { commitRename() }
+                        }
+                } else {
+                    Text(header.title)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
                 HStack(spacing: 6) {
                     Text(header.createdAt.formatted(date: .abbreviated, time: .shortened))
                     if let duration = header.duration {
@@ -117,6 +136,20 @@ struct TranscriptsView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private func beginRename(_ header: TranscriptHeader) {
+        renameDraft = header.title
+        renamingID = header.id
+        isRenameFieldFocused = true
+    }
+
+    /// Enter or leaving the field saves; Esc cleared `renamingID` first, so it saves nothing.
+    private func commitRename() {
+        guard let id = renamingID else { return }
+        renamingID = nil
+        let title = renameDraft
+        Task { await library.rename(id, to: title) }
     }
 
     // MARK: - The detail
@@ -195,10 +228,10 @@ struct TranscriptsView: View {
 
     private func header(_ transcript: Transcript) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(transcript.header.title)
-                .font(.headline)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            TranscriptTitleField(title: transcript.header.title) { title in
+                Task { await library.rename(transcript.id, to: title) }
+            }
+            .id(transcript.id)
             Text(Self.caption(date: transcript.header.createdAt,
                               duration: transcript.header.duration,
                               run: transcript.run))
@@ -473,5 +506,42 @@ struct TranscriptsView: View {
             parts.append(runText)
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// The open transcript's title, editable in place: a click puts the caret in it, and every
+/// change is saved as it is typed. Clearing it and leaving the field brings the stored title
+/// back, since a blank title is never stored.
+private struct TranscriptTitleField: View {
+    let title: String
+    let save: (String) -> Void
+
+    @State private var draft: String
+    @FocusState private var isFocused: Bool
+
+    init(title: String, save: @escaping (String) -> Void) {
+        self.title = title
+        self.save = save
+        _draft = State(initialValue: title)
+    }
+
+    var body: some View {
+        TextField("Title", text: $draft)
+            .textFieldStyle(.plain)
+            .font(.headline)
+            .lineLimit(1)
+            .focused($isFocused)
+            .help("Click to rename")
+            .onChange(of: draft) { _, value in save(value) }
+            .onChange(of: title) { _, stored in
+                // A rename from the list while this field is idle.
+                if !isFocused { draft = stored }
+            }
+            .onChange(of: isFocused) { _, focused in
+                if !focused, draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    draft = title
+                }
+            }
+            .onSubmit { isFocused = false }
     }
 }

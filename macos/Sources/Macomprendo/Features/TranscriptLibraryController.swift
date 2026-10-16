@@ -50,6 +50,8 @@ final class TranscriptLibraryController: ObservableObject {
     /// it (the cancelled select fails its token guard and never gets to clear it itself).
     private var pendingSelectionID: Int64?
 
+    private var lastRename: Task<Void, Never>?
+
     init(store: any TranscriptStoring, pasteboard: any PasteboardProtocol,
          bookmarks: any FileBookmarking, revealer: any FileRevealing) {
         self.store = store
@@ -110,6 +112,41 @@ final class TranscriptLibraryController: ObservableObject {
             pendingSelectionID = nil
             self.error = ErrorText.describe(error)
         }
+    }
+
+    /// Renames `id` to `title`, trimmed. A blank or unchanged title is not stored. The stored
+    /// title is the truth once written, so the list and the open transcript take it directly
+    /// rather than waiting for a reload. Renames run one after another: the detail title saves
+    /// on every keystroke, and an older keystroke must never land after a newer one.
+    func rename(_ id: Int64, to title: String) async {
+        let previous = lastRename
+        let task = Task { [weak self] in
+            await previous?.value
+            await self?.applyRename(id, to: title)
+        }
+        lastRename = task
+        await task.value
+    }
+
+    private func applyRename(_ id: Int64, to title: String) async {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              headers.first(where: { $0.id == id })?.title != trimmed else { return }
+        do {
+            try await store.setTitle(trimmed, for: id)
+        } catch {
+            self.error = ErrorText.describe(error)
+            return
+        }
+        if let index = headers.firstIndex(where: { $0.id == id }) {
+            headers[index] = headers[index].retitled(trimmed)
+        }
+        if let open = selected, open.id == id {
+            selected = Transcript(header: open.header.retitled(trimmed), run: open.run,
+                                  sourceBookmark: open.sourceBookmark, summary: open.summary,
+                                  segments: open.segments)
+        }
+        error = nil
     }
 
     /// Removes `id`. A selection on the deleted transcript is cleared.

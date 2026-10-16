@@ -852,6 +852,10 @@ headless test. Use the signed `npm run install-app:signed` build and real files.
       timestamps), the Summarize feature's model and presets, and no **Replace selection**. Copy
       pastes the summary, and the panel closes without changing the transcript. Then press ⌥M
       (Summarize selection) and confirm **Replace selection** is back for the hotkey path.
+- [ ] **Rename.** Right-click a transcript in the list ▸ **Rename**: the title becomes a field;
+  Enter saves, Esc keeps the old title. Click the open transcript's title, type: the list row
+  follows each keystroke; clearing the title and clicking away restores it. Relaunch: the new
+  title is still there.
 - [ ] **Export writes all three formats.** For a completed transcript use **Export ▸ Plain text
       (.txt)**, **Subtitles (.srt)** and **Markdown (.md)**: the `.txt` holds the segment lines with
       no timestamps; the `.srt` numbers cues from 1 with `HH:MM:SS,mmm --> HH:MM:SS,mmm` and opens

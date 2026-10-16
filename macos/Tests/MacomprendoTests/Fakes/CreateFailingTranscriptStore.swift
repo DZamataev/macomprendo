@@ -47,6 +47,10 @@ final class CreateFailingTranscriptStore: TranscriptStoring, @unchecked Sendable
         try await inner.setSummary(summary, for: id)
     }
 
+    func setTitle(_ title: String, for id: Int64) async throws {
+        try await inner.setTitle(title, for: id)
+    }
+
     func setSourceBookmark(_ bookmark: Data?, for id: Int64) async throws {
         try await inner.setSourceBookmark(bookmark, for: id)
     }

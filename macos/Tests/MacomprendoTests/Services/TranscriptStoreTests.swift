@@ -96,6 +96,21 @@ import Testing
         }
     }
 
+    @Test func aTitleCanBeChangedAndMissingRowsAreAnError() async throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let id = try await store.create(sourceKind: .call, title: "Call 2026-10-15 16:42",
+                                        sourceBookmark: nil, duration: 1, run: run, at: .now)
+
+        try await store.setTitle("Weekly sync", for: id)
+        #expect(try await store.transcript(id: id)?.header.title == "Weekly sync")
+        #expect(try await store.headers().first?.title == "Weekly sync")
+
+        await #expect(throws: MacomprendoError.transcriptStore("no transcript has identifier 42")) {
+            try await store.setTitle("x", for: 42)
+        }
+    }
+
     @Test func deletingATranscriptDeletesItsSegments() async throws {
         let (store, directory) = makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }

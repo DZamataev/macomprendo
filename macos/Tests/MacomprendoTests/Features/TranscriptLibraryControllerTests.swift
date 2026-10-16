@@ -205,6 +205,50 @@ import Testing
 
     // MARK: - Failures
 
+    // MARK: - Renaming
+
+    @Test func renameUpdatesTheListAndTheOpenTranscript() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "lecture.mp3", segments: twoSegments)
+        let controller = makeController(store: store)
+        await controller.reload()
+        await controller.select(id)
+
+        await controller.rename(id, to: "  Physics lecture  ")
+
+        #expect(controller.headers.first?.title == "Physics lecture")
+        #expect(controller.selected?.header.title == "Physics lecture")
+        #expect(controller.selected?.segments == twoSegments)
+        #expect(try await store.transcript(id: id)?.header.title == "Physics lecture")
+        #expect(controller.error == nil)
+    }
+
+    @Test func aBlankOrUnchangedTitleIsNotStored() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "lecture.mp3")
+        let controller = makeController(store: store)
+        await controller.reload()
+
+        await controller.rename(id, to: "   ")
+        await controller.rename(id, to: "lecture.mp3")
+
+        #expect(controller.headers.first?.title == "lecture.mp3")
+        #expect(await store.titleWrites == 0)
+    }
+
+    @Test func aFailedRenameKeepsTheOldTitleAndReports() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "lecture.mp3")
+        let controller = makeController(store: store)
+        await controller.reload()
+
+        await controller.rename(42, to: "Nope")
+
+        #expect(controller.headers.first(where: { $0.id == id })?.title == "lecture.mp3")
+        #expect(controller.error == ErrorText.describe(
+            MacomprendoError.transcriptStore("no transcript has identifier 42")))
+    }
+
     @Test func aStoreFailureSetsError() async throws {
         let store = FakeTranscriptStore()
         await store.failNextReadOnce(.transcriptStore("the disk is full"))

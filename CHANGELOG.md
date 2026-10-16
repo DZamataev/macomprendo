@@ -20,6 +20,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   file has moved or was deleted it asks for the file again with **Choose File…** and carries on
   from the same position.
 - Transcripts are kept until you delete them, separately from dictation history.
+- **Rename** a transcript: **Rename** in the list's context menu, or click the title of the open
+  transcript and type — the new title is saved as you type.
 - **Record calls**: microphone and system audio into two files, transcribed with **Me** / **Others**
   labels. Start and stop from the menubar's **Record Call** / **Stop Recording** item or the
   **Record Call** hotkey; while recording the status item shows the elapsed time and the menu
