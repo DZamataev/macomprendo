@@ -150,6 +150,18 @@ with fakes:
   actions. `Summarize` opens the ordinary Summarize Quick Panel with the transcript's plain text
   and **Replace selection** hidden, because no other app holds a selection to replace.
 
+**Transcript playback.** A transcript's audio plays from a bar under the segment list.
+`TranscriptPlaybackController` (`@MainActor`) owns one `TranscriptAudioPlaying` —
+`AVTranscriptAudioPlayer` over `AVPlayer` — resolves the source through the transcript's
+bookmark (its file, or the tracks of its call recording), and turns the player's position, end
+and failure callbacks into the bar's state, the marked segment and follow. `PlaybackComposition`
+builds what is played: an `AVURLAsset` for a file, and an `AVMutableComposition` for a call —
+each track inserted at its `startOffset`, so a call plays as a composition of its tracks on the
+recording's timeline — with an `AVAudioMix` whose per-track volume is the **Me** / **Others**
+toggle. `PlaybackTimeline` (pure) maps a position to the active segment and formats `m:ss` /
+`h:mm:ss`. Playback stops when the window closes, when another transcript opens or when a call
+recording starts, and is otherwise independent of transcription.
+
 Dictation outranks file transcription. Both local-model callers go through `TranscriptionLane`,
 which serialises calls and serves an interactive waiter before a background one: a dictation waits
 for at most the one segment in flight, never for the file, and a file job is not cancelled by a

@@ -28,6 +28,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shows the two level meters. The call keeps playing while it is recorded, dictation still works
   during a recording, and a recording cut short by a quit or a crash is finalised at the next
   launch and can be **Resumed**. Recordings are kept in their own folder, apart from transcripts.
+- **Play a transcript's audio** in the Transcripts window: a seek bar, ±15 s, 1×–2× speed, **Me** / **Others** toggles for calls; the segment being played is marked and the list follows it; click a timestamp to play from there.
 
 ### Changed
 - Settings ▸ Refine & Summarize labels each feature's model picker **Model for Refine** and

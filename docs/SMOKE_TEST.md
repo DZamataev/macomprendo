@@ -966,3 +966,45 @@ Audio Recording).
       tracks nothing but the two writers — while the menu's elapsed time keeps advancing. Stop: both
       tracks finalise, play end to end in QuickTime without a gap, and the transcript covers the
       whole call.
+
+## Transcript playback
+
+The bar under the segment list is `AVPlayer` glue plus SwiftUI, so none of it is reachable from a
+headless test. Playback needs no transcription: a transcript that is still being transcribed, or
+is incomplete, plays whatever audio exists.
+
+- [ ] **A file transcript plays, audio or video.** Open a finished file transcript and press
+      **Play**: the sound plays, the time runs and the seek bar moves. Repeat with a video file's
+      transcript: only its sound plays, with no picture.
+- [ ] **A call transcript plays both sides.** Open a call transcript and press **Play**: the
+      conversation plays in order, Me and Others interleaved at their recorded offsets. Switch
+      **Me** off: only the other side is heard. Switch **Others** off instead: only your side.
+      With both off, the time still advances in silence.
+- [ ] **A call missing one track.** Delete one of the call's two track files and open the
+      transcript: the other side still plays, and the missing side's toggle is disabled with the
+      tooltip "This side's track is missing".
+- [ ] **Every speed keeps the pitch.** Play a passage at 1.25×, 1.5× and 2×: speech is faster
+      and keeps its pitch (no chipmunk voices). The chosen speed still applies to the next
+      transcript opened in the window.
+- [ ] **Dragging the seek bar seeks on release.** Drag the playhead: the bar follows the pointer
+      while the audio keeps playing, and the audio jumps to the dropped position on release.
+      Click a point on the bar without dragging: it seeks there too.
+- [ ] **Clicking a timestamp plays from there.** Hover a segment's `[mm:ss]` — it underlines like
+      a link — and click it: playback starts at that segment.
+- [ ] **The marker follows the speech.** While playing, the segment being spoken is tinted and
+      the list scrolls to keep it in view with a little context above it; a pause of more than a
+      second unmarks it, and in a longer pause nothing is marked.
+- [ ] **A manual scroll stops following; Back to current returns.** While playing, scroll the
+      list by hand: following stops and **Back to current** appears over the list's bottom edge.
+      Press it: the list scrolls back to the marker and follows again.
+- [ ] **A moved source file shows the strip; Choose File… relinks playback.** Move a file
+      transcript's source file, then open the transcript: the strip reads
+      `Audio unavailable — the source file cannot be found` with **Choose File…**. Choose the
+      file at its new location: playback loads from it and plays, and no transcription job
+      starts. For a call, move its recording folder: **Choose Folder…** relinks it the same way.
+- [ ] **Playback while dictating.** Start playback, then dictate a sentence: the dictation
+      inserts as usual and the audio keeps playing.
+- [ ] **Starting a call recording stops playback.** While a transcript plays, start a call
+      recording: playback stops.
+- [ ] **Closing the window stops playback.** Close the Transcripts window while audio plays:
+      the sound stops.

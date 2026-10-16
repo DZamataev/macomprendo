@@ -108,7 +108,8 @@ Core/PlaybackSource                   .file(URL) / .call([PlaybackTrack])
   `rate`, the toggles, `activeSegmentIndex` and `isFollowing`. `open(transcript)` cancels any
   in-flight load (a new transcript wins), stops the previous player, resolves and loads the
   source. One in-flight load at a time. `AppModel` stops it when a call recording starts.
-  Constructed in `AppEnvironment` like every other controller.
+  Owned by `AppModel` as a lazy property, like the other controllers; its player comes from
+  `AppEnvironment`.
 - **Follow detection.** macOS 14 has no SwiftUI API that reports a user scroll, so the view
   installs a local `NSEvent` monitor for `.scrollWheel` while the window is key and the pointer is
   over the list, and turns follow off on the first event. The monitor is removed when the view
