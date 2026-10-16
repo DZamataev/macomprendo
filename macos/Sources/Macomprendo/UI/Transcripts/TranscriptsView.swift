@@ -235,7 +235,7 @@ struct TranscriptsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
                 }
-                .background(ScrollWheelObserver { playback.isFollowing = false })
+                .background(ScrollWheelObserver { if playback.isFollowing { playback.isFollowing = false } })
                 .overlay(alignment: .bottomTrailing) { backToCurrent(proxy: proxy) }
                 .onChange(of: playback.activeSegmentIndex) { _, index in
                     guard playback.isFollowing, isPlaying, let index else { return }
