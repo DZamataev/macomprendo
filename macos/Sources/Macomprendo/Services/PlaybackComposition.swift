@@ -2,7 +2,10 @@ import AVFoundation
 import Foundation
 
 /// The asset a transcript plays, and which composition track carries each call side.
-struct PlaybackAsset {
+/// `@unchecked`: the composition is never mutated after `make` returns it, and Xcode 16's SDK
+/// does not yet mark `AVAsset`/`AVAssetTrack` `Sendable`, so building it off the main actor and
+/// handing it back would not compile otherwise.
+struct PlaybackAsset: @unchecked Sendable {
     let asset: AVAsset
     let duration: TimeInterval
     /// Empty for a file; for a call, exactly the sides that could be read.
@@ -11,8 +14,9 @@ struct PlaybackAsset {
 
 /// Builds the `AVAsset` for a `PlaybackSource`: the file itself, or a composition that puts each
 /// call track at its `startOffset`, so the mix sounds like the conversation did. Deterministic and
-/// file-based, so it is unit-tested with generated audio rather than smoke-tested.
-@MainActor
+/// file-based, so it is unit-tested with generated audio rather than smoke-tested. Nonisolated:
+/// on Xcode 16's SDK `loadTracks` returns non-`Sendable` tracks, which a main-actor caller may not
+/// receive.
 enum PlaybackComposition {
     static func make(_ source: PlaybackSource) async throws -> PlaybackAsset {
         switch source {
