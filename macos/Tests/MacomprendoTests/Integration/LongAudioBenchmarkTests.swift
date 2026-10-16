@@ -16,6 +16,8 @@ import Testing
 ///     MACOMPRENDO_BENCH_LANGUAGE=<ISO-639-1, whisper only>            (optional)
 ///     MACOMPRENDO_BENCH_REFERENCE=<.txt or .srt reference>            (optional)
 ///     MACOMPRENDO_BENCH_LIMIT_SECONDS=<N>                             (optional, quick runs)
+///     MACOMPRENDO_BENCH_JOIN_GAP=<seconds>                            (optional; default the
+///         file gap `SpeechSpanAssembler.joinGap`, 1.5 = a call track's `callJoinGap`)
 ///
 /// It writes `<out>/<model>.txt`, `<out>/<model>.srt` and merges this run's numbers into
 /// `<out>/report.json` (rerunning with more models keeps the earlier entries). The report also
@@ -34,6 +36,8 @@ import Testing
         .map { URL(fileURLWithPath: $0) }
     private static let limitSeconds: TimeInterval? = environment["MACOMPRENDO_BENCH_LIMIT_SECONDS"]
         .flatMap(Double.init)
+    private static let joinGap: TimeInterval = environment["MACOMPRENDO_BENCH_JOIN_GAP"]
+        .flatMap(Double.init) ?? SpeechSpanAssembler.joinGap
     /// `nil` means automatic detection. An empty value means the same thing.
     private static let language: String? = environment["MACOMPRENDO_BENCH_LANGUAGE"]
         .flatMap { $0.isEmpty ? nil : $0 }
@@ -159,7 +163,7 @@ import Testing
                                          transcriber: { timed },
                                          language: Self.language)
         do {
-            events: for try await event in pipeline.run(fixture, from: 0) {
+            events: for try await event in pipeline.run(fixture, from: 0, joinGap: Self.joinGap) {
                 switch event {
                 case .opened(let duration):
                     sourceDuration = duration
