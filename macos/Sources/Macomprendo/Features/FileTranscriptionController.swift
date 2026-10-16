@@ -27,7 +27,9 @@ import Foundation
         /// `fileAt` is the source the user chose after the stored bookmark stopped resolving:
         /// a file for a file transcript, a recording folder for a call one. `nil` means
         /// resolve the bookmark.
-        case resume(transcriptID: Int64, fileAt: URL?)
+        /// `fromScratch`: **Transcribe Again** — the stored segments are dropped once the
+        /// source checks out, and the job starts every track from 0.
+        case resume(transcriptID: Int64, fileAt: URL?, fromScratch: Bool = false)
     }
 
     private let store: any TranscriptStoring
@@ -107,6 +109,15 @@ import Foundation
         start(.resume(transcriptID: transcriptID, fileAt: url), after: previous)
     }
 
+    /// Transcribes the whole source again, replacing the stored text — after a model or
+    /// segmentation change. The text is kept until the source is found, so a moved file costs
+    /// nothing; from then on the row is this job's, exactly as with `Resume`.
+    func transcribeAgain(transcriptID: Int64) {
+        guard !isShuttingDown else { return }
+        let previous = supersede()
+        start(.resume(transcriptID: transcriptID, fileAt: nil, fromScratch: true), after: previous)
+    }
+
     func cancel() {
         jobTask?.cancel()
     }
@@ -173,22 +184,25 @@ import Foundation
             switch job {
             case let .transcribe(url):
                 await self.run(url: url, from: 0, resuming: nil, generation: generation)
-            case let .resume(transcriptID, fileAt):
-                await self.runResume(id: transcriptID, fileAt: fileAt, generation: generation)
+            case let .resume(transcriptID, fileAt, fromScratch):
+                await self.runResume(id: transcriptID, fileAt: fileAt, fromScratch: fromScratch,
+                                     generation: generation)
             }
         }
     }
 
-    private func runResume(id: Int64, fileAt chosenURL: URL?, generation: Int) async {
+    private func runResume(id: Int64, fileAt chosenURL: URL?, fromScratch: Bool,
+                           generation: Int) async {
         var marked = false
         do {
             try Task.checkCancellation()
-            guard let transcript = try await store.transcript(id: id) else {
+            guard let stored = try await store.transcript(id: id) else {
                 fail(ErrorText.describe(MacomprendoError.transcriptStore(
                         "no transcript has identifier \(id)")),
                      transcriptID: nil, generation: generation)
                 return
             }
+            let transcript = fromScratch ? stored.withoutSegments : stored
             try Task.checkCancellation()
             // `Resume` is a job like any other: a backend that is not ready fails it with the
             // backend's reason before its row is touched — except a call row the recorder just
@@ -227,13 +241,15 @@ import Foundation
                     }
                 }
                 try Task.checkCancellation()
+                if fromScratch { try await store.removeSegments(of: id) }
                 try await store.setStatus(.inProgress, reason: nil, for: id)
                 marked = true
                 await run(url: url, from: transcript.resumePosition, resuming: transcript,
                           generation: generation)
 
             case .call:
-                await resumeCall(transcript, id: id, folderAt: chosenURL, generation: generation)
+                await resumeCall(transcript, id: id, folderAt: chosenURL, fromScratch: fromScratch,
+                                 generation: generation)
             }
         } catch {
             // A cancellation before the row is marked must not touch it: `Resume` was never
@@ -249,7 +265,7 @@ import Foundation
     /// it was and reports the failure the window answers with **Choose Folder…**. A row the
     /// recorder just created `inProgress` is the exception: the failure is written into it.
     private func resumeCall(_ transcript: Transcript, id: Int64, folderAt chosenURL: URL?,
-                            generation: Int) async {
+                            fromScratch: Bool, generation: Int) async {
         var marked = false
         do {
             let folder: URL?
@@ -279,6 +295,7 @@ import Foundation
                 return
             }
             try Task.checkCancellation()
+            if fromScratch { try await store.removeSegments(of: id) }
             try await store.setStatus(.inProgress, reason: nil, for: id)
             marked = true
             await runCall(folder: folder, steps: steps, resuming: transcript,
@@ -441,7 +458,9 @@ import Foundation
             // what holds the provider, and it must not be free to start another segment in the
             // gap between the cancellation and the loop unwinding.
             try await withTaskCancellationHandler(operation: {
-                for try await event in pipeline.run(url, from: start) {
+                let joinGap = speaker == nil ? SpeechSpanAssembler.joinGap
+                                             : SpeechSpanAssembler.callJoinGap
+                for try await event in pipeline.run(url, from: start, joinGap: joinGap) {
                     try Task.checkCancellation()
                     switch event {
                     case let .opened(openedDuration):

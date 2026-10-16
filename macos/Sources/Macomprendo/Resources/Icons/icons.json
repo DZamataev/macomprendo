@@ -6,6 +6,8 @@
   { "name": "stop", "weight": "regular" },
   { "name": "play", "weight": "regular" },
   { "name": "pause", "weight": "regular" },
+  { "name": "arrow-counter-clockwise", "weight": "regular" },
+  { "name": "arrow-clockwise", "weight": "regular" },
   { "name": "sparkle", "weight": "regular" },
   { "name": "text-aa", "weight": "regular" },
   { "name": "clipboard-text", "weight": "regular" },

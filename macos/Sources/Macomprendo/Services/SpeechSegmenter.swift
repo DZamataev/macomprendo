@@ -5,7 +5,9 @@ import SherpaOnnxC
 protocol SpeechSegmenting: Sendable {
     /// A fresh detector for one recording. Sessions keep state between `accept` calls and are
     /// used from one task at a time.
-    func makeSession() throws -> any SpeechSegmentingSession
+    /// `joinGap`: how close two speech regions must be to share a segment
+    /// (`SpeechSpanAssembler.joinGap` for a file, `callJoinGap` for a call track).
+    func makeSession(joinGap: TimeInterval) throws -> any SpeechSegmentingSession
 }
 
 protocol SpeechSegmentingSession: AnyObject {
@@ -30,11 +32,11 @@ struct SherpaSileroSegmenter: SpeechSegmenting {
         self.modelURL = modelURL
     }
 
-    func makeSession() throws -> any SpeechSegmentingSession {
+    func makeSession(joinGap: TimeInterval) throws -> any SpeechSegmentingSession {
         guard let modelURL, FileManager.default.fileExists(atPath: modelURL.path) else {
             throw MacomprendoError.speechDetector("silero_vad.onnx is not in the app bundle")
         }
-        return try SherpaSileroSession(modelPath: modelURL.path)
+        return try SherpaSileroSession(modelPath: modelURL.path, joinGap: joinGap)
     }
 }
 
@@ -46,7 +48,7 @@ private final class SherpaSileroSession: SpeechSegmentingSession {
     private let assembler: SpeechSpanAssembler
     private let rate = SherpaSileroSegmenter.sampleRate
 
-    init(modelPath: String) throws {
+    init(modelPath: String, joinGap: TimeInterval) throws {
         var config = SherpaOnnxVadModelConfig()
         let created: OpaquePointer? = modelPath.withCString { model in
             "cpu".withCString { provider in
@@ -73,7 +75,7 @@ private final class SherpaSileroSession: SpeechSegmentingSession {
             throw MacomprendoError.speechDetector("sherpa-onnx rejected the model")
         }
         detector = created
-        assembler = SpeechSpanAssembler(sampleRate: rate)
+        assembler = SpeechSpanAssembler(sampleRate: rate, joinGap: joinGap)
     }
 
     deinit {

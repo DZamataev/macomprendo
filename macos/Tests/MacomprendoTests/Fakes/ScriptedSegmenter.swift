@@ -7,6 +7,7 @@ final class ScriptedSegmenter: SpeechSegmenting, @unchecked Sendable {
     private let lock = NSLock()
     private var _acceptScript: [[SpeechSegment]]
     private var _finishSegments: [SpeechSegment]
+    private var _sessionJoinGaps: [TimeInterval] = []
 
     init(acceptScript: [[SpeechSegment]] = [], finishSegments: [SpeechSegment] = []) {
         _acceptScript = acceptScript
@@ -25,9 +26,13 @@ final class ScriptedSegmenter: SpeechSegmenting, @unchecked Sendable {
         set { lock.withLock { _finishSegments = newValue } }
     }
 
-    func makeSession() throws -> any SpeechSegmentingSession {
+    /// The `joinGap` each session was made with, in order.
+    var sessionJoinGaps: [TimeInterval] { lock.withLock { _sessionJoinGaps } }
+
+    func makeSession(joinGap: TimeInterval) throws -> any SpeechSegmentingSession {
         lock.withLock {
-            ScriptedSegmenterSession(acceptScript: _acceptScript, finishSegments: _finishSegments)
+            _sessionJoinGaps.append(joinGap)
+            return ScriptedSegmenterSession(acceptScript: _acceptScript, finishSegments: _finishSegments)
         }
     }
 }

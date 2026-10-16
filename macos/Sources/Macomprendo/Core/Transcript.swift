@@ -89,6 +89,12 @@ struct Transcript: Sendable, Equatable {
             .joined(separator: "\n")
     }
 
+    /// The same transcript with no text: what **Transcribe Again** starts from.
+    var withoutSegments: Transcript {
+        Transcript(header: header, run: run, sourceBookmark: sourceBookmark, summary: summary,
+                   segments: [])
+    }
+
     /// Where `Resume` restarts decoding: the end of the last stored segment.
     var resumePosition: TimeInterval {
         segments.last?.end ?? 0

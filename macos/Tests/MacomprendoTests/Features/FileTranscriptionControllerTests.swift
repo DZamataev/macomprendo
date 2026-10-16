@@ -100,6 +100,7 @@ import Testing
         await rig.controller.drain()
 
         #expect(rig.controller.state == .finished(transcriptID: 1))
+        #expect(rig.segmenter.sessionJoinGaps == [SpeechSpanAssembler.joinGap])
         let createCount = await rig.store.createCount
         #expect(createCount == 1)
         let stored = await rig.store.snapshot(1)
@@ -514,6 +515,59 @@ import Testing
         ])
     }
 
+    // MARK: - Transcribe Again
+
+    @Test func transcribeAgainReplacesTheTextFromTheStart() async throws {
+        let path = "/files/meeting.m4a"
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 60,
+                                                        chunks: [Self.chunk(seconds: 1),
+                                                                 Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)],
+                                                                      [Self.segment(start: 10)]]))
+        let id = await rig.store.create(sourceKind: .file, title: "meeting.m4a",
+                                        sourceBookmark: Data(path.utf8), duration: 60,
+                                        run: TranscriptionRun.from(rig.settings.value.transcriptionSource,
+                                                                   language: nil),
+                                        at: Self.fixedNow)
+        try await rig.store.appendSegment(TranscriptSegment(start: 0, end: 12, text: "old"), to: id)
+        try await rig.store.setStatus(.complete, reason: nil, for: id)
+
+        rig.controller.transcribeAgain(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .finished(transcriptID: id))
+        #expect(rig.decoder.requests.map(\.start) == [0])
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.header.status == .complete)
+        #expect(stored?.segments == [
+            TranscriptSegment(start: 0, end: 1, text: "hello"),
+            TranscriptSegment(start: 10, end: 11, text: "hello"),
+        ])
+    }
+
+    @Test func transcribeAgainWithAMissingFileKeepsTheText() async throws {
+        let path = "/files/gone.m4a"
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(),
+                          bookmarks: FakeFileBookmarks(missing: [path]))
+        let id = await rig.store.create(sourceKind: .file, title: "gone.m4a",
+                                        sourceBookmark: Data(path.utf8), duration: 10,
+                                        run: TranscriptionRun.from(rig.settings.value.transcriptionSource,
+                                                                   language: nil),
+                                        at: Self.fixedNow)
+        try await rig.store.appendSegment(TranscriptSegment(start: 0, end: 5, text: "keep"), to: id)
+        try await rig.store.setStatus(.complete, reason: nil, for: id)
+
+        rig.controller.transcribeAgain(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .failed(
+            message: ErrorText.describe(MacomprendoError.sourceFileUnavailable), transcriptID: id))
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.segments == [TranscriptSegment(start: 0, end: 5, text: "keep")])
+        #expect(stored?.header.status == .complete)
+    }
+
     @Test func resumeWithAMissingFileFails() async throws {
         let path = "/files/gone.m4a"
         let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 10,
@@ -740,6 +794,9 @@ import Testing
         #expect(rig.controller.state == .finished(transcriptID: id))
         #expect(decoder.requests.map(\.url) == [trackURL(folder, .me),
                                                 trackURL(folder, .others)])
+        // Call tracks are cut at the other side's turns, not joined across them.
+        #expect(segmenter.sessionJoinGaps == [SpeechSpanAssembler.callJoinGap,
+                                              SpeechSpanAssembler.callJoinGap])
         let stored = await rig.store.snapshot(id)
         #expect(stored?.segments == [
             TranscriptSegment(start: 0.2, end: 1.2, text: "hello", speaker: .me),
@@ -902,6 +959,40 @@ import Testing
         let stored = await rig.store.snapshot(id)
         #expect(stored?.header.status == .incomplete)
         #expect(stored?.header.statusReason == expected)
+    }
+
+    @Test func aCallTranscribedAgainStartsBothTracksOver() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let meDecoder = ScriptedMediaDecoder(duration: 60, chunks: [Self.chunk(seconds: 1)])
+        let othersDecoder = ScriptedMediaDecoder(duration: 60, chunks: [Self.chunk(seconds: 1)])
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([
+                              Self.pipeline(decoder: meDecoder,
+                                            segmenter: ScriptedSegmenter(
+                                                acceptScript: [[Self.segment(start: 0)]]),
+                                            provider: FakeTranscriptionProvider()),
+                              Self.pipeline(decoder: othersDecoder,
+                                            segmenter: ScriptedSegmenter(
+                                                acceptScript: [[Self.segment(start: 0)]]),
+                                            provider: FakeTranscriptionProvider())]))
+        let id = try await makeCallRow(in: rig, folder: folder, segments: [
+            TranscriptSegment(start: 0.2, end: 30, text: "old me", speaker: .me),
+            TranscriptSegment(start: 0.5, end: 40, text: "old others", speaker: .others),
+        ])
+        try await rig.store.setStatus(.complete, reason: nil, for: id)
+
+        rig.controller.transcribeAgain(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(meDecoder.requests.map(\.start) == [0])
+        #expect(othersDecoder.requests.map(\.start) == [0])
+        let stored = await rig.store.snapshot(id)
+        #expect(stored?.segments == [
+            TranscriptSegment(start: 0.2, end: 1.2, text: "hello", speaker: .me),
+            TranscriptSegment(start: 0.5, end: 1.5, text: "hello", speaker: .others),
+        ])
+        #expect(stored?.header.status == .complete)
     }
 
     @Test func aCallResumeContinuesTheHalfDoneTrackThenTheRest() async throws {

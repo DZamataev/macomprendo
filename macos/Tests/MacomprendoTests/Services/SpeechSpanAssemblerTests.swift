@@ -54,6 +54,34 @@ import Testing
         #expect(segment.samples.count == Int(4.6 * 16_000))
     }
 
+    /// A call track goes quiet while the other side speaks: the call gap keeps two turns apart
+    /// that a file's gap would join, so the transcript interleaves the sides in real order.
+    @Test func theCallGapKeepsTurnsTwoSecondsApartSeparate() throws {
+        let assembler = SpeechSpanAssembler(sampleRate: rate, joinGap: SpeechSpanAssembler.callJoinGap)
+        let stream = quiet(0.5) + loud(1) + quiet(2) + loud(1) + quiet(0.5)
+
+        let flushed = assembler.accept(samples: stream,
+                                       regions: [region(0.5, 1.5), region(3.5, 4.5)],
+                                       speechInProgress: false)
+        let segments = flushed + assembler.finish()
+
+        #expect(SpeechSpanAssembler.callJoinGap == 1.5)
+        #expect(segments.count == 2)
+        #expect(abs((segments.first?.start ?? -1) - 0.2) < 1e-9)
+        #expect(abs((segments.last?.start ?? -1) - 3.2) < 1e-9)
+    }
+
+    @Test func theCallGapStillJoinsAShortPause() throws {
+        let assembler = SpeechSpanAssembler(sampleRate: rate, joinGap: SpeechSpanAssembler.callJoinGap)
+        let stream = quiet(0.5) + loud(1) + quiet(1) + loud(1) + quiet(0.5)
+
+        let segments = assembler.accept(samples: stream,
+                                        regions: [region(0.5, 1.5), region(2.5, 3.5)],
+                                        speechInProgress: false) + assembler.finish()
+
+        #expect(segments.count == 1)
+    }
+
     @Test func regionsTwelveSecondsApartBecomeTwoSegmentsAndTheGapIsDropped() throws {
         let assembler = SpeechSpanAssembler(sampleRate: rate)
         let stream = quiet(1) + loud(1) + quiet(12) + loud(1) + quiet(1)

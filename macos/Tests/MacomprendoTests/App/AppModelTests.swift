@@ -802,4 +802,41 @@ import Testing
             model.transcriptLibrary.headers.map(\.id) == [header.id]
         }
     }
+
+    // MARK: - Transcript playback
+
+    /// A call must not start with the app talking into it: the tap would not record the
+    /// playback anyway, and the transcript would be written over a running call. Starting a
+    /// recording therefore stops whatever the Transcripts window is playing.
+    @Test func startingACallRecordingStopsTranscriptPlayback() async throws {
+        let root = try callRecordingDirectory()
+        let player = FakeTranscriptAudioPlayer()
+        let store = FakeTranscriptStore()
+        let folders = FakeCallRecordingFolders(realDirectoryRoot: root)
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(transcriptAudioPlayer: player, transcriptStore: store,
+                                        callRecordingFolders: folders))
+        model.settings.callRecordingsDirectory = root.path
+        let id = await store.create(sourceKind: .file, title: "podcast.m4a",
+                                    sourceBookmark: Data("/files/podcast.m4a".utf8),
+                                    duration: 60,
+                                    run: TranscriptionRun.from(.local(modelID: "base"),
+                                                               language: nil),
+                                    at: Date())
+        let transcript = try #require(try await store.transcript(id: id))
+        await model.transcriptPlayback.open(transcript)
+        model.transcriptPlayback.play()
+        #expect(player.isPlaying)
+
+        model.start()
+        model.route(.keyDown(.recordCall))
+        await waitFor("the call recording to start") {
+            if case .recording = model.callRecording.state { return true }
+            return false
+        }
+
+        #expect(player.isPlaying == false)
+        #expect(model.transcriptPlayback.state == .idle)
+    }
 }

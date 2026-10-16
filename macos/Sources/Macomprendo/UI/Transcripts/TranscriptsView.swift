@@ -12,14 +12,19 @@ struct TranscriptsView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var library: TranscriptLibraryController
     @ObservedObject var transcription: FileTranscriptionController
+    @ObservedObject var playback: TranscriptPlaybackController
 
     @State private var isDeleteConfirmationPresented = false
+    /// The transcript **Transcribe Again** was asked for, while its confirmation is up.
+    @State private var transcribeAgainID: Int64?
     /// A failure from writing an export. Export is the one action whose failure belongs to no
     /// controller, so the window reports it itself.
     @State private var actionError: String?
     /// The list row being renamed from its context menu, and its draft title.
     @State private var renamingID: Int64?
     @State private var renameDraft = ""
+    /// The segment whose timestamp is under the pointer, so it can underline like a link.
+    @State private var hoveredSegment: Int?
     @FocusState private var isRenameFieldFocused: Bool
 
     var body: some View {
@@ -42,6 +47,12 @@ struct TranscriptsView: View {
             await model.modelsViewModel.refresh()
             model.dictationTabModel.adopt(model.modelsViewModel.rows)
             await library.reload()
+            // The window opens on whatever the list already had selected, which no change
+            // event fires for.
+            await playback.open(library.selected)
+        }
+        .onChange(of: library.selected) { _, selected in
+            Task { await playback.open(selected) }
         }
         .onChange(of: library.selected?.id) { _, _ in
             actionError = nil
@@ -76,6 +87,23 @@ struct TranscriptsView: View {
             Text("This permanently removes the transcript and its segments. "
                 + "The source file is not touched.")
         }
+        .confirmationDialog("Transcribe again?",
+                            isPresented: Binding(get: { transcribeAgainID != nil },
+                                                 set: { if !$0 { transcribeAgainID = nil } }),
+                            titleVisibility: .visible) {
+            Button("Transcribe Again") {
+                guard let id = transcribeAgainID else { return }
+                transcription.transcribeAgain(transcriptID: id)
+            }
+        } message: {
+            Text("The current text is replaced by a new transcription of the whole recording, "
+                + "with the model selected in Settings. The audio is not touched.")
+        }
+    }
+
+    /// Not for the transcript a job is writing right now: it is being transcribed already.
+    private func canTranscribeAgain(_ header: TranscriptHeader) -> Bool {
+        header.status != .inProgress
     }
 
     // MARK: - The list
@@ -87,6 +115,8 @@ struct TranscriptsView: View {
                     .tag(header.id)
                     .contextMenu {
                         Button("Rename") { beginRename(header) }
+                        Button("Transcribe Again…") { transcribeAgainID = header.id }
+                            .disabled(!canTranscribeAgain(header))
                     }
             }
         }
@@ -210,19 +240,30 @@ struct TranscriptsView: View {
                 progressRow(position: position, duration: duration, speaker: speaker)
                 Divider()
             }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    if !transcript.segments.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(Array(transcript.segments.enumerated()), id: \.offset) { _, segment in
-                                segmentRow(segment)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        if !transcript.segments.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(Array(transcript.segments.enumerated()), id: \.offset) { index, segment in
+                                    segmentRow(segment, index: index,
+                                               isActive: index == playback.activeSegmentIndex)
+                                        .id(index)
+                                }
                             }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
+                .background(ScrollWheelObserver { if playback.isFollowing { playback.isFollowing = false } })
+                .overlay(alignment: .bottomTrailing) { backToCurrent(proxy: proxy) }
+                .onChange(of: playback.activeSegmentIndex) { _, index in
+                    guard playback.isFollowing, isPlaying, let index else { return }
+                    follow(index, proxy: proxy)
+                }
             }
+            playbackFooter(transcript)
         }
     }
 
@@ -280,6 +321,16 @@ struct TranscriptsView: View {
                 .fixedSize()
             }
 
+            if canTranscribeAgain(transcript.header) {
+                Button {
+                    transcribeAgainID = transcript.id
+                } label: {
+                    Label { Text("Transcribe Again") } icon: { Icon(.refresh, size: 14) }
+                }
+                .help("Replace the text with a new transcription of the whole recording")
+                .fixedSize()
+            }
+
             if transcript.header.sourceKind == .call {
                 // The folder's bookmark is resolved by the library, not here.
                 Button {
@@ -334,14 +385,100 @@ struct TranscriptsView: View {
         .padding(10)
     }
 
-    private func segmentRow(_ segment: TranscriptSegment) -> some View {
+    /// A segment row. The row itself takes only `isActive` — a marker move re-renders two rows,
+    /// not the list. Every row carries the same padding so the active row's tint does not move
+    /// the text.
+    private func segmentRow(_ segment: TranscriptSegment, index: Int, isActive: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("[\(TranscriptExporter.clock(segment.start))]")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            Button {
+                Task { await playback.playSegment(at: index) }
+            } label: {
+                Text("[\(TranscriptExporter.clock(segment.start))]")
+                    .font(.caption.monospacedDigit())
+                    .underline(hoveredSegment == index)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Play from here")
+            .onHover { hovered in hoveredSegment = hovered ? index : nil }
+            .fixedSize()
             Text(TranscriptExporter.speakerPrefix(segment) + segment.text)
                 .textSelection(.enabled)
         }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        // The tint is a row marker, not a text bubble: a short segment's row is as wide as a
+        // long one's.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isActive ? Color.accentColor.opacity(0.14) : .clear,
+                    in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// Keeps the active segment in view with a little context above it.
+    private func follow(_ index: Int, proxy: ScrollViewProxy) {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            proxy.scrollTo(index, anchor: UnitPoint(x: 0, y: 0.25))
+        }
+    }
+
+    /// Shown while playing and the user has scrolled away from the marker: brings the list back
+    /// to it and turns follow on again.
+    @ViewBuilder private func backToCurrent(proxy: ScrollViewProxy) -> some View {
+        if isPlaying, !playback.isFollowing, let index = playback.activeSegmentIndex {
+            Button("Back to current") {
+                playback.isFollowing = true
+                follow(index, proxy: proxy)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .padding(10)
+        }
+    }
+
+    /// The bar under the list — or, when the audio cannot be played, the strip in its place. A
+    /// mid-playback failure shows its strip under the bar until the next **Play**.
+    @ViewBuilder private func playbackFooter(_ transcript: Transcript) -> some View {
+        switch playback.state {
+        case .loading, .ready:
+            Divider()
+            TranscriptPlayerBar(playback: playback, transcript: transcript)
+            if let failure = playback.failure {
+                unavailableStrip(reason: failure, recovery: nil)
+            }
+        case let .unavailable(reason, recovery):
+            Divider()
+            unavailableStrip(reason: reason, recovery: recovery)
+        case .idle:
+            EmptyView()
+        }
+    }
+
+    private func unavailableStrip(reason: String,
+                                  recovery: TranscriptPlaybackController.Recovery?) -> some View {
+        HStack(spacing: 6) {
+            Icon(.warning, size: 14)
+            Text("Audio unavailable — \(reason)")
+                .font(.callout)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
+            switch recovery {
+            case .chooseFile:
+                bannerButton("Choose File…") { choosePlaybackSourceFile() }
+            case .chooseFolder:
+                bannerButton("Choose Folder…") { choosePlaybackRecordingFolder() }
+            case nil:
+                EmptyView()
+            }
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    private var isPlaying: Bool {
+        if case .ready(_, _, true) = playback.state { return true }
+        return false
     }
 
     /// No transcript open: the drop zone, plus the progress of a job whose transcript is not
@@ -418,6 +555,37 @@ struct TranscriptsView: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         transcription.resume(transcriptID: id, fileAt: url)
+    }
+
+    /// Picks the audio file again for an unavailable file transcript. Playback relinks to it and
+    /// the library re-reads the row, so the new bookmark also serves **Show in Finder**. This is
+    /// playback only — it does not start or resume transcription.
+    private func choosePlaybackSourceFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audiovisualContent]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        relinkPlayback(to: url)
+    }
+
+    /// Picks the recording folder again for an unavailable call transcript, with the same panel
+    /// configuration as `Resume`'s.
+    private func choosePlaybackRecordingFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        relinkPlayback(to: url)
+    }
+
+    private func relinkPlayback(to url: URL) {
+        Task {
+            await playback.relink(to: url)
+            guard let id = playback.transcriptID else { return }
+            await library.select(id)
+        }
     }
 
     // MARK: - Export

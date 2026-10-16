@@ -43,10 +43,12 @@ its two tracks mixed back into the conversation. It builds on
 
 ### Marker in the text
 
-- The active segment's row gets an accent-tinted background. The active segment is the last
-  segment whose `start ≤ position`, as long as `position ≤ end + 1 s`; in a longer pause nothing is
-  marked. When two speakers overlap, the one that started later is marked. Segments are sorted by
-  `start` (they are stored and shown in that order).
+- The active segment's row gets an accent-tinted background. The active segment is the
+  latest-starting segment with `start ≤ position ≤ end + 1 s`; in a longer pause nothing is
+  marked. So when two speakers overlap, the one that started later is marked, and when a short
+  reply ends inside a long one, the marker goes back to the long one. Segments are sorted by
+  `start` (they are stored and shown in that order), and the lookup only looks back 120 s, longer
+  than any stored segment.
 - The marker shows while playing and while paused at a position other than 0; before the first
   **Play** nothing is marked.
 - While playing, the list follows the active segment, keeping it in view with a little context
@@ -106,7 +108,8 @@ Core/PlaybackSource                   .file(URL) / .call([PlaybackTrack])
   `rate`, the toggles, `activeSegmentIndex` and `isFollowing`. `open(transcript)` cancels any
   in-flight load (a new transcript wins), stops the previous player, resolves and loads the
   source. One in-flight load at a time. `AppModel` stops it when a call recording starts.
-  Constructed in `AppEnvironment` like every other controller.
+  Owned by `AppModel` as a lazy property, like the other controllers; its player comes from
+  `AppEnvironment`.
 - **Follow detection.** macOS 14 has no SwiftUI API that reports a user scroll, so the view
   installs a local `NSEvent` monitor for `.scrollWheel` while the window is key and the pointer is
   over the list, and turns follow off on the first event. The monitor is removed when the view

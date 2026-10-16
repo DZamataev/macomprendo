@@ -150,9 +150,20 @@ transcribes it.
 - The transcript: `source_kind = call`, title `Call 2026-10-15 16:42`, `source_bookmark` = a
   bookmark to the recording folder, `duration_s` = the recording's elapsed wall-clock time (the
   stop instant minus the start instant).
-- The **Me** track is transcribed first, then **Others**, each through `LongAudioPipeline`
-  unchanged. Every segment is shifted by its track's `startOffset` and stored with its
-  `speaker`. Queries already order segments by `start_s`, which interleaves the two sides.
+- The **Me** track is transcribed first, then **Others**, each through `LongAudioPipeline`.
+  Every segment is shifted by its track's `startOffset` and stored with its `speaker`. Queries
+  already order segments by `start_s`, which interleaves the two sides.
+- A call track joins speech regions only across pauses up to `SpeechSpanAssembler.callJoinGap`
+  (1.5 s), not the file gap of 10 s. A track is silent while the other side talks, so the file
+  gap glued two of one side's turns around the other's reply into one 30 s segment, and the
+  list showed the reply after both. Measured on a 15-minute call with large-v3-turbo: **Me**
+  went from 13 segments (mean 13 s) to 21 (mean 6.8 s), **Others** from 32 to 34 (its long
+  segments are real monologues), no phantom phrases, and the turns around 12:29 read in the order
+  they were spoken. A reply that overlaps a still-talking side stays inside that side's segment;
+  finer order needs the recogniser's own timestamps.
+- **Transcribe Again** replaces the stored text with a fresh run of every track from 0 (after
+  a model or segmentation change). The text is dropped only once the folder, the manifest and
+  the track files check out.
 - Progress reads `Transcribing Me — 12:40 / 58:03`, then `Transcribing Others — …`.
 - A track with no speech is not an error. Only when neither track has speech does the job fail
   as `noSpeechFound` and delete the empty transcript; the recording stays.
