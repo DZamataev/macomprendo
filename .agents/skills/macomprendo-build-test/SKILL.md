@@ -90,6 +90,7 @@ xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
 |---|---|
 | `type 'Bundle?' has no member 'module'` | A dependency ships resources it never declared — it cannot be an SPM dependency |
 | `static property … is not concurrency-safe` | Add `@MainActor`, or make the type `Sendable` |
+| CI (`macos-15`, Xcode 16.4 / Swift 6.1) fails with `non-sendable result type '[AVAssetTrack]' cannot be sent` while the local Xcode 26 build is clean | Xcode 16's SDK has no `Sendable` on `AVAsset`/`AVAssetTrack`; don't call `AVAsset.load*` from a `@MainActor` type — load in a nonisolated function and return a `Sendable` (or `@unchecked Sendable`) value. Local `swift build` cannot catch this; only the CI run does |
 | `requires that 'Settings' conform to 'Scene'` | Our Core `Settings` is shadowing SwiftUI's — write `SwiftUI.Settings` |
 | `Could not find '…/*.test.mjs'` or `Cannot find module '…/__tests__'` from `node --test` | The test path was spelled as a Node-expanded glob (broken before v21) or a bare directory (broken on v22); use the shell glob `scripts/__tests__/*.test.mjs` |
 | `everyIconHasAVendoredSVG` fails | An `AppIcon` case has no SVG: add it to `Resources/Icons/icons.json` and run `npm run sync-icons` |
