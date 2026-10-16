@@ -164,7 +164,7 @@ transcribes it.
 ### Transcripts window
 
 - A call segment row reads `[00:12:04] Me: text`.
-- A call transcript adds **Show Recording in Finder**.
+- A call transcript adds **Show in Finder**, which reveals its recording folder.
 - `Copy` and `Summarize` use `Me: text` lines; Summarize is otherwise unchanged (Quick Panel,
   nothing stored).
 - Export: `.txt` — `Me: text` per line; `.srt` — the cue text is prefixed with `Me: `; `.md` —

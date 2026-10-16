@@ -224,6 +224,7 @@ struct TranscriptsView: View {
                 Label { Text("Copy") } icon: { Icon(.copy, size: 14) }
             }
             .help("Copy the transcript text, without timestamps")
+            .fixedSize()
 
             exportMenu
 
@@ -234,6 +235,7 @@ struct TranscriptsView: View {
                 Label { Text("Summarize") } icon: { Icon(.summarize, size: 14) }
             }
             .help("Summarize in the Quick Panel with the LLM configured for Summarize")
+            .fixedSize()
 
             if transcript.header.status == .incomplete {
                 Button {
@@ -242,12 +244,18 @@ struct TranscriptsView: View {
                     Label { Text("Resume") } icon: { Icon(.play, size: 14) }
                 }
                 .help("Continue transcribing from the last stored segment")
+                .fixedSize()
             }
 
             if transcript.header.sourceKind == .call {
                 // The folder's bookmark is resolved by the library, not here.
-                Button("Show Recording in Finder") { library.revealSelectedRecording() }
-                    .help("Show this call's recording folder in Finder")
+                Button {
+                    library.revealSelectedRecording()
+                } label: {
+                    Label { Text("Show in Finder") } icon: { Icon(.folder, size: 14) }
+                }
+                .help("Show this call's recording folder in Finder")
+                .fixedSize()
             }
 
             Spacer()
@@ -258,8 +266,12 @@ struct TranscriptsView: View {
                 Label { Text("Delete") } icon: { Icon(.delete, size: 14) }
             }
             .help("Delete this transcript")
+            .fixedSize()
         }
         .buttonStyle(.borderless)
+        .labelStyle(.titleAndIcon)
+        // A narrow window takes the room from the gap before Delete, never from a label.
+        .lineLimit(1)
     }
 
     /// A pull-down of the three formats: choosing one opens the save panel filtered to that
@@ -270,7 +282,7 @@ struct TranscriptsView: View {
                 Button(format.displayName) { export(format) }
             }
         } label: {
-            Label { Text("Export…") } icon: { Icon(.download, size: 14) }
+            Label { Text("Export") } icon: { Icon(.download, size: 14) }
         }
         .menuStyle(.borderlessButton)
         .fixedSize()

@@ -485,7 +485,7 @@ import Testing
 
     // MARK: - Revealing a recording
 
-    /// **Show Recording in Finder** resolves the open call transcript's folder bookmark here,
+    /// **Show in Finder** resolves the open call transcript's folder bookmark here,
     /// not in the view, and hands the folder to the revealer.
     @Test func revealSelectedRecordingRevealsTheBookmarkedFolder() async throws {
         let store = FakeTranscriptStore()

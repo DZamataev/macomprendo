@@ -31,6 +31,7 @@ enum AppIcon: String, CaseIterable {
     case presets = "list-bullets"
     case magic = "magic-wand"
     case globe = "globe"
+    case folder = "folder-open"
 
     /// Shown when the SVG resource is missing, so the UI degrades instead of going blank.
     var fallbackSymbol: String {
@@ -61,6 +62,7 @@ enum AppIcon: String, CaseIterable {
         case .presets: return "list.bullet"
         case .magic: return "wand.and.stars"
         case .globe: return "globe"
+        case .folder: return "folder"
         }
     }
 

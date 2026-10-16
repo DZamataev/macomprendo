@@ -25,5 +25,6 @@
   { "name": "cpu", "weight": "regular" },
   { "name": "list-bullets", "weight": "regular" },
   { "name": "magic-wand", "weight": "regular" },
-  { "name": "globe", "weight": "regular" }
+  { "name": "globe", "weight": "regular" },
+  { "name": "folder-open", "weight": "regular" }
 ]

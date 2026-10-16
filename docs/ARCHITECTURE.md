@@ -146,7 +146,7 @@ with fakes:
   transcript text. `TranscriptLibraryController` owns the list, the open transcript, delete, copy
   and export.
 - `TranscriptsView` is the window: the list on the left, the open transcript on the right, a drop
-  zone when nothing is selected, and the `Copy`, `Export…`, `Summarize`, `Resume` and `Delete`
+  zone when nothing is selected, and the `Copy`, `Export`, `Summarize`, `Resume` and `Delete`
   actions. `Summarize` opens the ordinary Summarize Quick Panel with the transcript's plain text
   and **Replace selection** hidden, because no other app holds a selection to replace.
 
@@ -251,7 +251,7 @@ On the UI side the menu bar label is the recording indicator — `record.circle`
 the status item remaining invariant 12's one SF Symbol exception — and the menu opens with the state
 line and the two ten-cell level rows. Settings ▸ General gains a **Call recordings** section and
 Settings ▸ Hotkeys **Record Call**; the Transcripts window labels a call segment `[00:12:04] Me: text`,
-offers **Show Recording in Finder**, and exports with the speaker prefix. Call recording requires
+offers **Show in Finder**, and exports with the speaker prefix. Call recording requires
 **macOS 14.2**, the first release with process taps.
 
 ## Rules
