@@ -116,6 +116,10 @@ final class AppModel: ObservableObject {
                                                              pasteboard: env.pasteboard,
                                                              bookmarks: env.fileBookmarks,
                                                              revealer: env.fileRevealer)
+    lazy var transcriptPlayback = TranscriptPlaybackController(player: env.transcriptAudioPlayer,
+                                                               bookmarks: env.fileBookmarks,
+                                                               folders: env.callRecordingFolders,
+                                                               store: env.transcriptStore)
     /// The call recorder: the two captures, the track writers, and the transcript row the
     /// transcription job takes over. Its own `AVAudioEngine` — dictation keeps recording while
     /// a call is recorded.
@@ -349,6 +353,12 @@ final class AppModel: ObservableObject {
             .store(in: &cancellables)
         callRecording.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        // A call should not start with the app talking; the tap would not record it anyway.
+        callRecording.$state
+            .sink { [weak self] state in
+                if case .recording = state { self?.transcriptPlayback.stop() }
+            }
             .store(in: &cancellables)
         // System sleep stops the recording exactly as Stop does: the recording is finalised and
         // its transcription job starts immediately, not on the next launch.

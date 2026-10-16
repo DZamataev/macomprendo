@@ -12,6 +12,7 @@ struct TranscriptsView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var library: TranscriptLibraryController
     @ObservedObject var transcription: FileTranscriptionController
+    @ObservedObject var playback: TranscriptPlaybackController
 
     @State private var isDeleteConfirmationPresented = false
     /// A failure from writing an export. Export is the one action whose failure belongs to no
@@ -42,6 +43,12 @@ struct TranscriptsView: View {
             await model.modelsViewModel.refresh()
             model.dictationTabModel.adopt(model.modelsViewModel.rows)
             await library.reload()
+            // The window opens on whatever the list already had selected, which no change
+            // event fires for.
+            await playback.open(library.selected)
+        }
+        .onChange(of: library.selected) { _, selected in
+            Task { await playback.open(selected) }
         }
         .onChange(of: library.selected?.id) { _, _ in
             actionError = nil
