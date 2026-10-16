@@ -21,7 +21,7 @@ test('identity constants match the spec', () => {
   assert.equal(BUNDLE_ID, 'com.dzamataev.macomprendo');
   assert.equal(TEAM_ID, '68QJJA7HK9');
   assert.equal(NOTARY_PROFILE, 'macomprendo-notary');
-  assert.equal(DEPLOYMENT_TARGET, '14.0');
+  assert.equal(DEPLOYMENT_TARGET, '14.2');
   assert.equal(SCHEME, 'Macomprendo');
 });
 

@@ -266,7 +266,7 @@ export async function main(argv, deps = {}) {
       '  --arch <list>            arm64, x86_64, or "arm64,x86_64" (default: host arch)',
       '  --sign <identity>        codesign identity; "-" for ad-hoc (default: -)',
       '  --configuration <name>   release | debug (default: release)',
-      '  --deployment-target <v>  macOS deployment target (default: 14.0)',
+      '  --deployment-target <v>  macOS deployment target (default: 14.2)',
       '  --entitlements <path>    entitlements plist for hardened-runtime signing',
       '  --timestamp <mode>       auto | none (default: auto; none for local Developer ID installs)',
       '  --version <X.Y.Z>        override MARKETING_VERSION from macos/project.yml',

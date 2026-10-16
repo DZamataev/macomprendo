@@ -8,7 +8,7 @@ summarization run through local Ollama or another endpoint you configure.
 Macomprendo has no account, telemetry, update ping, or automatic network traffic. It connects
 only to services you configure and model downloads you start.
 
-Requires macOS 14 or newer. Universal (Apple silicon and Intel). The source is MIT licensed;
+Requires macOS 14.2 or newer. Universal (Apple silicon and Intel). The source is MIT licensed;
 the distributed app is under GPL-3.0 because it bundles a framework with espeak-ng statically
 linked — see [NOTICE](NOTICE).
 

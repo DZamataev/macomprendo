@@ -14,7 +14,7 @@ test('parseBuildArgs defaults to the host architecture and an ad-hoc signature',
   assert.deepEqual(options.archs, [process.arch === 'arm64' ? 'arm64' : 'x86_64']);
   assert.equal(options.sign, '-');
   assert.equal(options.configuration, 'release');
-  assert.equal(options.deploymentTarget, '14.0');
+  assert.equal(options.deploymentTarget, '14.2');
   assert.equal(options.dist, DIST_DIR);
   assert.equal(options.timestamp, 'auto');
   assert.equal(options.dryRun, false);
