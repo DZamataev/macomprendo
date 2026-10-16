@@ -44,6 +44,9 @@ struct AppEnvironment {
     /// Plays a saved recording back from the history window. Separate from the speech
     /// services' own players so stopping one never silences the other.
     var historyAudioPlayer: any AudioPlaying
+    /// Plays a transcript's file or its call recording. Separate from `historyAudioPlayer`, so
+    /// transcript playback and dictation-history playback never silence each other.
+    var transcriptAudioPlayer: any TranscriptAudioPlaying
     var fileRevealer: any FileRevealing
     /// Hands a URL to the default browser: the About window's privacy and homepage links.
     var urlOpener: any URLOpening
@@ -115,6 +118,7 @@ struct AppEnvironment {
                 directoryURL: applicationSupportDirectory
                     .appendingPathComponent("Vocabulary", isDirectory: true)),
             historyAudioPlayer: AVAudioPlayerPlayer(),
+            transcriptAudioPlayer: AVTranscriptAudioPlayer(),
             fileRevealer: NSWorkspaceFileRevealer(),
             urlOpener: NSWorkspaceURLOpener(),
             launchAtLogin: SMAppServiceLaunchAtLogin(),
