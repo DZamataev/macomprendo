@@ -127,11 +127,13 @@
 		589DFAB0D318CEF2D2609D0F /* SummarizeControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2F666821A0B8AF1E85021A /* SummarizeControllerTests.swift */; };
 		5996A188943965F021879C5A /* PermissionsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82DFD16A44FDEBB68DEE24A /* PermissionsService.swift */; };
 		5A78C3271017BE7A5DACB660 /* GeneralTabModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F0B7F3D5F512AC703FCDF9B /* GeneralTabModel.swift */; };
+		5C41665AA2ECEF2B76CAA6BF /* ScrollWheelObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC27A1A3F6D0EB684CF7486E /* ScrollWheelObserver.swift */; };
 		5C62629AAF54B5581E9BD82C /* LocalSpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04155AAA422FE60355DB2936 /* LocalSpeechService.swift */; };
 		5CB0C78A7652F5EDB84E2BC3 /* HUDWindowPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC14D979EDBCAE2767B8F8F /* HUDWindowPresenter.swift */; };
 		5D43FF68ABA05D6F6713D5CC /* FakeAudioInputEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 473A058090836AB628D0B72C /* FakeAudioInputEngine.swift */; };
 		5E83CD935B252A609B279377 /* SherpaOfflineTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97944CC1009F4E73F6D8BADF /* SherpaOfflineTranscriber.swift */; };
 		5F57D8123EC3B814CAC342A2 /* FakeTranscriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD558DFA87085FF33927D546 /* FakeTranscriptStore.swift */; };
+		5F65A88479754D86D63174D6 /* TranscriptPlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0BA0A32365C796324F450A /* TranscriptPlayerBar.swift */; };
 		6140D2204CD33BAEA0FBF3D9 /* Endpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = C071926D0B0BF1A2C044ED84 /* Endpoint.swift */; };
 		624F599D0E0CFD6C4775960D /* CallRecordingControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D24D6F8166894CDCD9BDA2 /* CallRecordingControllerTests.swift */; };
 		62B777E070A92B3DF0D2A5D8 /* ProvidersTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E786AF130059D7044240A9D /* ProvidersTab.swift */; };
@@ -482,6 +484,7 @@
 		4855B5728820703725398332 /* SpeechRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRequestBuilder.swift; sourceTree = "<group>"; };
 		49006B8B10DEED92A79EA86B /* FactoryPresets+Spanish.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FactoryPresets+Spanish.swift"; sourceTree = "<group>"; };
 		4A2DE4F5E42A5F28EA857A33 /* FakeTranscriptAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeTranscriptAudioPlayer.swift; sourceTree = "<group>"; };
+		4B0BA0A32365C796324F450A /* TranscriptPlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptPlayerBar.swift; sourceTree = "<group>"; };
 		4B61D07CA58E9C6A30B9ED37 /* SpeechRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRouter.swift; sourceTree = "<group>"; };
 		4C1734A150620612C32E96E5 /* CorrectionReviewControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionReviewControllerTests.swift; sourceTree = "<group>"; };
 		4E314AC11116CAEA55AA3F69 /* GlossarySectionModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlossarySectionModelTests.swift; sourceTree = "<group>"; };
@@ -638,6 +641,7 @@
 		BAE1E09173F76D1E5726C20F /* LanguageDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageDetectorTests.swift; sourceTree = "<group>"; };
 		BB967710AF163B0F8F15537C /* FloatingPanelHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPanelHost.swift; sourceTree = "<group>"; };
 		BC0FE690DF8CC1C54D5AECCE /* HUDView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDView.swift; sourceTree = "<group>"; };
+		BC27A1A3F6D0EB684CF7486E /* ScrollWheelObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollWheelObserver.swift; sourceTree = "<group>"; };
 		BCD3DF2BA40558FA89D6D54C /* FileBookmarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBookmarks.swift; sourceTree = "<group>"; };
 		BCEB9AE9BBE7A3949AB82327 /* FakeURLOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeURLOpener.swift; sourceTree = "<group>"; };
 		BDA21B4463F11821CCE88477 /* SpeechSourceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSourceModel.swift; sourceTree = "<group>"; };
@@ -869,6 +873,8 @@
 		25CF9C5622D4BAA6D377229B /* Transcripts */ = {
 			isa = PBXGroup;
 			children = (
+				BC27A1A3F6D0EB684CF7486E /* ScrollWheelObserver.swift */,
+				4B0BA0A32365C796324F450A /* TranscriptPlayerBar.swift */,
 				E3A037CF775C5FD3021BD5A2 /* TranscriptsView.swift */,
 			);
 			path = Transcripts;
@@ -1871,6 +1877,7 @@
 				9EF682502BC802905991D885 /* ResourceBundle.swift in Sources */,
 				BA351E14E3CEFFC37A623398 /* SSEParser.swift in Sources */,
 				18C3A6E07AF8663F84950CE1 /* SavedAudioModel.swift in Sources */,
+				5C41665AA2ECEF2B76CAA6BF /* ScrollWheelObserver.swift in Sources */,
 				44976947C3FB0B94A0AECEE1 /* SelectedTextService.swift in Sources */,
 				F61FD3BD8FF2389B2CA27F7A /* Settings.swift in Sources */,
 				2FDD755A1612D81830BD0A27 /* SettingsHolding.swift in Sources */,
@@ -1900,6 +1907,7 @@
 				3135515DF17AA20618975A5F /* TranscriptExporter.swift in Sources */,
 				54E0C67BB1259855AD2BF00F /* TranscriptLibraryController.swift in Sources */,
 				583E2A54F8023D6679C18F95 /* TranscriptPlaybackController.swift in Sources */,
+				5F65A88479754D86D63174D6 /* TranscriptPlayerBar.swift in Sources */,
 				67007347EBAB082EF7298224 /* TranscriptStore.swift in Sources */,
 				79FFBA9E2E874E25FEE6E7BE /* TranscriptionLane.swift in Sources */,
 				3446285AB6D3C1A4209F672F /* TranscriptionProvider.swift in Sources */,
