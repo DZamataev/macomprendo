@@ -44,6 +44,10 @@ final class SpeechSpanAssembler {
 
     /// Regions closer than this to the open span's end extend it, keeping the audio between.
     static let joinGap: TimeInterval = 10
+    /// A call track is silent while the other side talks, so any longer pause is a turn: joining
+    /// across it would glue two of one side's turns around the other's reply and lose the order
+    /// of the conversation. Above sherpa's 0.5 s `min_silence_duration`, so one breath still joins.
+    static let callJoinGap: TimeInterval = 1.5
     /// Padding added on both sides of a span, clamped to the stream.
     static let padding: TimeInterval = 0.3
     /// The detector's Silero window size, in samples, and its minimum speech duration. The
@@ -98,9 +102,9 @@ final class SpeechSpanAssembler {
         var provisional: Bool
     }
 
-    init(sampleRate: Int) {
+    init(sampleRate: Int, joinGap: TimeInterval = SpeechSpanAssembler.joinGap) {
         self.sampleRate = sampleRate
-        joinGapSamples = Int(Self.joinGap * Double(sampleRate))
+        joinGapSamples = Int(joinGap * Double(sampleRate))
         paddingSamples = Int(Self.padding * Double(sampleRate))
         capSamples = Int(SpeechSegmentSplitter.maximumDuration * Double(sampleRate))
         remainderSamples = Int(SpeechSegmentSplitter.minimumRemainder * Double(sampleRate))

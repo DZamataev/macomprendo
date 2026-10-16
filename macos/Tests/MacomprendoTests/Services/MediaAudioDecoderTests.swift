@@ -103,18 +103,18 @@ import Testing
 @Suite struct SherpaSileroSegmenterTests {
 
     @Test func theBundledModelLoads() throws {
-        _ = try SherpaSileroSegmenter().makeSession()
+        _ = try SherpaSileroSegmenter().makeSession(joinGap: SpeechSpanAssembler.joinGap)
     }
 
     @Test func aMissingModelIsASpeechDetectorError() {
         let segmenter = SherpaSileroSegmenter(modelURL: URL(fileURLWithPath: "/nonexistent.onnx"))
         #expect(throws: MacomprendoError.speechDetector("silero_vad.onnx is not in the app bundle")) {
-            _ = try segmenter.makeSession()
+            _ = try segmenter.makeSession(joinGap: SpeechSpanAssembler.joinGap)
         }
     }
 
     @Test func silenceYieldsNoSegments() throws {
-        let session = try SherpaSileroSegmenter().makeSession()
+        let session = try SherpaSileroSegmenter().makeSession(joinGap: SpeechSpanAssembler.joinGap)
         var segments = session.accept(Array(repeating: 0, count: 16_000 * 5))
         segments += session.finish()
         #expect(segments.isEmpty)
@@ -139,7 +139,7 @@ import Testing
         let silence = [Float](repeating: 0, count: 16_000 * 3)
         let stream = silence + speech + silence
 
-        let session = try SherpaSileroSegmenter().makeSession()
+        let session = try SherpaSileroSegmenter().makeSession(joinGap: SpeechSpanAssembler.joinGap)
         var segments: [SpeechSegment] = []
         var offset = 0
         while offset < stream.count {

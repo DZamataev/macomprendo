@@ -69,7 +69,9 @@ struct LongAudioPipeline: Sendable {
     /// mid-transcription, by as long as that transcription takes — so a caller that stops
     /// reading must [`stop()`](stop()) it and [`awaitCompletion()`](awaitCompletion()) it
     /// before assuming the provider it obtained has been released.
-    func run(_ url: URL, from start: TimeInterval) -> AsyncThrowingStream<LongAudioEvent, Error> {
+    func run(_ url: URL, from start: TimeInterval,
+             joinGap: TimeInterval = SpeechSpanAssembler.joinGap)
+        -> AsyncThrowingStream<LongAudioEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -77,7 +79,7 @@ struct LongAudioPipeline: Sendable {
                     continuation.yield(.opened(duration: decoded.duration))
                     // Sessions are not Sendable and keep state between chunks, so the session is
                     // built here, inside the one task that drives the stream.
-                    let session = try segmenter.makeSession()
+                    let session = try segmenter.makeSession(joinGap: joinGap)
                     // Obtained once per run, on first use: a file with no speech never builds one.
                     var provider: (any TranscriptionProvider)?
                     let offset = decoded.startOffset

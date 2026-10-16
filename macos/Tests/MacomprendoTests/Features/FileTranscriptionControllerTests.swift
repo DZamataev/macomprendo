@@ -100,6 +100,7 @@ import Testing
         await rig.controller.drain()
 
         #expect(rig.controller.state == .finished(transcriptID: 1))
+        #expect(rig.segmenter.sessionJoinGaps == [SpeechSpanAssembler.joinGap])
         let createCount = await rig.store.createCount
         #expect(createCount == 1)
         let stored = await rig.store.snapshot(1)
@@ -740,6 +741,9 @@ import Testing
         #expect(rig.controller.state == .finished(transcriptID: id))
         #expect(decoder.requests.map(\.url) == [trackURL(folder, .me),
                                                 trackURL(folder, .others)])
+        // Call tracks are cut at the other side's turns, not joined across them.
+        #expect(segmenter.sessionJoinGaps == [SpeechSpanAssembler.callJoinGap,
+                                              SpeechSpanAssembler.callJoinGap])
         let stored = await rig.store.snapshot(id)
         #expect(stored?.segments == [
             TranscriptSegment(start: 0.2, end: 1.2, text: "hello", speaker: .me),

@@ -441,7 +441,9 @@ import Foundation
             // what holds the provider, and it must not be free to start another segment in the
             // gap between the cancellation and the loop unwinding.
             try await withTaskCancellationHandler(operation: {
-                for try await event in pipeline.run(url, from: start) {
+                let joinGap = speaker == nil ? SpeechSpanAssembler.joinGap
+                                             : SpeechSpanAssembler.callJoinGap
+                for try await event in pipeline.run(url, from: start, joinGap: joinGap) {
                     try Task.checkCancellation()
                     switch event {
                     case let .opened(openedDuration):
