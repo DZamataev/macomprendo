@@ -29,6 +29,8 @@ final class TranscriptLibraryController: ObservableObject {
 
     private let store: any TranscriptStoring
     private let pasteboard: any PasteboardProtocol
+    private let bookmarks: any FileBookmarking
+    private let revealer: any FileRevealing
 
     /// Guards the list: bumped when `reload()` starts and when a `delete()` completes. A
     /// `reload()` writes `headers` only while the value it started with is still current, so a
@@ -48,9 +50,14 @@ final class TranscriptLibraryController: ObservableObject {
     /// it (the cancelled select fails its token guard and never gets to clear it itself).
     private var pendingSelectionID: Int64?
 
-    init(store: any TranscriptStoring, pasteboard: any PasteboardProtocol) {
+    private var lastRename: Task<Void, Never>?
+
+    init(store: any TranscriptStoring, pasteboard: any PasteboardProtocol,
+         bookmarks: any FileBookmarking, revealer: any FileRevealing) {
         self.store = store
         self.pasteboard = pasteboard
+        self.bookmarks = bookmarks
+        self.revealer = revealer
     }
 
     /// Loads the list, newest first, and re-reads the open transcript so a segment a running
@@ -107,6 +114,41 @@ final class TranscriptLibraryController: ObservableObject {
         }
     }
 
+    /// Renames `id` to `title`, trimmed. A blank or unchanged title is not stored. The stored
+    /// title is the truth once written, so the list and the open transcript take it directly
+    /// rather than waiting for a reload. Renames run one after another: the detail title saves
+    /// on every keystroke, and an older keystroke must never land after a newer one.
+    func rename(_ id: Int64, to title: String) async {
+        let previous = lastRename
+        let task = Task { [weak self] in
+            await previous?.value
+            await self?.applyRename(id, to: title)
+        }
+        lastRename = task
+        await task.value
+    }
+
+    private func applyRename(_ id: Int64, to title: String) async {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              headers.first(where: { $0.id == id })?.title != trimmed else { return }
+        do {
+            try await store.setTitle(trimmed, for: id)
+        } catch {
+            self.error = ErrorText.describe(error)
+            return
+        }
+        if let index = headers.firstIndex(where: { $0.id == id }) {
+            headers[index] = headers[index].retitled(trimmed)
+        }
+        if let open = selected, open.id == id {
+            selected = Transcript(header: open.header.retitled(trimmed), run: open.run,
+                                  sourceBookmark: open.sourceBookmark, summary: open.summary,
+                                  segments: open.segments)
+        }
+        error = nil
+    }
+
     /// Removes `id`. A selection on the deleted transcript is cleared.
     func delete(_ id: Int64) async {
         do {
@@ -147,6 +189,20 @@ final class TranscriptLibraryController: ObservableObject {
     func exportText(_ format: TranscriptExportFormat) -> String? {
         guard let selected else { return nil }
         return TranscriptExporter.render(selected, as: format)
+    }
+
+    /// Shows the open call transcript's recording folder in Finder. The folder's bookmark is
+    /// resolved here rather than in the window, and one that no longer resolves reports the
+    /// same failure `Resume` reports. A file transcript has no recording folder and does
+    /// nothing.
+    func revealSelectedRecording() {
+        guard let selected, selected.header.sourceKind == .call else { return }
+        guard let bookmark = selected.sourceBookmark,
+              let folder = try? bookmarks.resolve(bookmark) else {
+            error = ErrorText.describe(MacomprendoError.callRecordingUnavailable)
+            return
+        }
+        revealer.reveal(folder)
     }
 
     /// Marks every `inProgress` row the app did not finish, then refreshes the list so it shows

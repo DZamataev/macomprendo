@@ -24,7 +24,7 @@ export const EXECUTABLE_NAME = 'Macomprendo';
 export const BUNDLE_ID = 'com.dzamataev.macomprendo';
 export const TEAM_ID = '68QJJA7HK9';
 export const NOTARY_PROFILE = 'macomprendo-notary';
-export const DEPLOYMENT_TARGET = '14.0';
+export const DEPLOYMENT_TARGET = '14.2';
 export const SCHEME = 'Macomprendo';
 
 export function appPath(distDir = DIST_DIR) {

@@ -348,6 +348,9 @@ struct Settings: Codable, Sendable, Equatable {
     /// Whether the recommended packs have already been offered. Set the first time the master
     /// switch goes on, whichever way the user answered, so the offer is made exactly once.
     var glossaryRecommendedPacksOffered: Bool
+    /// Where call recordings are stored. `nil` uses `CallRecordingLayout.defaultDirectory`. A
+    /// `String` rather than a `URL` so the persisted JSON stays readable and portable.
+    var callRecordingsDirectory: String?
 
     static var `default`: Settings {
         Settings(
@@ -386,7 +389,8 @@ struct Settings: Codable, Sendable, Equatable {
             localModelIdleTimeout: .tenMinutes,
             glossaryEnabled: false,
             glossaryManualTerms: [],
-            glossaryRecommendedPacksOffered: false
+            glossaryRecommendedPacksOffered: false,
+            callRecordingsDirectory: nil
         )
     }
 
@@ -476,5 +480,7 @@ extension Settings {
         glossaryRecommendedPacksOffered = try c.decodeIfPresent(
             Bool.self, forKey: .glossaryRecommendedPacksOffered)
             ?? d.glossaryRecommendedPacksOffered
+        callRecordingsDirectory = try c.decodeIfPresent(String.self,
+                                                        forKey: .callRecordingsDirectory)
     }
 }

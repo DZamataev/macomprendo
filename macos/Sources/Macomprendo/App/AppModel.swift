@@ -26,6 +26,8 @@ final class AppModel: ObservableObject {
             }
             if settings.preferredInputDeviceUID != oldValue.preferredInputDeviceUID {
                 env.recorder.setPreferredInputDevice(uid: settings.preferredInputDeviceUID)
+                // The call recorder has its own engine but follows the same microphone choice.
+                env.callMicrophone.setPreferredInputDevice(uid: settings.preferredInputDeviceUID)
             }
             if settings.historyRetention != oldValue.historyRetention {
                 Task { [weak self] in
@@ -81,12 +83,17 @@ final class AppModel: ObservableObject {
     lazy var microphonePickerModel = MicrophonePickerModel(holder: self,
                                                            devices: env.audioInputDevices)
     lazy var savedAudioModel = SavedAudioModel(history: history, revealer: env.fileRevealer)
+    /// The General tab's Call recordings section: the folder, its size and the reveal action.
+    lazy var callRecordingsModel = CallRecordingsSettingsModel(holder: self,
+                                                               folders: env.callRecordingFolders,
+                                                               revealer: env.fileRevealer)
     /// File transcription's controllers, wired to the environment's services. Every closure
     /// reads the current settings, glossary and readiness, so a job started after a settings
     /// change sees the new values.
     lazy var fileTranscription = FileTranscriptionController(
         store: env.transcriptStore,
         bookmarks: env.fileBookmarks,
+        folders: env.callRecordingFolders,
         pipeline: { [unowned self] in
             LongAudioPipeline(decoder: env.mediaDecoder,
                               segmenter: env.speechSegmenter,
@@ -98,9 +105,33 @@ final class AppModel: ObservableObject {
         readiness: { [unowned self] in self.dictationTabModel.readiness },
         transcriptsChanged: { [weak self] in
             Task { await self?.transcriptLibrary.reload() }
+        },
+        callFinished: { [weak self] _, _ in
+            // A finished call transcript reports itself: the Transcripts window is not opened
+            // for it. Longer than a dictation's toast — the user may not be looking at the
+            // screen when the job lands.
+            self?.hud.toast("Call transcript ready", duration: 3)
         })
     lazy var transcriptLibrary = TranscriptLibraryController(store: env.transcriptStore,
-                                                             pasteboard: env.pasteboard)
+                                                             pasteboard: env.pasteboard,
+                                                             bookmarks: env.fileBookmarks,
+                                                             revealer: env.fileRevealer)
+    /// The call recorder: the two captures, the track writers, and the transcript row the
+    /// transcription job takes over. Its own `AVAudioEngine` — dictation keeps recording while
+    /// a call is recorded.
+    lazy var callRecording = CallRecordingController(
+        microphone: env.callMicrophone,
+        systemAudio: env.systemAudio,
+        folders: env.callRecordingFolders,
+        makeWriter: env.callTrackWriter,
+        permissions: env.permissions,
+        store: env.transcriptStore,
+        bookmarks: env.fileBookmarks,
+        settings: { [unowned self] in self.settings },
+        transcribe: { [unowned self] id in self.fileTranscription.resume(transcriptID: id) },
+        transcriptsChanged: { [weak self] in
+            Task { await self?.transcriptLibrary.reload() }
+        })
     /// The About window's content, owned here so the view never constructs a service
     /// (invariant 1). Not actually deferred to first open: SwiftUI evaluates every `Scene`'s
     /// content `ViewBuilder` — including this one's `AboutView(model: model.aboutModel)` —
@@ -129,6 +160,9 @@ final class AppModel: ObservableObject {
     private let snapshot: SettingsSnapshot
     private let glossaryBox = GlossaryBox()
     private let enablement: HotkeyEnablementStore
+    /// Captured here, in the init that runs before any hotkey can start a recording: launch
+    /// recovery must never finalise a recording this process started.
+    private let processLaunchDate = ProcessLaunch.date
     private var hotkeyTask: Task<Void, Never>?
     private var middleMouseTask: Task<Void, Never>?
     private var historyMaintenanceTask: Task<Void, Never>?
@@ -270,10 +304,21 @@ final class AppModel: ObservableObject {
     /// Called once at launch: applies hotkey enablement and starts routing hotkey events.
     func start() {
         // Before anything else can start a job: no job can be running at launch, so every
-        // `inProgress` transcript belongs to a job the app did not finish.
+        // `inProgress` transcript belongs to a job the app did not finish — and every folder
+        // still marked `recording` belongs to a recording the app did not finish.
         if transcriptMaintenanceTask == nil {
             transcriptMaintenanceTask = Task { [weak self] in
-                await self?.transcriptLibrary.performLaunchMaintenance()
+                guard let self else { return }
+                await self.transcriptLibrary.performLaunchMaintenance()
+                await CallRecordingRecovery(
+                    folders: self.env.callRecordingFolders,
+                    store: self.env.transcriptStore,
+                    bookmarks: self.env.fileBookmarks,
+                    settings: { [weak self] in self?.settings ?? .default },
+                    launchDate: self.processLaunchDate).recover()
+                // Recovery creates a row per recovered recording; the list has to be read
+                // again so those rows show up.
+                await self.transcriptLibrary.reload()
             }
         }
         if settings.glossaryEnabled {
@@ -293,11 +338,26 @@ final class AppModel: ObservableObject {
                                              history: history)
         }
 
+        // The call recorder runs its own engine but listens to the same chosen microphone.
+        env.callMicrophone.setPreferredInputDevice(uid: settings.preferredInputDeviceUID)
+
         for action in HotkeyAction.allCases {
             env.hotkeys.setEnabled(action, enablement.isEnabled(action))
         }
         dictation.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        callRecording.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        // System sleep stops the recording exactly as Stop does: the recording is finalised and
+        // its transcription job starts immediately, not on the next launch.
+        NSWorkspace.shared.notificationCenter
+            .publisher(for: NSWorkspace.willSleepNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task { await self?.callRecording.systemWillSleep() }
+            }
             .store(in: &cancellables)
 
         env.middleMouse.setEnabled(settings.middleMouseAction != nil)
@@ -323,6 +383,9 @@ final class AppModel: ObservableObject {
         switch event.action {
         case .dictate:
             dictation.handle(event, mode: mode)
+        case .recordCall:
+            // Toggle semantics of its own; the key-up and the dictation mode mean nothing here.
+            callRecording.handle(event)
         default:
             textFeatures?.handle(event, mode: mode)
         }
@@ -348,12 +411,14 @@ final class AppModel: ObservableObject {
 
     /// Releases native local-ASR contexts before application termination is allowed to finish.
     ///
-    /// Order matters: the running file job is stopped and awaited first, so the pipeline task
+    /// Order matters: a recording in flight is finalised first — its row goes `incomplete` and
+    /// no job starts — then the running file job is stopped and awaited, so the pipeline task
     /// that holds the cached provider — and, with it, the whisper context — has released it
     /// before the cache drops the model. An in-flight dictation is stopped the same way, for
     /// the same reason: a context still alive at process exit aborts in whisper.cpp v1.9.2's
     /// ggml-metal static destructor, and quitting mid-job must be a clean quit.
     func shutdown() async {
+        await callRecording.shutdown()
         await fileTranscription.shutdown()
         switch dictation.state {
         case .recording, .transcribing, .inserting:

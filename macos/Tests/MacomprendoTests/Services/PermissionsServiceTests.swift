@@ -38,3 +38,35 @@ import Testing
         #expect(await permissions.status(of: .accessibility) == .granted)
     }
 }
+
+/// The status → prompt → System Settings flow `DictationController` and
+/// `CallRecordingController` share.
+@Suite struct PermissionsEnsureGrantedTests {
+    @Test func grantedPromptsNothingAndOpensNothing() async {
+        let permissions = FakePermissions()
+
+        #expect(await permissions.ensureGranted(.microphone))
+        #expect(permissions.requested.isEmpty)
+        #expect(permissions.openedPanes.isEmpty)
+    }
+
+    @Test func undeterminedIsPromptedAndAGrantSucceeds() async {
+        let permissions = FakePermissions()
+        permissions.statuses[.microphone] = .undetermined
+        permissions.requestResults[.microphone] = .granted
+
+        #expect(await permissions.ensureGranted(.microphone))
+        #expect(permissions.requested == [.microphone])
+        #expect(permissions.openedPanes.isEmpty)
+    }
+
+    @Test func aRefusalPromptsOpensSystemSettingsAndReportsFailure() async {
+        let permissions = FakePermissions()
+        permissions.statuses[.accessibility] = .denied
+        permissions.requestResults[.accessibility] = .denied
+
+        #expect(await permissions.ensureGranted(.accessibility) == false)
+        #expect(permissions.requested == [.accessibility])
+        #expect(permissions.openedPanes == [.accessibility])
+    }
+}

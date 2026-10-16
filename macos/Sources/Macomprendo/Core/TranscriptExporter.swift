@@ -65,8 +65,14 @@ enum TranscriptExporter {
         transcript.segments.enumerated().map { index, segment in
             "\(index + 1)\n"
                 + "\(subRipTimestamp(segment.start)) --> \(subRipTimestamp(segment.end))\n"
-                + "\(segment.text)\n"
+                + "\(speakerPrefix(segment))\(segment.text)\n"
         }.joined(separator: "\n")
+    }
+
+    /// `"Me: "` / `"Others: "` for a call recording's segments, `""` for every other transcript —
+    /// so file and dictation exports stay byte-for-byte as they were.
+    static func speakerPrefix(_ segment: TranscriptSegment) -> String {
+        segment.speaker.map { "\($0.label): " } ?? ""
     }
 
     private static func markdown(_ transcript: Transcript) -> String {
@@ -80,7 +86,11 @@ enum TranscriptExporter {
             lines += ["## Summary", "", summary, ""]
         }
         lines += ["## Transcript", ""]
-        lines += transcript.segments.map { "**[\(clock($0.start))]** \($0.text)" }
+        // A blank line per segment: Markdown folds adjacent lines into one paragraph.
+        let segments = transcript.segments.map { segment in
+            "**[\(clock(segment.start))]\(segment.speaker.map { " \($0.label):" } ?? "")** \(segment.text)"
+        }
+        if !segments.isEmpty { lines.append(segments.joined(separator: "\n\n")) }
         return lines.joined(separator: "\n") + "\n"
     }
 }

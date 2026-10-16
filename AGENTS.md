@@ -1,6 +1,6 @@
 # Macomprendo — agent instructions
 
-Menubar-only macOS app (macOS 14+, Swift 6, SwiftUI + AppKit). Global hotkeys drive
+Menubar-only macOS app (macOS 14.2+, Swift 6, SwiftUI + AppKit). Global hotkeys drive
 five actions: dictate, dictate & refine, speak selection, summarize selection, refine
 selection. Transcription is whisper.cpp locally or an OpenAI-compatible endpoint; refine
 and summarize go through Ollama or an OpenAI-compatible chat endpoint.

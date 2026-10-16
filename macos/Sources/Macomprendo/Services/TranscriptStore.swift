@@ -12,6 +12,8 @@ protocol TranscriptStoring: Sendable {
     /// Replaces the bookmark `Resume` resolves for the row: written when the user chose the
     /// source file again because the stored bookmark no longer resolves.
     func setSourceBookmark(_ bookmark: Data?, for id: Int64) async throws
+    /// Renames the row. The caller trims and rejects a blank title.
+    func setTitle(_ title: String, for id: Int64) async throws
     /// Every transcript, newest first.
     func headers() async throws -> [TranscriptHeader]
     func transcript(id: Int64) async throws -> Transcript?
@@ -59,8 +61,8 @@ actor SQLiteTranscriptStore: TranscriptStoring {
         // foreign-key failure SQLite would raise.
         try requireExistingTranscript(id, on: db)
         let statement = try prepare("""
-            INSERT INTO transcript_segments (transcript_id, start_s, end_s, text, raw_text)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO transcript_segments (transcript_id, start_s, end_s, text, raw_text, speaker)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             """, on: db)
         defer { sqlite3_finalize(statement) }
         try check(sqlite3_bind_int64(statement, 1, id), on: db)
@@ -68,6 +70,7 @@ actor SQLiteTranscriptStore: TranscriptStoring {
         try check(sqlite3_bind_double(statement, 3, segment.end), on: db)
         try bind(segment.text, 4, statement, db)
         try bind(segment.rawText, 5, statement, db)
+        try bind(segment.speaker?.rawValue, 6, statement, db)
         try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)
     }
 
@@ -99,6 +102,16 @@ actor SQLiteTranscriptStore: TranscriptStoring {
             "UPDATE transcripts SET source_bookmark = ?1 WHERE id = ?2", on: db)
         defer { sqlite3_finalize(statement) }
         try bind(bookmark, 1, statement, db)
+        try check(sqlite3_bind_int64(statement, 2, id), on: db)
+        try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)
+        try requireOneChange(id, on: db)
+    }
+
+    func setTitle(_ title: String, for id: Int64) throws {
+        let db = try connection()
+        let statement = try prepare("UPDATE transcripts SET title = ?1 WHERE id = ?2", on: db)
+        defer { sqlite3_finalize(statement) }
+        try bind(title, 1, statement, db)
         try check(sqlite3_bind_int64(statement, 2, id), on: db)
         try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)
         try requireOneChange(id, on: db)
@@ -182,7 +195,7 @@ actor SQLiteTranscriptStore: TranscriptStoring {
 
     private func segments(of id: Int64, on db: OpaquePointer) throws -> [TranscriptSegment] {
         let statement = try prepare("""
-            SELECT start_s, end_s, text, raw_text FROM transcript_segments
+            SELECT start_s, end_s, text, raw_text, speaker FROM transcript_segments
             WHERE transcript_id = ?1 ORDER BY start_s, id
             """, on: db)
         defer { sqlite3_finalize(statement) }
@@ -195,7 +208,9 @@ actor SQLiteTranscriptStore: TranscriptStoring {
             result.append(TranscriptSegment(start: sqlite3_column_double(statement, 0),
                                             end: sqlite3_column_double(statement, 1),
                                             text: text(statement, 2) ?? "",
-                                            rawText: text(statement, 3)))
+                                            rawText: text(statement, 3),
+                                            speaker: text(statement, 4)
+                                                .flatMap(TranscriptSpeaker.init(rawValue:))))
         }
         return result
     }
@@ -244,18 +259,50 @@ actor SQLiteTranscriptStore: TranscriptStoring {
                     start_s REAL NOT NULL,
                     end_s REAL NOT NULL,
                     text TEXT NOT NULL,
-                    raw_text TEXT
+                    raw_text TEXT,
+                    speaker TEXT CHECK(speaker IN ('me', 'others'))
                 );
                 CREATE INDEX IF NOT EXISTS transcript_segments_by_start
                     ON transcript_segments (transcript_id, start_s);
-                PRAGMA user_version = 1;
                 """, on: opened)
+            try migrateSchema(on: opened)
         } catch {
             sqlite3_close_v2(opened)
             throw error
         }
         handle = TranscriptDatabaseHandle(opened)
         return opened
+    }
+
+    /// Brings a database up to schema version 2. A fresh file (0) already carries the speaker
+    /// column from the DDL above and needs only the version stamped; a version 1 file gets the
+    /// column added — its existing rows read as speakerless — then the version. The add and the
+    /// stamp share one transaction so a crash cannot leave a half-migrated file.
+    private func migrateSchema(on db: OpaquePointer) throws {
+        switch try userVersion(on: db) {
+        case 0:
+            try execute("PRAGMA user_version = 2", on: db)
+        case 1:
+            try execute("""
+                BEGIN;
+                ALTER TABLE transcript_segments
+                    ADD COLUMN speaker TEXT CHECK(speaker IN ('me', 'others'));
+                PRAGMA user_version = 2;
+                COMMIT;
+                """, on: db)
+        case 2:
+            break
+        default:
+            throw MacomprendoError.transcriptStore(
+                "the transcripts database is from a newer version")
+        }
+    }
+
+    private func userVersion(on db: OpaquePointer) throws -> Int32 {
+        let statement = try prepare("PRAGMA user_version", on: db)
+        defer { sqlite3_finalize(statement) }
+        try check(sqlite3_step(statement), expected: SQLITE_ROW, on: db)
+        return sqlite3_column_int(statement, 0)
     }
 
     private func requireExistingTranscript(_ id: Int64, on db: OpaquePointer) throws {

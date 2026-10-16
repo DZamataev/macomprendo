@@ -17,6 +17,10 @@ struct TranscriptsView: View {
     /// A failure from writing an export. Export is the one action whose failure belongs to no
     /// controller, so the window reports it itself.
     @State private var actionError: String?
+    /// The list row being renamed from its context menu, and its draft title.
+    @State private var renamingID: Int64?
+    @State private var renameDraft = ""
+    @FocusState private var isRenameFieldFocused: Bool
 
     var body: some View {
         NavigationSplitView {
@@ -79,7 +83,11 @@ struct TranscriptsView: View {
     private var sidebar: some View {
         List(selection: selection) {
             ForEach(library.headers) { header in
-                row(header).tag(header.id)
+                row(header)
+                    .tag(header.id)
+                    .contextMenu {
+                        Button("Rename") { beginRename(header) }
+                    }
             }
         }
     }
@@ -94,9 +102,20 @@ struct TranscriptsView: View {
     private func row(_ header: TranscriptHeader) -> some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(header.title)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if renamingID == header.id {
+                    TextField("Title", text: $renameDraft)
+                        .textFieldStyle(.plain)
+                        .focused($isRenameFieldFocused)
+                        .onSubmit { commitRename() }
+                        .onExitCommand { renamingID = nil }
+                        .onChange(of: isRenameFieldFocused) { _, focused in
+                            if !focused { commitRename() }
+                        }
+                } else {
+                    Text(header.title)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
                 HStack(spacing: 6) {
                     Text(header.createdAt.formatted(date: .abbreviated, time: .shortened))
                     if let duration = header.duration {
@@ -117,6 +136,20 @@ struct TranscriptsView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private func beginRename(_ header: TranscriptHeader) {
+        renameDraft = header.title
+        renamingID = header.id
+        isRenameFieldFocused = true
+    }
+
+    /// Enter or leaving the field saves; Esc cleared `renamingID` first, so it saves nothing.
+    private func commitRename() {
+        guard let id = renamingID else { return }
+        renamingID = nil
+        let title = renameDraft
+        Task { await library.rename(id, to: title) }
     }
 
     // MARK: - The detail
@@ -145,27 +178,36 @@ struct TranscriptsView: View {
         // another transcript never sits over this one; selecting another transcript clears it.
         if case let .failed(message, transcriptID) = transcription.state,
            transcriptID == nil || transcriptID == library.selected?.id {
-            errorBanner(message, chooseSourceFileFor: chooseFileTarget)
+            errorBanner(message, resume: resumeChoice)
         }
     }
 
-    /// The id **Choose File…** would resume: the open transcript's `Resume` failed because its
-    /// stored bookmark no longer resolves.
-    private var chooseFileTarget: Int64? {
+    /// Which source the banner offers to pick again for a failed `Resume`: the file for a file
+    /// transcript, the recording folder for a call one. `nil` when the failure has no picker
+    /// to offer here.
+    private enum ResumeChoice {
+        case sourceFile(Int64)
+        case recordingFolder(Int64)
+    }
+
+    /// The id a **Choose File…** / **Choose Folder…** would resume: the open transcript's
+    /// `Resume` failed because its stored source no longer resolves.
+    private var resumeChoice: ResumeChoice? {
         guard case let .failed(_, transcriptID) = transcription.state,
-              let id = transcriptID, id == library.selected?.id,
-              transcription.canChooseSourceFile
+              let id = transcriptID, id == library.selected?.id
         else { return nil }
-        return id
+        if transcription.canChooseSourceFile { return .sourceFile(id) }
+        if transcription.canChooseRecordingFolder { return .recordingFolder(id) }
+        return nil
     }
 
     private func transcriptDetail(_ transcript: Transcript) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             header(transcript)
             Divider()
-            if case let .running(id, _, position, duration) = transcription.state,
+            if case let .running(id, _, position, duration, speaker) = transcription.state,
                id == transcript.id {
-                progressRow(position: position, duration: duration)
+                progressRow(position: position, duration: duration, speaker: speaker)
                 Divider()
             }
             ScrollView {
@@ -186,10 +228,10 @@ struct TranscriptsView: View {
 
     private func header(_ transcript: Transcript) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(transcript.header.title)
-                .font(.headline)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            TranscriptTitleField(title: transcript.header.title) { title in
+                Task { await library.rename(transcript.id, to: title) }
+            }
+            .id(transcript.id)
             Text(Self.caption(date: transcript.header.createdAt,
                               duration: transcript.header.duration,
                               run: transcript.run))
@@ -215,6 +257,7 @@ struct TranscriptsView: View {
                 Label { Text("Copy") } icon: { Icon(.copy, size: 14) }
             }
             .help("Copy the transcript text, without timestamps")
+            .fixedSize()
 
             exportMenu
 
@@ -225,6 +268,7 @@ struct TranscriptsView: View {
                 Label { Text("Summarize") } icon: { Icon(.summarize, size: 14) }
             }
             .help("Summarize in the Quick Panel with the LLM configured for Summarize")
+            .fixedSize()
 
             if transcript.header.status == .incomplete {
                 Button {
@@ -233,6 +277,18 @@ struct TranscriptsView: View {
                     Label { Text("Resume") } icon: { Icon(.play, size: 14) }
                 }
                 .help("Continue transcribing from the last stored segment")
+                .fixedSize()
+            }
+
+            if transcript.header.sourceKind == .call {
+                // The folder's bookmark is resolved by the library, not here.
+                Button {
+                    library.revealSelectedRecording()
+                } label: {
+                    Label { Text("Show in Finder") } icon: { Icon(.folder, size: 14) }
+                }
+                .help("Show this call's recording folder in Finder")
+                .fixedSize()
             }
 
             Spacer()
@@ -243,8 +299,12 @@ struct TranscriptsView: View {
                 Label { Text("Delete") } icon: { Icon(.delete, size: 14) }
             }
             .help("Delete this transcript")
+            .fixedSize()
         }
         .buttonStyle(.borderless)
+        .labelStyle(.titleAndIcon)
+        // A narrow window takes the room from the gap before Delete, never from a label.
+        .lineLimit(1)
     }
 
     /// A pull-down of the three formats: choosing one opens the save panel filtered to that
@@ -255,18 +315,19 @@ struct TranscriptsView: View {
                 Button(format.displayName) { export(format) }
             }
         } label: {
-            Label { Text("Export…") } icon: { Icon(.download, size: 14) }
+            Label { Text("Export") } icon: { Icon(.download, size: 14) }
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Write the transcript to a file")
     }
 
-    private func progressRow(position: TimeInterval, duration: TimeInterval) -> some View {
+    private func progressRow(position: TimeInterval, duration: TimeInterval,
+                             speaker: TranscriptSpeaker? = nil) -> some View {
         HStack(spacing: 8) {
             ProgressView()
                 .controlSize(.small)
-            Text(Self.progressText(position: position, duration: duration))
+            Text(Self.progressText(position: position, duration: duration, speaker: speaker))
             Spacer()
             Button("Cancel") { transcription.cancel() }
         }
@@ -278,7 +339,7 @@ struct TranscriptsView: View {
             Text("[\(TranscriptExporter.clock(segment.start))]")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
-            Text(segment.text)
+            Text(TranscriptExporter.speakerPrefix(segment) + segment.text)
                 .textSelection(.enabled)
         }
     }
@@ -287,13 +348,13 @@ struct TranscriptsView: View {
     /// (yet) in the list — the feedback a drop needs before its first segment lands.
     private var emptyState: some View {
         VStack(spacing: 0) {
-            if case let .running(_, title, position, duration) = transcription.state {
+            if case let .running(_, title, position, duration, speaker) = transcription.state {
                 VStack(spacing: 6) {
                     Text(title)
                         .font(.headline)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    progressRow(position: position, duration: duration)
+                    progressRow(position: position, duration: duration, speaker: speaker)
                 }
             }
             Spacer()
@@ -308,23 +369,32 @@ struct TranscriptsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func errorBanner(_ message: String, chooseSourceFileFor id: Int64? = nil) -> some View {
+    private func errorBanner(_ message: String, resume: ResumeChoice? = nil) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Icon(.warning, size: 14)
             Text(message)
                 .font(.callout)
                 .textSelection(.enabled)
             Spacer()
-            if let id {
-                Button("Choose File…") { chooseSourceFile(for: id) }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.primary)
-                    .fixedSize()
+            switch resume {
+            case .sourceFile(let id):
+                bannerButton("Choose File…") { chooseSourceFile(for: id) }
+            case .recordingFolder(let id):
+                bannerButton("Choose Folder…") { chooseRecordingFolder(for: id) }
+            case nil:
+                EmptyView()
             }
         }
         .foregroundStyle(.red)
         .padding(8)
         .background(Color.red.opacity(0.08))
+    }
+
+    private func bannerButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.borderless)
+            .foregroundStyle(.primary)
+            .fixedSize()
     }
 
     /// Picks the source file again for a `Resume` whose stored bookmark no longer resolves.
@@ -333,6 +403,18 @@ struct TranscriptsView: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.audiovisualContent]
         panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        transcription.resume(transcriptID: id, fileAt: url)
+    }
+
+    /// Picks the recording folder again for a call `Resume` whose stored bookmark or a track
+    /// file no longer resolves. The chosen folder continues the job and becomes the row's
+    /// bookmark.
+    private func chooseRecordingFolder(for id: Int64) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         transcription.resume(transcriptID: id, fileAt: url)
@@ -378,7 +460,7 @@ struct TranscriptsView: View {
     nonisolated static func listEffect(for state: FileTranscriptionController.State,
                                        headers: [TranscriptHeader]) -> ListEffect {
         switch state {
-        case let .running(transcriptID, _, _, _):
+        case let .running(transcriptID, _, _, _, _):
             return headers.contains { $0.id == transcriptID } ? .none : .reload
         case let .finished(transcriptID):
             return .reloadAndSelect(transcriptID)
@@ -387,9 +469,13 @@ struct TranscriptsView: View {
         }
     }
 
-    /// `Transcribing — 12:40 / 58:03`.
-    nonisolated static func progressText(position: TimeInterval, duration: TimeInterval) -> String {
-        "Transcribing — \(TranscriptExporter.clock(position)) / \(TranscriptExporter.clock(duration))"
+    /// `Transcribing — 12:40 / 58:03`; a call job's two tracks name their speaker:
+    /// `Transcribing Me — 12:40 / 58:03`.
+    nonisolated static func progressText(position: TimeInterval, duration: TimeInterval,
+                                         speaker: TranscriptSpeaker? = nil) -> String {
+        let side = speaker.map { " \($0.label)" } ?? ""
+        return "Transcribing\(side) — "
+            + "\(TranscriptExporter.clock(position)) / \(TranscriptExporter.clock(duration))"
     }
 
     /// The badge the list shows for a status that is not simply finished; `nil` for `complete`.
@@ -420,5 +506,42 @@ struct TranscriptsView: View {
             parts.append(runText)
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// The open transcript's title, editable in place: a click puts the caret in it, and every
+/// change is saved as it is typed. Clearing it and leaving the field brings the stored title
+/// back, since a blank title is never stored.
+private struct TranscriptTitleField: View {
+    let title: String
+    let save: (String) -> Void
+
+    @State private var draft: String
+    @FocusState private var isFocused: Bool
+
+    init(title: String, save: @escaping (String) -> Void) {
+        self.title = title
+        self.save = save
+        _draft = State(initialValue: title)
+    }
+
+    var body: some View {
+        TextField("Title", text: $draft)
+            .textFieldStyle(.plain)
+            .font(.headline)
+            .lineLimit(1)
+            .focused($isFocused)
+            .help("Click to rename")
+            .onChange(of: draft) { _, value in save(value) }
+            .onChange(of: title) { _, stored in
+                // A rename from the list while this field is idle.
+                if !isFocused { draft = stored }
+            }
+            .onChange(of: isFocused) { _, focused in
+                if !focused, draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    draft = title
+                }
+            }
+            .onSubmit { isFocused = false }
     }
 }

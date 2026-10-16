@@ -9,9 +9,12 @@ import Testing
                                        appVersion: "1.2.3")
 
     private func makeController(store: FakeTranscriptStore = FakeTranscriptStore(),
-                                pasteboard: FakePasteboard = FakePasteboard())
+                                pasteboard: FakePasteboard = FakePasteboard(),
+                                bookmarks: FakeFileBookmarks = FakeFileBookmarks(),
+                                revealer: FakeFileRevealer = FakeFileRevealer())
         -> TranscriptLibraryController {
-        TranscriptLibraryController(store: store, pasteboard: pasteboard)
+        TranscriptLibraryController(store: store, pasteboard: pasteboard,
+                                    bookmarks: bookmarks, revealer: revealer)
     }
 
     /// Stores one transcript and returns its id. `status` defaults to `complete`, the state a
@@ -201,6 +204,50 @@ import Testing
     }
 
     // MARK: - Failures
+
+    // MARK: - Renaming
+
+    @Test func renameUpdatesTheListAndTheOpenTranscript() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "lecture.mp3", segments: twoSegments)
+        let controller = makeController(store: store)
+        await controller.reload()
+        await controller.select(id)
+
+        await controller.rename(id, to: "  Physics lecture  ")
+
+        #expect(controller.headers.first?.title == "Physics lecture")
+        #expect(controller.selected?.header.title == "Physics lecture")
+        #expect(controller.selected?.segments == twoSegments)
+        #expect(try await store.transcript(id: id)?.header.title == "Physics lecture")
+        #expect(controller.error == nil)
+    }
+
+    @Test func aBlankOrUnchangedTitleIsNotStored() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "lecture.mp3")
+        let controller = makeController(store: store)
+        await controller.reload()
+
+        await controller.rename(id, to: "   ")
+        await controller.rename(id, to: "lecture.mp3")
+
+        #expect(controller.headers.first?.title == "lecture.mp3")
+        #expect(await store.titleWrites == 0)
+    }
+
+    @Test func aFailedRenameKeepsTheOldTitleAndReports() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "lecture.mp3")
+        let controller = makeController(store: store)
+        await controller.reload()
+
+        await controller.rename(42, to: "Nope")
+
+        #expect(controller.headers.first(where: { $0.id == id })?.title == "lecture.mp3")
+        #expect(controller.error == ErrorText.describe(
+            MacomprendoError.transcriptStore("no transcript has identifier 42")))
+    }
 
     @Test func aStoreFailureSetsError() async throws {
         let store = FakeTranscriptStore()
@@ -478,6 +525,61 @@ import Testing
 
         #expect(controller.selected?.id == wanted)
         #expect(controller.headers.map(\.id) == [wanted, open])
+    }
+
+    // MARK: - Revealing a recording
+
+    /// **Show in Finder** resolves the open call transcript's folder bookmark here,
+    /// not in the view, and hands the folder to the revealer.
+    @Test func revealSelectedRecordingRevealsTheBookmarkedFolder() async throws {
+        let store = FakeTranscriptStore()
+        let folder = URL(fileURLWithPath: "/recordings/rec 2026-10-15 16-42-07")
+        let id = await store.create(sourceKind: .call, title: "Call 2026-10-15 16:42",
+                                    sourceBookmark: Data(folder.path.utf8), duration: nil,
+                                    run: run, at: date)
+        try await store.setStatus(.complete, reason: nil, for: id)
+        let revealer = FakeFileRevealer()
+        let controller = makeController(store: store, revealer: revealer)
+        await controller.select(id)
+
+        controller.revealSelectedRecording()
+
+        #expect(revealer.revealed == [folder])
+        #expect(controller.error == nil)
+    }
+
+    /// A bookmark that no longer resolves reports the same failure `Resume` reports, and
+    /// reveals nothing.
+    @Test func revealSelectedRecordingReportsAMissingRecording() async throws {
+        let store = FakeTranscriptStore()
+        let folder = URL(fileURLWithPath: "/recordings/rec 2026-10-15 16-42-07")
+        let id = await store.create(sourceKind: .call, title: "Call 2026-10-15 16:42",
+                                    sourceBookmark: Data(folder.path.utf8), duration: nil,
+                                    run: run, at: date)
+        let revealer = FakeFileRevealer()
+        let controller = makeController(store: store,
+                                        bookmarks: FakeFileBookmarks(missing: [folder.path]),
+                                        revealer: revealer)
+        await controller.select(id)
+
+        controller.revealSelectedRecording()
+
+        #expect(revealer.revealed.isEmpty)
+        #expect(controller.error == ErrorText.describe(MacomprendoError.callRecordingUnavailable))
+    }
+
+    /// A file transcript has no recording folder: the action does nothing at all.
+    @Test func revealSelectedRecordingIgnoresAFileTranscript() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "lecture.mp3")
+        let revealer = FakeFileRevealer()
+        let controller = makeController(store: store, revealer: revealer)
+        await controller.select(id)
+
+        controller.revealSelectedRecording()
+
+        #expect(revealer.revealed.isEmpty)
+        #expect(controller.error == nil)
     }
 }
 

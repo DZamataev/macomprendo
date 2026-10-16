@@ -95,7 +95,7 @@ switches on the hardened runtime (`--options runtime --timestamp`) and applies
 `macos/AppBundle/Macomprendo.entitlements`.
 
 Other `build-app.mjs` flags: `--configuration release|debug` (default `release`),
-`--deployment-target <v>` (default `14.0`), `--entitlements <path>`, `--version <X.Y.Z>`
+`--deployment-target <v>` (default `14.2`), `--entitlements <path>`, `--version <X.Y.Z>`
 (override `MARKETING_VERSION`), `--build-number <n>` (default: the version), and
 `--dist <dir>` (default `dist/`).
 

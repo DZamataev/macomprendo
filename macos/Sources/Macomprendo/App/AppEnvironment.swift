@@ -64,6 +64,13 @@ struct AppEnvironment {
     /// One lane for every caller of the local speech model, so an interactive dictation
     /// overtakes the file segments already waiting behind it.
     var transcriptionLane: TranscriptionLane
+    /// The call recording's microphone capture: its own `AVAudioEngine`, never dictation's,
+    /// so a call and a dictation can run at once.
+    var callMicrophone: any CallMicrophoneCapturing
+    /// Everything the Mac plays, through a global process tap.
+    var systemAudio: any CallAudioCapturing
+    var callRecordingFolders: any CallRecordingFolderManaging
+    var callTrackWriter: CallTrackWriterFactory
 
     @MainActor
     static func live() -> AppEnvironment {
@@ -131,6 +138,11 @@ struct AppEnvironment {
             mediaDecoder: AVAssetMediaDecoder(),
             speechSegmenter: SherpaSileroSegmenter(),
             fileBookmarks: FoundationFileBookmarks(),
-            transcriptionLane: TranscriptionLane())
+            transcriptionLane: TranscriptionLane(),
+            callMicrophone: EngineCallMicrophoneCapture(engine: AVAudioInputEngine(),
+                                                        devices: audioInputDevices),
+            systemAudio: ProcessTapSystemAudioCapture(),
+            callRecordingFolders: FileSystemCallRecordingFolders(),
+            callTrackWriter: AssetCallTrackWriter.factory)
     }
 }

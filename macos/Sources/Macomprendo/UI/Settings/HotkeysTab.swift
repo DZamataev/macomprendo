@@ -12,6 +12,7 @@ struct HotkeysTab: View {
                 KeyboardShortcuts.Recorder("Speak selection", name: .speak)
                 KeyboardShortcuts.Recorder("Summarize selection", name: .summarize)
                 KeyboardShortcuts.Recorder("Refine selection", name: .refineSelection)
+                KeyboardShortcuts.Recorder("Record Call", name: .recordCall)
 
                 Picker("Dictation behaviour", selection: $model.settings.dictationMode) {
                     Text("Hold to talk").tag(DictationMode.hold)

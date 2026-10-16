@@ -852,7 +852,11 @@ headless test. Use the signed `npm run install-app:signed` build and real files.
       timestamps), the Summarize feature's model and presets, and no **Replace selection**. Copy
       pastes the summary, and the panel closes without changing the transcript. Then press ⌥M
       (Summarize selection) and confirm **Replace selection** is back for the hotkey path.
-- [ ] **Export writes all three formats.** For a completed transcript use **Export… ▸ Plain text
+- [ ] **Rename.** Right-click a transcript in the list ▸ **Rename**: the title becomes a field;
+  Enter saves, Esc keeps the old title. Click the open transcript's title, type: the list row
+  follows each keystroke; clearing the title and clicking away restores it. Relaunch: the new
+  title is still there.
+- [ ] **Export writes all three formats.** For a completed transcript use **Export ▸ Plain text
       (.txt)**, **Subtitles (.srt)** and **Markdown (.md)**: the `.txt` holds the segment lines with
       no timestamps; the `.srt` numbers cues from 1 with `HH:MM:SS,mmm --> HH:MM:SS,mmm` and opens
       in a player; the `.md` has a `#` title, a metadata line (date, duration, model) and
@@ -903,3 +907,62 @@ swift test --package-path macos --filter LongAudioBenchmarkTests
       WER/CER into `<out>/report.json`, releasing each model before the next. It fails only on
       errors, never on quality. `MACOMPRENDO_BENCH_LIMIT_SECONDS` stops a run early, and the models
       are read from `~/Library/Application Support/Macomprendo/models` — never downloaded.
+
+## Call recording
+
+The system side is a global Core Audio process tap (`ProcessTapSystemAudioCapture`): it hears
+every process except Macomprendo, read through a private aggregate device built around the tap
+alone. The tap is unmuted — the call keeps playing while it is recorded — and the first tap
+raises the one-time **System Audio Recording** prompt (Privacy & Security ▸ Screen & System
+Audio Recording).
+
+- [ ] **Call over the built-in speakers.** Record a call playing through the Mac's speakers and
+      check the **Others** track: the remote side is there, complete enough to transcribe, and
+      the call itself kept playing.
+- [ ] **Call over wired headphones.** Repeat with wired headphones: the Others track still holds
+      the remote side.
+- [ ] **Call over AirPods using the Mac's microphone.** Repeat with AirPods and the Mac's own
+      microphone selected: the Others track holds the remote side while **Me** fills in.
+- [ ] **Call over AirPods using their own microphone.** Repeat with the AirPods' microphone
+      selected — the call runs in the hands-free profile: the Others track still holds the remote
+      side.
+- [ ] **Switching the output mid-call.** Start recording with the speakers, then switch the
+      system output to AirPods (or headphones) during the call: the recording continues, the tap
+      rebuilds on the new route within about a second, the Others track resumes with at most a
+      short gap, and the app does not need a restart.
+- [ ] **Declining System Audio Recording.** With the grant off or declined — turn Macomprendo off
+      under Privacy & Security ▸ Screen & System Audio Recording, or answer **Don't Allow** on a
+      first run — record a call: **Me** fills in, **Others** stays empty (no level movement, no
+      Others segments in the transcript), and the recording still stops and transcribes normally.
+- [ ] **Unplugging the chosen microphone mid-call.** Choose a USB or Bluetooth microphone in
+      Settings ▸ General ▸ Microphone, start a recording and keep talking, then unplug it (or switch
+      it off) while the call is still recording: the **Me** track continues on the fallback — the
+      system default, then the built-in microphone — with at most a short gap where the device went
+      away, and the recording does not stop. Plug it back in and the capture moves back to it; the
+      recording still finalises and transcribes.
+- [ ] **Dictating during a recording.** While a call is being recorded, press the dictation hotkey
+      and dictate a sentence into TextEdit: it transcribes and inserts as usual, and the call
+      recording keeps going — both level rows keep moving and the elapsed time keeps climbing. Stop
+      the call afterwards: the recording is complete and both tracks are there.
+- [ ] **The menu bar timer and level rows.** Start a recording and open the menu: the status item
+      shows `record.circle` with the elapsed time beside it (`12:04`, `1:02:04` past an hour), and
+      the menu opens with `Recording call — 12:04` above the two level rows `Me` and `Others`.
+      Talk and play something through the Mac to move each row. Leave the menu open: if a native
+      menu does not re-render while open, the rows show the levels as of opening — either is
+      acceptable — while the status item's timer keeps counting.
+- [ ] **Quit mid-recording, relaunch, Resume.** With the local whisper model selected, start a
+      recording, talk, then quit Macomprendo from the menubar. The app exits without a crash report
+      (Console ▸ Crash Reports). Relaunch: the recording is in the Transcripts window as
+      **Incomplete** with reason **Macomprendo quit before it finished.**, its folder's
+      `recording.json` now reads `finished`, and **Resume** transcribes both tracks.
+- [ ] **Killing the app mid-recording, then relaunching.** Start a recording, talk for at least ten
+      seconds, then kill the app outright (`pkill -9 Macomprendo`, or Force Quit): the two `.m4a`
+      files are playable up to the last second (open them in QuickTime — at most the final second is
+      lost), and `recording.json` still reads `recording`. Relaunch: the folder is finalised
+      `finished`, an **Incomplete** call transcript appears with reason **Macomprendo quit before it
+      finished.**, and **Resume** transcribes it. Launching once more creates no duplicate row.
+- [ ] **A one-hour call keeps memory flat and the files play.** Record a call for about an hour with
+      Activity Monitor open: memory stays flat — the encoder writes as it goes, and peak memory
+      tracks nothing but the two writers — while the menu's elapsed time keeps advancing. Stop: both
+      tracks finalise, play end to end in QuickTime without a gap, and the transcript covers the
+      whole call.

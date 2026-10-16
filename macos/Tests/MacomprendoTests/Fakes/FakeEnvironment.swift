@@ -35,6 +35,10 @@ extension AppEnvironment {
                      mediaDecoder: any MediaAudioDecoding = ScriptedMediaDecoder(),
                      speechSegmenter: any SpeechSegmenting = ScriptedSegmenter(),
                      fileBookmarks: any FileBookmarking = FakeFileBookmarks(),
+                     callMicrophone: any CallMicrophoneCapturing = ScriptedCallCapture(),
+                     systemAudio: any CallAudioCapturing = ScriptedCallCapture(),
+                     callRecordingFolders: any CallRecordingFolderManaging = FakeCallRecordingFolders(),
+                     callTrackWriter: @escaping CallTrackWriterFactory = { _, _, _ in FakeCallTrackWriter() },
                      transcriptionLane: TranscriptionLane = TranscriptionLane()) -> AppEnvironment {
         AppEnvironment(hotkeys: hotkeys,
                        middleMouse: middleMouse,
@@ -69,6 +73,10 @@ extension AppEnvironment {
                        mediaDecoder: mediaDecoder,
                        speechSegmenter: speechSegmenter,
                        fileBookmarks: fileBookmarks,
-                       transcriptionLane: transcriptionLane)
+                       transcriptionLane: transcriptionLane,
+                       callMicrophone: callMicrophone,
+                       systemAudio: systemAudio,
+                       callRecordingFolders: callRecordingFolders,
+                       callTrackWriter: callTrackWriter)
     }
 }

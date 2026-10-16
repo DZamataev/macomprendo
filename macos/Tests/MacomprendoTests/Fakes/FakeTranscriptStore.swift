@@ -6,6 +6,11 @@ actor FakeTranscriptStore: TranscriptStoring {
     private var transcripts: [Int64: Transcript] = [:]
 
     var failNextAppend: MacomprendoError?
+    /// How many times `setTitle` was called, so a test can prove a no-op rename never wrote.
+    private(set) var titleWrites = 0
+    /// Armed by a test to make the next `setStatus` throw once — the per-folder store failure
+    /// launch recovery has to swallow so the next folder is still processed.
+    var failNextStatus: MacomprendoError?
     /// Armed by a test to make the next read — `headers()` or `transcript(id:)` — fail once.
     var failNextRead: MacomprendoError?
     /// Armed by a test to hold the next `transcript(id:)` read until the gate opens, then clear
@@ -62,6 +67,10 @@ actor FakeTranscriptStore: TranscriptStoring {
     }
 
     func setStatus(_ status: TranscriptStatus, reason: String?, for id: Int64) throws {
+        if let error = failNextStatus {
+            failNextStatus = nil
+            throw error
+        }
         guard let transcript = transcripts[id] else {
             throw MacomprendoError.transcriptStore("no transcript has identifier \(id)")
         }
@@ -71,6 +80,17 @@ actor FakeTranscriptStore: TranscriptStoring {
                                        duration: header.duration, status: status,
                                        statusReason: status == .incomplete ? reason : nil)
         transcripts[id] = Transcript(header: updated, run: transcript.run,
+                                     sourceBookmark: transcript.sourceBookmark,
+                                     summary: transcript.summary, segments: transcript.segments)
+    }
+
+    func setTitle(_ title: String, for id: Int64) throws {
+        titleWrites += 1
+        guard let transcript = transcripts[id] else {
+            throw MacomprendoError.transcriptStore("no transcript has identifier \(id)")
+        }
+        transcripts[id] = Transcript(header: transcript.header.retitled(title),
+                                     run: transcript.run,
                                      sourceBookmark: transcript.sourceBookmark,
                                      summary: transcript.summary, segments: transcript.segments)
     }

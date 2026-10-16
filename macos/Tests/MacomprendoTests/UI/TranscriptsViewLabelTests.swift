@@ -19,6 +19,17 @@ import Testing
                 == "Transcribing — 12:40 / 58:03")
     }
 
+    /// A call job runs its two tracks in turn, so the row has to say which side is being
+    /// transcribed; a file job keeps the speakerless wording.
+    @Test func progressTextNamesTheSpeakerOfACallTrack() {
+        #expect(TranscriptsView.progressText(position: 760, duration: 3483, speaker: nil)
+                == "Transcribing — 12:40 / 58:03")
+        #expect(TranscriptsView.progressText(position: 760, duration: 3483, speaker: .me)
+                == "Transcribing Me — 12:40 / 58:03")
+        #expect(TranscriptsView.progressText(position: 760, duration: 3483, speaker: .others)
+                == "Transcribing Others — 12:40 / 58:03")
+    }
+
     @Test func statusBadgeIsNilForAFinishedTranscript() {
         #expect(TranscriptsView.statusBadge(.inProgress) == "In progress")
         #expect(TranscriptsView.statusBadge(.incomplete) == "Incomplete")
@@ -56,7 +67,7 @@ import Testing
     /// arrive before any `transcriptsChanged` reload: the window reloads once so the row shows.
     @Test func aRunningJobWhoseRowIsMissingReloadsTheList() {
         let state = FileTranscriptionController.State.running(
-            transcriptID: 7, title: "lecture.mp3", position: 0, duration: 10)
+            transcriptID: 7, title: "lecture.mp3", position: 0, duration: 10, speaker: nil)
         #expect(TranscriptsView.listEffect(for: state, headers: []) == .reload)
         #expect(TranscriptsView.listEffect(for: state, headers: [header(id: 7)]) == .none)
         #expect(TranscriptsView.listEffect(for: state, headers: [header(id: 8)]) == .reload)
