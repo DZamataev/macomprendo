@@ -49,7 +49,7 @@ import Testing
         #expect(lines[0] == "# lecture.mp3")
         #expect(lines[2].hasSuffix(" · 1:02:05 · base"))
         #expect(text.contains("## Summary\n\nShort.\n"))
-        #expect(text.contains("## Transcript\n\n**[00:01]** Hello there.\n**[1:01:01]** Past one hour.\n"))
+        #expect(text.contains("## Transcript\n\n**[00:01]** Hello there.\n\n**[1:01:01]** Past one hour.\n"))
     }
 
     @Test func markdownWithoutSummaryHasNoSummarySection() {
@@ -72,8 +72,7 @@ import Testing
         #expect(TranscriptExporter.render(t, as: .subRip) ==
             "1\n00:00:00,000 --> 00:00:01,500\nMe: Hi\n\n2\n01:02:05,000 --> 01:02:06,000\nOthers: Hello\n")
         let md = TranscriptExporter.render(t, as: .markdown)
-        #expect(md.contains("**[00:00] Me:** Hi\n"))
-        #expect(md.contains("**[1:02:05] Others:** Hello\n"))
+        #expect(md.hasSuffix("**[00:00] Me:** Hi\n\n**[1:02:05] Others:** Hello\n"))
     }
 
     @Test func clockSwitchesToHoursAtOneHour() {

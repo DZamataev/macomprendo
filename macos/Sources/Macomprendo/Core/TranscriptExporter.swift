@@ -86,9 +86,11 @@ enum TranscriptExporter {
             lines += ["## Summary", "", summary, ""]
         }
         lines += ["## Transcript", ""]
-        lines += transcript.segments.map { segment in
+        // A blank line per segment: Markdown folds adjacent lines into one paragraph.
+        let segments = transcript.segments.map { segment in
             "**[\(clock(segment.start))]\(segment.speaker.map { " \($0.label):" } ?? "")** \(segment.text)"
         }
+        if !segments.isEmpty { lines.append(segments.joined(separator: "\n\n")) }
         return lines.joined(separator: "\n") + "\n"
     }
 }
