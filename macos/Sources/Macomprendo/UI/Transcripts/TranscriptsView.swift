@@ -15,6 +15,8 @@ struct TranscriptsView: View {
     @ObservedObject var playback: TranscriptPlaybackController
 
     @State private var isDeleteConfirmationPresented = false
+    /// The transcript **Transcribe Again** was asked for, while its confirmation is up.
+    @State private var transcribeAgainID: Int64?
     /// A failure from writing an export. Export is the one action whose failure belongs to no
     /// controller, so the window reports it itself.
     @State private var actionError: String?
@@ -85,6 +87,23 @@ struct TranscriptsView: View {
             Text("This permanently removes the transcript and its segments. "
                 + "The source file is not touched.")
         }
+        .confirmationDialog("Transcribe again?",
+                            isPresented: Binding(get: { transcribeAgainID != nil },
+                                                 set: { if !$0 { transcribeAgainID = nil } }),
+                            titleVisibility: .visible) {
+            Button("Transcribe Again") {
+                guard let id = transcribeAgainID else { return }
+                transcription.transcribeAgain(transcriptID: id)
+            }
+        } message: {
+            Text("The current text is replaced by a new transcription of the whole recording, "
+                + "with the model selected in Settings. The audio is not touched.")
+        }
+    }
+
+    /// Not for the transcript a job is writing right now: it is being transcribed already.
+    private func canTranscribeAgain(_ header: TranscriptHeader) -> Bool {
+        header.status != .inProgress
     }
 
     // MARK: - The list
@@ -96,6 +115,8 @@ struct TranscriptsView: View {
                     .tag(header.id)
                     .contextMenu {
                         Button("Rename") { beginRename(header) }
+                        Button("Transcribe Again…") { transcribeAgainID = header.id }
+                            .disabled(!canTranscribeAgain(header))
                     }
             }
         }
@@ -297,6 +318,16 @@ struct TranscriptsView: View {
                     Label { Text("Resume") } icon: { Icon(.play, size: 14) }
                 }
                 .help("Continue transcribing from the last stored segment")
+                .fixedSize()
+            }
+
+            if canTranscribeAgain(transcript.header) {
+                Button {
+                    transcribeAgainID = transcript.id
+                } label: {
+                    Label { Text("Transcribe Again") } icon: { Icon(.refresh, size: 14) }
+                }
+                .help("Replace the text with a new transcription of the whole recording")
                 .fixedSize()
             }
 

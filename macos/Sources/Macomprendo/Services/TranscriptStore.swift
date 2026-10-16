@@ -18,6 +18,8 @@ protocol TranscriptStoring: Sendable {
     func headers() async throws -> [TranscriptHeader]
     func transcript(id: Int64) async throws -> Transcript?
     func delete(id: Int64) async throws
+    /// Drops every segment of the row and keeps the row: **Transcribe Again** refills it.
+    func removeSegments(of id: Int64) async throws
     /// Turns every `inProgress` transcript into `incomplete`. Called once at launch, when no
     /// job can be running, so any `inProgress` row belongs to a job the app did not finish.
     func markAbandonedJobs(reason: String) async throws
@@ -159,6 +161,15 @@ actor SQLiteTranscriptStore: TranscriptStoring {
         let db = try connection()
         // Segments go with their transcript through ON DELETE CASCADE.
         let statement = try prepare("DELETE FROM transcripts WHERE id = ?1", on: db)
+        defer { sqlite3_finalize(statement) }
+        try check(sqlite3_bind_int64(statement, 1, id), on: db)
+        try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)
+    }
+
+    func removeSegments(of id: Int64) throws {
+        let db = try connection()
+        let statement = try prepare("DELETE FROM transcript_segments WHERE transcript_id = ?1",
+                                    on: db)
         defer { sqlite3_finalize(statement) }
         try check(sqlite3_bind_int64(statement, 1, id), on: db)
         try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)

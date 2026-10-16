@@ -96,6 +96,20 @@ import Testing
         }
     }
 
+    @Test func removingSegmentsKeepsTheRow() async throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let id = try await store.create(sourceKind: .file, title: "a.mp3", sourceBookmark: nil,
+                                        duration: 1, run: run, at: .now)
+        try await store.appendSegment(TranscriptSegment(start: 0, end: 1, text: "x"), to: id)
+
+        try await store.removeSegments(of: id)
+
+        let transcript = try await store.transcript(id: id)
+        #expect(transcript?.segments == [])
+        #expect(transcript?.header.title == "a.mp3")
+    }
+
     @Test func aTitleCanBeChangedAndMissingRowsAreAnError() async throws {
         let (store, directory) = makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }

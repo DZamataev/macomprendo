@@ -149,6 +149,11 @@ actor FakeTranscriptStore: TranscriptStoring {
         transcripts[id]
     }
 
+    func removeSegments(of id: Int64) {
+        guard let transcript = transcripts[id] else { return }
+        transcripts[id] = transcript.withoutSegments
+    }
+
     func delete(id: Int64) async {
         if let gate = deleteGate {
             deleteGate = nil

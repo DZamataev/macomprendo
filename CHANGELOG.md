@@ -28,6 +28,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shows the two level meters. The call keeps playing while it is recorded, dictation still works
   during a recording, and a recording cut short by a quit or a crash is finalised at the next
   launch and can be **Resumed**. Recordings are kept in their own folder, apart from transcripts.
+- A call transcript keeps the order of the conversation: each side is cut at the other side's
+  turns instead of being joined across them into long blocks.
+- **Transcribe Again** in the Transcripts window (and the list's context menu) replaces a
+  transcript's text with a new transcription of the whole recording — after changing the model,
+  or for calls recorded before the fix above.
 - **Play a transcript's audio** in the Transcripts window: a seek bar, ±15 s, 1×–2× speed, **Me** / **Others** toggles for calls; the segment being played is marked and the list follows it; click a timestamp to play from there.
 
 ### Changed

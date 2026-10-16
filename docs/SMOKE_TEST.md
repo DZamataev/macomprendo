@@ -852,6 +852,10 @@ headless test. Use the signed `npm run install-app:signed` build and real files.
       timestamps), the Summarize feature's model and presets, and no **Replace selection**. Copy
       pastes the summary, and the panel closes without changing the transcript. Then press ⌥M
       (Summarize selection) and confirm **Replace selection** is back for the hotkey path.
+- [ ] **Transcribe Again.** On a complete call transcript press **Transcribe Again** and confirm:
+  the row goes to Transcribing, the old text is replaced, and the Me / Others turns interleave in
+  the order they were spoken. With the source file moved, the job fails with **Choose File…** and
+  the old text is still there.
 - [ ] **Rename.** Right-click a transcript in the list ▸ **Rename**: the title becomes a field;
   Enter saves, Esc keeps the old title. Click the open transcript's title, type: the list row
   follows each keystroke; clearing the title and clicking away restores it. Relaunch: the new
