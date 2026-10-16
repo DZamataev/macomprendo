@@ -19,6 +19,7 @@ enum PlaybackComposition {
         case .file(let url):
             let asset = AVURLAsset(url: url)
             guard let tracks = try? await asset.loadTracks(withMediaType: .audio), !tracks.isEmpty,
+                  (try? await asset.load(.isPlayable)) == true,
                   let duration = try? await asset.load(.duration) else {
                 throw MacomprendoError.transcriptPlaybackUnavailable("the file has no playable sound")
             }
@@ -28,9 +29,10 @@ enum PlaybackComposition {
             var ids: [TranscriptSpeaker: CMPersistentTrackID] = [:]
             var end: TimeInterval = 0
             for track in tracks {
-                // One unreadable side must not take the other down with it.
+                // One unreadable or unplayable side must not take the other down with it.
                 let asset = AVURLAsset(url: track.url)
                 guard let source = try? await asset.loadTracks(withMediaType: .audio).first,
+                      (try? await asset.load(.isPlayable)) == true,
                       let range = try? await source.load(.timeRange),
                       let target = composition.addMutableTrack(
                           withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)

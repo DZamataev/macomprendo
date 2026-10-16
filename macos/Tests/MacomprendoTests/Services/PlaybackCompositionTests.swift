@@ -20,6 +20,29 @@ struct PlaybackCompositionTests {
         return url
     }
 
+    /// A valid CAF container whose audio track uses a codec AVFoundation lists but cannot play:
+    /// `loadTracks` returns the track, yet `isPlayable` is false. This is the spec's
+    /// unsupported-codec case, which `WAVEncoder` cannot produce; the bytes are fixed, so the
+    /// fixture is deterministic.
+    private func unplayableCaf(in directory: URL, name: String) throws -> URL {
+        func be32(_ value: UInt32) -> [UInt8] {
+            (0..<4).map { UInt8((value >> (8 * UInt32(3 - $0))) & 0xff) }
+        }
+        func be64(_ value: Int64) -> [UInt8] {
+            (0..<8).map { UInt8((UInt64(bitPattern: value) >> (8 * UInt64(7 - $0))) & 0xff) }
+        }
+        func float64(_ value: Double) -> [UInt8] { be64(Int64(bitPattern: value.bitPattern)) }
+        var bytes: [UInt8] = Array("caff".utf8) + [0, 1, 0, 0]
+        bytes += Array("desc".utf8) + be64(32)
+        bytes += float64(8000) + Array("zzzz".utf8)
+        bytes += be32(0) + be32(2) + be32(1) + be32(2) + be32(1) + be32(16)
+        bytes += Array("data".utf8) + be64(4 + 4096) + be32(0)
+        bytes += [UInt8](repeating: 0, count: 4096)
+        let url = directory.appendingPathComponent(name)
+        try Data(bytes).write(to: url)
+        return url
+    }
+
     @Test func aFileSourceLoadsWithTheFileDuration() async throws {
         let dir = try tempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -36,6 +59,16 @@ struct PlaybackCompositionTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("notes.wav")
         try Data("not audio".utf8).write(to: url)
+
+        await #expect(throws: MacomprendoError.transcriptPlaybackUnavailable("the file has no playable sound")) {
+            _ = try await PlaybackComposition.make(.file(url))
+        }
+    }
+
+    @Test func aFileAVFoundationCannotPlayIsUnavailable() async throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = try unplayableCaf(in: dir, name: "unsupported.caf")
 
         await #expect(throws: MacomprendoError.transcriptPlaybackUnavailable("the file has no playable sound")) {
             _ = try await PlaybackComposition.make(.file(url))
@@ -73,6 +106,20 @@ struct PlaybackCompositionTests {
         let asset = try await PlaybackComposition.make(.call([
             PlaybackTrack(speaker: .me, url: me, offset: 0),
             PlaybackTrack(speaker: .others, url: broken, offset: 0.1),
+        ]))
+
+        #expect(Set(asset.trackIDs.keys) == [.me])
+    }
+
+    @Test func anUnplayableCallTrackIsLeftOutAndTheOtherPlays() async throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let me = try wav(0.2, in: dir, name: "me.wav")
+        let unplayable = try unplayableCaf(in: dir, name: "others.caf")
+
+        let asset = try await PlaybackComposition.make(.call([
+            PlaybackTrack(speaker: .me, url: me, offset: 0),
+            PlaybackTrack(speaker: .others, url: unplayable, offset: 0.1),
         ]))
 
         #expect(Set(asset.trackIDs.keys) == [.me])
