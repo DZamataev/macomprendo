@@ -15,13 +15,15 @@ import Testing
     }
 
     private func makeRig(selection: String?, ax: (any AXReading)? = nil,
-                          copyTimeout: TimeInterval = 0.02) -> Rig {
+                          copyTimeout: TimeInterval = 0.02, llmGate: AsyncGate? = nil) -> Rig {
         let holder = ScriptedSettingsHolder.seeded()
         let host = ScriptedPanelHost()
         let panel = QuickPanelController(holder: holder)
         panel.attach(host)
 
-        let provider = ScriptedLLMProvider(deltas: ["ok"], recorder: LLMCallRecorder())
+        let provider = ScriptedLLMProvider(deltas: ["ok", "more"], gate: llmGate,
+                                           pauseAfterDeltaCount: llmGate == nil ? 0 : 1,
+                                           recorder: LLMCallRecorder())
         let pasteboard = ScriptedPasteboard(initialString: "clip")
         let keys = ScriptedKeySimulator()
         let toaster = ScriptedToaster()
@@ -71,6 +73,23 @@ import Testing
         #expect(rig.features.summarize.source == "an article")
         #expect(rig.features.quickPanel.layout == .summary)
         #expect(rig.features.quickPanel.isVisible)
+    }
+
+    /// A summary the user walked away from must not keep the LLM busy: a local server answers
+    /// one request at a time, so an abandoned stream blocks every later Refine and Summarize.
+    @Test func dismissingThePanelStopsARunningSummary() async {
+        let gate = AsyncGate()
+        let rig = makeRig(selection: "an article", llmGate: gate)
+        rig.features.handle(.keyDown(.summarize))
+        await rig.features.drain()
+        await waitFor("the summary to start streaming") { rig.features.summarize.summary == "ok" }
+
+        rig.features.quickPanel.dismiss()
+        gate.open()
+        await rig.features.summarize.drain()
+
+        #expect(rig.features.summarize.isStreaming == false)
+        #expect(rig.features.summarize.summary == "ok")
     }
 
     @Test func refineSelectionHotkeyOpensTheRefinePanel() async {

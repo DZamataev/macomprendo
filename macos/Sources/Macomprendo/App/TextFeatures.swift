@@ -25,6 +25,12 @@ import Foundation
         self.speak = speak
         self.selectedText = selectedText
         self.toaster = toaster
+        // A stream nobody can see any more still holds the LLM: a local server answers one
+        // request at a time, so it would block every later Refine and Summarize.
+        quickPanel.whenDismissed { [weak refine, weak summarize] in
+            refine?.stop()
+            summarize?.stop()
+        }
     }
 
     /// Opens Refine for text that already belongs to the app, without reading the focused
