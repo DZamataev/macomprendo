@@ -22,7 +22,11 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private let hostingController: NSHostingController<AnyView>
+    private let now: () -> Date
     private var cancellables: Set<AnyCancellable> = []
+    /// When the popover last closed, to tell a genuine reopen from the mouse-up half of the
+    /// click that just closed it (see `StatusItemToggle`).
+    private var lastClosedAt: Date?
     /// The title the item's width was last reserved for; `nil` until the first render.
     private var reservedSample: String?
 
@@ -32,8 +36,9 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
 
     var isPanelShown: Bool { popover.isShown }
 
-    init(model: AppModel) {
+    init(model: AppModel, now: @escaping () -> Date = { Date() }) {
         self.model = model
+        self.now = now
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         hostingController = NSHostingController(
             rootView: AnyView(MenuPanelView(maxHeight: .greatestFiniteMagnitude)
@@ -62,19 +67,28 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     // MARK: - Toggling
 
     @objc private func togglePanel() {
-        if isPanelShown {
-            closePanel()
-        } else {
-            showPanel()
+        switch StatusItemToggle.decide(isShown: isPanelShown, lastClosedAt: lastClosedAt, now: now()) {
+        case .close: closePanel()
+        case .show: showPanel()
+        case .ignore: break
         }
     }
 
     func closePanel() {
         guard isPanelShown else { return }
         popover.performClose(nil)
+        recordClose()
         // Belt and braces with the delegate callbacks below: a close this method asks for
         // must never leave the button pressed (spec §6, §8's stuck-highlight check).
         statusItem.button?.highlight(false)
+    }
+
+    /// Called on every close path so the toggle can recognise the mouse-up that follows a
+    /// click's own dismissal (`StatusItemToggle`). Not on `willClose`: `performClose` and
+    /// every AppKit dismissal reach `didClose`, and the shortest recency window is centred
+    /// on the moment the popover is actually gone.
+    private func recordClose() {
+        lastClosedAt = now()
     }
 
     private func showPanel() {
@@ -106,6 +120,7 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     }
 
     func popoverDidClose(_ notification: Notification) {
+        recordClose()
         statusItem.button?.highlight(false)
     }
 
