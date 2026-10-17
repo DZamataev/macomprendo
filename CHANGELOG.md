@@ -6,14 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- The menubar menu is now a quick-access **panel**: **Record Call** / **Stop Recording** with the
+  live level meters, the microphone, dictation-model and translation pickers, **Transcribe File…**,
+  **Transcripts…** and **Dictation History…**, hotkey enablement and history saving in a collapsed
+  **Options** group, then **Show All Windows**, Settings, permissions, About and Quit. While the
+  panel is closed the status item also shows a transcription job's progress beside the icon.
+  **Dictation History…** is available whether or not history saving is switched on.
+
 ### Fixed
 - Summarize and Refine no longer hang on a thinking model served by Ollama (such as qwen3.5):
   the request asks for the answer without the hidden reasoning, which on a long transcript ran
   for many minutes before the first word.
 - Closing the Quick Panel stops a summary or refinement that is still being written, so an
   abandoned request no longer holds a local model and blocks the next one.
-- While a call is being recorded, the pointer stays on the menu item under it — the level
-  meters no longer rebuild the whole menu ten times a second.
+- While a call is being recorded, the pointer stays on the control under it — the live level
+  meters update only their own panel rows instead of rebuilding the surface ten times a second,
+  so the hovered row no longer jumps.
 
 ## [1.0.0] - 2026-10-17
 
