@@ -351,9 +351,9 @@ final class AppModel: ObservableObject {
         dictation.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
-        callRecording.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
+        // `callRecording` is deliberately not forwarded: its level meters tick every 100 ms, and
+        // the whole menu observes this model, so forwarding rebuilt every menu item each tick —
+        // the item under the pointer lost its highlight. The call rows observe it themselves.
         // A call should not start with the app talking; the tap would not record it anyway.
         callRecording.$state
             .sink { [weak self] state in

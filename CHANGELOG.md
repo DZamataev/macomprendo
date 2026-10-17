@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Summarize and Refine no longer hang on a thinking model served by Ollama (such as qwen3.5):
+  the request asks for the answer without the hidden reasoning, which on a long transcript ran
+  for many minutes before the first word.
+- Closing the Quick Panel stops a summary or refinement that is still being written, so an
+  abandoned request no longer holds a local model and blocks the next one.
+- While a call is being recorded, the pointer stays on the menu item under it — the level
+  meters no longer rebuild the whole menu ten times a second.
+
 ## [1.0.0] - 2026-10-17
 
 ### Added

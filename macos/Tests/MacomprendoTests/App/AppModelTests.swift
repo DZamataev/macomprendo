@@ -808,6 +808,31 @@ import Testing
     /// A call must not start with the app talking into it: the tap would not record the
     /// playback anyway, and the transcript would be written over a running call. Starting a
     /// recording therefore stops whatever the Transcripts window is playing.
+    /// The menu bar's whole menu observes `AppModel`: if the recorder's 100 ms level ticks were
+    /// forwarded, every tick would rebuild the menu, and the item under the pointer would lose
+    /// its highlight. Only the call rows observe the recorder.
+    @Test func aRunningCallRecordingDoesNotRepublishTheModel() async throws {
+        let root = try callRecordingDirectory()
+        let folders = FakeCallRecordingFolders(realDirectoryRoot: root)
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(callRecordingFolders: folders))
+        model.settings.callRecordingsDirectory = root.path
+        model.start()
+        model.route(.keyDown(.recordCall))
+        await waitFor("the call recording to start") {
+            if case .recording = model.callRecording.state { return true }
+            return false
+        }
+        var changes = 0
+        let subscription = model.objectWillChange.sink { _ in changes += 1 }
+        defer { subscription.cancel() }
+
+        try await Task.sleep(for: .milliseconds(450))
+
+        #expect(changes == 0)
+    }
+
     @Test func startingACallRecordingStopsTranscriptPlayback() async throws {
         let root = try callRecordingDirectory()
         let player = FakeTranscriptAudioPlayer()
