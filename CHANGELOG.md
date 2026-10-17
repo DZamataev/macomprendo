@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-17
+
 ### Added
 - **Transcribe File…** and a **Transcripts** window: transcribe any audio or video file — a
   podcast, a lecture, a recorded meeting — with the transcription source already configured in
