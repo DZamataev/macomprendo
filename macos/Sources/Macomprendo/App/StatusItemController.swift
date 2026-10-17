@@ -41,8 +41,7 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
         self.now = now
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         hostingController = NSHostingController(
-            rootView: AnyView(MenuPanelView(maxHeight: .greatestFiniteMagnitude)
-                .environmentObject(model)))
+            rootView: AnyView(Self.panel(for: model, maxHeight: .greatestFiniteMagnitude)))
         super.init()
 
         if let button = statusItem.button {
@@ -94,12 +93,23 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     private func showPanel() {
         guard let button = statusItem.button else { return }
         hostingController.rootView = AnyView(
-            MenuPanelView(maxHeight: maxPanelHeight(for: button)).environmentObject(model))
+            Self.panel(for: model, maxHeight: maxPanelHeight(for: button)))
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         button.highlight(true)
         NSApp.activate(ignoringOtherApps: true)
         // The popover window must be key for ⌘, ⌘Q and Escape to reach the panel.
         popover.contentViewController?.view.window?.makeKey()
+    }
+
+    /// The panel with its three observed selector models wired in. The root view is rebuilt per
+    /// show, which resets the panel's `@State` — so Options starts collapsed and the shortcut
+    /// annotations are re-read on every opening (spec §6).
+    private static func panel(for model: AppModel, maxHeight: CGFloat) -> some View {
+        MenuPanelView(dictation: model.dictationTabModel,
+                      models: model.modelsViewModel,
+                      microphone: model.panelMicrophonePickerModel,
+                      maxHeight: maxHeight)
+            .environmentObject(model)
     }
 
     /// Caps the panel on the status button's own screen, leaving the popover's arrow and

@@ -638,12 +638,12 @@ struct TranscriptsView: View {
     }
 
     /// `Transcribing — 12:40 / 58:03`; a call job's two tracks name their speaker:
-    /// `Transcribing Me — 12:40 / 58:03`.
+    /// `Transcribing Me — 12:40 / 58:03`. The wording itself lives in
+    /// `TranscriptProgressText`, shared with the menubar panel so the two cannot drift.
     nonisolated static func progressText(position: TimeInterval, duration: TimeInterval,
                                          speaker: TranscriptSpeaker? = nil) -> String {
-        let side = speaker.map { " \($0.label)" } ?? ""
-        return "Transcribing\(side) — "
-            + "\(TranscriptExporter.clock(position)) / \(TranscriptExporter.clock(duration))"
+        TranscriptProgressText.progressText(position: position, duration: duration,
+                                            speaker: speaker)
     }
 
     /// The badge the list shows for a status that is not simply finished; `nil` for `complete`.

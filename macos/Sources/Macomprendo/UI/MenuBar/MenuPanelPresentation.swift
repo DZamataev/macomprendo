@@ -80,8 +80,7 @@ enum MenuPanelPresentation {
                 transcriptID: transcriptID,
                 title: title,
                 caption: "Transcribing \(speaker?.label ?? "file")",
-                detail: "\(TranscriptExporter.clock(position)) / "
-                    + TranscriptExporter.clock(duration),
+                detail: TranscriptProgressText.clockText(position: position, duration: duration),
                 progress: progress,
                 isFailure: false)
         }
@@ -124,8 +123,9 @@ enum MenuPanelPresentation {
         }
         if case let .running(_, _, position, duration, speaker) = transcription {
             if let speaker {
-                lines.append("Transcribing \(speaker.label) — \(TranscriptExporter.clock(position))"
-                    + " / \(TranscriptExporter.clock(duration))")
+                lines.append(TranscriptProgressText.progressText(position: position,
+                                                                duration: duration,
+                                                                speaker: speaker))
             } else {
                 let readable = filePercent(position: position, duration: duration)
                     .map { "\($0)%" } ?? "in progress"

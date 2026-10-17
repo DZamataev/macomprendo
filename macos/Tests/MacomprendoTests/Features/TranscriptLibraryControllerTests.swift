@@ -93,6 +93,21 @@ import Testing
         #expect(controller.selected?.segments.last?.text == "Two.")
     }
 
+    /// The menubar panel's progress card selects a running transcript *before* it opens the
+    /// Transcripts window, so the window's own first `reload()` must keep that selection
+    /// rather than clear it — the selection is what the window lands on.
+    @Test func reloadKeepsASelectionMadeBeforeTheWindowOpened() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "running.m4a", status: .inProgress)
+        let controller = makeController(store: store)
+
+        await controller.select(id)
+        await controller.reload()
+
+        #expect(controller.selected?.id == id)
+        #expect(controller.selected?.header.status == .inProgress)
+    }
+
     @Test func reloadDropsASelectedTranscriptThatIsGone() async throws {
         let store = FakeTranscriptStore()
         let id = try await self.store(store, title: "talk.m4a")
