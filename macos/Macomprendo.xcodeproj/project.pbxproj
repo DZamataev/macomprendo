@@ -12,6 +12,7 @@
 		046965FAEB629A4A2519DADB /* TextFeaturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0BA67F6B95B5386BB0588C /* TextFeaturesTests.swift */; };
 		048D9D9F8A817B0941DDF96C /* FakeEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18DA58F47EC7928FAFED2988 /* FakeEnvironment.swift */; };
 		06F676053CA14D1DD741AEF1 /* ScriptedLanguageDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03EC46E92FAE17E86290C061 /* ScriptedLanguageDetector.swift */; };
+		070D350F3A75B61EE64E8A5F /* MenuPanelPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C34A3FBB17181520CAFDDEB0 /* MenuPanelPresentationTests.swift */; };
 		07BAF04FB73FA378FA27A449 /* FactoryPresets+Spanish.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49006B8B10DEED92A79EA86B /* FactoryPresets+Spanish.swift */; };
 		089F2E3D6B9DD087C9613127 /* FloatingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC4B246442557B15A888744 /* FloatingPanel.swift */; };
 		0ADBE7EEE5CC12D83B2E5B01 /* FactoryPackResourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F151E75A16B30D952CCD059 /* FactoryPackResourceTests.swift */; };
@@ -118,6 +119,7 @@
 		51F8C3EEDBD6D3DD1B6A9946 /* URLSessionHTTPClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE6DE4552D77F065A18EBB9 /* URLSessionHTTPClientTests.swift */; };
 		542C1C7BA26EAC25C40E1FF3 /* SpeechSpanAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91909BAE64DEC54718FB101 /* SpeechSpanAssembler.swift */; };
 		54E0C67BB1259855AD2BF00F /* TranscriptLibraryController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E3C649DD8CCABB51B4BA7B /* TranscriptLibraryController.swift */; };
+		5527ECB71179A8804B171369 /* MenuPanelPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FFF1E7A9EC27C1EE7ABB499 /* MenuPanelPresentation.swift */; };
 		55DB800BC42EB76B00B26DCA /* EndpointSpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF447E78C49B1973572A936E /* EndpointSpeechService.swift */; };
 		5672640E43300708B7EE7CB2 /* CallRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1AC119D91FA2D3F4257CE7 /* CallRecording.swift */; };
 		576D802C25C76242C9860DAA /* CallAudioCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 153E044282E5B35235DED26E /* CallAudioCapture.swift */; };
@@ -565,6 +567,7 @@
 		7EA13BF92902D04E3E28E1A7 /* PlaybackSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSource.swift; sourceTree = "<group>"; };
 		7EDCFD9E6A8915401359A8AC /* FakeMiddleMouseMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeMiddleMouseMonitor.swift; sourceTree = "<group>"; };
 		7FD5CCAF32F5D56423204B8A /* ScriptedKeySimulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedKeySimulator.swift; sourceTree = "<group>"; };
+		7FFF1E7A9EC27C1EE7ABB499 /* MenuPanelPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuPanelPresentation.swift; sourceTree = "<group>"; };
 		800AF8448D0040F66B0CBF79 /* Pasteboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pasteboard.swift; sourceTree = "<group>"; };
 		80E86D62DBA74528B11A55BC /* DictationTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationTab.swift; sourceTree = "<group>"; };
 		81ECA486939EED977B6AAD4C /* NormalizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NormalizerTests.swift; sourceTree = "<group>"; };
@@ -652,6 +655,7 @@
 		C0E67239CC9468C31568C3FB /* HotkeyServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyServiceTests.swift; sourceTree = "<group>"; };
 		C1F69FB0B7378D8337CBC338 /* TranscriptExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptExporter.swift; sourceTree = "<group>"; };
 		C295CCF95BBE42312B6BF795 /* FileTranscriptionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTranscriptionControllerTests.swift; sourceTree = "<group>"; };
+		C34A3FBB17181520CAFDDEB0 /* MenuPanelPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuPanelPresentationTests.swift; sourceTree = "<group>"; };
 		C4CB54D4AC020A6C8298E8BF /* SSEParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEParser.swift; sourceTree = "<group>"; };
 		C539240747C0028DB1F88BE5 /* QuickPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickPanelView.swift; sourceTree = "<group>"; };
 		C6487D038A12E4C238B5FAC7 /* GlossaryPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlossaryPack.swift; sourceTree = "<group>"; };
@@ -805,6 +809,7 @@
 				858FF14D95A559D79A411B92 /* HUDViewTests.swift */,
 				B0F794E45AE351635D5BA109 /* IconTests.swift */,
 				AA9850A37B9716A335AE8B09 /* MenuBarLabelTests.swift */,
+				C34A3FBB17181520CAFDDEB0 /* MenuPanelPresentationTests.swift */,
 				0A1E7E64AB7037DA64905AD3 /* MicrophonePickerModelTests.swift */,
 				CCD04E46D2ACA17C08C7808B /* MiddleMouseConflictNoticeTests.swift */,
 				E535809D2DB36A223B818026 /* ModelsViewModelTests.swift */,
@@ -885,6 +890,7 @@
 			children = (
 				372609194A45CAC97C5AD928 /* CallRecordingMenu.swift */,
 				7ACC25F1FEE4CCF3A8C1E0D8 /* MenuBarView.swift */,
+				7FFF1E7A9EC27C1EE7ABB499 /* MenuPanelPresentation.swift */,
 			);
 			path = MenuBar;
 			sourceTree = "<group>";
@@ -1657,6 +1663,7 @@
 				0D1F51E6961AB4B2493BB195 /* MacomprendoErrorTests.swift in Sources */,
 				B2B7A44765A337CD88AA92EB /* MediaAudioDecoderTests.swift in Sources */,
 				F85CBEE1BC0F5FD7CF5777B5 /* MenuBarLabelTests.swift in Sources */,
+				070D350F3A75B61EE64E8A5F /* MenuPanelPresentationTests.swift in Sources */,
 				A14507937B068D23CC661AF0 /* MicrophonePickerModelTests.swift in Sources */,
 				AE6CB0DF1631FE2AF7B3B705 /* MiddleMouseConflictNoticeTests.swift in Sources */,
 				C66A1A23FF9553415FDA0004 /* MixedLanguageSpeechPlannerTests.swift in Sources */,
@@ -1840,6 +1847,7 @@
 				027315885E1D0C18A94FFE46 /* MacomprendoError.swift in Sources */,
 				F458D2960E1C89C282E61BCB /* MediaAudioDecoder.swift in Sources */,
 				DADE0911A16F39C30CB9C17C /* MenuBarView.swift in Sources */,
+				5527ECB71179A8804B171369 /* MenuPanelPresentation.swift in Sources */,
 				4236AF3B68177E1C0A4F4807 /* MicrophonePickerModel.swift in Sources */,
 				DF8C4DCBCE8FBA5AB0CFD0F5 /* MiddleMouseAction.swift in Sources */,
 				7A022DA6120412D5872EA7BC /* MiddleMouseMonitor.swift in Sources */,
