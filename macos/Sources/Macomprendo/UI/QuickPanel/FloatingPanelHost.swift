@@ -36,6 +36,7 @@ final class QuickPanelWindow: NSPanel {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier(WindowIdentifier.quickPanel)
         window.backgroundColor = .clear
         window.contentView = NSHostingView(rootView: rootView)
         window.delegate = self

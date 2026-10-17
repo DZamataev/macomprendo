@@ -57,6 +57,8 @@ struct AppEnvironment {
     var speech: any SpeechSynthesizing
     /// nil in tests: no NSPanel is created and the Quick Panel controller stays headless.
     var quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)?
+    /// The menubar panel's Show All Windows: eligibility over `NSApp.windows` and the raising.
+    var windowRaiser: any WindowRaising
     var activationPolicy: any ActivationPolicyControlling
     /// File transcription's own database and services — transcripts live apart from
     /// dictation history (ADR-0016).
@@ -135,6 +137,7 @@ struct AppEnvironment {
                                                 keychain: keychain,
                                                 player: AVAudioPlayerPlayer())),
             quickPanelHost: { view in FloatingPanelHost(rootView: view) },
+            windowRaiser: AppKitWindowRaiser(),
             activationPolicy: NSAppActivationPolicy(),
             transcriptStore: SQLiteTranscriptStore(
                 databaseURL: applicationSupportDirectory

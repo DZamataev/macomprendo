@@ -70,6 +70,7 @@ final class CorrectionReviewWindowPresenter: CorrectionReviewPresenting {
         let panel = FloatingPanel(
             contentRect: NSRect(origin: .zero, size: CorrectionReviewLayout.size),
             ignoresMouse: false)
+        panel.identifier = NSUserInterfaceItemIdentifier(WindowIdentifier.correctionReview)
         if let contentView { panel.contentView = contentView }
         return panel
     }

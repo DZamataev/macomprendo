@@ -37,6 +37,7 @@ final class HUDWindowPresenter: HUDPresenting {
 
     private func makePanel(for controller: HUDController) -> FloatingPanel {
         let panel = FloatingPanel(contentRect: NSRect(origin: .zero, size: HUDLayout.size))
+        panel.identifier = NSUserInterfaceItemIdentifier(WindowIdentifier.hud)
         panel.contentView = NSHostingView(rootView: HUDView(controller: controller))
         return panel
     }

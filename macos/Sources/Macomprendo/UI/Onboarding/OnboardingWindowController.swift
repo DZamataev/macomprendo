@@ -51,6 +51,7 @@ enum OnboardingWindowController {
                               backing: .buffered,
                               defer: false)
         window.title = "Welcome to Macomprendo"
+        window.identifier = NSUserInterfaceItemIdentifier(WindowIdentifier.onboarding)
         window.isReleasedWhenClosed = false
         let delegate = OnboardingWindowDelegate { [weak model] in
             model?.dockIcon.close(.onboarding)

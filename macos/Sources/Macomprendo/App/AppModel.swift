@@ -492,6 +492,12 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - Windows
+
+    /// Show All Windows, from the environment so the panel reaches the same raiser the app
+    /// was built with (and tests a fake).
+    var windowRaiser: any WindowRaising { env.windowRaiser }
+
     private static func localTranscriptionConfiguration(
         for settings: Settings
     ) -> LocalTranscriptionProviderCache.Configuration? {
