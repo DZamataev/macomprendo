@@ -48,6 +48,10 @@ struct OllamaProvider: LLMProvider {
         let model: String
         let messages: [ChatMessage]
         let stream: Bool
+        /// Always false: a thinking model streams its reasoning into a field nobody shows, and on
+        /// a long transcript reasons for many minutes (unbounded) before the first answer token.
+        /// Models without thinking ignore it.
+        let think: Bool
         let options: Options
     }
 
@@ -71,6 +75,7 @@ struct OllamaProvider: LLMProvider {
                         model: model,
                         messages: messages,
                         stream: true,
+                        think: false,
                         options: .init(temperature: options.temperature, numPredict: options.maxTokens)
                     ))
                     let request = HTTPRequest(

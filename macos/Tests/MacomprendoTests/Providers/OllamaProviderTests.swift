@@ -96,6 +96,9 @@ import Testing
         let body = try jsonBody(request)
         #expect(body["model"] as? String == "qwen2.5:1.5b")
         #expect(body["stream"] as? Bool == true)
+        // A thinking model (qwen3.5) otherwise reasons for minutes on a long transcript before
+        // its first visible token; Refine and Summarize want the answer only.
+        #expect(body["think"] as? Bool == false)
         let options = try #require(body["options"] as? [String: Any])
         #expect(options["temperature"] as? Double == 0.7)
         #expect(options["num_predict"] == nil)
