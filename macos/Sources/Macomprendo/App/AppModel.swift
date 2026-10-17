@@ -389,6 +389,12 @@ final class AppModel: ObservableObject {
             }
         }
 
+        // The app's own status item: the scene graph deliberately shows none (the hidden
+        // `MenuBarExtra` anchor only keeps launch window-free), so the panel is built here.
+        if statusItem == nil, let makeStatusItem = env.makeStatusItem {
+            statusItem = makeStatusItem(self)
+        }
+
         guard hotkeyTask == nil else { return }
         let events = env.hotkeys.events
         hotkeyTask = Task { [weak self] in
@@ -497,6 +503,15 @@ final class AppModel: ObservableObject {
     /// Show All Windows, from the environment so the panel reaches the same raiser the app
     /// was built with (and tests a fake).
     var windowRaiser: any WindowRaising { env.windowRaiser }
+
+    /// The app's status item and popover; `nil` in tests and before `start()`.
+    private(set) var statusItem: (any StatusItemHosting)?
+
+    /// Closes the menubar panel, called by the panel's commands before they route to a
+    /// window or a file chooser (spec §6); a no-op when nothing is shown.
+    func closeMenuPanel() {
+        statusItem?.closePanel()
+    }
 
     private static func localTranscriptionConfiguration(
         for settings: Settings

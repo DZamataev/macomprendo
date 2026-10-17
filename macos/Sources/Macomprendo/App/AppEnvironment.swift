@@ -57,6 +57,10 @@ struct AppEnvironment {
     var speech: any SpeechSynthesizing
     /// nil in tests: no NSPanel is created and the Quick Panel controller stays headless.
     var quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)?
+    /// The menubar panel's status item and popover, built from the model because the
+    /// button's title follows its recording and transcription controllers. nil in tests:
+    /// no real status item is created.
+    var makeStatusItem: (@MainActor (AppModel) -> any StatusItemHosting)?
     /// The menubar panel's Show All Windows: eligibility over `NSApp.windows` and the raising.
     var windowRaiser: any WindowRaising
     var activationPolicy: any ActivationPolicyControlling
@@ -137,6 +141,7 @@ struct AppEnvironment {
                                                 keychain: keychain,
                                                 player: AVAudioPlayerPlayer())),
             quickPanelHost: { view in FloatingPanelHost(rootView: view) },
+            makeStatusItem: { model in StatusItemController(model: model) },
             windowRaiser: AppKitWindowRaiser(),
             activationPolicy: NSAppActivationPolicy(),
             transcriptStore: SQLiteTranscriptStore(
