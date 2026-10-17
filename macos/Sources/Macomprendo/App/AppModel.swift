@@ -80,8 +80,17 @@ final class AppModel: ObservableObject {
             self.ttsModelsViewModel.rows.reduce(into: [:]) { $0[$1.id] = $1.state }
         })
     lazy var speechSourceModel = SpeechSourceModel(holder: self)
-    lazy var microphonePickerModel = MicrophonePickerModel(holder: self,
-                                                           devices: env.audioInputDevices)
+    lazy var microphonePickerModel = MicrophonePickerModel(
+        holder: self,
+        devices: env.audioInputDevices,
+        settingsChanges: $settings.eraseToAnyPublisher())
+    /// The menubar panel's own picker. A second instance, not a shared one: each surface owns
+    /// its device-observation lifetime, so closing either never stops the other's updates, and
+    /// `settingsChanges` keeps the two selections in step.
+    lazy var panelMicrophonePickerModel = MicrophonePickerModel(
+        holder: self,
+        devices: env.audioInputDevices,
+        settingsChanges: $settings.eraseToAnyPublisher())
     lazy var savedAudioModel = SavedAudioModel(history: history, revealer: env.fileRevealer)
     /// The General tab's Call recordings section: the folder, its size and the reveal action.
     lazy var callRecordingsModel = CallRecordingsSettingsModel(holder: self,

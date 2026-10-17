@@ -9,6 +9,15 @@ import Testing
         MicrophonePickerModel(holder: ScriptedSettingsHolder(settings), devices: devices)
     }
 
+    /// A surface's picker over a shared holder and device list, wired like `AppModel` wires it:
+    /// it hears about microphone writes made through the other surface.
+    private func surfaceModel(_ holder: ScriptedSettingsHolder,
+                              devices: FakeAudioInputDevices) -> MicrophonePickerModel {
+        MicrophonePickerModel(holder: holder,
+                              devices: devices,
+                              settingsChanges: holder.settingsChanges.eraseToAnyPublisher())
+    }
+
     private func eventually(_ condition: @escaping @MainActor () -> Bool) async -> Bool {
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while ContinuousClock.now < deadline {
@@ -94,5 +103,73 @@ import Testing
         picker.selection = nil
         #expect(emissions == 1)
         cancellable.cancel()
+    }
+
+    // MARK: - Two surfaces over one holder
+
+    /// Settings and the panel each keep the device list live. Closing one surface must not
+    /// stop the other's updates, so each owns its own observation task over the same service.
+    @Test func closingOneSurfaceLeavesTheOtherObserving() async {
+        let holder = ScriptedSettingsHolder()
+        let devices = FakeAudioInputDevices([.builtIn])
+        let settings = surfaceModel(holder, devices: devices)
+        let panel = surfaceModel(holder, devices: devices)
+        settings.startObserving()
+        panel.startObserving()
+
+        settings.stopObserving()
+        devices.devices = [.builtIn, .mchose]
+        devices.emitChange()
+
+        #expect(await eventually { panel.options.count == 3 })
+        panel.stopObserving()
+    }
+
+    /// The panel writes the microphone choice through its own picker; Settings has to redraw,
+    /// and exactly once, without the write churning on an intermediate state.
+    @Test func aWriteThroughOneSurfaceRepublishesTheOtherExactlyOnce() {
+        let holder = ScriptedSettingsHolder()
+        let devices = FakeAudioInputDevices([.builtIn, .mchose])
+        let settings = surfaceModel(holder, devices: devices)
+        let panel = surfaceModel(holder, devices: devices)
+        var emissions = 0
+        let cancellable = panel.objectWillChange.sink { emissions += 1 }
+
+        settings.selection = AudioInputDevice.mchose.uid
+
+        #expect(emissions == 1)
+        #expect(panel.selection == AudioInputDevice.mchose.uid)
+        cancellable.cancel()
+    }
+
+    /// A settings write that touched nothing about the microphone must not churn either picker.
+    @Test func anUnrelatedSettingsWriteRepublishesNothing() {
+        let holder = ScriptedSettingsHolder()
+        let devices = FakeAudioInputDevices([.builtIn])
+        let panel = surfaceModel(holder, devices: devices)
+        var emissions = 0
+        let cancellable = panel.objectWillChange.sink { emissions += 1 }
+
+        holder.settings.maximumRecordingSeconds = 120
+
+        #expect(emissions == 0)
+        cancellable.cancel()
+    }
+
+    /// A chosen-but-disconnected headset reads the same on both surfaces — the choice kept,
+    /// the fallback explained.
+    @Test func bothSurfacesShowADisconnectedChoiceTheSameWay() {
+        var settings = Settings.default
+        settings.preferredInputDeviceUID = AudioInputDevice.mchose.uid
+        settings.preferredInputDeviceName = AudioInputDevice.mchose.name
+        let holder = ScriptedSettingsHolder(settings)
+        let devices = FakeAudioInputDevices([.builtIn])
+        let settingsSurface = surfaceModel(holder, devices: devices)
+        let panel = surfaceModel(holder, devices: devices)
+
+        #expect(panel.options == settingsSurface.options)
+        #expect(panel.options.last?.title == "MCHOSE V9 — not connected")
+        #expect(panel.caption == settingsSurface.caption)
+        #expect(panel.selection == AudioInputDevice.mchose.uid)
     }
 }
