@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-18
+
 ### Fixed
 - A Bluetooth headset no longer stays in its low-quality call mode after a dictation or a call
   recording ends: the microphone is let go as soon as recording stops. Settings ▸ General ▸
