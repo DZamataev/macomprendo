@@ -33,6 +33,8 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     /// misses some of them — a click into another app's window on another display, made after
     /// scrolling it without focusing it, left the panel open — so such a click closes it here.
     private var outsideClickMonitor: Any?
+    /// Follows the status button's window while the popover is shown (see `reanchor()`).
+    private var buttonWindowObservers: [NSObjectProtocol] = []
 
     private lazy var titleWriter = StatusItemTitleWriter { [weak self] content in
         self?.write(content)
@@ -104,6 +106,40 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
         // The popover window must be key for ⌘, ⌘Q and Escape to reach the panel.
         popover.contentViewController?.view.window?.makeKey()
         installOutsideClickMonitor()
+        followButtonWindow(of: button)
+        // Clicking the menu bar of a display that is not the focused one moves the status
+        // item's window there during this very click; AppKit has anchored the popover to the
+        // frame it had before. A pass on the next turn finds it where it now is.
+        DispatchQueue.main.async { [weak self] in self?.reanchor() }
+    }
+
+    /// Showing an already shown popover again repositions it — window and arrow — against
+    /// the button's current frame.
+    private func reanchor() {
+        guard isPanelShown, let button = statusItem.button else { return }
+        popover.animates = false
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.animates = true
+    }
+
+    /// The button's window also moves while the panel is open: a title that changes width
+    /// (the recording clock, a percent) or a display change. Each move re-anchors.
+    private func followButtonWindow(of button: NSStatusBarButton) {
+        stopFollowingButtonWindow()
+        guard let window = button.window else { return }
+        for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification,
+                     NSWindow.didChangeScreenNotification] {
+            buttonWindowObservers.append(NotificationCenter.default.addObserver(
+                forName: name, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.reanchor() }
+            })
+        }
+    }
+
+    private func stopFollowingButtonWindow() {
+        buttonWindowObservers.forEach(NotificationCenter.default.removeObserver)
+        buttonWindowObservers = []
     }
 
     /// A global monitor only sees events sent to other apps, so clicks on the panel, our own
@@ -152,6 +188,7 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
 
     func popoverDidClose(_ notification: Notification) {
         removeOutsideClickMonitor()
+        stopFollowingButtonWindow()
         recordClose()
         statusItem.button?.highlight(false)
     }
