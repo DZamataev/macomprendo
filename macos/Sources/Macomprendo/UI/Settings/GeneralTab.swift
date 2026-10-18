@@ -54,6 +54,14 @@ struct GeneralTab: View {
                 Text(callRecordings.totalSizeText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle("Transcribe a call as soon as it stops",
+                       isOn: $model.settings.transcribeCallsAfterRecording)
+                Text("When off, a stopped call waits in Transcripts until you press Resume — "
+                     + "for a busy Mac, or to pick another model first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .task { await callRecordings.refreshSize() }
 

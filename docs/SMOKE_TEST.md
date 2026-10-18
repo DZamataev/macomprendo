@@ -60,8 +60,27 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
       unchanged. Select “Summarize selection”, select text in TextEdit and click the middle button:
       the Summary panel opens. Disable the toggle and confirm middle-button clicks no longer invoke
       Macomprendo.
-- [ ] Menubar menu: switch "Dictate" off, press the hotkey — nothing happens; switching it back
-      on restores it.
+- [ ] Menubar panel with a Macomprendo window open (Transcripts, Settings): click the status
+  item — the panel opens once and stays; it does not vanish and reappear. A click into that
+  window, Escape, or switching to another app (⌘Tab) closes it.
+- [ ] Menubar panel, two displays: with the other display focused, click the status item in
+  this display's menu bar — the panel opens under it and its arrow points at the icon on the
+  first try. While it is open, a recording clock or percent that changes the item's width keeps
+  the arrow on the icon.
+- [ ] Menubar panel, two displays: with the panel open, click the status item (or anywhere) on
+  the other display — the panel closes and does not reopen there; the next click opens it.
+- [ ] Menubar panel, two displays: open the panel, scroll an unfocused window of another app on
+  the other display without clicking, then click into it — the panel closes. A click on another
+  app's window, the desktop or another app's menu-bar item closes it too; clicks inside the
+  panel, its pop-up menus and Macomprendo's own windows do not close it by themselves.
+- [ ] Menubar panel ▸ Options: the whole **Options** row (not just the caret) expands it, its
+  label lines up with the commands above; every switch is mini-sized with its label on the left
+  and the switch on the right. **Launch at login** there and in Settings ▸ General agree both ways,
+  and one removed in System Settings ▸ General ▸ Login Items shows as off on the next opening.
+- [ ] Menubar panel: Microphone, Dictation model and the translation selector all reach the
+  panel's right edge; the translation caption names Refine & Summarize and its tooltip explains it.
+- [ ] Menubar panel ▸ Options: switch "Dictate" off, press the hotkey — nothing happens;
+      switching it back on restores it.
 - [ ] **Very short dictation.** In Settings ▸ General, enable **Insert “OK” for a very short
       dictation**, then press and release the Dictate hotkey in under half a second — `OK` is
       inserted without waiting for speech recognition, and **no HUD appears at any point** —
@@ -76,7 +95,9 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
       extra space.
 - [ ] Dictate into a full-screen app on a second display — the HUD appears on the screen with
       the mouse, above the full-screen app, and the text lands in the app.
-- [ ] Menubar menu while idle / recording — the status line reads "Ready" / "Recording…".
+- [ ] Menubar panel while dictating — no status line while idle; pressing the hotkey shows
+      "Recording dictation…", then "Transcribing dictation…", then "Inserting text…", and the
+      line goes away when the dictation ends. (Idle never reads "Ready".)
 - [x] **Local-model memory.** Settings ▸ General ▸ Local models shows “Unload local model”
       with Immediately, 5, 10, 30 minutes, and Never; a fresh or upgraded install selects
       10 minutes. Set it to Never and dictate twice with the same local model:
@@ -606,12 +627,74 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
 > a glue object observing `NSWindow.willCloseNotification` and reconciling against
 > `NSApp.windows`; the `DockIconCoordinator` API does not change.
 
+## Menubar panel
+
+The status item is app-owned (`StatusItemController`): one `NSStatusItem` and an `.applicationDefined`
+`NSPopover` hosting the SwiftUI `MenuPanelView`. Left and right clicks toggle the same panel.
+The pure presentation rules are unit-tested; everything below needs a pointer, a real recording
+or the window server.
+
+- [ ] **Hover stays put while the meters move.** During a real call, hold the pointer still over
+      **Stop Recording** and over a different row while the level meters and the clock update:
+      the highlight and the hit target stay fixed, no row moves or resizes, and clicking Stop
+      works. This is the check the old `.menu` surface could never pass.
+- [ ] **Transcription progress matches the Transcripts window.** Start a file transcription and
+      open the panel: the card shows the title, `Transcribing file`, the processed position and
+      duration, and the same integer percent as the Transcripts window. Close that window: the
+      card stays. Click the card: the panel closes, Transcripts opens (or comes forward) with the
+      running transcript selected. On completion or cancellation the card disappears. Repeat for
+      a call: the card names `Me` / `Others` per track with the processed/total clock and **no**
+      percentage — one track's ratio is never presented as the whole call.
+- [ ] **Concurrent recording and transcription.** Record a call and transcribe a file at the
+      same time: both the call block and the progress card show, a second job or a call-track
+      transition does not disturb the recording indicator, and the status item keeps the
+      recording clock first.
+- [ ] **Clicks, Escape and keyboard shortcuts.** Left click, right click and a repeat click each
+      toggle the same panel; a click into another app and into an existing Macomprendo window
+      dismisses it; Escape closes it; keyboard focus moves through the rows; ⌘, opens Settings
+      and ⌘Q quits from the key panel; the status button's highlight is never left stuck.
+- [ ] **Every window command works after a cold launch.** Launch the app (no window opens) and,
+      before Settings has ever appeared, use each command: **Transcribe File…** (chooser opens,
+      cancelling starts nothing — no row, no job — and choosing a file starts the job and opens
+      Transcripts), **Transcripts…**, **Dictation History…**, **Settings…**, **Check
+      permissions…** and **About Macomprendo…**. The three pickers' menus open, each translation
+      target renders, and the model picker shows every availability state (ready, not ready,
+      nothing ready at all).
+- [ ] **Show All Windows.** With several windows open, one minimized and none duplicated, run
+      it: the panel closes, the app activates, the minimized window restores, every existing
+      window comes forward, no window is created and no work restarts. With no eligible windows
+      the row is disabled and its tooltip reads "No Macomprendo windows are open". With the
+      onboarding window closed but retained it stays closed, and an excluded overlay (the HUD,
+      the correction panel) never gains focus. With the Quick Panel streaming, raising it does
+      not stop or restart its stream.
+- [ ] **The microphone picker follows devices on both surfaces.** With Settings ▸ General and the
+      panel open at once, connect, disconnect and change a device: both pickers update. Close one
+      surface and change a device again: the other still updates. The persisted selection is not
+      reset by closing the panel, and a chosen-but-disconnected device stays listed and selected
+      with the fallback caption; actual capture follows the existing input policy.
+- [ ] **Appearance.** Switch System, Light and Dark while the panel is open, then reopen it after
+      a theme change: the native popover material and arrow, text, picker menus, disabled rows,
+      hover and selected colours, meters and progress all stay readable. Check a non-blue accent,
+      Increase Contrast, Reduce Transparency and Reduce Motion (meter ticks step instead of
+      animating), and a menu-bar wallpaper whose contrast differs from the panel's theme.
+- [ ] **Small screens and long labels.** On a short visible screen height and with multiple
+      displays: **Options** and Quit remain reachable, Stop stays accessible, the region below
+      the call and progress blocks scrolls as one region, and a long device, model or error label
+      truncates instead of widening the panel or covering a shortcut.
+- [ ] **VoiceOver.** With VoiceOver on, the recording state, each level meter, the progress card
+      and every switch announce their state and hint, levels are not spoken ten times a second,
+      and dismissing the panel or changing the theme cancels no background work.
+- [ ] **Shortcuts are re-read on every opening.** Rebind "Refine selection" in Settings ▸
+      Hotkeys with the panel closed, then open **Options**: the new shortcut appears beside its
+      switch on that first opening. An action with no shortcut shows none — never "not set".
+
 ## Menubar hotkey display, per-language voices and prompt language
 
 | Step | Expected |
 |---|---|
-| Rebind "Refine selection" in Settings ▸ Hotkeys, then open the menubar menu | Each row reads "<action> — <shortcut>" with the new shortcut; an unbound action reads "not set". The shortcut is inline, not right-aligned like a native menu key equivalent — that is a platform constraint, not a defect. **Read the rows, do not just check the menu opens:** the shortcut once went missing here silently, and only opening the menu can catch it. |
-| Menubar: choose an active dictation model and a translation target | With two downloaded local models, both are offered by the Active dictation model submenu; whisper.cpp entries start with `whisper.cpp —`. Selecting one updates the source caption and the next dictation uses it. “Translate into” offers the system and prompt languages plus every fixed target; selecting one persists after relaunch and is used by a Translate preset. |
+| Rebind "Refine selection" in Settings ▸ Hotkeys, then open the panel ▸ Options | Each switch's trailing annotation shows its current shortcut; an unbound action shows none. The annotations are read on every opening, so a rebind made in Settings appears without relaunching. |
+| Panel ▸ Microphone / Dictation model / Translate into | Microphone lists System default (naming the current device), connected inputs and the selected disconnected one; the model list offers every ready source (`whisper.cpp —` prefixed) plus the active one when it is not ready, and is disabled when nothing is ready; "Translate into" offers the system and prompt languages plus every fixed target, and the choice persists after relaunch and is used by a Translate preset. |
+| Panel ▸ Transcribe File… → Cancel | No job starts: no transcript row, no progress card, nothing transcribed. |
 | Settings ▸ Dictation | The speech-model list is here and the Models tab is gone |
 | Settings ▸ Speech, pick a voice under "Voice per language" | A short phrase is heard immediately in that voice and in that language |
 | Turn off "Play a sample when a voice is selected", pick another voice | Nothing is heard |
@@ -759,10 +842,10 @@ prerequisites, installed in the login keychain.
       the app keeps running normally. So this row is a judgement call about how the icons *look*,
       not a pass/fail the app itself reports, and a "yes, they look like Phosphor icons" here is
       the closest a human glance gets to confirming the resources loaded — it is not conclusive on
-      its own (use the `find`/`wc -l` check in Build artifact for that). The menubar's own status
-      item is not evidence either way: it is deliberately hardcoded to the SF Symbol `waveform`
-      (`MenuBarExtra("Macomprendo", systemImage: "waveform")` in `MacomprendoApp.swift`), per
-      CLAUDE.md invariant 12 — it never draws from this bundle, with or without it present.
+      its own (use the `find`/`wc -l` check in Build artifact for that). The status item is not
+      evidence either way: it is deliberately an SF Symbol template (`waveform` / `record.circle`)
+      drawn by `StatusItemController`, per CLAUDE.md invariant 12 — it never draws from this
+      bundle, with or without it present.
 - [ ] **Dictation produces a transcript.** Press the dictation hotkey once, say a sentence, and
       confirm text is inserted. This is the only proof that the whisper xcframework
       (`whisper.framework`, dynamically linked — see ADR-0007) actually loaded and ran on this
@@ -852,6 +935,30 @@ headless test. Use the signed `npm run install-app:signed` build and real files.
       timestamps), the Summarize feature's model and presets, and no **Replace selection**. Copy
       pastes the summary, and the panel closes without changing the transcript. Then press ⌥M
       (Summarize selection) and confirm **Replace selection** is back for the hotkey path.
+- [ ] **Delete from the list.** Right-click a transcript that is not the open one ▸ **Delete…**:
+  a sheet asks, with **Also move the source file to the Trash** (a call: **…the call
+  recording…**) checked. Delete: the row goes, the open transcript stays open, and the source
+  file / the recording folder is in the Trash (Put Back works). Uncheck the box: the source stays
+  where it was. Cancel deletes nothing. A source already moved elsewhere: the transcript is still
+  deleted. A source the Trash refuses (e.g. a read-only volume): the transcript stays and the
+  window says why. The action bar's Delete asks the same way.
+- [ ] **Onboarding ▸ System audio (optional).** Menubar panel ▸ Check permissions…, step 3 of 5:
+  **Allow system audio…** makes macOS ask once (after a reset of the permission); the step says
+  "Asked…"; **Open System Settings** opens Privacy & Security ▸ Screen & System Audio Recording.
+  Continue works without asking. With a call recording running, the step says system audio is
+  already allowed and does not touch the recording.
+- [ ] **Stop a transcription from the panel.** While a file or call is transcribing, the panel's
+  progress card has **Stop**: the job stops, the panel stays open, the transcript is
+  **Incomplete** with what was done; **Resume** continues it, **Transcribe Again** starts over.
+- [ ] **Transcribe calls later.** Settings ▸ General ▸ Call recordings ▸ switch off **Transcribe a
+  call as soon as it stops**, record and stop a call: no job starts; the transcript waits as
+  Incomplete with "Not transcribed yet — press Resume to transcribe it."; Resume transcribes it.
+  The panel's Options ▸ **Transcribe calls after Stop** is the same switch: flipping either
+  updates the other.
+- [ ] **No delete while transcribing.** While a transcript is being transcribed (a file job, or
+  a call's tracks after Stop), its **Delete…** (context menu) and **Delete** (action bar) are
+  disabled, the latter with the help "Cancel the transcription before deleting it"; after
+  Cancel they work again. A call being recorded has no transcript yet, so nothing to delete.
 - [ ] **Transcribe Again.** On a complete call transcript press **Transcribe Again** and confirm:
   the row goes to Transcribing, the old text is replaced, and the Me / Others turns interleave in
   the order they were spoken. With the source file moved, the job fails with **Choose File…** and
@@ -948,12 +1055,12 @@ Audio Recording).
       and dictate a sentence into TextEdit: it transcribes and inserts as usual, and the call
       recording keeps going — both level rows keep moving and the elapsed time keeps climbing. Stop
       the call afterwards: the recording is complete and both tracks are there.
-- [ ] **The menu bar timer and level rows.** Start a recording and open the menu: the status item
-      shows `record.circle` with the elapsed time beside it (`12:04`, `1:02:04` past an hour), and
-      the menu opens with `Recording call — 12:04` above the two level rows `Me` and `Others`.
-      Talk and play something through the Mac to move each row. Leave the menu open: if a native
-      menu does not re-render while open, the rows show the levels as of opening — either is
-      acceptable — while the status item's timer keeps counting.
+- [ ] **The status item timer and the panel's call block.** Start a recording: the status item
+      shows `record.circle` with the elapsed time beside it (`12:04`, `1:02:04` past an hour) and
+      keeps counting while the panel is closed. Open the panel: the call block shows the red dot
+      and `Recording call` with the same clock, the full-width **Stop Recording** button, then the
+      two level rows `Me` and `Others`. Talk and play something through the Mac: both meters move
+      while no row moves or resizes, and the clock's digits stay put.
 - [ ] **Quit mid-recording, relaunch, Resume.** With the local whisper model selected, start a
       recording, talk, then quit Macomprendo from the menubar. The app exits without a crash report
       (Console ▸ Crash Reports). Relaunch: the recording is in the Transcripts window as

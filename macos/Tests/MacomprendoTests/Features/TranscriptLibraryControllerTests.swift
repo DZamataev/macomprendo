@@ -11,10 +11,11 @@ import Testing
     private func makeController(store: FakeTranscriptStore = FakeTranscriptStore(),
                                 pasteboard: FakePasteboard = FakePasteboard(),
                                 bookmarks: FakeFileBookmarks = FakeFileBookmarks(),
-                                revealer: FakeFileRevealer = FakeFileRevealer())
+                                revealer: FakeFileRevealer = FakeFileRevealer(),
+                                trash: FakeFileTrash = FakeFileTrash())
         -> TranscriptLibraryController {
         TranscriptLibraryController(store: store, pasteboard: pasteboard,
-                                    bookmarks: bookmarks, revealer: revealer)
+                                    bookmarks: bookmarks, revealer: revealer, trash: trash)
     }
 
     /// Stores one transcript and returns its id. `status` defaults to `complete`, the state a
@@ -93,6 +94,21 @@ import Testing
         #expect(controller.selected?.segments.last?.text == "Two.")
     }
 
+    /// The menubar panel's progress card selects a running transcript *before* it opens the
+    /// Transcripts window, so the window's own first `reload()` must keep that selection
+    /// rather than clear it — the selection is what the window lands on.
+    @Test func reloadKeepsASelectionMadeBeforeTheWindowOpened() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await self.store(store, title: "running.m4a", status: .inProgress)
+        let controller = makeController(store: store)
+
+        await controller.select(id)
+        await controller.reload()
+
+        #expect(controller.selected?.id == id)
+        #expect(controller.selected?.header.status == .inProgress)
+    }
+
     @Test func reloadDropsASelectedTranscriptThatIsGone() async throws {
         let store = FakeTranscriptStore()
         let id = try await self.store(store, title: "talk.m4a")
@@ -135,6 +151,104 @@ import Testing
 
         #expect(controller.selected?.id == kept)
         #expect(controller.headers.map(\.id) == [kept])
+    }
+
+    // MARK: - Deleting with the source
+
+    private func storeWithSource(_ store: FakeTranscriptStore, kind: TranscriptSourceKind = .file,
+                                 path: String) async throws -> Int64 {
+        let id = await store.create(sourceKind: kind, title: "talk", sourceBookmark: Data(path.utf8),
+                                    duration: 12, run: run, at: date)
+        try await store.setStatus(.complete, reason: nil, for: id)
+        return id
+    }
+
+    @Test func deletingWithTheSourceMovesTheFileToTheTrash() async throws {
+        let store = FakeTranscriptStore()
+        let trash = FakeFileTrash()
+        let id = try await storeWithSource(store, path: "/files/talk.m4a")
+        let controller = makeController(store: store, trash: trash)
+        await controller.reload()
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        #expect(trash.trashed == [URL(fileURLWithPath: "/files/talk.m4a")])
+        #expect(controller.headers.isEmpty)
+        #expect(controller.error == nil)
+    }
+
+    @Test func deletingACallWithItsSourceTrashesTheRecordingFolder() async throws {
+        let store = FakeTranscriptStore()
+        let trash = FakeFileTrash()
+        let id = try await storeWithSource(store, kind: .call, path: "/rec/rec 2026-10-18 10-00-00")
+        let controller = makeController(store: store, trash: trash)
+        await controller.reload()
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        #expect(trash.trashed == [URL(fileURLWithPath: "/rec/rec 2026-10-18 10-00-00")])
+        #expect(controller.headers.isEmpty)
+    }
+
+    @Test func deletingWithoutTheSourceTouchesNoFile() async throws {
+        let store = FakeTranscriptStore()
+        let trash = FakeFileTrash()
+        let id = try await storeWithSource(store, path: "/files/talk.m4a")
+        let controller = makeController(store: store, trash: trash)
+        await controller.reload()
+
+        await controller.delete(id, movingSourceToTrash: false)
+
+        #expect(trash.trashed.isEmpty)
+        #expect(controller.headers.isEmpty)
+    }
+
+    @Test func aSourceThatIsAlreadyGoneStillDeletesTheTranscript() async throws {
+        let store = FakeTranscriptStore()
+        let trash = FakeFileTrash()
+        let id = try await storeWithSource(store, path: "/files/gone.m4a")
+        let controller = makeController(store: store,
+                                        bookmarks: FakeFileBookmarks(missing: ["/files/gone.m4a"]),
+                                        trash: trash)
+        await controller.reload()
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        #expect(trash.trashed.isEmpty)
+        #expect(controller.headers.isEmpty)
+        #expect(controller.error == nil)
+    }
+
+    @Test func aSourceThatCannotBeTrashedKeepsTheTranscriptAndSaysWhy() async throws {
+        let store = FakeTranscriptStore()
+        let trash = FakeFileTrash()
+        trash.failure = CocoaError(.fileWriteNoPermission)
+        let id = try await storeWithSource(store, path: "/files/locked.m4a")
+        let controller = makeController(store: store, trash: trash)
+        await controller.reload()
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        #expect(controller.headers.map(\.id) == [id])
+        #expect(controller.error == ErrorText.describe(MacomprendoError.sourceNotMovedToTrash(
+            CocoaError(.fileWriteNoPermission).localizedDescription)))
+    }
+
+    /// A row a job is still writing — a call's tracks being transcribed, a file mid-run — is not
+    /// deleted: with its source going to the Trash the job would lose its audio under it.
+    @Test func aTranscriptBeingTranscribedIsNotDeleted() async throws {
+        let store = FakeTranscriptStore()
+        let trash = FakeFileTrash()
+        let id = await store.create(sourceKind: .call, title: "Call", sourceBookmark: Data("/rec/a".utf8),
+                                    duration: 12, run: run, at: date)
+        let controller = makeController(store: store, trash: trash)
+        await controller.reload()
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        #expect(trash.trashed.isEmpty)
+        #expect(controller.headers.map(\.id) == [id])
+        #expect(TranscriptLibraryController.canDelete(controller.headers[0]) == false)
     }
 
     // MARK: - Copying

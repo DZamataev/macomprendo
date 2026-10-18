@@ -66,10 +66,11 @@ it, and `AppEnvironment` constructs the actor-backed `SQLiteDictationHistoryStor
 
 The store retains the newest 100,000 text records, pages them by descending insertion ID, and
 clears records only on the confirmed user action. Disabling the preference stops new writes
-without purging existing records. `DictationHistoryView` is the UI consumer in the history
-window; the menu opens that single SwiftUI window only while the preference is enabled, and
-the existing `DockIconCoordinator` keeps the Dock icon visible while the window is open.
-This preserves the UI → Features → Services → Core dependency direction.
+without purging existing records — reading them stays available. `DictationHistoryView` is the
+UI consumer in the history window; the menubar panel opens that single SwiftUI window whenever
+it is asked to, regardless of the preference, and the existing `DockIconCoordinator` keeps the
+Dock icon visible while the window is open. This preserves the UI → Features → Services → Core
+dependency direction.
 
 Each row also carries the transcript before normalisation (`rawText`), a `TranscriptionRun` —
 model, engine, language and app version that produced it — and, while **Save the original
@@ -88,6 +89,37 @@ reports every rewrite with its range in the *final* text. Both are pure Core typ
 `DictationController` and `DictationCapture` normalise at the same two commit points that write
 history, reading the glossary when the transcript arrives. Normalisation comes before biasing
 (ADR-0013); biasing the recogniser itself is not implemented.
+
+### Menubar panel
+
+The status item is app-owned: `AppModel.start()` builds a `StatusItemController` through
+`AppEnvironment.makeStatusItem`, and that object owns the single `NSStatusItem`, its button and
+one `.applicationDefined` `NSPopover` holding one long-lived `NSHostingController`. The popover's root view
+is `MenuPanelView`, rebuilt on every show so its `@State` starts fresh — which is what keeps
+**Options** collapsed and re-reads shortcut annotations — while the controller and the view
+tree are retained. The scene graph carries no visible menubar scene: `MacomprendoApp`'s first
+scene is deliberately a hidden `MenuBarExtra(isInserted: .constant(false))`, because SwiftUI
+otherwise opens the first `Settings`/`Window` scene at launch, and
+`applicationShouldTerminateAfterLastWindowClosed` answers `false` so closing the last window
+leaves the app running (spec `2026-10-17-menubar-panel-design.md` §7).
+
+The panel is a quick-access surface in one fixed order: header, the call block (Record Call, or
+the recording state line, Stop and the two capsule meters — the one place that observes
+`CallRecordingController`'s 10 Hz `levels`), the conditional dictation activity line, the
+transcription progress card, the microphone / dictation-model / translation pickers, the file
+and history commands, a collapsed **Options** group (history saving, the six hotkey switches
+with their live shortcut annotations), and the window and application commands. An activity's
+card opens Transcripts and selects its transcript by id, whether or not that window was already
+open. Every command that opens a window or a chooser closes the panel, activates the app and
+then routes, because an `LSUIElement` app must activate itself; switches, pickers and
+Record/Stop keep the panel open. Show All Windows never creates a window — it raises the
+existing ones through the `WindowRaising` seam (§5), and the history command stays enabled when
+history saving is off.
+
+The status item's own content — an SF Symbol template (`waveform` / `record.circle`) plus a
+compact text readout, updated only when the rendered value changes — is produced by the pure
+`MenuPanelPresentation`, so no filename or transcript text ever reaches the menu bar. Its width
+is reserved per title mode so a percent or clock update cannot re-anchor an open popover.
 
 ### Post-dictation review
 
@@ -259,9 +291,10 @@ transcript, so it appears in Transcripts and `Resume` transcribes it. The row is
 manifest is marked `finished`, so a failure in that window leaves the folder for the next launch to
 pick up rather than losing the call.
 
-On the UI side the menu bar label is the recording indicator — `record.circle` and the elapsed time,
-the status item remaining invariant 12's one SF Symbol exception — and the menu opens with the state
-line and the two ten-cell level rows. Settings ▸ General gains a **Call recordings** section and
+On the UI side the app-owned status item is the recording indicator — `record.circle` and the
+elapsed time, the status item remaining invariant 12's one SF Symbol exception — and the panel's
+call block shows the state line, the full-width **Stop Recording** button and the two level
+meters. Settings ▸ General gains a **Call recordings** section and
 Settings ▸ Hotkeys **Record Call**; the Transcripts window labels a call segment `[00:12:04] Me: text`,
 offers **Show in Finder**, and exports with the speaker prefix. Call recording requires
 **macOS 14.2**, the first release with process taps.
@@ -329,5 +362,5 @@ to an SF Symbol if the resource is missing. Views write `Icon(.microphone)` and 
 
 The `phosphor-icons/swift` SPM package is deliberately **not** used — it declares no
 resources, so `Bundle.module` does not exist and it fails to compile under `swift build`.
-The menubar status item is the one place an SF Symbol is correct, because `MenuBarExtra`
-requires a template symbol name.
+The status item is the one place an SF Symbol is correct: a menubar item must be a template
+image macOS can contrast itself, which a dual-tone Phosphor SVG is not.

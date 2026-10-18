@@ -139,9 +139,11 @@ import Testing
         viewModel.next()
         #expect(viewModel.step == .accessibility)
         viewModel.next()
+        #expect(viewModel.step == .systemAudio)
+        viewModel.next()
         #expect(viewModel.step == .model)
         viewModel.back()
-        #expect(viewModel.step == .accessibility)
+        #expect(viewModel.step == .systemAudio)
     }
 
     @Test func nextOnTheLastStepFinishes() {
@@ -151,6 +153,7 @@ import Testing
         viewModel.onFinish = { finished.increment() }
 
         viewModel.next()   // accessibility
+        viewModel.next()   // system audio
         viewModel.next()   // model
         viewModel.next()   // ollama
         viewModel.next()   // finish
@@ -169,7 +172,40 @@ import Testing
         permissions.statuses[.microphone] = .denied
         let viewModel = makeModel(permissions: permissions)
         viewModel.next()   // accessibility
+        viewModel.next()   // system audio — optional
+        #expect(viewModel.canContinue == true)
         viewModel.next()   // model — optional
+        #expect(viewModel.canContinue == true)
+    }
+
+    // MARK: - System audio (optional, for call recording)
+
+    /// macOS has no public status for system-audio capture: the wizard can only ask, by
+    /// starting a capture once, and report what the attempt said.
+    @Test func askingForSystemAudioRunsTheProbeAndReportsIt() async {
+        let viewModel = makeModel()
+        var probes = 0
+        viewModel.probeSystemAudio = {
+            probes += 1
+            return .asked
+        }
+        #expect(viewModel.systemAudioProbe == nil)
+
+        await viewModel.requestSystemAudio()
+
+        #expect(probes == 1)
+        #expect(viewModel.systemAudioProbe == .asked)
+    }
+
+    @Test func aFailedSystemAudioProbeIsReportedAndDoesNotBlock() async {
+        let viewModel = makeModel()
+        viewModel.probeSystemAudio = { .failed("the tap could not be started") }
+        viewModel.next()   // accessibility
+        viewModel.next()   // system audio
+
+        await viewModel.requestSystemAudio()
+
+        #expect(viewModel.systemAudioProbe == .failed("the tap could not be started"))
         #expect(viewModel.canContinue == true)
     }
 

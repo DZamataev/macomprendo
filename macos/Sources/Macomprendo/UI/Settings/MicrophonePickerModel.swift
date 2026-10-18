@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 
@@ -14,6 +15,11 @@ struct MicrophoneOption: Identifiable, Equatable, Sendable {
 /// and keeps a chosen-but-disconnected device listed — a switched-off headset comes back,
 /// and silently resetting the user's choice to the default is worse than showing it with
 /// its problem.
+///
+/// One instance per surface (Settings, the menubar panel); each owns its own device
+/// observation, so closing either never stops the other's updates. They share only the
+/// holder and the device service, which is why a write through one is announced to the
+/// other through `settingsChanges`.
 @MainActor
 final class MicrophonePickerModel: ObservableObject {
     let holder: any SettingsHolding
@@ -21,11 +27,44 @@ final class MicrophonePickerModel: ObservableObject {
     @Published private(set) var connected: [AudioInputDevice] = []
     @Published private(set) var systemDefault: AudioInputDevice?
     private var observation: Task<Void, Never>?
+    private var settingsCancellable: AnyCancellable?
+    /// The persisted microphone fields as this surface last saw them. A write from the other
+    /// surface arrives as an opaque new `Settings`; comparing against this is what separates a
+    /// real microphone change from the rest of a settings write, so unrelated writes are silent.
+    private var lastSeenChoice: Choice
 
-    init(holder: any SettingsHolding, devices: any AudioInputDeviceListing) {
+    private struct Choice: Equatable {
+        let uid: String?
+        let name: String?
+
+        init(_ settings: Settings) {
+            uid = settings.preferredInputDeviceUID
+            name = settings.preferredInputDeviceName
+        }
+    }
+
+    /// `settingsChanges` carries every write to the holder's settings (in `AppModel`,
+    /// `$settings`). Defaults to a silent publisher for callers with no other surface to sync
+    /// with.
+    init(holder: any SettingsHolding,
+         devices: any AudioInputDeviceListing,
+         settingsChanges: AnyPublisher<Settings, Never> = Empty().eraseToAnyPublisher()) {
         self.holder = holder
         self.devices = devices
+        self.lastSeenChoice = Choice(holder.settings)
         reload()
+        settingsCancellable = settingsChanges.sink { [weak self] settings in
+            self?.settingsDidChange(to: settings)
+        }
+    }
+
+    /// Republishes only when the microphone choice actually moved, so a settings write about
+    /// anything else leaves the picker (and the view drawing it) alone.
+    private func settingsDidChange(to settings: Settings) {
+        let choice = Choice(settings)
+        guard choice != lastSeenChoice else { return }
+        lastSeenChoice = choice
+        objectWillChange.send()
     }
 
     /// Re-reads the device list. Called on every Core Audio change while observing.
@@ -69,12 +108,24 @@ final class MicrophonePickerModel: ObservableObject {
             // `settings` lives on the holder, not here: without this the picker would keep
             // drawing the old choice (see the swiftui-macos-ui skill).
             objectWillChange.send()
-            holder.settings.preferredInputDeviceUID = newValue
+            let name: String?
             if let newValue, let device = connected.first(where: { $0.uid == newValue }) {
-                holder.settings.preferredInputDeviceName = device.name
+                name = device.name
             } else if newValue == nil {
-                holder.settings.preferredInputDeviceName = nil
+                name = nil
+            } else {
+                // A disconnected pick keeps the name it was remembered under.
+                name = holder.settings.preferredInputDeviceName
             }
+            // UID and name go in one assignment: two writes would announce two microphone
+            // changes and make the other surface republish twice for a single pick.
+            var updated = holder.settings
+            updated.preferredInputDeviceUID = newValue
+            updated.preferredInputDeviceName = name
+            // Claim this choice before the write, so our own subscription sees the echo as
+            // already-known instead of republishing it.
+            lastSeenChoice = Choice(updated)
+            holder.settings = updated
         }
     }
 

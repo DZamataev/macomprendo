@@ -80,8 +80,17 @@ final class AppModel: ObservableObject {
             self.ttsModelsViewModel.rows.reduce(into: [:]) { $0[$1.id] = $1.state }
         })
     lazy var speechSourceModel = SpeechSourceModel(holder: self)
-    lazy var microphonePickerModel = MicrophonePickerModel(holder: self,
-                                                           devices: env.audioInputDevices)
+    lazy var microphonePickerModel = MicrophonePickerModel(
+        holder: self,
+        devices: env.audioInputDevices,
+        settingsChanges: $settings.eraseToAnyPublisher())
+    /// The menubar panel's own picker. A second instance, not a shared one: each surface owns
+    /// its device-observation lifetime, so closing either never stops the other's updates, and
+    /// `settingsChanges` keeps the two selections in step.
+    lazy var panelMicrophonePickerModel = MicrophonePickerModel(
+        holder: self,
+        devices: env.audioInputDevices,
+        settingsChanges: $settings.eraseToAnyPublisher())
     lazy var savedAudioModel = SavedAudioModel(history: history, revealer: env.fileRevealer)
     /// The General tab's Call recordings section: the folder, its size and the reveal action.
     lazy var callRecordingsModel = CallRecordingsSettingsModel(holder: self,
@@ -115,7 +124,8 @@ final class AppModel: ObservableObject {
     lazy var transcriptLibrary = TranscriptLibraryController(store: env.transcriptStore,
                                                              pasteboard: env.pasteboard,
                                                              bookmarks: env.fileBookmarks,
-                                                             revealer: env.fileRevealer)
+                                                             revealer: env.fileRevealer,
+                                                             trash: env.fileTrash)
     lazy var transcriptPlayback = TranscriptPlaybackController(player: env.transcriptAudioPlayer,
                                                                bookmarks: env.fileBookmarks,
                                                                folders: env.callRecordingFolders,
@@ -380,6 +390,12 @@ final class AppModel: ObservableObject {
             }
         }
 
+        // The app's own status item: the scene graph deliberately shows none (the hidden
+        // `MenuBarExtra` anchor only keeps launch window-free), so the panel is built here.
+        if statusItem == nil, let makeStatusItem = env.makeStatusItem {
+            statusItem = makeStatusItem(self)
+        }
+
         guard hotkeyTask == nil else { return }
         let events = env.hotkeys.events
         hotkeyTask = Task { [weak self] in
@@ -481,6 +497,21 @@ final class AppModel: ObservableObject {
         case .inserting: "Inserting…"
         case .failed(let message): message
         }
+    }
+
+    // MARK: - Windows
+
+    /// Show All Windows, from the environment so the panel reaches the same raiser the app
+    /// was built with (and tests a fake).
+    var windowRaiser: any WindowRaising { env.windowRaiser }
+
+    /// The app's status item and popover; `nil` in tests and before `start()`.
+    private(set) var statusItem: (any StatusItemHosting)?
+
+    /// Closes the menubar panel, called by the panel's commands before they route to a
+    /// window or a file chooser (spec §6); a no-op when nothing is shown.
+    func closeMenuPanel() {
+        statusItem?.closePanel()
     }
 
     private static func localTranscriptionConfiguration(

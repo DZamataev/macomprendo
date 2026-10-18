@@ -31,6 +31,7 @@ final class TranscriptLibraryController: ObservableObject {
     private let pasteboard: any PasteboardProtocol
     private let bookmarks: any FileBookmarking
     private let revealer: any FileRevealing
+    private let trash: any FileTrashing
 
     /// Guards the list: bumped when `reload()` starts and when a `delete()` completes. A
     /// `reload()` writes `headers` only while the value it started with is still current, so a
@@ -53,11 +54,13 @@ final class TranscriptLibraryController: ObservableObject {
     private var lastRename: Task<Void, Never>?
 
     init(store: any TranscriptStoring, pasteboard: any PasteboardProtocol,
-         bookmarks: any FileBookmarking, revealer: any FileRevealing) {
+         bookmarks: any FileBookmarking, revealer: any FileRevealing,
+         trash: any FileTrashing) {
         self.store = store
         self.pasteboard = pasteboard
         self.bookmarks = bookmarks
         self.revealer = revealer
+        self.trash = trash
     }
 
     /// Loads the list, newest first, and re-reads the open transcript so a segment a running
@@ -149,8 +152,34 @@ final class TranscriptLibraryController: ObservableObject {
         error = nil
     }
 
-    /// Removes `id`. A selection on the deleted transcript is cleared.
-    func delete(_ id: Int64) async {
+    /// A transcript a job is still writing cannot be deleted: its source would go to the Trash
+    /// under the running job. (A call has no row at all until its recording stops.)
+    nonisolated static func canDelete(_ header: TranscriptHeader) -> Bool {
+        header.status != .inProgress
+    }
+
+    /// Removes `id`. A selection on the deleted transcript is cleared. With
+    /// `movingSourceToTrash`, the transcript's source — the file it was made from, or a call's
+    /// recording folder — goes to the Trash first, where it can still be put back. A source that
+    /// is already gone is no reason to keep the transcript; one the Trash refuses is: the row
+    /// stays and the failure says why, so nothing is half-deleted.
+    func delete(_ id: Int64, movingSourceToTrash: Bool = false) async {
+        if let header = headers.first(where: { $0.id == id }), !Self.canDelete(header) { return }
+        if movingSourceToTrash {
+            do {
+                if let bookmark = try await store.transcript(id: id)?.sourceBookmark,
+                   let source = try? bookmarks.resolve(bookmark) {
+                    try trash.moveToTrash(source)
+                }
+            } catch let error as MacomprendoError {
+                self.error = ErrorText.describe(error)
+                return
+            } catch {
+                self.error = ErrorText.describe(
+                    MacomprendoError.sourceNotMovedToTrash(error.localizedDescription))
+                return
+            }
+        }
         do {
             try await store.delete(id: id)
         } catch {

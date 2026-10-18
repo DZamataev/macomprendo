@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Macomprendo — menubar panel study</title>
+<style>
+*{box-sizing:border-box} .study{font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:inline-flex;flex-direction:column;align-items:flex-start;gap:16px;color:var(--foreground, #222226);max-width:100%;padding:2px 0 12px} .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px}.toolbar button{font:inherit;color:var(--foreground, #222226);background:var(--card, #f0f0f3);border:1px solid var(--border, #d4d4d8);border-radius:6px;padding:5px 10px;cursor:pointer}.quiet{color:var(--muted-foreground, #68686e);font-size:12px;line-height:1.5}.panels{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}.sample{width:300px}.sample h3{font-size:13px;font-weight:600;margin:0 0 10px;color:var(--foreground, #222226)}.desktop{--ink:#222226;--secondary:#68686e;--rule:#00000018;--surface:#ececf0ed;--tile:#ffffff75;--accent-native:#007aff;--muted-fill:#b4b4bb70;--hover:#007aff;--danger:#d53539;width:300px;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;font-size:13px;color:var(--ink)}.study.dark .desktop{--ink:#f1f1f4;--secondary:#b4b4bd;--rule:#ffffff20;--surface:#303034f5;--tile:#ffffff0b;--accent-native:#0a84ff;--muted-fill:#7a7a8270;--hover:#0a64d0;--danger:#ff696d}.menubar{height:28px;display:flex;justify-content:flex-end;padding:0 16px;align-items:center;gap:12px;color:var(--ink);background:var(--surface);font-size:12px}.status-item{height:24px;display:flex;align-items:center;gap:5px;background:var(--rule);padding:0 7px;border-radius:4px;font-variant-numeric:tabular-nums;font-weight:500}.status-item svg{width:16px;height:16px}.popover{position:relative;margin-top:10px;width:300px;background:var(--surface);border:1px solid var(--rule);border-radius:11px;padding:9px 7px 6px;box-shadow:0 7px 22px #0000001b;backdrop-filter:blur(22px)}.popover:before{content:'';position:absolute;right:37px;top:-7px;width:12px;height:12px;transform:rotate(45deg);background:var(--surface);border-top:1px solid var(--rule);border-left:1px solid var(--rule)}.heading{padding:2px 7px 9px}.heading .title{display:flex;align-items:center;justify-content:space-between;font-weight:600;font-size:13px}.state{font-size:11px;font-weight:400;color:var(--secondary)}.source{margin-top:3px;color:var(--secondary);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.call{border-radius:7px;background:var(--tile);border:1px solid var(--rule);padding:5px;margin:0 2px 9px}.call-head{height:22px;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:11px;color:var(--secondary)}.live{display:inline-flex;align-items:center;gap:5px}.dot{width:6px;height:6px;border-radius:50%;background:var(--danger)}.clock{font-variant-numeric:tabular-nums;font-size:12px}.row{border:0;width:100%;background:transparent;color:inherit;font:inherit;min-height:25px;padding:3px 7px;display:flex;align-items:center;text-align:left;gap:7px;border-radius:4px;cursor:default;line-height:19px}.row:hover,.row:focus-visible{background:var(--hover);color:white;outline:none}.row:hover .shortcut,.row:focus-visible .shortcut{color:#ffffffd0}.row .name{flex:1;white-space:nowrap}.shortcut{color:var(--secondary);font-size:11px;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}.icon{width:15px;height:15px;flex:0 0 15px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.call-action{font-weight:500}.call-action.recording{color:var(--danger)}.call-action.recording:hover,.call-action.recording:focus-visible{color:white}.meters{padding:4px 6px 3px;display:flex;flex-direction:column;gap:2px}.meter-line{height:23px;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--secondary)}.bars{display:flex;gap:3px;height:22px;align-items:center;width:81px;justify-content:flex-end}.bars i{display:block;width:3px;border-radius:2px;background:var(--muted-fill)}.bars i.on{background:var(--accent-native)}.note{font-size:11px;color:var(--secondary);padding:4px 6px}.section-label{padding:0 7px 4px;color:var(--secondary);font-size:11px}.check{width:13px;height:13px;border:1px solid var(--secondary);border-radius:3px;display:flex;justify-content:center;align-items:center;font-size:11px;line-height:11px;background:transparent;color:transparent;flex:0 0 13px}.row[aria-checked=true] .check{background:var(--accent-native);border-color:var(--accent-native);color:white}.row:hover .check{border-color:#ffffffb0}.divider{height:1px;background:var(--rule);margin:7px 6px}.picker{display:block;position:relative;padding:4px 7px;border-radius:4px;cursor:default}.picker:hover{background:var(--rule)}.picker-caption{font-size:10px;color:var(--secondary);line-height:14px}.picker select{appearance:none;background:transparent;color:inherit;border:0;padding:1px 15px 1px 0;width:100%;font:inherit;cursor:default;line-height:18px}.picker select:focus-visible{outline:2px solid var(--accent-native);outline-offset:2px}.picker:after{content:'⌃⌄';position:absolute;right:7px;bottom:7px;font-size:10px;letter-spacing:-4px;pointer-events:none}.feedback{min-height:18px;max-width:620px;font-size:12px;color:var(--muted-foreground, #68686e)}.references{max-width:620px;border-top:1px solid var(--border, #d4d4d8);padding-top:14px}.references h3{margin:0 0 10px;font-size:14px}.refs{display:flex;gap:12px;flex-wrap:wrap}.ref{width:300px;font-size:12px;line-height:1.5}.ref a{color:var(--accent, #007aff)}.ref img{display:block;width:300px;height:185px;object-fit:contain;object-position:left center;border-radius:6px;background:var(--card, #f0f0f3);margin-bottom:8px}.ref p{margin:3px 0;color:var(--muted-foreground, #68686e)}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Revision: quick controls first, infrequent options disclosed below. */
+.heading{padding-bottom:8px}.heading .state{font-size:11px}.call.idle{padding:3px;margin-bottom:6px}.quick-controls{padding:0 2px}.picker select{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.picker:after{content:'⌄';letter-spacing:0;font-size:14px}.device-note{font-size:11px;line-height:15px;color:var(--danger);padding:3px 7px 6px}.device-note:empty{display:none}.options{margin:0 0 3px}.options summary{list-style:none;display:flex;align-items:center;gap:7px;padding:4px 7px;min-height:27px;font-size:12px;border-radius:4px;cursor:default}.options summary::-webkit-details-marker{display:none}.options summary:before{content:'›';font-size:18px;width:15px;text-align:center;color:var(--secondary)}.options[open] summary:before{transform:rotate(90deg)}.options summary:hover{background:var(--rule)}.options summary:focus-visible{outline:2px solid var(--accent-native)}.options-body{padding:4px 0 5px}.options .section-label{padding-top:5px}.switch-track{width:26px;height:15px;border-radius:9px;background:var(--muted-fill);position:relative;flex:0 0 26px}.switch-track:after{content:'';position:absolute;width:11px;height:11px;left:2px;top:2px;border-radius:50%;background:white;box-shadow:0 1px 2px #0003}.row[aria-checked=true] .switch-track{background:var(--accent-native)}.row[aria-checked=true] .switch-track:after{left:13px}.options .row .name{font-size:12px}.options .shortcut{font-size:10px}.options .row{gap:6px}.options .note{padding:2px 7px 5px}.call{margin-bottom:6px}.refs{display:none}.references{display:none}
+.transcription{display:block;width:calc(100% - 4px);margin:0 2px 6px;padding:7px 9px;border:1px solid var(--rule);border-radius:7px;background:var(--tile);color:inherit;text-align:left;font:inherit;cursor:default}.transcription:hover{background:var(--rule)}.transcription:focus-visible{outline:2px solid var(--accent-native);outline-offset:1px}.progress-heading{display:flex;justify-content:space-between;font-size:11px}.progress-title{display:block;font-size:12px;margin-top:3px}.transcription progress{display:block;width:100%;height:5px;margin:7px 0;accent-color:var(--accent-native);border:0;border-radius:3px;overflow:hidden}.transcription progress::-webkit-progress-bar{background:var(--muted-fill)}.transcription progress::-webkit-progress-value{background:var(--accent-native)}.progress-link{display:block;color:var(--secondary);font-size:11px}.status-progress{font-variant-numeric:tabular-nums}.toolbar select{color:var(--foreground, #222226);background:var(--card, #f0f0f3);font:inherit;border:1px solid var(--border, #d4d4d8);border-radius:6px;padding:5px}
+</style>
+</head>
+<body>
+<div class="study" id="study">
+<div class="toolbar"><strong>Panel · 300 pt</strong><label>Preview appearance: <select id="theme" aria-label="Preview appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label><button id="motion" aria-pressed="true">Pause demo levels</button></div>
+<div class="quiet">Layout study, not the running app. Values, progress and shortcuts are illustrative.<br>Hover Stop Recording: only the level bars and clock update.</div>
+<div class="panels" id="panels"></div>
+<div class="feedback" role="status" aria-live="polite" id="feedback">Options and selectors affect this study only. Appearance controls are not part of the app.</div>
+</div>
+<script>
+const shapes={windows:'<rect x="2" y="6" width="12" height="11" rx="1"/><path d="M6 6V2h12v11h-4"/>',wave:'<path d="M2 8v4m4-8v12M10 2v16m4-13v10m4-7v4"/>',stop:'<rect x="4" y="4" width="12" height="12" rx="1"/>',record:'<circle cx="10" cy="10" r="6"/><circle cx="10" cy="10" r="3" fill="currentColor" stroke="none"/>',folder:'<path d="M2 6V4h6l2 2h8v10H2Z"/>',history:'<path d="M4 5a7 7 0 1 1-1 8M2 3v5h5m3-3v5l3 2"/>',file:'<path d="M5 2h7l4 4v12H5Zm7 0v5h4M8 11h5m-5 3h5"/>',gear:'<circle cx="10" cy="10" r="3"/><path d="M8 2h4l1 3 3-1 2 4-2 2 2 2-2 4-3-1-1 3H8l-1-3-3 1-2-4 2-2-2-2 2-4 3 1Z"/>',shield:'<path d="m10 2 7 3v5c0 4-7 8-7 8s-7-4-7-8V5Zm-3 8 2 2 4-5"/>',info:'<circle cx="10" cy="10" r="8"/><path d="M10 9v5m0-9v1"/>',power:'<path d="M10 2v8m-4-6a7 7 0 1 0 8 0"/>'};
+const icon=n=>`<svg class="icon" viewBox="0 0 20 20" aria-hidden="true">${shapes[n]||''}</svg>`;
+const toggles=[['Dictate','⌥Space'],['Dictate & Refine','⇧⌥Space'],['Speak selection','⌥S'],['Summarize selection','⌥M'],['Refine selection',''],['Record Call','']];
+const row=(label,ico,shortcut='')=>`<button class="row command" data-label="${label}">${icon(ico)}<span class="name">${label}</span>${shortcut?`<span class="shortcut">${shortcut}</span>`:''}</button>`;
+function switchRow(label, shortcut='', accessibility=label) {
+  return `<button class="row toggle" role="switch" aria-checked="true" aria-label="${accessibility}"><span class="name">${label}</span>${shortcut ? `<span class="shortcut">${shortcut}</span>` : ''}<span class="switch-track" aria-hidden="true"></span></button>`;
+}
+function panel(recording) {
+  return `<section class="sample">
+    <h3>${recording ? 'Call + file transcription' : 'Idle'}</h3>
+    <div class="desktop">
+      <div class="menubar"><span class="status-item">${icon(recording ? 'record' : 'wave')}${recording ? '<span class="clock" data-clock>12:34</span><span class="status-progress">· 42%</span>' : ''}</span><span>Sat 10:24</span></div>
+      <div class="popover">
+        <div class="heading"><div class="title"><span>Macomprendo</span></div></div>
+        <div class="call ${recording ? '' : 'idle'}">
+          ${recording ? '<div class="call-head"><span class="live"><i class="dot"></i>Recording call</span><span class="clock" data-clock>12:34</span></div>' : ''}
+          <button class="row call-action ${recording ? 'recording' : ''}" data-record="${recording}">${icon(recording ? 'stop' : 'record')}<span class="name">${recording ? 'Stop Recording' : 'Record Call'}</span></button>
+          ${recording ? '<div class="meters"><div class="meter-line"><span>Me</span><span class="bars" data-meter="me"></span></div><div class="meter-line"><span>Others</span><span class="bars" data-meter="others"></span></div></div>' : ''}
+        </div>
+        ${recording ? `<button class="transcription command" data-label="Transcripts…" aria-label="Open Transcripts, Interview.m4a, 42 percent transcribed"><span class="progress-heading"><span>Transcribing file</span><span class="clock">42%</span></span><span class="progress-title">Interview.m4a</span><progress value="42" max="100" aria-label="Transcription progress">42%</progress><span class="progress-link">Open Transcripts…</span></button>` : ''}
+        <div class="quick-controls">
+          <label class="picker"><span class="picker-caption">Microphone</span><select aria-label="Microphone" class="microphone"><option value="default">System default (MacBook Microphone)</option><option value="builtin" selected>MacBook Microphone</option><option value="usb">USB Microphone</option><option value="disconnected">Headset — not connected</option></select></label>
+          <div class="device-note" role="status"></div>
+          <label class="picker"><span class="picker-caption">Dictation model</span><select aria-label="Dictation model"><option>Local · Whisper large-v3-turbo</option><option>Local · Parakeet — example</option><option>Endpoint · Server — example</option></select></label>
+          <label class="picker"><span class="picker-caption">Translate into</span><select aria-label="Translate into"><option>Off</option><option>English</option><option>French</option><option>German</option></select></label>
+        </div>
+        <div class="divider"></div>
+        ${row('Transcribe File…', 'file')}
+        ${row('Transcripts…', 'folder')}
+        ${row('Dictation History…', 'history')}
+        <div class="divider"></div>
+        <details class="options">
+          <summary>Options</summary>
+          <div class="options-body">
+            ${switchRow('Save dictation history')}
+            <div class="section-label">Enable hotkeys</div>
+            ${toggles.map(([label, shortcut]) => switchRow(label, shortcut, `Enable ${label} hotkey`)).join('')}
+            <div class="note">Assign shortcuts in Settings → Hotkeys.</div>
+          </div>
+        </details>
+        ${row('Show All Windows', 'windows')}
+        ${row('Settings…', 'gear', '⌘,')}
+        ${row('Check permissions…', 'shield')}
+        ${row('About Macomprendo…', 'info')}
+        ${row('Quit Macomprendo', 'power', '⌘Q')}
+      </div>
+    </div>
+  </section>`;
+}
+document.getElementById('panels').innerHTML=panel(false)+panel(true);
+const heights=[8,10,12,14,16,19,22,22,19,16,14,12,10,8];
+document.querySelectorAll('[data-meter]').forEach(m=>{m.innerHTML=heights.map((h,i)=>`<i style="height:${h}px" class="${i<6?'on':''}"></i>`).join('')});
+let running=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+let elapsed=754, ticks=0;
+function syncMotion(){document.getElementById('motion').textContent=running?'Pause demo levels':'Animate demo levels';document.getElementById('motion').setAttribute('aria-pressed',String(running))}
+syncMotion();
+setInterval(()=>{if(!running)return;ticks++;document.querySelectorAll('[data-meter]').forEach(m=>{const n=Math.floor(Math.random()*12)+1;[...m.children].forEach((bar,i)=>bar.classList.toggle('on',i<n))});if(ticks%10===0){elapsed++;const value=`${String(Math.floor(elapsed/60)).padStart(2,'0')}:${String(elapsed%60).padStart(2,'0')}`;document.querySelectorAll('[data-clock]').forEach(t=>t.textContent=value)}},100);
+document.getElementById('motion').onclick=()=>{running=!running;syncMotion()};
+const appearance = matchMedia('(prefers-color-scheme: dark)');
+function syncAppearance() {
+  const selected = document.getElementById('theme').value;
+  document.getElementById('study').classList.toggle('dark', selected === 'dark' || (selected === 'system' && appearance.matches));
+}
+appearance.addEventListener('change', syncAppearance);
+document.getElementById('theme').onchange = syncAppearance;
+syncAppearance();
+document.querySelectorAll('.microphone').forEach(select => select.onchange = () => {
+  select.closest('.quick-controls').querySelector('.device-note').textContent = select.value === 'disconnected' ? 'Headset is not connected. Using system default: MacBook Microphone.' : '';
+});
+document.querySelectorAll('.toggle').forEach(b=>b.onclick=()=>b.setAttribute('aria-checked',String(b.getAttribute('aria-checked')!=='true')));
+document.querySelectorAll('.command').forEach(b=>b.onclick=()=>{document.getElementById('feedback').textContent=`${b.dataset.label} — the app will dismiss the panel before routing this command. This is a layout study.`});
+document.querySelectorAll('[data-record]').forEach(b=>b.onclick=()=>{document.getElementById('feedback').textContent=b.dataset.record==='true'?'Stop Recording: stop the call and keep the panel open to show the result.':'Record Call: start the call and keep the panel open; show any start failure here.'});
+</script>
+</body>
+</html>

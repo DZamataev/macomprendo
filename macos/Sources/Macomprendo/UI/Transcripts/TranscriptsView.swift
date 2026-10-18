@@ -14,7 +14,6 @@ struct TranscriptsView: View {
     @ObservedObject var transcription: FileTranscriptionController
     @ObservedObject var playback: TranscriptPlaybackController
 
-    @State private var isDeleteConfirmationPresented = false
     /// The transcript **Transcribe Again** was asked for, while its confirmation is up.
     @State private var transcribeAgainID: Int64?
     /// A failure from writing an export. Export is the one action whose failure belongs to no
@@ -76,17 +75,6 @@ struct TranscriptsView: View {
                 }
             }
         }
-        .confirmationDialog("Delete this transcript?",
-                            isPresented: $isDeleteConfirmationPresented,
-                            titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                guard let id = library.selected?.id else { return }
-                Task { await library.delete(id) }
-            }
-        } message: {
-            Text("This permanently removes the transcript and its segments. "
-                + "The source file is not touched.")
-        }
         .confirmationDialog("Transcribe again?",
                             isPresented: Binding(get: { transcribeAgainID != nil },
                                                  set: { if !$0 { transcribeAgainID = nil } }),
@@ -117,6 +105,9 @@ struct TranscriptsView: View {
                         Button("Rename") { beginRename(header) }
                         Button("Transcribe Again…") { transcribeAgainID = header.id }
                             .disabled(!canTranscribeAgain(header))
+                        Divider()
+                        Button("Delete…", role: .destructive) { confirmDelete(header) }
+                            .disabled(!TranscriptLibraryController.canDelete(header))
                     }
             }
         }
@@ -345,11 +336,14 @@ struct TranscriptsView: View {
             Spacer()
 
             Button {
-                isDeleteConfirmationPresented = true
+                confirmDelete(transcript.header)
             } label: {
                 Label { Text("Delete") } icon: { Icon(.delete, size: 14) }
             }
-            .help("Delete this transcript")
+            .help(TranscriptLibraryController.canDelete(transcript.header)
+                  ? "Delete this transcript"
+                  : "Cancel the transcription before deleting it")
+            .disabled(!TranscriptLibraryController.canDelete(transcript.header))
             .fixedSize()
         }
         .buttonStyle(.borderless)
@@ -612,6 +606,44 @@ struct TranscriptsView: View {
         }
     }
 
+    // MARK: - Deleting
+
+    /// Asks before deleting — from the action bar or a row's context menu, which need not be
+    /// the open transcript. A SwiftUI confirmation cannot carry a checkbox, so this is an
+    /// `NSAlert` sheet whose suppression button is the "also move the source" box, checked by
+    /// default. The source goes to the Trash, never straight away, so it can be put back.
+    private func confirmDelete(_ header: TranscriptHeader) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Delete “\(header.title)”?"
+        alert.informativeText = "The transcript and its text are removed permanently. "
+            + "A source moved to the Trash can be put back from there."
+        let delete = alert.addButton(withTitle: "Delete")
+        delete.hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = Self.deleteSourceTitle(for: header.sourceKind)
+        alert.suppressionButton?.state = .on
+        let id = header.id
+        let finish: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .alertFirstButtonReturn else { return }
+            let movingSource = alert.suppressionButton?.state == .on
+            Task { await library.delete(id, movingSourceToTrash: movingSource) }
+        }
+        if let window = NSApp.keyWindow {
+            alert.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            finish(alert.runModal())
+        }
+    }
+
+    nonisolated static func deleteSourceTitle(for kind: TranscriptSourceKind) -> String {
+        switch kind {
+        case .file: "Also move the source file to the Trash"
+        case .call: "Also move the call recording to the Trash"
+        }
+    }
+
     // MARK: - Pure labels
 
     /// What a change of the transcription state asks of the list. A job's row is created
@@ -638,12 +670,12 @@ struct TranscriptsView: View {
     }
 
     /// `Transcribing — 12:40 / 58:03`; a call job's two tracks name their speaker:
-    /// `Transcribing Me — 12:40 / 58:03`.
+    /// `Transcribing Me — 12:40 / 58:03`. The wording itself lives in
+    /// `TranscriptProgressText`, shared with the menubar panel so the two cannot drift.
     nonisolated static func progressText(position: TimeInterval, duration: TimeInterval,
                                          speaker: TranscriptSpeaker? = nil) -> String {
-        let side = speaker.map { " \($0.label)" } ?? ""
-        return "Transcribing\(side) — "
-            + "\(TranscriptExporter.clock(position)) / \(TranscriptExporter.clock(duration))"
+        TranscriptProgressText.progressText(position: position, duration: duration,
+                                            speaker: speaker)
     }
 
     /// The badge the list shows for a status that is not simply finished; `nil` for `complete`.

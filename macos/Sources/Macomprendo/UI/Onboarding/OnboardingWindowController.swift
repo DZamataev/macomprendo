@@ -45,12 +45,29 @@ enum OnboardingWindowController {
             model.settings.transcriptionSource = .local(modelID: modelID)
         }
         viewModel.onFinish = { close() }
+        viewModel.openSystemAudioSettings = { model.env.urlOpener.open(PrivacyPane.systemAudio) }
+        viewModel.probeSystemAudio = { [weak model] in
+            guard let model else { return .failed("Macomprendo is shutting down.") }
+            // The capture is the recorder's own: never start it under a running call.
+            if model.callRecording.isRecording { return .inUse }
+            do {
+                try model.env.systemAudio.start { _ in }
+                // Long enough for the tap's I/O to run, which is what makes macOS ask.
+                try? await Task.sleep(for: .milliseconds(500))
+                model.env.systemAudio.stop()
+                return .asked
+            } catch {
+                model.env.systemAudio.stop()
+                return .failed(ErrorText.describe(error))
+            }
+        }
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 460),
                               styleMask: [.titled, .closable],
                               backing: .buffered,
                               defer: false)
         window.title = "Welcome to Macomprendo"
+        window.identifier = NSUserInterfaceItemIdentifier(WindowIdentifier.onboarding)
         window.isReleasedWhenClosed = false
         let delegate = OnboardingWindowDelegate { [weak model] in
             model?.dockIcon.close(.onboarding)

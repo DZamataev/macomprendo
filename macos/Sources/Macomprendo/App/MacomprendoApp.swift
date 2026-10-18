@@ -37,6 +37,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return .terminateLater
     }
+
+    /// The status item is the app's permanent surface and launch shows no window at all;
+    /// closing the last window (Settings) must leave the app running (spec §7).
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
 }
 
 @main
@@ -45,15 +51,14 @@ struct MacomprendoApp: App {
     @StateObject private var model = AppRoot.model
 
     var body: some Scene {
-        // The status item is deliberately an SF Symbol template image (spec §2, §3.5).
-        // `AppIcon` raw values are SVG file names and must not be used here.
-        MenuBarExtra {
-            MenuBarView(dictation: model.dictationTabModel, models: model.modelsViewModel)
-                .environmentObject(model)
-        } label: {
-            CallRecordingMenuLabel(controller: model.callRecording)
+        // The first scene is deliberately a hidden extra: without a `MenuBarExtra`, SwiftUI
+        // opens the first `Settings`/`Window` scene at launch, and the hidden one keeps
+        // launch window-free (spike, spec §7). The real status item is app-owned —
+        // `StatusItemController`, built from `AppModel.start()` — so no icon comes from
+        // here; this scene only creates a zero-height status window.
+        MenuBarExtra("Macomprendo", isInserted: .constant(false)) {
+            EmptyView()
         }
-        .menuBarExtraStyle(.menu)
 
         // `Settings` alone would resolve to our own Core type, so qualify the scene.
         SwiftUI.Settings {

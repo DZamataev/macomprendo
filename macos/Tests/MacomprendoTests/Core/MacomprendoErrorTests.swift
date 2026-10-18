@@ -34,7 +34,8 @@ import Testing
     .callRecordingLocationUnavailable,
     .callRecordingWriteFailed("the disk is full"),
     .callRecordingUnavailable,
-    .transcriptPlaybackUnavailable("x")
+    .transcriptPlaybackUnavailable("x"),
+    .sourceNotMovedToTrash("x")
 ])
 func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
     #expect(error.errorDescription?.isEmpty == false)

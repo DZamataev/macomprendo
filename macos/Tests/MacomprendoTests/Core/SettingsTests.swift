@@ -625,6 +625,17 @@ import Testing
         #expect(try Settings.migrate(json).callRecordingsDirectory == nil)
     }
 
+    @Test func callsAreTranscribedAfterStopByDefaultAndTheChoiceRoundTrips() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+        #expect(try Settings.migrate(json).transcribeCallsAfterRecording == true)
+        #expect(Settings.default.transcribeCallsAfterRecording == true)
+
+        var settings = Settings.default
+        settings.transcribeCallsAfterRecording = false
+        #expect(try Settings.migrate(JSONEncoder().encode(settings)).transcribeCallsAfterRecording
+                == false)
+    }
+
     @Test func theCallRecordingsDirectoryDefaultsToNilAndRoundTrips() throws {
         #expect(Settings.default.callRecordingsDirectory == nil)
 

@@ -28,12 +28,13 @@ struct HTTPOllamaDetector: OllamaDetecting {
 @MainActor
 final class OnboardingViewModel: ObservableObject {
     enum Step: Int, CaseIterable, Equatable {
-        case microphone, accessibility, model, ollama
+        case microphone, accessibility, systemAudio, model, ollama
 
         var title: String {
             switch self {
             case .microphone: "Microphone"
             case .accessibility: "Accessibility"
+            case .systemAudio: "System audio (optional)"
             case .model: "Speech model"
             case .ollama: "Ollama (optional)"
             }
@@ -48,6 +49,23 @@ final class OnboardingViewModel: ObservableObject {
     @Published private(set) var modelState: ModelState = .notDownloaded
     @Published private(set) var ollamaFound: Bool?
     @Published var selectedModelID: String = ModelCatalog.defaultID
+    /// What the last system-audio request found; `nil` until the user asks.
+    @Published private(set) var systemAudioProbe: SystemAudioProbe?
+
+    /// The outcome of asking for system audio. macOS publishes no status for it, so this is
+    /// what the attempt itself reported, not a permission state.
+    enum SystemAudioProbe: Equatable {
+        /// A capture started: macOS asked, or already had an answer.
+        case asked
+        /// A call is being recorded, so system audio is in use and already allowed.
+        case inUse
+        case failed(String)
+    }
+
+    /// Starts a system-audio capture once — the only way to make macOS ask. Injected: the
+    /// capture belongs to `AppEnvironment` and must not be started while a call records.
+    var probeSystemAudio: (@MainActor () async -> SystemAudioProbe)?
+    var openSystemAudioSettings: (@MainActor () -> Void)?
 
     var onFinish: (@MainActor () -> Void)?
     var applySelection: (@MainActor (String) -> Void)?
@@ -78,7 +96,7 @@ final class OnboardingViewModel: ObservableObject {
         switch step {
         case .microphone: micStatus == .granted
         case .accessibility: accessibilityStatus == .granted
-        case .model, .ollama: true
+        case .systemAudio, .model, .ollama: true
         }
     }
 
@@ -116,6 +134,11 @@ final class OnboardingViewModel: ObservableObject {
         if accessibilityStatus != .granted {
             permissions.openSystemSettings(for: .accessibility)
         }
+    }
+
+    func requestSystemAudio() async {
+        guard let probeSystemAudio else { return }
+        systemAudioProbe = await probeSystemAudio()
     }
 
     func downloadSelectedModel() async {

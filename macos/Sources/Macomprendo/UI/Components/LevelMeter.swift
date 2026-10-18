@@ -13,6 +13,8 @@ struct LevelMeter: View {
     let level: Float
     var barCount: Int = 14
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         let lit = LevelMeterModel.litBars(level: level, count: barCount)
         HStack(spacing: 3) {
@@ -22,7 +24,9 @@ struct LevelMeter: View {
                     .frame(width: 3, height: height(for: index))
             }
         }
-        .animation(.linear(duration: 0.08), value: lit)
+        // A tick is a reading, not an entrance: with Reduce Motion the bars step instead of
+        // animating (spec §6).
+        .animation(reduceMotion ? nil : .linear(duration: 0.08), value: lit)
         .accessibilityLabel("Input level")
         .accessibilityValue("\(Int(min(max(level, 0), 1) * 100)) percent")
     }

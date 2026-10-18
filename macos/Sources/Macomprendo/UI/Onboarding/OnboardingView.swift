@@ -30,7 +30,7 @@ struct OnboardingView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Welcome to Macomprendo").font(.title2).bold()
-            Text("Four hotkeys for dictation and text. Two permissions and a model, and you are done.")
+            Text("Hotkeys for dictation and text, and call recording. Two permissions and a model, and you are done.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -56,6 +56,20 @@ struct OnboardingView: View {
                 permissionButtons(grantTitle: "Allow accessibility…") {
                     await viewModel.requestAccessibility()
                 }
+            }
+        case .systemAudio:
+            stepBody(icon: .speak,
+                     title: "Allow system audio (optional)",
+                     detail: "Only for Record Call: the other side of a call is everything your Mac plays. Dictation does not need it.") {
+                systemAudioRow
+                HStack(spacing: 8) {
+                    Button("Allow system audio…") { Task { await viewModel.requestSystemAudio() } }
+                    Button("Open System Settings") { viewModel.openSystemAudioSettings?() }
+                }
+                Text("macOS asks once and has no way to show the answer here. If you chose Don’t Allow, turn on Macomprendo in Privacy & Security ▸ Screen & System Audio Recording ▸ System Audio Recording Only.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         case .model:
             stepBody(icon: .download,
@@ -87,6 +101,25 @@ struct OnboardingView: View {
                     EmptyView()
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var systemAudioRow: some View {
+        switch viewModel.systemAudioProbe {
+        case .none:
+            EmptyView()
+        case .some(.asked):
+            Label { Text("Asked. If macOS showed a prompt, your answer is now saved.") }
+                icon: { Icon(.success, size: 14) }
+                .foregroundStyle(.green)
+        case .some(.inUse):
+            Label { Text("A call is being recorded, so system audio is already allowed.") }
+                icon: { Icon(.success, size: 14) }
+                .foregroundStyle(.green)
+        case .some(.failed(let message)):
+            Label { Text(message) } icon: { Icon(.warning, size: 14) }
+                .foregroundStyle(.red)
         }
     }
 

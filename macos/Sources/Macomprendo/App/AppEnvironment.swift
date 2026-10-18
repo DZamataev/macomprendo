@@ -48,6 +48,7 @@ struct AppEnvironment {
     /// transcript playback and dictation-history playback never silence each other.
     var transcriptAudioPlayer: any TranscriptAudioPlaying
     var fileRevealer: any FileRevealing
+    var fileTrash: any FileTrashing
     /// Hands a URL to the default browser: the About window's privacy and homepage links.
     var urlOpener: any URLOpening
     var launchAtLogin: any LaunchAtLoginManaging
@@ -57,6 +58,12 @@ struct AppEnvironment {
     var speech: any SpeechSynthesizing
     /// nil in tests: no NSPanel is created and the Quick Panel controller stays headless.
     var quickPanelHost: (@MainActor (QuickPanelView) -> any QuickPanelHosting)?
+    /// The menubar panel's status item and popover, built from the model because the
+    /// button's title follows its recording and transcription controllers. nil in tests:
+    /// no real status item is created.
+    var makeStatusItem: (@MainActor (AppModel) -> any StatusItemHosting)?
+    /// The menubar panel's Show All Windows: eligibility over `NSApp.windows` and the raising.
+    var windowRaiser: any WindowRaising
     var activationPolicy: any ActivationPolicyControlling
     /// File transcription's own database and services — transcripts live apart from
     /// dictation history (ADR-0016).
@@ -120,6 +127,7 @@ struct AppEnvironment {
             historyAudioPlayer: AVAudioPlayerPlayer(),
             transcriptAudioPlayer: AVTranscriptAudioPlayer(),
             fileRevealer: NSWorkspaceFileRevealer(),
+            fileTrash: FileManagerTrash(),
             urlOpener: NSWorkspaceURLOpener(),
             launchAtLogin: SMAppServiceLaunchAtLogin(),
             escapeMonitor: GlobalEscapeMonitor(),
@@ -135,6 +143,8 @@ struct AppEnvironment {
                                                 keychain: keychain,
                                                 player: AVAudioPlayerPlayer())),
             quickPanelHost: { view in FloatingPanelHost(rootView: view) },
+            makeStatusItem: { model in StatusItemController(model: model) },
+            windowRaiser: AppKitWindowRaiser(),
             activationPolicy: NSAppActivationPolicy(),
             transcriptStore: SQLiteTranscriptStore(
                 databaseURL: applicationSupportDirectory

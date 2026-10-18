@@ -23,6 +23,7 @@ linked — see [NOTICE](NOTICE).
 | **Speak selection** | ⌥S | Reads selected text with System, offline Local, or endpoint speech; System and Local can switch configured voices by language |
 | **Summarize selection** | ⌥M | Quick Panel with a streamed summary; Copy or Replace the selection |
 | **Refine selection** | unassigned | The refine Quick Panel, applied to the current selection |
+| **Record Call** | unassigned | Records the microphone and all system audio into two `.m4a` files, then transcribes them with **Me** / **Others** labels |
 
 Other things it does:
 
@@ -53,6 +54,29 @@ Other things it does:
   rename, rewrite, reorder, delete, or add to.
 - **Multiple endpoints.** Add as many Ollama or OpenAI-compatible providers as you like, test
   the connection from Settings, and pick a different model per feature.
+
+### Transcribing files and recording calls
+
+- **Transcribe File…** from the menubar, or a file dropped on the **Transcripts** window,
+  transcribes any audio or video file with the transcription source you already configured in
+  Settings ▸ Dictation. A long file is decoded in chunks and split with the bundled Silero VAD,
+  so memory stays flat. Starting another job cancels the running one, which keeps its segments
+  and becomes **Incomplete**.
+- The **Transcripts** window keeps each result with per-segment timestamps and can **Resume** an
+  unfinished transcript, **Transcribe Again** after changing the model, **Rename** it, or **Export**
+  it as `.txt`, `.srt` or `.md`. **Summarize** opens the configured LLM; **Delete** can also move
+  its source file, or a call's recording folder, to the Trash.
+- **Playback** sits under the segment list: a seek bar, ±15 s skips, 1× to 2× speed, and the
+  playing segment marked and followed. For a call, **Me** / **Others** toggles mute either side;
+  clicking a timestamp plays from there.
+- **Record Call** from the menubar panel or the **Record Call** hotkey captures your microphone
+  and everything your Mac plays into two ordinary `.m4a` files, **Me** and **Others**, one folder
+  per call in a location you choose. Stopping transcribes them with **Me** / **Others** labels in
+  the order the sides spoke. A recording cut short by a quit or a crash is finalised at the next
+  launch and can be resumed.
+- Call recording needs macOS 14.2 and the system-audio permission. With a local model, no audio
+  leaves your Mac, and transcripts are kept until you delete them, separately from dictation
+  history.
 
 ## Screenshots
 

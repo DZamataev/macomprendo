@@ -83,4 +83,12 @@ import Testing
         #expect(TranscriptsView.listEffect(for: .failed(message: "gone", transcriptID: 7),
                                            headers: []) == .reload)
     }
+
+    /// The delete confirmation names what its checkbox sends to the Trash.
+    @Test func theDeleteCheckboxNamesTheSource() {
+        #expect(TranscriptsView.deleteSourceTitle(for: .file)
+                == "Also move the source file to the Trash")
+        #expect(TranscriptsView.deleteSourceTitle(for: .call)
+                == "Also move the call recording to the Trash")
+    }
 }

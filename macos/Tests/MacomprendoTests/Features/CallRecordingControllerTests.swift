@@ -418,6 +418,22 @@ private func tempDirectory() throws -> URL {
         #expect(rig.folders.removed.isEmpty)
     }
 
+    /// With transcription after Stop switched off, the call is kept for later: the row waits
+    /// `incomplete` with a reason that says how to start it, and no job runs.
+    @Test func withTranscriptionAfterStopOffTheRowWaitsAndNoJobStarts() async throws {
+        let rig = try Rig()
+        rig.settings.value.transcribeCallsAfterRecording = false
+        await startRecording(rig)
+
+        await rig.controller.stop()
+
+        #expect(rig.transcribes.value.isEmpty)
+        let stored = await rig.store.snapshot(1)
+        #expect(stored?.header.status == .incomplete)
+        #expect(stored?.header.statusReason == CallRecordingController.notTranscribedYetReason)
+        #expect(rig.controller.state == .idle)
+    }
+
     @Test func aToggleDuringStartingStopsAsSoonAsCaptureIsUp() async throws {
         let rig = try Rig()
         let gate = AsyncGate()

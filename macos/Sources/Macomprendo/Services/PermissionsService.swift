@@ -37,6 +37,11 @@ extension PermissionsChecking {
 }
 
 enum PrivacyPane {
+    /// Screen & System Audio Recording, where macOS lists the apps allowed to capture system
+    /// audio (the "System Audio Recording Only" section).
+    static let systemAudio =
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+
     static func url(for kind: PermissionKind) -> URL {
         switch kind {
         case .microphone:

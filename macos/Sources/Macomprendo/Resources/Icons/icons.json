@@ -28,5 +28,13 @@
   { "name": "list-bullets", "weight": "regular" },
   { "name": "magic-wand", "weight": "regular" },
   { "name": "globe", "weight": "regular" },
-  { "name": "folder-open", "weight": "regular" }
+  { "name": "folder-open", "weight": "regular" },
+  { "name": "record", "weight": "regular" },
+  { "name": "file-audio", "weight": "regular" },
+  { "name": "clock-counter-clockwise", "weight": "regular" },
+  { "name": "app-window", "weight": "regular" },
+  { "name": "shield-check", "weight": "regular" },
+  { "name": "info", "weight": "regular" },
+  { "name": "power", "weight": "regular" },
+  { "name": "caret-right", "weight": "regular" }
 ]

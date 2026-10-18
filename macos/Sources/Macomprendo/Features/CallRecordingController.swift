@@ -133,6 +133,9 @@ final class CallRecordingController: ObservableObject {
         await stop()
     }
 
+    /// The reason a call waits untranscribed when transcription after Stop is switched off.
+    static let notTranscribedYetReason = "Not transcribed yet — press Resume to transcribe it."
+
     /// The app is quitting: finalise, create the row `incomplete` with
     /// `TranscriptLibraryController.abandonedJobReason`, start no job. Does nothing when no
     /// recording is under way.
@@ -309,8 +312,15 @@ final class CallRecordingController: ObservableObject {
                 // The row is there; the next launch's abandoned-job pass repairs its status.
                 remember(error)
             }
-        } else {
+        } else if settings().transcribeCallsAfterRecording {
             transcribe(id)
+        } else {
+            do {
+                try await store.setStatus(.incomplete, reason: Self.notTranscribedYetReason,
+                                          for: id)
+            } catch {
+                remember(error)
+            }
         }
         transcriptsChanged()
         endStop()

@@ -864,4 +864,48 @@ import Testing
         #expect(player.isPlaying == false)
         #expect(model.transcriptPlayback.state == .idle)
     }
+
+    // MARK: - The menubar panel
+
+    /// The panel's commands close the popover through the model; the model must reach
+    /// whatever host the environment built (spec §6).
+    @Test func closeMenuPanelReachesTheStatusItemHost() {
+        let host = FakeStatusItemHost()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(makeStatusItem: { _ in host }))
+        model.start()
+        #expect(model.statusItem === host)
+
+        model.closeMenuPanel()
+
+        #expect(host.closePanelCount == 1)
+    }
+
+    /// The status item is the app's single permanent UI: a second `start()` must not build
+    /// a second one.
+    @Test func startBuildsTheStatusItemOnce() {
+        var builds = 0
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(makeStatusItem: { _ in
+                                 builds += 1
+                                 return FakeStatusItemHost()
+                             }))
+        model.start()
+        model.start()
+
+        #expect(builds == 1)
+    }
+
+    /// Headless tests build no host at all; the panel commands must still be callable.
+    @Test func closeMenuPanelWithoutAStatusItemIsANoOp() {
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake())
+        model.start()
+
+        #expect(model.statusItem == nil)
+        model.closeMenuPanel()
+    }
 }

@@ -31,4 +31,21 @@ import Testing
         #expect(cacheWasEmptyAtReply.value)
         #expect(cache.isEmpty)
     }
+
+    /// The app's real surface is the status item, not a window: with the hidden
+    /// `MenuBarExtra` anchor showing nothing at launch, closing the last window (Settings)
+    /// must leave the app running (spec §7's cold-launch decision).
+    @Test func closingTheLastWindowDoesNotTerminateTheApp() {
+        let model = AppModel(
+            store: InMemorySettingsStore(),
+            keychain: InMemoryKeychainStore(),
+            env: .fake()
+        )
+        let delegate = AppDelegate(model: model, replyToTermination: { _ in })
+
+        let shouldTerminate = delegate.applicationShouldTerminateAfterLastWindowClosed(
+            NSApplication.shared)
+
+        #expect(shouldTerminate == false)
+    }
 }
