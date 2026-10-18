@@ -60,6 +60,10 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
       unchanged. Select “Summarize selection”, select text in TextEdit and click the middle button:
       the Summary panel opens. Disable the toggle and confirm middle-button clicks no longer invoke
       Macomprendo.
+- [ ] Menubar panel, two displays: open the panel, scroll an unfocused window of another app on
+  the other display without clicking, then click into it — the panel closes. A click on another
+  app's window, the desktop or another app's menu-bar item closes it too; clicks inside the
+  panel, its pop-up menus and Macomprendo's own windows do not close it by themselves.
 - [ ] Menubar panel ▸ Options: the whole **Options** row (not just the caret) expands it, its
   label lines up with the commands above; every switch is mini-sized with its label on the left
   and the switch on the right. **Launch at login** there and in Settings ▸ General agree both ways,

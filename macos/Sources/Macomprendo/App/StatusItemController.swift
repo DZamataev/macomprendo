@@ -29,6 +29,10 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     private var lastClosedAt: Date?
     /// The title the item's width was last reserved for; `nil` until the first render.
     private var reservedSample: String?
+    /// Watches clicks delivered to other apps while the popover is shown. `.transient` alone
+    /// misses some of them — a click into another app's window on another display, made after
+    /// scrolling it without focusing it, left the panel open — so such a click closes it here.
+    private var outsideClickMonitor: Any?
 
     private lazy var titleWriter = StatusItemTitleWriter { [weak self] content in
         self?.write(content)
@@ -99,6 +103,23 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
         NSApp.activate(ignoringOtherApps: true)
         // The popover window must be key for ⌘, ⌘Q and Escape to reach the panel.
         popover.contentViewController?.view.window?.makeKey()
+        installOutsideClickMonitor()
+    }
+
+    /// A global monitor only sees events sent to other apps, so clicks on the panel, our own
+    /// windows and our status item never reach it.
+    private func installOutsideClickMonitor() {
+        removeOutsideClickMonitor()
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closePanel() }
+        }
+    }
+
+    private func removeOutsideClickMonitor() {
+        if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
+        outsideClickMonitor = nil
     }
 
     /// The panel with its three observed selector models wired in. The root view is rebuilt per
@@ -130,6 +151,7 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     }
 
     func popoverDidClose(_ notification: Notification) {
+        removeOutsideClickMonitor()
         recordClose()
         statusItem.button?.highlight(false)
     }
