@@ -953,6 +953,8 @@ headless test. Use the signed `npm run install-app:signed` build and real files.
 - [ ] **Transcribe calls later.** Settings ▸ General ▸ Call recordings ▸ switch off **Transcribe a
   call as soon as it stops**, record and stop a call: no job starts; the transcript waits as
   Incomplete with "Not transcribed yet — press Resume to transcribe it."; Resume transcribes it.
+  The panel's Options ▸ **Transcribe calls after Stop** is the same switch: flipping either
+  updates the other.
 - [ ] **No delete while transcribing.** While a transcript is being transcribed (a file job, or
   a call's tracks after Stop), its **Delete…** (context menu) and **Delete** (action bar) are
   disabled, the latter with the help "Cancel the transcription before deleting it"; after

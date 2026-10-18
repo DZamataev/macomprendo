@@ -258,6 +258,10 @@ struct MenuPanelView: View {
                 PanelSwitchRow(title: "Save dictation history",
                                isOn: $model.settings.dictationHistoryEnabled)
 
+                PanelSwitchRow(title: "Transcribe calls after Stop",
+                               isOn: $model.settings.transcribeCallsAfterRecording)
+                    .help("When off, a stopped call waits in Transcripts until you press Resume.")
+
                 PanelCaption(text: "Enable hotkeys")
                     .padding(.leading, PanelMetrics.textInset)
                     .padding(.top, 6)
