@@ -202,7 +202,11 @@ hosts. Buttons own stable hover/focus state. Do not restore the removed call-con
 
 Both left and right clicks toggle this same panel. The status button is highlighted
 while open; repeat click, outside click and Escape close it and clear highlight.
-Start with native `.transient` behavior. Vorssaint's `.applicationDefined` custom dismissal
+**Executor decision (smoke):** `.transient` closed and reopened the panel when activating the
+app brought an open window of ours (Transcripts) forward, and missed some clicks into other
+apps' windows on another display. The popover is `.applicationDefined`, dismissed by a global
+click monitor (other apps), a local one (our other windows, Escape) and the app resigning
+active. Original note: start with native `.transient` behavior. Vorssaint's `.applicationDefined` custom dismissal
 exists for its own workflow and is not a requirement here. Verify picker interaction,
 clicks into this app's other windows, and focus before adding any custom event monitor.
 

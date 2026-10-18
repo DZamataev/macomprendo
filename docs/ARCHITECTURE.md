@@ -94,7 +94,7 @@ history, reading the glossary when the transcript arrives. Normalisation comes b
 
 The status item is app-owned: `AppModel.start()` builds a `StatusItemController` through
 `AppEnvironment.makeStatusItem`, and that object owns the single `NSStatusItem`, its button and
-one transient `NSPopover` holding one long-lived `NSHostingController`. The popover's root view
+one `.applicationDefined` `NSPopover` holding one long-lived `NSHostingController`. The popover's root view
 is `MenuPanelView`, rebuilt on every show so its `@State` starts fresh — which is what keeps
 **Options** collapsed and re-reads shortcut annotations — while the controller and the view
 tree are retained. The scene graph carries no visible menubar scene: `MacomprendoApp`'s first

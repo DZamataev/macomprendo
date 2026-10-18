@@ -60,6 +60,9 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
       unchanged. Select “Summarize selection”, select text in TextEdit and click the middle button:
       the Summary panel opens. Disable the toggle and confirm middle-button clicks no longer invoke
       Macomprendo.
+- [ ] Menubar panel with a Macomprendo window open (Transcripts, Settings): click the status
+  item — the panel opens once and stays; it does not vanish and reappear. A click into that
+  window, Escape, or switching to another app (⌘Tab) closes it.
 - [ ] Menubar panel, two displays: with the other display focused, click the status item in
   this display's menu bar — the panel opens under it and its arrow points at the icon on the
   first try. While it is open, a recording clock or percent that changes the item's width keeps
@@ -626,7 +629,7 @@ Setup: Settings ▸ Speech ▸ Speech source = "Endpoint". Point Base URL at you
 
 ## Menubar panel
 
-The status item is app-owned (`StatusItemController`): one `NSStatusItem` and a transient
+The status item is app-owned (`StatusItemController`): one `NSStatusItem` and an `.applicationDefined`
 `NSPopover` hosting the SwiftUI `MenuPanelView`. Left and right clicks toggle the same panel.
 The pure presentation rules are unit-tested; everything below needs a pointer, a real recording
 or the window server.

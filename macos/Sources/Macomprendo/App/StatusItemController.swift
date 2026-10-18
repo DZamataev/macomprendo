@@ -33,6 +33,9 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     /// misses some of them — a click into another app's window on another display, made after
     /// scrolling it without focusing it, left the panel open — so such a click closes it here.
     private var outsideClickMonitor: Any?
+    /// The same for our own windows and Escape, which `.applicationDefined` leaves to us.
+    private var localEventMonitor: Any?
+    private var resignActiveObserver: NSObjectProtocol?
     /// Follows the status button's window while the popover is shown (see `reanchor()`).
     private var buttonWindowObservers: [NSObjectProtocol] = []
     /// The display the panel settled on after opening; `nil` until that first pass.
@@ -63,7 +66,11 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
             button.font = Self.titleFont
         }
         hostingController.sizingOptions = .preferredContentSize
-        popover.behavior = .transient
+        // Not `.transient`: activating the app to make the panel key also brings an open
+        // window of ours (Transcripts, Settings) forward, and a transient popover took that
+        // key change for a dismissal — it closed and reopened. Dismissal is ours instead:
+        // a click elsewhere, Escape, the app losing focus (`installDismissal()`).
+        popover.behavior = .applicationDefined
         popover.contentViewController = hostingController
         popover.delegate = self
 
@@ -161,20 +168,54 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
         buttonWindowObservers = []
     }
 
-    /// A global monitor only sees events sent to other apps, so clicks on the panel, our own
-    /// windows and our status item never reach it.
+    /// Every way the panel is dismissed besides its own commands. A global monitor sees clicks
+    /// sent to other apps; a local one sees clicks in our own windows (the status item's
+    /// window excluded — its click is the toggle) and Escape. Pop-up menus inside the panel
+    /// track in their own loop and never reach the local monitor.
     private func installOutsideClickMonitor() {
         removeOutsideClickMonitor()
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closePanel() }
+        }
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: clicks.union(.keyDown)) {
+            [weak self] event in
+            // Local monitors run on the main thread; NSEvent is not Sendable, so the hop into
+            // the main actor's isolation carries it unchecked.
+            nonisolated(unsafe) let event = event
+            nonisolated(unsafe) var result: NSEvent? = event
+            MainActor.assumeIsolated { result = self?.handleLocal(event) ?? event }
+            return result
+        }
+        resignActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.closePanel() }
         }
     }
 
+    private func handleLocal(_ event: NSEvent) -> NSEvent? {
+        guard isPanelShown else { return event }
+        let panelWindow = popover.contentViewController?.view.window
+        if event.type == .keyDown {
+            // Escape, while the panel is the key window.
+            guard event.keyCode == 53, event.window === panelWindow else { return event }
+            closePanel()
+            return nil
+        }
+        if event.window !== panelWindow, event.window !== statusItem.button?.window {
+            closePanel()
+        }
+        return event
+    }
+
     private func removeOutsideClickMonitor() {
         if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
         outsideClickMonitor = nil
+        if let localEventMonitor { NSEvent.removeMonitor(localEventMonitor) }
+        localEventMonitor = nil
+        if let resignActiveObserver { NotificationCenter.default.removeObserver(resignActiveObserver) }
+        resignActiveObserver = nil
     }
 
     /// The panel with its three observed selector models wired in. The root view is rebuilt per
