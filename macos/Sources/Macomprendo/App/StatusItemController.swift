@@ -244,6 +244,12 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     // one that observes the close.
     func popoverWillClose(_ notification: Notification) {
         statusItem.button?.highlight(false)
+        // Stop here, not on didClose: `isShown` stays true through the close animation, and a
+        // window opened by a panel command can move the status item in that time — a re-anchor
+        // then reopened the panel over the new window.
+        stopFollowingButtonWindow()
+        removeOutsideClickMonitor()
+        anchoredScreen = nil
     }
 
     func popoverDidClose(_ notification: Notification) {
