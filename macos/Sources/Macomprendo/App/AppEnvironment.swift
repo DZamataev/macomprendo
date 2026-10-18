@@ -48,6 +48,7 @@ struct AppEnvironment {
     /// transcript playback and dictation-history playback never silence each other.
     var transcriptAudioPlayer: any TranscriptAudioPlaying
     var fileRevealer: any FileRevealing
+    var fileTrash: any FileTrashing
     /// Hands a URL to the default browser: the About window's privacy and homepage links.
     var urlOpener: any URLOpening
     var launchAtLogin: any LaunchAtLoginManaging
@@ -126,6 +127,7 @@ struct AppEnvironment {
             historyAudioPlayer: AVAudioPlayerPlayer(),
             transcriptAudioPlayer: AVTranscriptAudioPlayer(),
             fileRevealer: NSWorkspaceFileRevealer(),
+            fileTrash: FileManagerTrash(),
             urlOpener: NSWorkspaceURLOpener(),
             launchAtLogin: SMAppServiceLaunchAtLogin(),
             escapeMonitor: GlobalEscapeMonitor(),

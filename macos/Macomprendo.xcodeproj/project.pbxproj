@@ -110,6 +110,7 @@
 		4DAD115533BD95444DB2D767 /* SpeechServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EE8EE7E50A05C5624FC2B40 /* SpeechServiceTests.swift */; };
 		4E4AD68F7F7A33E919DD70D7 /* FakeKeySimulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD29B5EEB8F587BAC1D9C4B /* FakeKeySimulator.swift */; };
 		4F1958AFE334E79910FDD447 /* Wait.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25FAD6C6C5458D4AE9A2B67 /* Wait.swift */; };
+		4F7D94215714EA6DD9CAD488 /* FileTrash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253843F40BDF16E32D106618 /* FileTrash.swift */; };
 		5013ABD613D5D9B300C36889 /* CallTranscriptionPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9557C10DD0A7F649FC35D41F /* CallTranscriptionPlanTests.swift */; };
 		507B7FCE6E21194FD6DD99DF /* SpeechReadiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771237B5313A1DFB7D09346D /* SpeechReadiness.swift */; };
 		50BD75A8D26D6A7644DABCEF /* EndpointTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70E431E2494736FD9AD176BB /* EndpointTests.swift */; };
@@ -227,6 +228,7 @@
 		9732BE623DD4CEDBB422F178 /* SherpaTTSService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85DA6BBB9B30C922D136C961 /* SherpaTTSService.swift */; };
 		97760FCE0DBC9DB4D21CBCEB /* FakeFileRevealer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B7BA665469EF79988BCDBA1 /* FakeFileRevealer.swift */; };
 		978DEDD441A92623194FA1C3 /* DockIconCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB415A484AE4E79834E2A4D /* DockIconCoordinatorTests.swift */; };
+		9833D9483896DA91AEF77276 /* FakeFileTrash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A418D77E9F92FAE9122B796A /* FakeFileTrash.swift */; };
 		986CB08BC906769CC4B733EF /* DictationHistoryLiveUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04B1EEF928D263101B9DFFE5 /* DictationHistoryLiveUpdateTests.swift */; };
 		9995097DC91DB7D8C89115C7 /* Toasting.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1BC772198BEE9912D3BF36 /* Toasting.swift */; };
 		99ED0336BBA11B1B25123EF2 /* FakeFrontmostAppTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EFE08D188CD0550AA5E231 /* FakeFrontmostAppTracker.swift */; };
@@ -454,6 +456,7 @@
 		241F70DC31EA61EE43A3A5EB /* OllamaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaProvider.swift; sourceTree = "<group>"; };
 		243B05C0BCF87DA424809F70 /* DictationCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationCapture.swift; sourceTree = "<group>"; };
 		248588652856602E21554C90 /* Box.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Box.swift; sourceTree = "<group>"; };
+		253843F40BDF16E32D106618 /* FileTrash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTrash.swift; sourceTree = "<group>"; };
 		27144E1F3C90A0D197DF68D6 /* CreateFailingTranscriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateFailingTranscriptStore.swift; sourceTree = "<group>"; };
 		273356E45ADB71B9F6598175 /* FakeTranscriptAudioPlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeTranscriptAudioPlayerTests.swift; sourceTree = "<group>"; };
 		27A6A71C6A2CDB098272E6BE /* StubURLProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubURLProtocol.swift; sourceTree = "<group>"; };
@@ -631,6 +634,7 @@
 		A367EE3DD58E45355C4BCA39 /* FactoryPresets+Russian.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FactoryPresets+Russian.swift"; sourceTree = "<group>"; };
 		A36A87F456E75622EBADFC9C /* StatusItemTitleWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemTitleWriter.swift; sourceTree = "<group>"; };
 		A3BE9BF347F7031A6F3CA096 /* FakeOllamaDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeOllamaDetector.swift; sourceTree = "<group>"; };
+		A418D77E9F92FAE9122B796A /* FakeFileTrash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeFileTrash.swift; sourceTree = "<group>"; };
 		A5075219EABE62DC7C82DDBB /* TranscriptProgressText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptProgressText.swift; sourceTree = "<group>"; };
 		A5516103D0EDC5FEEAF0AD5B /* DictationHistoryControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryControllerTests.swift; sourceTree = "<group>"; };
 		A5D34BE01DCCE5840B090D5A /* ScriptedPermissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedPermissions.swift; sourceTree = "<group>"; };
@@ -1228,6 +1232,7 @@
 				032B279DB9A2DB88B975971E /* EscapeMonitor.swift */,
 				BCD3DF2BA40558FA89D6D54C /* FileBookmarks.swift */,
 				5DBEC7BEE3A52A04FE6A5C2D /* FileRevealer.swift */,
+				253843F40BDF16E32D106618 /* FileTrash.swift */,
 				4F586E6A5937178D4A671836 /* FrontmostAppTracker.swift */,
 				D219D9C62A2E6B2EA479CA65 /* GlossaryStore.swift */,
 				381609CCF1D7FD71356B0BAC /* HotkeyService.swift */,
@@ -1402,6 +1407,7 @@
 				7488ABFA59EDEDE31129E63B /* FakeEscapeMonitor.swift */,
 				161B8325299DEE6D49C3C736 /* FakeFileBookmarks.swift */,
 				8B7BA665469EF79988BCDBA1 /* FakeFileRevealer.swift */,
+				A418D77E9F92FAE9122B796A /* FakeFileTrash.swift */,
 				E7EFE08D188CD0550AA5E231 /* FakeFrontmostAppTracker.swift */,
 				742FF9FF5259C24F15F842CE /* FakeGlossaryStore.swift */,
 				D03D31A3D30F7D79337DCA6F /* FakeHotkeyService.swift */,
@@ -1652,6 +1658,7 @@
 				F672D417E4DC765B0448FDA6 /* FakeEscapeMonitor.swift in Sources */,
 				67CBB9D52079CC4038019E87 /* FakeFileBookmarks.swift in Sources */,
 				97760FCE0DBC9DB4D21CBCEB /* FakeFileRevealer.swift in Sources */,
+				9833D9483896DA91AEF77276 /* FakeFileTrash.swift in Sources */,
 				99ED0336BBA11B1B25123EF2 /* FakeFrontmostAppTracker.swift in Sources */,
 				33411B7BD0674A0871802BFE /* FakeGlossaryStore.swift in Sources */,
 				516533F301ED94FF93F7E8A7 /* FakeHTTPClient.swift in Sources */,
@@ -1855,6 +1862,7 @@
 				DC366D91938E89060D01E207 /* FileBookmarks.swift in Sources */,
 				A2AA15A4055777CBC3E54BB0 /* FileRevealer.swift in Sources */,
 				17D46F987F17A117A752F77F /* FileTranscriptionController.swift in Sources */,
+				4F7D94215714EA6DD9CAD488 /* FileTrash.swift in Sources */,
 				089F2E3D6B9DD087C9613127 /* FloatingPanel.swift in Sources */,
 				EC07C5AAFC757E3FCED3FE77 /* FloatingPanelHost.swift in Sources */,
 				A0EDE17BFA7689A6B166F69D /* FrontmostAppTracker.swift in Sources */,

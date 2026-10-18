@@ -935,9 +935,13 @@ headless test. Use the signed `npm run install-app:signed` build and real files.
       timestamps), the Summarize feature's model and presets, and no **Replace selection**. Copy
       pastes the summary, and the panel closes without changing the transcript. Then press ⌥M
       (Summarize selection) and confirm **Replace selection** is back for the hotkey path.
-- [ ] **Delete from the list.** Right-click a transcript that is not the open one ▸ **Delete…** ▸
-  Delete: that row goes, the open transcript stays open. Right-click the open one ▸ Delete…:
-  the detail clears. Cancel in the confirmation deletes nothing. A call's recording folder stays.
+- [ ] **Delete from the list.** Right-click a transcript that is not the open one ▸ **Delete…**:
+  a sheet asks, with **Also move the source file to the Trash** (a call: **…the call
+  recording…**) checked. Delete: the row goes, the open transcript stays open, and the source
+  file / the recording folder is in the Trash (Put Back works). Uncheck the box: the source stays
+  where it was. Cancel deletes nothing. A source already moved elsewhere: the transcript is still
+  deleted. A source the Trash refuses (e.g. a read-only volume): the transcript stays and the
+  window says why. The action bar's Delete asks the same way.
 - [ ] **Transcribe Again.** On a complete call transcript press **Transcribe Again** and confirm:
   the row goes to Transcribing, the old text is replaced, and the Me / Others turns interleave in
   the order they were spoken. With the source file moved, the job fails with **Choose File…** and

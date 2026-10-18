@@ -124,7 +124,8 @@ final class AppModel: ObservableObject {
     lazy var transcriptLibrary = TranscriptLibraryController(store: env.transcriptStore,
                                                              pasteboard: env.pasteboard,
                                                              bookmarks: env.fileBookmarks,
-                                                             revealer: env.fileRevealer)
+                                                             revealer: env.fileRevealer,
+                                                             trash: env.fileTrash)
     lazy var transcriptPlayback = TranscriptPlaybackController(player: env.transcriptAudioPlayer,
                                                                bookmarks: env.fileBookmarks,
                                                                folders: env.callRecordingFolders,

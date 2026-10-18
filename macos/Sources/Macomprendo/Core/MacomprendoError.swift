@@ -40,6 +40,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case callRecordingWriteFailed(String)
     case callRecordingUnavailable
     case transcriptPlaybackUnavailable(String)
+    /// Deleting a transcript together with its source, the source would not go to the Trash.
+    case sourceNotMovedToTrash(String)
     case cancelled
 
     var errorDescription: String? {
@@ -108,6 +110,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "The call recording stopped because a file could not be written (\(reason))."
         case .callRecordingUnavailable:
             return "The call recording cannot be found."
+        case .sourceNotMovedToTrash(let reason):
+            return "The source could not be moved to the Trash (\(reason)). The transcript was kept."
         case .transcriptPlaybackUnavailable(let reason):
             return "Can't play this transcript's audio: \(reason)."
         case .cancelled:
@@ -181,6 +185,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Free some disk space or choose another folder in Settings ▸ General. What was recorded so far is kept."
         case .callRecordingUnavailable:
             return "Choose the recording's folder again, or restore it from the Trash."
+        case .sourceNotMovedToTrash:
+            return "Delete the transcript without its source, or move the file to the Trash yourself."
         case .transcriptPlaybackUnavailable:
             return "If the file or the recording folder moved, choose it again with Choose File… or Choose Folder…."
         case .cancelled:

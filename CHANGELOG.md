@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Deleting a transcript can also move its source — the transcribed file, or a call's recording
+  folder — to the Trash. The confirmation has the box checked by default; **Delete…** is also in
+  the list's context menu.
+
 ### Changed
 - The menubar menu is now a quick-access **panel**: **Record Call** / **Stop Recording** with the
   live level meters, the microphone, dictation-model and translation pickers, **Transcribe File…**,
