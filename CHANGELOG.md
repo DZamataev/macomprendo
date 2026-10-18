@@ -11,6 +11,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   folder — to the Trash. The confirmation has the box checked by default; **Delete…** is also in
   the list's context menu. A transcript that is still being transcribed cannot be deleted
   until its job is cancelled.
+- **Stop** on the panel's transcription card stops the running job; the transcript keeps what
+  was done and **Resume** or **Transcribe Again** finishes it later.
+- Settings ▸ General ▸ Call recordings ▸ **Transcribe a call as soon as it stops** (on by
+  default): switched off, a stopped call waits in Transcripts until you press **Resume**.
 
 ### Changed
 - The menubar menu is now a quick-access **panel**: **Record Call** / **Stop Recording** with the

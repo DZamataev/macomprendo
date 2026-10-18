@@ -942,6 +942,12 @@ headless test. Use the signed `npm run install-app:signed` build and real files.
   where it was. Cancel deletes nothing. A source already moved elsewhere: the transcript is still
   deleted. A source the Trash refuses (e.g. a read-only volume): the transcript stays and the
   window says why. The action bar's Delete asks the same way.
+- [ ] **Stop a transcription from the panel.** While a file or call is transcribing, the panel's
+  progress card has **Stop**: the job stops, the panel stays open, the transcript is
+  **Incomplete** with what was done; **Resume** continues it, **Transcribe Again** starts over.
+- [ ] **Transcribe calls later.** Settings ▸ General ▸ Call recordings ▸ switch off **Transcribe a
+  call as soon as it stops**, record and stop a call: no job starts; the transcript waits as
+  Incomplete with "Not transcribed yet — press Resume to transcribe it."; Resume transcribes it.
 - [ ] **No delete while transcribing.** While a transcript is being transcribed (a file job, or
   a call's tracks after Stop), its **Delete…** (context menu) and **Delete** (action bar) are
   disabled, the latter with the help "Cancel the transcription before deleting it"; after

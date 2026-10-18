@@ -26,6 +26,23 @@ struct TranscriptionActivitySection: View {
             .buttonStyle(.plain)
             .onHover { isHovering = $0 }
             .accessibilityLabel(accessibilityLabel(activity))
+            // Over the card rather than inside it: a button in another button's label does
+            // not get its own clicks. The panel stays open, and the job becomes `incomplete`
+            // with what it has so far — Resume continues it, Transcribe Again starts over.
+            .overlay(alignment: .bottomTrailing) {
+                if !activity.isFailure {
+                    Button {
+                        transcription.cancel()
+                    } label: {
+                        Label { Text("Stop") } icon: { Icon(.stop, size: 11) }
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .labelStyle(.titleAndIcon)
+                    .help("Stop transcribing. Resume continues it later, or Transcribe Again starts over with another model.")
+                    .padding(8)
+                }
+            }
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
         }

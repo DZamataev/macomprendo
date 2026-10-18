@@ -351,6 +351,9 @@ struct Settings: Codable, Sendable, Equatable {
     /// Where call recordings are stored. `nil` uses `CallRecordingLayout.defaultDirectory`. A
     /// `String` rather than a `URL` so the persisted JSON stays readable and portable.
     var callRecordingsDirectory: String?
+    /// Whether a call is transcribed as soon as its recording stops. Off keeps the call for
+    /// later — a busy Mac, no time, or another model first — waiting `incomplete` for Resume.
+    var transcribeCallsAfterRecording: Bool
 
     static var `default`: Settings {
         Settings(
@@ -390,7 +393,8 @@ struct Settings: Codable, Sendable, Equatable {
             glossaryEnabled: false,
             glossaryManualTerms: [],
             glossaryRecommendedPacksOffered: false,
-            callRecordingsDirectory: nil
+            callRecordingsDirectory: nil,
+            transcribeCallsAfterRecording: true
         )
     }
 
@@ -482,5 +486,8 @@ extension Settings {
             ?? d.glossaryRecommendedPacksOffered
         callRecordingsDirectory = try c.decodeIfPresent(String.self,
                                                         forKey: .callRecordingsDirectory)
+        transcribeCallsAfterRecording = try c.decodeIfPresent(
+            Bool.self, forKey: .transcribeCallsAfterRecording)
+            ?? d.transcribeCallsAfterRecording
     }
 }
