@@ -14,7 +14,9 @@ struct TranscriptsView: View {
     @ObservedObject var transcription: FileTranscriptionController
     @ObservedObject var playback: TranscriptPlaybackController
 
-    @State private var isDeleteConfirmationPresented = false
+    /// The transcript **Delete** was asked for — from the action bar or a row's context menu,
+    /// which need not be the open one — while its confirmation is up.
+    @State private var deleteID: Int64?
     /// The transcript **Transcribe Again** was asked for, while its confirmation is up.
     @State private var transcribeAgainID: Int64?
     /// A failure from writing an export. Export is the one action whose failure belongs to no
@@ -77,10 +79,11 @@ struct TranscriptsView: View {
             }
         }
         .confirmationDialog("Delete this transcript?",
-                            isPresented: $isDeleteConfirmationPresented,
+                            isPresented: Binding(get: { deleteID != nil },
+                                                 set: { if !$0 { deleteID = nil } }),
                             titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                guard let id = library.selected?.id else { return }
+                guard let id = deleteID else { return }
                 Task { await library.delete(id) }
             }
         } message: {
@@ -117,6 +120,8 @@ struct TranscriptsView: View {
                         Button("Rename") { beginRename(header) }
                         Button("Transcribe Again…") { transcribeAgainID = header.id }
                             .disabled(!canTranscribeAgain(header))
+                        Divider()
+                        Button("Delete…", role: .destructive) { deleteID = header.id }
                     }
             }
         }
@@ -345,7 +350,7 @@ struct TranscriptsView: View {
             Spacer()
 
             Button {
-                isDeleteConfirmationPresented = true
+                deleteID = transcript.id
             } label: {
                 Label { Text("Delete") } icon: { Icon(.delete, size: 14) }
             }
