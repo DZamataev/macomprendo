@@ -103,48 +103,36 @@ struct MenuPanelView: View {
         VStack(alignment: .leading, spacing: 7) {
             VStack(alignment: .leading, spacing: 3) {
                 PanelCaption(text: "Microphone")
-                Picker("Microphone", selection: microphoneSelection) {
-                    ForEach(microphone.options) { option in
-                        Text(option.title).tag(option.uid)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                PanelPopUpButton(items: microphone.options.map { .init(title: $0.title, value: $0.uid) },
+                                 selection: microphoneSelection)
+                    .accessibilityLabel("Microphone")
                 if let caption = microphone.caption {
                     note(caption)
                 }
             }
             VStack(alignment: .leading, spacing: 3) {
                 PanelCaption(text: "Dictation model")
-                Picker("Dictation model", selection: activeSource) {
-                    ForEach(dictation.selectableSources) { entry in
-                        Text(entry.menuTitle).tag(entry.source)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 // The library's own readiness rule: the active source stays listed even when
                 // it cannot run, and the picker says why it is disabled.
-                .disabled(!dictation.hasReadySource)
+                PanelPopUpButton(items: dictation.selectableSources.map {
+                                     .init(title: $0.menuTitle, value: $0.source) },
+                                 selection: activeSource,
+                                 isEnabled: dictation.hasReadySource)
+                    .accessibilityLabel("Dictation model")
                 if !dictation.hasReadySource {
                     note("No model is ready — set one up in Settings ▸ Dictation.")
                 }
             }
             VStack(alignment: .leading, spacing: 3) {
-                PanelCaption(text: "Translate into")
-                Picker("Translate into", selection: $model.settings.translationTarget) {
-                    ForEach(TranslationTarget.allOptions, id: \.self) { target in
-                        Text(target.pickerLabel(
-                            promptLanguage: model.settings.promptLanguage,
-                            systemLanguageCode: TranslationTarget.currentSystemLanguageCode))
-                            .tag(target)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                PanelCaption(text: MenuPanelPresentation.translationCaption)
+                PanelPopUpButton(items: TranslationTarget.allOptions.map { target in
+                                     .init(title: target.pickerLabel(
+                                               promptLanguage: model.settings.promptLanguage,
+                                               systemLanguageCode: TranslationTarget.currentSystemLanguageCode),
+                                           value: target) },
+                                 selection: $model.settings.translationTarget)
+                    .accessibilityLabel(MenuPanelPresentation.translationCaption)
+                    .help(MenuPanelPresentation.translationHelp)
             }
         }
         .padding(.horizontal, 12)
@@ -246,18 +234,19 @@ struct MenuPanelView: View {
     // MARK: - Options (§3.6)
 
     private var options: some View {
-        DisclosureGroup(isExpanded: $optionsExpanded) {
-            VStack(alignment: .leading, spacing: 2) {
-                Toggle(isOn: $model.settings.dictationHistoryEnabled) {
-                    Text("Save dictation history")
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .padding(.horizontal, 6)
-                .frame(minHeight: 24)
+        VStack(alignment: .leading, spacing: 2) {
+            PanelCommandRow(icon: .disclosure, title: "Options",
+                            iconRotation: optionsExpanded ? .degrees(90) : .zero) {
+                optionsExpanded.toggle()
+            }
+            .accessibilityValue(optionsExpanded ? "Expanded" : "Collapsed")
+
+            if optionsExpanded {
+                PanelSwitchRow(title: "Save dictation history",
+                               isOn: $model.settings.dictationHistoryEnabled)
 
                 PanelCaption(text: "Enable hotkeys")
-                    .padding(.horizontal, 6)
+                    .padding(.leading, PanelMetrics.textInset)
                     .padding(.top, 6)
                     .padding(.bottom, 2)
 
@@ -268,14 +257,12 @@ struct MenuPanelView: View {
                 Text("Change shortcuts in Settings ▸ Hotkeys")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
+                    .padding(.leading, PanelMetrics.textInset)
                     .padding(.vertical, 6)
             }
-            .padding(.top, 4)
-        } label: {
-            Text("Options")
-                .font(.callout)
         }
+        // The same container inset as the command rows, so "Options" and every switch label
+        // line up with the commands above and below.
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
     }
@@ -284,24 +271,11 @@ struct MenuPanelView: View {
     /// The annotation is read from the live binding, not a launch-time cache, and an action
     /// with no shortcut shows none (spec §3).
     private func hotkeyToggle(_ action: HotkeyAction) -> some View {
-        Toggle(isOn: Binding(get: { model.isEnabled(action) },
-                             set: { model.setEnabled(action, $0) })) {
-            HStack(spacing: 6) {
-                Text(action.displayName)
-                Spacer(minLength: 6)
-                if let annotation = MenuPanelPresentation.shortcutAnnotation(
-                    action.currentShortcutText()) {
-                    Text(annotation)
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .toggleStyle(.switch)
-        .controlSize(.small)
-        .padding(.horizontal, 6)
-        .frame(minHeight: 24)
+        PanelSwitchRow(title: action.displayName,
+                       annotation: MenuPanelPresentation.shortcutAnnotation(
+                           action.currentShortcutText()),
+                       isOn: Binding(get: { model.isEnabled(action) },
+                                     set: { model.setEnabled(action, $0) }))
     }
 
     private var divider: some View {

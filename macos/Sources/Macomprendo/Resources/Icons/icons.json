@@ -35,5 +35,6 @@
   { "name": "app-window", "weight": "regular" },
   { "name": "shield-check", "weight": "regular" },
   { "name": "info", "weight": "regular" },
-  { "name": "power", "weight": "regular" }
+  { "name": "power", "weight": "regular" },
+  { "name": "caret-right", "weight": "regular" }
 ]

@@ -5,6 +5,12 @@ import Foundation
 /// every rule is unit-tested without a running app, and so the noisy state publishers only
 /// ever reach text.
 enum MenuPanelPresentation {
+    /// The caption over the translation selector: the language only matters to the presets
+    /// that translate, which a bare "Translate into" did not say.
+    static let translationCaption = "Translation language for Refine & Summarize"
+    static let translationHelp = "The language the Translate presets of Refine and the "
+        + "“translated” presets of Summarize write in. Other presets ignore it."
+
 
     // MARK: - Dictation
 

@@ -166,6 +166,7 @@
 		6DEA7A071AA5AB5967A8588D /* SherpaRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7864757424A7A2A0860B27 /* SherpaRuntimeTests.swift */; };
 		6FA82867F9FAF4833FACEE25 /* DockIconCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52DD1DC69E8B539DD250B71C /* DockIconCoordinator.swift */; };
 		70130AFE91DB79853B858D53 /* GlossaryPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6487D038A12E4C238B5FAC7 /* GlossaryPack.swift */; };
+		7203509E282244EAAC2C2B6F /* PanelPopUpButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 694852A360DCCCA97AB9972B /* PanelPopUpButton.swift */; };
 		7321914C24ED5FBA7E40AFAD /* HotkeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381609CCF1D7FD71356B0BAC /* HotkeyService.swift */; };
 		750CAC7DCFED3A234A4A0A52 /* RefineControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE9DDF7B61F857367DCA5EC5 /* RefineControllerTests.swift */; };
 		754B158BE531AACA30BCE783 /* BackendReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BE1F0EE64B77F8762CA87C3 /* BackendReadinessTests.swift */; };
@@ -544,6 +545,7 @@
 		6625F2D66B8449C67EC7744A /* FakeLaunchAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeLaunchAtLogin.swift; sourceTree = "<group>"; };
 		684DC5415F34C378149AE05E /* FactoryPresetContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FactoryPresetContent.swift; sourceTree = "<group>"; };
 		687C533D4CC8412CDC7686AB /* ScriptedInserter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedInserter.swift; sourceTree = "<group>"; };
+		694852A360DCCCA97AB9972B /* PanelPopUpButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelPopUpButton.swift; sourceTree = "<group>"; };
 		6A32D6B6DB5A25505D79ABFB /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		6AEC1FAAEB86AC4E5C070A16 /* GlossaryPackConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlossaryPackConfig.swift; sourceTree = "<group>"; };
 		6B95725C6BB34DCFC688E01B /* ScriptedSegmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedSegmenter.swift; sourceTree = "<group>"; };
@@ -915,6 +917,7 @@
 				7FFF1E7A9EC27C1EE7ABB499 /* MenuPanelPresentation.swift */,
 				B069B7D9E1CFA8DCEAA2FB93 /* MenuPanelRows.swift */,
 				BC0A04D6339AB18B90C8D848 /* MenuPanelView.swift */,
+				694852A360DCCCA97AB9972B /* PanelPopUpButton.swift */,
 				D80F80CFD6CB1B666B4450F0 /* TranscriptionActivitySection.swift */,
 			);
 			path = MenuBar;
@@ -1906,6 +1909,7 @@
 				CF99FD33C9E60F54A52AD909 /* OnboardingWindowController.swift in Sources */,
 				2142B174C2680461F7E13719 /* OpenAICompatibleLLMProvider.swift in Sources */,
 				86936AD8B5E629CF0B7060E0 /* OpenAICompatibleTranscriber.swift in Sources */,
+				7203509E282244EAAC2C2B6F /* PanelPopUpButton.swift in Sources */,
 				95274FD18A9AED08FFF88B0C /* Pasteboard.swift in Sources */,
 				5996A188943965F021879C5A /* PermissionsService.swift in Sources */,
 				C5D7F72FE7C6625AACB7E71A /* PlaybackComposition.swift in Sources */,

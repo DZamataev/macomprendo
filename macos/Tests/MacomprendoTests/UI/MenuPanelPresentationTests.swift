@@ -195,4 +195,11 @@ import Testing
         #expect(others.tooltip
                 == "Macomprendo\nRecording call — 00:12\nTranscribing Others — 12:40 / 58:03")
     }
+
+    /// "Translate into" alone told a new user nothing about where the language is used.
+    @Test func theTranslationSelectorSaysWhereItApplies() {
+        #expect(MenuPanelPresentation.translationCaption == "Translation language for Refine & Summarize")
+        #expect(MenuPanelPresentation.translationHelp.contains("Translate"))
+        #expect(MenuPanelPresentation.translationHelp.contains("Summarize"))
+    }
 }

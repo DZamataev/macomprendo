@@ -12,6 +12,8 @@ struct PanelCommandRow: View {
     var shortcut: String?
     var isEnabled: Bool = true
     var help: String?
+    /// Turns the icon, e.g. the Options caret pointing down while expanded.
+    var iconRotation: Angle = .zero
     let action: () -> Void
 
     @State private var isHovering = false
@@ -20,6 +22,7 @@ struct PanelCommandRow: View {
         Button(action: action) {
             HStack(spacing: 7) {
                 Icon(icon, size: 14)
+                    .rotationEffect(iconRotation)
                     .frame(width: 16)
                     .foregroundStyle(foreground)
                 Text(title)
@@ -66,6 +69,41 @@ private struct PanelRowButtonStyle: ButtonStyle {
                     .fill(isHovering
                           ? Color(nsColor: .selectedContentBackgroundColor)
                           : .clear))
+    }
+}
+
+/// Where a row's text starts: the command rows' padding, icon column and spacing. Rows without
+/// an icon (switches, captions) start here too, so every label in the panel shares one edge.
+enum PanelMetrics {
+    static let textInset: CGFloat = 6 + 16 + 7
+}
+
+/// One switch row: the label on the left, an optional shortcut annotation, a mini switch on the
+/// right — the same shape for every switch, so none hugs its label.
+struct PanelSwitchRow: View {
+    let title: String
+    var annotation: String?
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            if let annotation {
+                Text(annotation)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            Toggle(title, isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+        }
+        .padding(.leading, PanelMetrics.textInset)
+        .padding(.trailing, 6)
+        .frame(minHeight: 22)
     }
 }
 
