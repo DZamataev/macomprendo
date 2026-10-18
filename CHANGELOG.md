@@ -15,6 +15,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was done and **Resume** or **Transcribe Again** finishes it later.
 - Settings ▸ General ▸ Call recordings ▸ **Transcribe a call as soon as it stops** (on by
   default): switched off, a stopped call waits in Transcripts until you press **Resume**.
+- The permissions wizard has an optional **System audio** step for call recording: it makes
+  macOS ask for system-audio capture and opens the right System Settings pane.
 
 ### Changed
 - The menubar menu is now a quick-access **panel**: **Record Call** / **Stop Recording** with the

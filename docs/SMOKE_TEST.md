@@ -942,6 +942,11 @@ headless test. Use the signed `npm run install-app:signed` build and real files.
   where it was. Cancel deletes nothing. A source already moved elsewhere: the transcript is still
   deleted. A source the Trash refuses (e.g. a read-only volume): the transcript stays and the
   window says why. The action bar's Delete asks the same way.
+- [ ] **Onboarding ▸ System audio (optional).** Menubar panel ▸ Check permissions…, step 3 of 5:
+  **Allow system audio…** makes macOS ask once (after a reset of the permission); the step says
+  "Asked…"; **Open System Settings** opens Privacy & Security ▸ Screen & System Audio Recording.
+  Continue works without asking. With a call recording running, the step says system audio is
+  already allowed and does not touch the recording.
 - [ ] **Stop a transcription from the panel.** While a file or call is transcribing, the panel's
   progress card has **Stop**: the job stops, the panel stays open, the transcript is
   **Incomplete** with what was done; **Resume** continues it, **Transcribe Again** starts over.
