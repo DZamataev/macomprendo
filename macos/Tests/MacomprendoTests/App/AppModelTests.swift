@@ -124,6 +124,59 @@ import Testing
         #expect(middleMouse.isEnabled == false)
     }
 
+    @Test func theReleaseMicrophoneSettingReachesBothRecorders() async {
+        let recorder = FakeAudioRecorder()
+        let call = ScriptedCallCapture()
+        let store = InMemorySettingsStore()
+        var saved = Settings.default
+        saved.releaseMicrophoneAfterRecording = false
+        store.save(try! JSONEncoder().encode(saved))
+        let model = AppModel(store: store, keychain: InMemoryKeychainStore(),
+                             env: .fake(recorder: recorder, callMicrophone: call))
+        model.start()
+        #expect(recorder.releasesInputWhenStopped == [false])
+        #expect(call.releasesInputWhenStopped == [false])
+
+        model.settings.releaseMicrophoneAfterRecording = true
+        #expect(recorder.releasesInputWhenStopped == [false, true])
+        #expect(call.releasesInputWhenStopped == [false, true])
+    }
+
+    @Test func releaseMicrophoneLetsGoOfEveryHeldInput() {
+        let recorder = FakeAudioRecorder()
+        let call = ScriptedCallCapture()
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(recorder: recorder, callMicrophone: call))
+        #expect(model.holdsMicrophone == false)
+        call.holdsInput = true
+        #expect(model.holdsMicrophone)
+
+        model.releaseMicrophone()
+        #expect(recorder.releaseInputCount == 1)
+        #expect(call.releaseInputCount == 1)
+        #expect(model.holdsMicrophone == false)
+    }
+
+    /// A plain middle click (opening a link in a new tab) must never open the microphone: that
+    /// alone drops a Bluetooth headset into its call mode.
+    @Test func aShortMiddleClickInHoldModeNeverStartsRecording() async {
+        let middleMouse = FakeMiddleMouseMonitor()
+        let recorder = FakeAudioRecorder()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(middleMouse: middleMouse, recorder: recorder))
+        model.settings.middleMouseMode = .hold
+        model.settings.middleMouseAction = .dictate
+        model.start()
+
+        middleMouse.send(.down)
+        try? await Task.sleep(for: .milliseconds(100))
+        middleMouse.send(.up)
+        try? await Task.sleep(for: AppModel.middleMouseHoldDelay + .milliseconds(200))
+        #expect(recorder.startCount == 0)
+        #expect(model.dictation.state == .idle)
+    }
+
     @Test func middleMouseToggleModeIsIndependentFromHotkeyMode() async {
         let middleMouse = FakeMiddleMouseMonitor()
         let recorder = FakeAudioRecorder()

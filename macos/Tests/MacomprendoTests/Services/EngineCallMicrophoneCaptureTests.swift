@@ -28,6 +28,41 @@ import Testing
         FakeAudioInputDevices([.builtIn], defaultUID: AudioInputDevice.builtIn.uid)
     }
 
+    /// A Bluetooth headset stays in its call mode while the process holds the input open.
+    @Test func stoppingReleasesTheInput() throws {
+        let engine = FakeAudioInputEngine()
+        let capture = make(engine, devices: builtInDevices())
+        try capture.start { _ in }
+        capture.stop()
+        #expect(engine.releaseCount == 1)
+    }
+
+    @Test func withReleaseSwitchedOffStoppingKeepsTheInput() throws {
+        let engine = FakeAudioInputEngine()
+        let capture = make(engine, devices: builtInDevices())
+        capture.setReleasesInputWhenStopped(false)
+        try capture.start { _ in }
+        capture.stop()
+        #expect(engine.releaseCount == 0)
+        #expect(engine.isRunning == false)
+    }
+
+    @Test func aKeptInputIsReportedUntilReleasedByHand() throws {
+        let engine = FakeAudioInputEngine()
+        let capture = make(engine, devices: builtInDevices())
+        capture.setReleasesInputWhenStopped(false)
+        try capture.start { _ in }
+        #expect(capture.holdsInput == false)
+        capture.releaseInput()
+        #expect(engine.releaseCount == 0)
+        capture.stop()
+        #expect(capture.holdsInput)
+
+        capture.releaseInput()
+        #expect(engine.releaseCount == 1)
+        #expect(capture.holdsInput == false)
+    }
+
     private func stereoBuffer(left: Float, right: Float, frames: AVAudioFrameCount,
                               rate: Double = 44_100) -> AVAudioPCMBuffer {
         let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2)!

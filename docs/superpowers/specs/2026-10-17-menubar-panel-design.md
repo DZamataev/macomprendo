@@ -106,6 +106,10 @@ connected inputs, and the selected disconnected input. Preserve that missing dev
 selection/name and explain the existing fallback. This is Macomprendo's input choice
 for dictation and call capture, not a system-wide output switch.
 
+When Settings ▸ General ▸ **Release the microphone after recording** is off and an input is
+held open between recordings, a **Release Microphone** row sits under the picker; it lets go
+of the input so Bluetooth headphones leave call mode. It never appears during a recording.
+
 The panel and Settings must stay synchronized, including device arrival/removal while
 both are visible. `MicrophonePickerModel` currently has one start/stop observation task;
 sharing its lifetime unchanged between two surfaces would let closing either stop the

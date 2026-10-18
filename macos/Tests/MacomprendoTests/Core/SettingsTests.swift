@@ -636,6 +636,17 @@ import Testing
                 == false)
     }
 
+    @Test func theMicrophoneIsReleasedAfterRecordingByDefaultAndTheChoiceRoundTrips() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+        #expect(try Settings.migrate(json).releaseMicrophoneAfterRecording == true)
+        #expect(Settings.default.releaseMicrophoneAfterRecording == true)
+
+        var settings = Settings.default
+        settings.releaseMicrophoneAfterRecording = false
+        #expect(try Settings.migrate(JSONEncoder().encode(settings)).releaseMicrophoneAfterRecording
+                == false)
+    }
+
     @Test func theCallRecordingsDirectoryDefaultsToNilAndRoundTrips() throws {
         #expect(Settings.default.callRecordingsDirectory == nil)
 

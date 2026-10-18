@@ -295,6 +295,9 @@ struct Settings: Codable, Sendable, Equatable {
     /// The chosen device's name when it was picked, so Settings can still name it while it
     /// is disconnected.
     var preferredInputDeviceName: String?
+    /// Lets go of the microphone as soon as a recording stops, so a Bluetooth headset leaves
+    /// its low-quality call mode. Off keeps the device open between recordings.
+    var releaseMicrophoneAfterRecording: Bool
     /// Replaces direct Dictate recordings shorter than half a second with "OK" without loading ASR.
     var shortDictationInsertsOK: Bool
     /// Adds one separating space after direct Dictate insertion; history keeps the raw transcript.
@@ -368,6 +371,7 @@ struct Settings: Codable, Sendable, Equatable {
             maximumRecordingSeconds: 300,
             preferredInputDeviceUID: nil,
             preferredInputDeviceName: nil,
+            releaseMicrophoneAfterRecording: true,
             shortDictationInsertsOK: false,
             appendSpaceAfterDictation: false,
             middleMouseAction: nil,
@@ -445,6 +449,9 @@ extension Settings {
                                       Settings.recordingSecondsRange.upperBound)
         preferredInputDeviceUID = try c.decodeIfPresent(String.self, forKey: .preferredInputDeviceUID)
         preferredInputDeviceName = try c.decodeIfPresent(String.self, forKey: .preferredInputDeviceName)
+        releaseMicrophoneAfterRecording = try c.decodeIfPresent(
+            Bool.self, forKey: .releaseMicrophoneAfterRecording)
+            ?? d.releaseMicrophoneAfterRecording
         shortDictationInsertsOK = try c.decodeIfPresent(Bool.self, forKey: .shortDictationInsertsOK)
             ?? d.shortDictationInsertsOK
         appendSpaceAfterDictation = try c.decodeIfPresent(Bool.self, forKey: .appendSpaceAfterDictation)

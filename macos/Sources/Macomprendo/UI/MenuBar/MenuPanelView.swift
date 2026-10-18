@@ -110,6 +110,12 @@ struct MenuPanelView: View {
                 if let caption = microphone.caption {
                     note(caption)
                 }
+                if model.holdsMicrophone {
+                    PanelCommandRow(icon: .microphone, title: "Release Microphone",
+                                    help: "Bluetooth headphones return to full sound") {
+                        model.releaseMicrophone()
+                    }
+                }
             }
             VStack(alignment: .leading, spacing: 3) {
                 PanelCaption(text: "Dictation model")

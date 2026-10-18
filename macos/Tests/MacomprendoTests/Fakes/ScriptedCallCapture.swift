@@ -72,6 +72,29 @@ final class ScriptedCallCapture: CallMicrophoneCapturing, @unchecked Sendable {
         reportReentry()
     }
 
+    private var _releasesInputWhenStopped: [Bool] = []
+    /// Every release choice handed to the capture, in call order.
+    var releasesInputWhenStopped: [Bool] { lock.withLock { _releasesInputWhenStopped } }
+
+    func setReleasesInputWhenStopped(_ releases: Bool) {
+        lock.withLock { _releasesInputWhenStopped.append(releases) }
+    }
+
+    private var _holdsInput = false
+    private var _releaseInputCount = 0
+    var holdsInput: Bool {
+        get { lock.withLock { _holdsInput } }
+        set { lock.withLock { _holdsInput = newValue } }
+    }
+    var releaseInputCount: Int { lock.withLock { _releaseInputCount } }
+
+    func releaseInput() {
+        lock.withLock {
+            _holdsInput = false
+            _releaseInputCount += 1
+        }
+    }
+
     /// A synchronous callback from inside the handler is the deadlock the real capture hits;
     /// reporting it keeps a controller that would hang from passing here.
     private func reportReentry() {

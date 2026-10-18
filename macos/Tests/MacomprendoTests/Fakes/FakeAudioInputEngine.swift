@@ -77,6 +77,16 @@ final class FakeAudioInputEngine: AudioInputEngine, @unchecked Sendable {
 
     func stop() { lock.withLock { _isRunning = false } }
 
+    private var _releaseCount = 0
+    var releaseCount: Int { lock.withLock { _releaseCount } }
+
+    func release() {
+        lock.withLock {
+            _isRunning = false
+            _releaseCount += 1
+        }
+    }
+
     /// What macOS does when the user picks another input device mid-recording.
     func switchInputDevice(to format: AVAudioFormat) {
         lock.withLock {

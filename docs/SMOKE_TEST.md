@@ -55,7 +55,9 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
       ⌥Space no longer does.
 - [ ] **Middle mouse action.** Settings ▸ Hotkeys: enable “Middle mouse button click” and choose
       Dictate. Set Mouse ▸ Dictation behaviour to Hold, hold the middle button in TextEdit while
-      speaking and release it: recording stops, transcribes and inserts. Set the **mouse** behaviour
+      speaking and release it: recording stops, transcribes and inserts; the recording starts
+      0.6 s after the press. With Bluetooth headphones playing music, middle-click a link in
+      Safari: no HUD appears and the music keeps playing. Set the **mouse** behaviour
       to Toggle: one click starts recording and the next stops it; the Keyboard behaviour remains
       unchanged. Select “Summarize selection”, select text in TextEdit and click the middle button:
       the Summary panel opens. Disable the toggle and confirm middle-button clicks no longer invoke
@@ -85,8 +87,9 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
       dictation**, then press and release the Dictate hotkey in under half a second — `OK` is
       inserted without waiting for speech recognition, and **no HUD appears at any point** —
       not even a flash. Hold the key (and, separately, the middle mouse button in hold mode) for
-      about two seconds: the recording HUD appears roughly half a second after the press, its
-      timer already past 0:00. Disable it and verify the same short recording follows the
+      about two seconds: the recording HUD appears roughly half a second after the press (about
+      1.1 s for the middle button, which starts recording only after 0.6 s), its timer already
+      past 0:00. Disable it and verify the same short recording follows the
       normal transcription path, with the recording HUD appearing immediately.
 - [ ] **Trailing space.** In Settings ▸ General, enable “Add a space after dictated text”,
       dictate `hello` into TextEdit, and verify the insertion is `hello ` (with one trailing
@@ -173,6 +176,14 @@ Device enumeration and binding are Core Audio calls, so only real hardware exerc
       switch it off: the picker shows **… — not connected** selected, with an orange caption
       naming the fallback. Dictate — the built-in microphone records. Switch the device back on
       — the caption goes, and the next dictation uses it again.
+- [ ] **A Bluetooth headset leaves call mode after recording.** With AirPods (or any Bluetooth
+      headset) as the microphone and music playing, dictate a few words. Within a couple of
+      seconds of the recording stopping the music returns to full quality, with Macomprendo
+      still running. Repeat with a call recording. Then switch off Settings ▸ General ▸
+      **Release the microphone after recording** and dictate again: the music stays in call
+      quality, and the menubar panel shows **Release Microphone** under the microphone picker.
+      Click it: the music returns to full quality and the row is gone the next time the panel
+      opens.
 - [ ] **A silent device is abandoned mid-recording.** Plug in a wireless headset's dongle with
       the headset switched off and make it the chosen (or default) microphone. Hold the
       dictation hotkey and start talking: within about two seconds the HUD reads **No signal

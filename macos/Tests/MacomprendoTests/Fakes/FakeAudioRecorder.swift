@@ -64,6 +64,29 @@ final class FakeAudioRecorder: AudioRecording, @unchecked Sendable {
         lock.withLock { _preferredInputDeviceUIDs.append(uid) }
     }
 
+    private var _releasesInputWhenStopped: [Bool] = []
+    /// Every release choice handed to the recorder, in call order.
+    var releasesInputWhenStopped: [Bool] { lock.withLock { _releasesInputWhenStopped } }
+
+    func setReleasesInputWhenStopped(_ releases: Bool) {
+        lock.withLock { _releasesInputWhenStopped.append(releases) }
+    }
+
+    private var _holdsInput = false
+    private var _releaseInputCount = 0
+    var holdsInput: Bool {
+        get { lock.withLock { _holdsInput } }
+        set { lock.withLock { _holdsInput = newValue } }
+    }
+    var releaseInputCount: Int { lock.withLock { _releaseInputCount } }
+
+    func releaseInput() {
+        lock.withLock {
+            _holdsInput = false
+            _releaseInputCount += 1
+        }
+    }
+
     var startCount: Int { lock.withLock { _startCount } }
     var stopCount: Int { lock.withLock { _stopCount } }
     var isRecording: Bool { lock.withLock { _recording } }

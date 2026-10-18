@@ -25,6 +25,9 @@ final class ScriptedRecorder: AudioRecording, @unchecked Sendable {
     }
 
     func setPreferredInputDevice(uid: String?) {}
+    func setReleasesInputWhenStopped(_ releases: Bool) {}
+    var holdsInput: Bool { false }
+    func releaseInput() {}
 
     var startCount: Int { lock.withLock { starts } }
     var stopCount: Int { lock.withLock { stops } }

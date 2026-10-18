@@ -38,6 +38,16 @@ struct GeneralTab: View {
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                Toggle("Release the microphone after recording",
+                       isOn: $model.settings.releaseMicrophoneAfterRecording)
+                Text("Bluetooth headphones switch to a low-quality call mode while the microphone "
+                     + "is open. On, they return to full sound as soon as recording stops. Off keeps "
+                     + "the microphone open between recordings, so the next one starts a little "
+                     + "sooner — but the headphones stay in call mode until you click Release "
+                     + "Microphone in the menubar panel.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("Call recordings") {

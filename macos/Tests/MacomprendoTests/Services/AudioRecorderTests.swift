@@ -35,6 +35,50 @@ import Testing
         #expect(await recorder.stop().isEmpty)
     }
 
+    /// A Bluetooth headset stays in its low-quality call mode while the process holds the
+    /// input open, so a stopped engine is not enough.
+    @Test func stoppingReleasesTheInput() throws {
+        let engine = FakeAudioInputEngine()
+        let recorder = make(engine)
+        try recorder.start()
+        _ = recorder.stop()
+        #expect(engine.releaseCount == 1)
+    }
+
+    @Test func withReleaseSwitchedOffStoppingKeepsTheInput() throws {
+        let engine = FakeAudioInputEngine()
+        let recorder = make(engine)
+        recorder.setReleasesInputWhenStopped(false)
+        try recorder.start()
+        _ = recorder.stop()
+        #expect(engine.releaseCount == 0)
+        #expect(engine.isRunning == false)
+    }
+
+    @Test func aKeptInputIsReportedUntilReleasedByHand() throws {
+        let engine = FakeAudioInputEngine()
+        let recorder = make(engine)
+        recorder.setReleasesInputWhenStopped(false)
+        #expect(recorder.holdsInput == false)
+        try recorder.start()
+        #expect(recorder.holdsInput == false)  // recording, not merely holding
+        recorder.releaseInput()
+        #expect(engine.releaseCount == 0)       // never cuts a running recording
+        _ = recorder.stop()
+        #expect(recorder.holdsInput)
+
+        recorder.releaseInput()
+        #expect(engine.releaseCount == 1)
+        #expect(recorder.holdsInput == false)
+    }
+
+    @Test func aReleasedInputIsNotReportedAsHeld() throws {
+        let recorder = make()
+        try recorder.start()
+        _ = recorder.stop()
+        #expect(recorder.holdsInput == false)
+    }
+
     /// The crash: the input device changed mid-recording, the engine stopped itself with the
     /// tap still installed, `stop()` skipped the tap because the engine was no longer
     /// running, and the next `start()` installed a second tap — an uncatchable exception.

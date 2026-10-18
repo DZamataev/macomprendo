@@ -22,6 +22,13 @@ protocol AudioRecording: AnyObject, Sendable {
     /// and so does a chosen device that is not connected. Applies at once, including to a
     /// recording in progress.
     func setPreferredInputDevice(uid: String?)
+    /// Whether `stop()` lets go of the input hardware or only stops the engine.
+    func setReleasesInputWhenStopped(_ releases: Bool)
+    /// Whether the input stays open between recordings (release switched off). False while a
+    /// recording runs: that is recording, not holding.
+    var holdsInput: Bool { get }
+    /// Lets go of an input kept open between recordings. Does nothing while recording.
+    func releaseInput()
     /// A fresh stream per caller of the fallbacks from a silent input device. Several
     /// controllers share one recorder, and an `AsyncStream` can be iterated only once.
     func inputFallbacks() -> AsyncStream<InputFallback>
@@ -92,16 +99,27 @@ protocol AudioInputEngine: AnyObject {
     func prepare()
     func start() throws
     func stop()
+    /// Stops and lets go of the input hardware. A stopped engine still holds the device open,
+    /// which keeps a Bluetooth headset in its low-quality call mode.
+    func release()
 }
 
 /// The real `AVAudioEngine`. Thin hardware glue, covered by `docs/SMOKE_TEST.md`.
 final class AVAudioInputEngine: AudioInputEngine, @unchecked Sendable {
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private var observer: NSObjectProtocol?
 
     var onConfigurationChange: (@Sendable () -> Void)?
 
     init() {
+        observe()
+    }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    private func observe() {
         observer = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in
@@ -109,8 +127,13 @@ final class AVAudioInputEngine: AudioInputEngine, @unchecked Sendable {
         }
     }
 
-    deinit {
+    /// Only deallocating the engine closes its input unit; a fresh engine opens nothing until
+    /// its input node is next touched.
+    func release() {
+        engine.stop()
         if let observer { NotificationCenter.default.removeObserver(observer) }
+        engine = AVAudioEngine()
+        observe()
     }
 
     var inputFormat: AVAudioFormat { engine.inputNode.inputFormat(forBus: 0) }
@@ -205,6 +228,9 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     private var recording = false
     /// `nil` follows the system default input.
     private var preferredUID: String?
+    private var releasesInputWhenStopped = true
+    /// The engine has touched the hardware since it was last released.
+    private var inputOpen = false
     /// The device the input node was last bound to, for naming it in a fallback.
     private var currentDevice: AudioInputDevice?
     /// Devices this recording found silent. Cleared by `start()`: a headset switched off
@@ -260,6 +286,21 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     func setPreferredInputDevice(uid: String?) {
         lock.withLock { preferredUID = uid }
         engineLock.withLock { _ = restartOnResolvedDeviceLocked(force: false) }
+    }
+
+    func setReleasesInputWhenStopped(_ releases: Bool) {
+        lock.withLock { releasesInputWhenStopped = releases }
+    }
+
+    var holdsInput: Bool { lock.withLock { inputOpen && !recording } }
+
+    func releaseInput() {
+        engineLock.withLock {
+            guard holdsInput else { return }
+            removeTapLocked()
+            engine.release()
+            lock.withLock { inputOpen = false }
+        }
     }
 
     /// The device a recording should use: the preferred one while it is connected, otherwise
@@ -319,6 +360,7 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
                 samples.removeAll(keepingCapacity: true)
                 activeMaxSamples = maxSamples
                 recording = true
+                inputOpen = true
                 targetFormat = target
             }
             do {
@@ -545,7 +587,12 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     private func stopEngine() {
         engineLock.withLock {
             removeTapLocked()
-            if engine.isRunning { engine.stop() }
+            if lock.withLock({ releasesInputWhenStopped }) {
+                engine.release()
+                lock.withLock { inputOpen = false }
+            } else if engine.isRunning {
+                engine.stop()
+            }
         }
     }
 

@@ -27,6 +27,13 @@ protocol CallAudioCapturing: AnyObject, Sendable {
 /// too: it takes the same lock, so calling it from inside the handler hangs just as surely.
 protocol CallMicrophoneCapturing: CallAudioCapturing {
     func setPreferredInputDevice(uid: String?)
+    /// Whether `stop()` lets go of the input hardware or only stops the engine.
+    func setReleasesInputWhenStopped(_ releases: Bool)
+    /// Whether the input stays open between recordings (release switched off). False while a
+    /// recording runs: that is recording, not holding.
+    var holdsInput: Bool { get }
+    /// Lets go of an input kept open between recordings. Does nothing while recording.
+    func releaseInput()
 }
 
 /// The host clock both call tracks are placed on: `mach_absolute_time` seconds, the same
@@ -67,6 +74,9 @@ final class EngineCallMicrophoneCapture: CallMicrophoneCapturing, @unchecked Sen
     private var handler: (@Sendable (CallAudioChunk) -> Void)?
     /// `nil` follows the system default input.
     private var preferredUID: String?
+    private var releasesInputWhenStopped = true
+    /// The engine has touched the hardware since it was last released.
+    private var inputOpen = false
     /// Whether this capture has a tap on the input bus. Tracked here rather than read off
     /// `engine.isRunning`: after a device change the engine stops itself but keeps the tap, and
     /// installing a second one raises an Objective-C exception that crashes the app.
@@ -96,6 +106,21 @@ final class EngineCallMicrophoneCapture: CallMicrophoneCapturing, @unchecked Sen
         engineLock.withLock { _ = restartOnResolvedDeviceLocked(force: false) }
     }
 
+    func setReleasesInputWhenStopped(_ releases: Bool) {
+        lock.withLock { releasesInputWhenStopped = releases }
+    }
+
+    var holdsInput: Bool { lock.withLock { inputOpen && !running } }
+
+    func releaseInput() {
+        engineLock.withLock {
+            guard holdsInput else { return }
+            removeTapLocked()
+            engine.release()
+            lock.withLock { inputOpen = false }
+        }
+    }
+
     func start(_ handler: @escaping @Sendable (CallAudioChunk) -> Void) throws {
         let inputFormat: AVAudioFormat = try engineLock.withLock {
             // A second start would swap the tap under a running engine; failing here, like the
@@ -115,6 +140,7 @@ final class EngineCallMicrophoneCapture: CallMicrophoneCapturing, @unchecked Sen
             lock.withLock {
                 self.handler = handler
                 running = true
+                inputOpen = true
             }
             do {
                 try startEngineLocked(inputFormat)
@@ -139,7 +165,12 @@ final class EngineCallMicrophoneCapture: CallMicrophoneCapturing, @unchecked Sen
         }
         engineLock.withLock {
             removeTapLocked()
-            if engine.isRunning { engine.stop() }
+            if lock.withLock({ releasesInputWhenStopped }) {
+                engine.release()
+                lock.withLock { inputOpen = false }
+            } else if engine.isRunning {
+                engine.stop()
+            }
         }
         Log.audio.info("Call microphone capture stopped")
     }

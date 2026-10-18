@@ -29,6 +29,10 @@ final class AppModel: ObservableObject {
                 // The call recorder has its own engine but follows the same microphone choice.
                 env.callMicrophone.setPreferredInputDevice(uid: settings.preferredInputDeviceUID)
             }
+            if settings.releaseMicrophoneAfterRecording != oldValue.releaseMicrophoneAfterRecording {
+                env.recorder.setReleasesInputWhenStopped(settings.releaseMicrophoneAfterRecording)
+                env.callMicrophone.setReleasesInputWhenStopped(settings.releaseMicrophoneAfterRecording)
+            }
             if settings.historyRetention != oldValue.historyRetention {
                 Task { [weak self] in
                     guard let self, let error = await self.history.applyRetention() else { return }
@@ -179,6 +183,10 @@ final class AppModel: ObservableObject {
     private let processLaunchDate = ProcessLaunch.date
     private var hotkeyTask: Task<Void, Never>?
     private var middleMouseTask: Task<Void, Never>?
+    /// How long the middle button must stay down before a hold-mode dictation opens the
+    /// microphone, so a plain click (a link in a new tab) never touches it.
+    static let middleMouseHoldDelay = Duration.milliseconds(600)
+    private var middleMouseHoldTask: Task<Void, Never>?
     private var historyMaintenanceTask: Task<Void, Never>?
     private var transcriptMaintenanceTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
@@ -288,6 +296,7 @@ final class AppModel: ObservableObject {
 
         env.recorder.setMaximumDuration(TimeInterval(loaded.maximumRecordingSeconds))
         env.recorder.setPreferredInputDevice(uid: loaded.preferredInputDeviceUID)
+        env.recorder.setReleasesInputWhenStopped(loaded.releaseMicrophoneAfterRecording)
 
         var seeded = settings
         FactoryPresets.seed(into: &seeded)
@@ -354,6 +363,7 @@ final class AppModel: ObservableObject {
 
         // The call recorder runs its own engine but listens to the same chosen microphone.
         env.callMicrophone.setPreferredInputDevice(uid: settings.preferredInputDeviceUID)
+        env.callMicrophone.setReleasesInputWhenStopped(settings.releaseMicrophoneAfterRecording)
 
         for action in HotkeyAction.allCases {
             env.hotkeys.setEnabled(action, enablement.isEnabled(action))
@@ -419,10 +429,37 @@ final class AppModel: ObservableObject {
 
     func route(_ event: MiddleMouseEvent) {
         guard let action = settings.middleMouseAction?.hotkeyAction else { return }
+        let mode = settings.middleMouseMode
+        let records = action == .dictate || action == .dictateAndRefine
         switch event {
-        case .down: route(.keyDown(action), mode: settings.middleMouseMode)
-        case .up: route(.keyUp(action), mode: settings.middleMouseMode)
+        case .down where records && mode == .hold:
+            middleMouseHoldTask?.cancel()
+            middleMouseHoldTask = Task { [weak self] in
+                try? await Task.sleep(for: Self.middleMouseHoldDelay)
+                guard !Task.isCancelled, let self else { return }
+                self.middleMouseHoldTask = nil
+                self.route(.keyDown(action), mode: mode)
+            }
+        case .down:
+            route(.keyDown(action), mode: mode)
+        case .up:
+            if let pending = middleMouseHoldTask {
+                // Released inside the window: a plain click, so the microphone was never opened.
+                pending.cancel()
+                middleMouseHoldTask = nil
+                return
+            }
+            route(.keyUp(action), mode: mode)
         }
+    }
+
+    /// A microphone kept open between recordings because releasing it is switched off.
+    var holdsMicrophone: Bool { env.recorder.holdsInput || env.callMicrophone.holdsInput }
+
+    func releaseMicrophone() {
+        env.recorder.releaseInput()
+        env.callMicrophone.releaseInput()
+        objectWillChange.send()
     }
 
     func isEnabled(_ action: HotkeyAction) -> Bool {

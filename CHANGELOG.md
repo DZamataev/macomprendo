@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- A Bluetooth headset no longer stays in its low-quality call mode after a dictation or a call
+  recording ends: the microphone is let go as soon as recording stops. Settings ▸ General ▸
+  Microphone ▸ **Release the microphone after recording** (on by default) turns this off; while
+  it is off and the microphone is held between recordings, the menubar panel shows **Release
+  Microphone** under the microphone picker.
+- In hold mode, a middle-mouse dictation starts only after the button has been held for 0.6 s,
+  so a plain middle click (opening a link in a new tab) no longer opens the microphone — and
+  no longer pauses Bluetooth headphones.
+
 ## [1.1.1] - 2026-10-18
 
 ### Fixed
