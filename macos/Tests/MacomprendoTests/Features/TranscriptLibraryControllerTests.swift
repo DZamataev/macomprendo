@@ -234,6 +234,23 @@ import Testing
             CocoaError(.fileWriteNoPermission).localizedDescription)))
     }
 
+    /// A row a job is still writing — a call's tracks being transcribed, a file mid-run — is not
+    /// deleted: with its source going to the Trash the job would lose its audio under it.
+    @Test func aTranscriptBeingTranscribedIsNotDeleted() async throws {
+        let store = FakeTranscriptStore()
+        let trash = FakeFileTrash()
+        let id = await store.create(sourceKind: .call, title: "Call", sourceBookmark: Data("/rec/a".utf8),
+                                    duration: 12, run: run, at: date)
+        let controller = makeController(store: store, trash: trash)
+        await controller.reload()
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        #expect(trash.trashed.isEmpty)
+        #expect(controller.headers.map(\.id) == [id])
+        #expect(TranscriptLibraryController.canDelete(controller.headers[0]) == false)
+    }
+
     // MARK: - Copying
 
     @Test func copyWritesPlainTextWithoutTimestamps() async throws {

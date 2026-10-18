@@ -107,6 +107,7 @@ struct TranscriptsView: View {
                             .disabled(!canTranscribeAgain(header))
                         Divider()
                         Button("Delete…", role: .destructive) { confirmDelete(header) }
+                            .disabled(!TranscriptLibraryController.canDelete(header))
                     }
             }
         }
@@ -339,7 +340,10 @@ struct TranscriptsView: View {
             } label: {
                 Label { Text("Delete") } icon: { Icon(.delete, size: 14) }
             }
-            .help("Delete this transcript")
+            .help(TranscriptLibraryController.canDelete(transcript.header)
+                  ? "Delete this transcript"
+                  : "Cancel the transcription before deleting it")
+            .disabled(!TranscriptLibraryController.canDelete(transcript.header))
             .fixedSize()
         }
         .buttonStyle(.borderless)

@@ -152,12 +152,19 @@ final class TranscriptLibraryController: ObservableObject {
         error = nil
     }
 
+    /// A transcript a job is still writing cannot be deleted: its source would go to the Trash
+    /// under the running job. (A call has no row at all until its recording stops.)
+    nonisolated static func canDelete(_ header: TranscriptHeader) -> Bool {
+        header.status != .inProgress
+    }
+
     /// Removes `id`. A selection on the deleted transcript is cleared. With
     /// `movingSourceToTrash`, the transcript's source — the file it was made from, or a call's
     /// recording folder — goes to the Trash first, where it can still be put back. A source that
     /// is already gone is no reason to keep the transcript; one the Trash refuses is: the row
     /// stays and the failure says why, so nothing is half-deleted.
     func delete(_ id: Int64, movingSourceToTrash: Bool = false) async {
+        if let header = headers.first(where: { $0.id == id }), !Self.canDelete(header) { return }
         if movingSourceToTrash {
             do {
                 if let bookmark = try await store.transcript(id: id)?.sourceBookmark,

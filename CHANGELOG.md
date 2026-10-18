@@ -9,7 +9,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Deleting a transcript can also move its source — the transcribed file, or a call's recording
   folder — to the Trash. The confirmation has the box checked by default; **Delete…** is also in
-  the list's context menu.
+  the list's context menu. A transcript that is still being transcribed cannot be deleted
+  until its job is cancelled.
 
 ### Changed
 - The menubar menu is now a quick-access **panel**: **Record Call** / **Stop Recording** with the
