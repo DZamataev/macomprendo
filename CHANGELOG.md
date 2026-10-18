@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-18
+
 ### Added
 - Deleting a transcript can also move its source — the transcribed file, or a call's recording
   folder — to the Trash. The confirmation has the box checked by default; **Delete…** is also in
