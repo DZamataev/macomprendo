@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-18
+
 ### Fixed
 - Opening Dictation History, Check permissions, Settings or About from the menubar panel no
   longer reopens the panel over the new window.
