@@ -24,6 +24,7 @@ struct MenuPanelView: View {
     let maxHeight: CGFloat
 
     @State private var optionsExpanded = false
+    @State private var launchAtLoginError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -242,6 +243,18 @@ struct MenuPanelView: View {
             .accessibilityValue(optionsExpanded ? "Expanded" : "Collapsed")
 
             if optionsExpanded {
+                PanelSwitchRow(title: "Launch at login",
+                               isOn: Binding(get: { model.settings.launchAtLogin },
+                                             set: { setLaunchAtLogin($0) }))
+                    // The system is the truth, as in Settings ▸ General: a login item removed
+                    // in System Settings must not keep showing as on.
+                    .onAppear { launchAtLoginModel.reconcile(settings: &model.settings) }
+                if let launchAtLoginError {
+                    note(launchAtLoginError)
+                        .padding(.leading, PanelMetrics.textInset)
+                        .padding(.trailing, 6)
+                }
+
                 PanelSwitchRow(title: "Save dictation history",
                                isOn: $model.settings.dictationHistoryEnabled)
 
@@ -265,6 +278,17 @@ struct MenuPanelView: View {
         // line up with the commands above and below.
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
+    }
+
+    /// Settings ▸ General's login-item logic, reused rather than restated.
+    private var launchAtLoginModel: GeneralTabModel {
+        GeneralTabModel(manager: model.env.launchAtLogin)
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        let viewModel = launchAtLoginModel
+        viewModel.setLaunchAtLogin(enabled, settings: &model.settings)
+        launchAtLoginError = viewModel.launchAtLoginError
     }
 
     /// A switch for one action's hotkey, annotated with the shortcut currently bound to it.

@@ -60,6 +60,12 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
       unchanged. Select “Summarize selection”, select text in TextEdit and click the middle button:
       the Summary panel opens. Disable the toggle and confirm middle-button clicks no longer invoke
       Macomprendo.
+- [ ] Menubar panel ▸ Options: the whole **Options** row (not just the caret) expands it, its
+  label lines up with the commands above; every switch is mini-sized with its label on the left
+  and the switch on the right. **Launch at login** there and in Settings ▸ General agree both ways,
+  and one removed in System Settings ▸ General ▸ Login Items shows as off on the next opening.
+- [ ] Menubar panel: Microphone, Dictation model and the translation selector all reach the
+  panel's right edge; the translation caption names Refine & Summarize and its tooltip explains it.
 - [ ] Menubar panel ▸ Options: switch "Dictate" off, press the hotkey — nothing happens;
       switching it back on restores it.
 - [ ] **Very short dictation.** In Settings ▸ General, enable **Insert “OK” for a very short
