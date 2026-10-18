@@ -35,6 +35,8 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     private var outsideClickMonitor: Any?
     /// Follows the status button's window while the popover is shown (see `reanchor()`).
     private var buttonWindowObservers: [NSObjectProtocol] = []
+    /// The display the panel settled on after opening; `nil` until that first pass.
+    private var anchoredScreen: NSScreen?
 
     private lazy var titleWriter = StatusItemTitleWriter { [weak self] content in
         self?.write(content)
@@ -110,7 +112,12 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
         // Clicking the menu bar of a display that is not the focused one moves the status
         // item's window there during this very click; AppKit has anchored the popover to the
         // frame it had before. A pass on the next turn finds it where it now is.
-        DispatchQueue.main.async { [weak self] in self?.reanchor() }
+        anchoredScreen = nil
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.reanchor()
+            self.anchoredScreen = self.statusItem.button?.window?.screen
+        }
     }
 
     /// Showing an already shown popover again repositions it — window and arrow — against
@@ -132,8 +139,20 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
             buttonWindowObservers.append(NotificationCenter.default.addObserver(
                 forName: name, object: window, queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.reanchor() }
+                MainActor.assumeIsolated { self?.buttonWindowMoved() }
             })
+        }
+    }
+
+    /// A move on the same display (the title changed width) keeps the panel and re-anchors
+    /// it; a move to another display means the menu bar there was clicked, and the panel
+    /// closes rather than jumping across — the same as clicking anywhere else outside it.
+    private func buttonWindowMoved() {
+        guard let anchoredScreen else { return }
+        if let screen = statusItem.button?.window?.screen, screen != anchoredScreen {
+            closePanel()
+        } else {
+            reanchor()
         }
     }
 
@@ -189,6 +208,7 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     func popoverDidClose(_ notification: Notification) {
         removeOutsideClickMonitor()
         stopFollowingButtonWindow()
+        anchoredScreen = nil
         recordClose()
         statusItem.button?.highlight(false)
     }

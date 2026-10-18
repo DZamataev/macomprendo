@@ -64,6 +64,8 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
   this display's menu bar — the panel opens under it and its arrow points at the icon on the
   first try. While it is open, a recording clock or percent that changes the item's width keeps
   the arrow on the icon.
+- [ ] Menubar panel, two displays: with the panel open, click the status item (or anywhere) on
+  the other display — the panel closes and does not reopen there; the next click opens it.
 - [ ] Menubar panel, two displays: open the panel, scroll an unfocused window of another app on
   the other display without clicking, then click into it — the panel closes. A click on another
   app's window, the desktop or another app's menu-bar item closes it too; clicks inside the
