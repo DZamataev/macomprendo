@@ -40,6 +40,7 @@ extension AppEnvironment {
                      speechSegmenter: any SpeechSegmenting = ScriptedSegmenter(),
                      fileBookmarks: any FileBookmarking = FakeFileBookmarks(),
                      callMicrophone: any CallMicrophoneCapturing = ScriptedCallCapture(),
+                     audioProcesses: any AudioProcessMonitoring = FakeAudioProcessMonitor(),
                      systemAudio: any CallAudioCapturing = ScriptedCallCapture(),
                      callRecordingFolders: any CallRecordingFolderManaging = FakeCallRecordingFolders(),
                      callTrackWriter: @escaping CallTrackWriterFactory = { _, _, _ in FakeCallTrackWriter() },
@@ -83,6 +84,7 @@ extension AppEnvironment {
                        fileBookmarks: fileBookmarks,
                        transcriptionLane: transcriptionLane,
                        callMicrophone: callMicrophone,
+                       audioProcesses: audioProcesses,
                        systemAudio: systemAudio,
                        callRecordingFolders: callRecordingFolders,
                        callTrackWriter: callTrackWriter)

@@ -77,6 +77,8 @@ struct AppEnvironment {
     /// The call recording's microphone capture: its own `AVAudioEngine`, never dictation's,
     /// so a call and a dictation can run at once.
     var callMicrophone: any CallMicrophoneCapturing
+    /// Which processes are using audio, for automatic call detection.
+    var audioProcesses: any AudioProcessMonitoring
     /// Everything the Mac plays, through a global process tap.
     var systemAudio: any CallAudioCapturing
     var callRecordingFolders: any CallRecordingFolderManaging
@@ -155,6 +157,7 @@ struct AppEnvironment {
             transcriptionLane: TranscriptionLane(),
             callMicrophone: EngineCallMicrophoneCapture(engine: AVAudioInputEngine(),
                                                         devices: audioInputDevices),
+            audioProcesses: CoreAudioProcessMonitor(),
             systemAudio: ProcessTapSystemAudioCapture(),
             callRecordingFolders: FileSystemCallRecordingFolders(),
             callTrackWriter: AssetCallTrackWriter.factory)
