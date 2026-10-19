@@ -24,6 +24,14 @@ final class CallRecordingController: ObservableObject {
         case recording(startedAt: Date)
         case stopping
         case failed(String)
+
+        /// Everything between a start attempt and the end of its finalisation.
+        var isRecording: Bool {
+            switch self {
+            case .starting, .recording, .stopping: true
+            case .idle, .failed: false
+            }
+        }
     }
 
     @Published private(set) var state: State = .idle
@@ -32,12 +40,7 @@ final class CallRecordingController: ObservableObject {
 
     /// Everything between a start attempt and the end of its finalisation — what the menu shows
     /// as recording and what a toggle ends.
-    var isRecording: Bool {
-        switch state {
-        case .starting, .recording, .stopping: true
-        case .idle, .failed: false
-        }
-    }
+    var isRecording: Bool { state.isRecording }
 
     private let microphone: any CallMicrophoneCapturing
     private let systemAudio: any CallAudioCapturing

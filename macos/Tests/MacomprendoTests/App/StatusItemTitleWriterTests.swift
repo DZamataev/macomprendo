@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import Macomprendo
@@ -88,8 +89,14 @@ import Testing
             transcription: .failed(message: "Failed.", transcriptID: nil)) == "")
     }
 
-    @Test func aRecordingReservesTheHourPairTheClockWillReach() {
+    @Test func aRecordingReservesOnlyTheClockShapeItHasReached() {
         #expect(StatusItemTitleSample.widest(recordingElapsed: 0, transcription: .idle)
+                == "23:45")
+        #expect(StatusItemTitleSample.widest(recordingElapsed: 3599, transcription: .idle)
+                == "23:45")
+        #expect(StatusItemTitleSample.widest(recordingElapsed: 3600, transcription: .idle)
+                == "1:23:45")
+        #expect(StatusItemTitleSample.widest(recordingElapsed: 36000, transcription: .idle)
                 == "12:23:45")
     }
 
@@ -99,23 +106,69 @@ import Testing
                 == "99%")
     }
 
-    @Test func aCallJobKeepsItsSpeakerAndReservesTheHourPair() {
+    @Test func aCallJobKeepsItsSpeakerAndReservesItsDurationShape() {
         #expect(StatusItemTitleSample.widest(recordingElapsed: nil, transcription: callJob(.me))
-                == "Me 12:23:45")
+                == "Me 23:45")
         #expect(StatusItemTitleSample.widest(recordingElapsed: nil,
                                              transcription: callJob(.others))
-                == "Others 12:23:45")
+                == "Others 23:45")
     }
 
     @Test func aRecordingWithAFileJobReservesBothHalves() {
         #expect(StatusItemTitleSample.widest(recordingElapsed: 30,
                                              transcription: fileJob(percent: 9, of: 100))
-                == "12:23:45 · 99%")
+                == "23:45 · 99%")
     }
 
     @Test func aRecordingWithACallJobReservesTheClockAndTheMarker() {
         #expect(StatusItemTitleSample.widest(recordingElapsed: 30,
                                              transcription: callJob(.others))
-                == "12:23:45 · …")
+                == "23:45 · …")
+    }
+}
+
+/// `@Published` emits in `willSet`, so a sink that re-reads the object sees the old value: the
+/// status item kept "Others 1:21:01" after the call transcript had finished. The inputs must
+/// carry each new value themselves.
+@MainActor
+@Suite struct StatusItemInputsTests {
+    private final class Sources: ObservableObject {
+        @Published var isRecording = false
+        @Published var elapsed: TimeInterval = 0
+        @Published var transcription: FileTranscriptionController.State = .idle
+    }
+
+    private let running = FileTranscriptionController.State.running(
+        transcriptID: 1, title: "Call", position: 4861, duration: 4861, speaker: .others)
+
+    @Test func theLastChangeIsDeliveredWithItsNewValue() {
+        let sources = Sources()
+        var received: [(TimeInterval?, FileTranscriptionController.State)] = []
+        let subscription = StatusItemInputs.latest(isRecording: sources.$isRecording,
+                                                   elapsed: sources.$elapsed,
+                                                   transcription: sources.$transcription)
+            .sink { received.append(($0.recordingElapsed, $0.transcription)) }
+        defer { subscription.cancel() }
+
+        sources.transcription = running
+        sources.transcription = .finished(transcriptID: 1)
+
+        #expect(received.last?.1 == .finished(transcriptID: 1))
+    }
+
+    @Test func aStoppedRecordingDropsItsClock() {
+        let sources = Sources()
+        var received: [TimeInterval?] = []
+        let subscription = StatusItemInputs.latest(isRecording: sources.$isRecording,
+                                                   elapsed: sources.$elapsed,
+                                                   transcription: sources.$transcription)
+            .sink { received.append($0.recordingElapsed) }
+        defer { subscription.cancel() }
+
+        sources.isRecording = true
+        sources.elapsed = 12
+        #expect(received.last == .some(12))
+        sources.isRecording = false
+        #expect(received.last == .some(nil))
     }
 }

@@ -7,6 +7,8 @@ import SwiftUI
 @MainActor
 protocol StatusItemHosting: AnyObject {
     func closePanel()
+    /// Shows the panel if it is not already shown; never closes it.
+    func revealPanel()
     var isPanelShown: Bool { get }
 }
 
@@ -75,7 +77,6 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
         popover.delegate = self
 
         observe()
-        render()
     }
 
     // MARK: - Toggling
@@ -95,6 +96,11 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
         // Belt and braces with the delegate callbacks below: a close this method asks for
         // must never leave the button pressed (spec §6, §8's stuck-highlight check).
         statusItem.button?.highlight(false)
+    }
+
+    func revealPanel() {
+        guard !isPanelShown else { return }
+        showPanel()
     }
 
     /// Called on every close path so the toggle can recognise the mouse-up that follows a
@@ -264,28 +270,23 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
 
     private static let titleFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize,
                                                                     weight: .regular)
-    /// AppKit's own margins around a status button's content, measured from its
-    /// variable-length frames (probe: 23.2–23.8 pt around image + text at the system font
-    /// size), so a reserved slot fits its title without clipping.
-    private static let slotMargin: CGFloat = 24
+    /// Room around the image and title inside a reserved slot: the image–title gap plus a
+    /// narrow margin each side. AppKit's own variable-length frames leave 23.2–23.8 pt here,
+    /// which crowds a clock under the notch on a full menu bar.
+    private static let slotMargin: CGFloat = 14
 
     /// The three publishers the title derives from. Deliberately not `$levels`: the meters
     /// tick at 10 Hz and would repaint the menu bar for nothing.
     private func observe() {
-        model.callRecording.$state
-            .sink { [weak self] _ in self?.render() }
-            .store(in: &cancellables)
-        model.callRecording.$elapsed
-            .sink { [weak self] _ in self?.render() }
-            .store(in: &cancellables)
-        model.fileTranscription.$state
-            .sink { [weak self] _ in self?.render() }
+        StatusItemInputs.latest(isRecording: model.callRecording.$state.map(\.isRecording),
+                                elapsed: model.callRecording.$elapsed,
+                                transcription: model.fileTranscription.$state)
+            .sink { [weak self] in self?.render($0.recordingElapsed, $0.transcription) }
             .store(in: &cancellables)
     }
 
-    private func render() {
-        let elapsed = model.callRecording.isRecording ? model.callRecording.elapsed : nil
-        let transcription = model.fileTranscription.state
+    private func render(_ elapsed: TimeInterval?,
+                        _ transcription: FileTranscriptionController.State) {
         titleWriter.apply(MenuPanelPresentation.statusItem(recordingElapsed: elapsed,
                                                            transcription: transcription))
         reserveWidth(for: StatusItemTitleSample.widest(recordingElapsed: elapsed,

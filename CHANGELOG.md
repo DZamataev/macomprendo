@@ -12,6 +12,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pieces, continuously ahead of playback.
 - A short foreign word inside local speech ("Anthropic" in Russian text) is read by the voice
   chosen for its language in Settings ▸ Speech, not by the default voice.
+- The menu bar item no longer reserves room for a ten-hour clock while a call is
+  recording, so it stays clear of the notch: it is as wide as the clock it shows and
+  widens once when the call passes an hour.
+- The menu bar item no longer keeps showing a call track's clock (e.g. `Others 1:21:01`)
+  after the call transcript has finished.
 
 ## [1.1.2] - 2026-10-18
 
