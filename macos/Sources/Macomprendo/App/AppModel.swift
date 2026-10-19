@@ -50,6 +50,14 @@ final class AppModel: ObservableObject {
             if settings.glossaryManualTerms != oldValue.glossaryManualTerms {
                 rebuildGlossary()
             }
+            if settings.autoRecordCalls != oldValue.autoRecordCalls {
+                if settings.autoRecordCalls {
+                    autoCallRecorder.start()
+                } else {
+                    // Turning it off leaves a running automatic recording to the user.
+                    autoCallRecorder.stop()
+                }
+            }
             persist()
         }
     }
@@ -150,6 +158,13 @@ final class AppModel: ObservableObject {
         transcriptsChanged: { [weak self] in
             Task { await self?.transcriptLibrary.reload() }
         })
+    /// Starts and stops call recordings on its own while `autoRecordCalls` is on. Built from
+    /// the same `callRecording` the menu drives, so there is one recorder.
+    lazy var autoCallRecorder = AutoCallRecorder(
+        monitor: env.audioProcesses,
+        recorder: callRecording,
+        apps: { [unowned self] in self.settings.autoRecordApps },
+        toast: { [hud] in hud.toast($0) })
     /// The About window's content, owned here so the view never constructs a service
     /// (invariant 1). Not actually deferred to first open: SwiftUI evaluates every `Scene`'s
     /// content `ViewBuilder` — including this one's `AboutView(model: model.aboutModel)` —
@@ -364,6 +379,9 @@ final class AppModel: ObservableObject {
         // The call recorder runs its own engine but listens to the same chosen microphone.
         env.callMicrophone.setPreferredInputDevice(uid: settings.preferredInputDeviceUID)
         env.callMicrophone.setReleasesInputWhenStopped(settings.releaseMicrophoneAfterRecording)
+        if settings.autoRecordCalls {
+            autoCallRecorder.start()
+        }
 
         for action in HotkeyAction.allCases {
             env.hotkeys.setEnabled(action, enablement.isEnabled(action))
@@ -481,6 +499,9 @@ final class AppModel: ObservableObject {
     /// the same reason: a context still alive at process exit aborts in whisper.cpp v1.9.2's
     /// ggml-metal static destructor, and quitting mid-job must be a clean quit.
     func shutdown() async {
+        // Stop polling first: a tick that saw the recorder idle after the stop below would
+        // start a fresh recording while the process is quitting.
+        autoCallRecorder.stop()
         await callRecording.shutdown()
         await fileTranscription.shutdown()
         switch dictation.state {

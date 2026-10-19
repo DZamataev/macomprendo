@@ -36,11 +36,19 @@ final class CoreAudioProcessMonitor: AudioProcessMonitoring {
                                    mElement: kAudioObjectPropertyElementMain)
     }
 
-    private static func read<T>(_ object: AudioObjectID,
-                                _ selector: AudioObjectPropertySelector,
-                                into value: inout T) -> OSStatus {
+    private static func read(_ object: AudioObjectID,
+                             _ selector: AudioObjectPropertySelector,
+                             into value: inout pid_t) -> OSStatus {
         var address = address(selector)
-        var size = UInt32(MemoryLayout<T>.size)
+        var size = UInt32(MemoryLayout<pid_t>.size)
+        return AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value)
+    }
+
+    private static func read(_ object: AudioObjectID,
+                             _ selector: AudioObjectPropertySelector,
+                             into value: inout UInt32) -> OSStatus {
+        var address = address(selector)
+        var size = UInt32(MemoryLayout<UInt32>.size)
         return AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value)
     }
 

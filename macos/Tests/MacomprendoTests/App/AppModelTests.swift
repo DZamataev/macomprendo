@@ -961,4 +961,38 @@ import Testing
         #expect(model.statusItem == nil)
         model.closeMenuPanel()
     }
+
+    // MARK: - Automatic call recording
+
+    @Test func theSettingStartsAndStopsTheAutoRecorder() {
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake())
+        #expect(!model.autoCallRecorder.isRunning)
+
+        model.settings.autoRecordCalls = true
+        #expect(model.autoCallRecorder.isRunning)
+
+        model.settings.autoRecordCalls = false
+        #expect(!model.autoCallRecorder.isRunning)
+    }
+
+    /// The setting `didSet` never fires for the value loaded in `init`, so `start()` has to
+    /// start the loop itself.
+    @Test func theStoredSettingStartsTheAutoRecorderAtLaunch() async throws {
+        var stored = Settings.default
+        stored.autoRecordCalls = true
+        let store = InMemorySettingsStore()
+        store.save(try JSONEncoder().encode(stored))
+        let model = AppModel(store: store, keychain: InMemoryKeychainStore(), env: .fake())
+        #expect(!model.autoCallRecorder.isRunning)
+
+        model.start()
+
+        #expect(model.autoCallRecorder.isRunning)
+
+        // Quitting must not leave the loop to start a recording nobody asked for.
+        await model.shutdown()
+        #expect(!model.autoCallRecorder.isRunning)
+    }
 }

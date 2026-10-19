@@ -26,7 +26,7 @@ struct AutoCallRecordPolicy: Sendable {
     /// One poll. `recorderBusy` is `CallRecordingController.isRecording`.
     mutating func observe(_ call: CallApp?, at now: Date,
                           recorderBusy: Bool) -> Decision? {
-        if let call {
+        if call != nil {
             callSince = callSince ?? now
             quietSince = nil
         } else {
