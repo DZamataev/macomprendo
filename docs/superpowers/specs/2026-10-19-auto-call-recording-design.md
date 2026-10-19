@@ -57,9 +57,19 @@ transcript and "transcribe after Stop" behaviour. Only *who presses Start and St
 - Stopping an automatic recording by hand (menu, panel, hotkey) is respected: no new
   automatic recording starts until the active call has been gone for 15 s, i.e. until that
   call is over.
+- **A failed automatic start counts as a stop to respect.** The policy sees only
+  `CallRecordingController.isRecording`, so a recorder that went to `failed` is indistinguishable
+  from a hand stop: no retry until the call has been gone for 15 s. Retrying every second would
+  only spam the same failure.
+- **The 15 s re-arm counts from when the call disappears**, not from the hand stop: a user who
+  stops the recording two seconds into a call still gets the feature back 15 s after that call
+  ends.
 - Turning the setting off while an automatic recording runs leaves the recording running; it
   is then the user's to stop.
-- Quitting or sleeping stops it as today (`systemWillSleep`, termination).
+- Quitting or sleeping stops it as today (`systemWillSleep`, termination). Quitting stops the
+  auto-recorder loop **first** of all (`AppModel.shutdown`): a tick that saw the recorder idle
+  after the call recording was finalised would otherwise start a fresh recording while the
+  process is terminating.
 
 ### Settings
 
@@ -73,6 +83,9 @@ transcript and "transcribe after Stop" behaviour. Only *who presses Start and St
   - Toggle *Record calls automatically*, with a caption: *Starts recording when a call app
     from the list below uses the microphone, and stops when the call ends. Many places require
     everyone's consent before a call is recorded; telling them is up to you.*
+  - Everything below appears only while the switch is on: the built-in list is sixteen rows
+    long, and the rest of the tab must not be buried under a feature that is off. Adding an
+    entry whose prefix is already in the list does nothing — the prefix is the list's identity.
   - The list of call apps: name, bundle-ID prefix, kind (App / Browser), and a remove button
     per row.
   - *Using the microphone now* — the audio processes currently running input that no entry

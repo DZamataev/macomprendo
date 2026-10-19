@@ -215,3 +215,27 @@ UI per the spec's *Settings* section: Options row `PanelSwitchRow(title: "Record
 
 - Every spec section maps to a task: detecting (1, 3), starting/stopping/overrides (4, 5), settings (2, 6), built-in list (1), architecture (1, 3, 4, 5), testing (all), verified facts (3, 7), privacy (7).
 - `CallRecordingController` untouched; its `toggle()` (line 117) and `isRecording` are the only entry points used.
+
+## Execution notes (written while executing the tasks)
+
+Corrections to the text above; the behaviour it describes is unchanged.
+
+- **Task 5 arithmetic was wrong.** With the monitor emptied on the tick after the start, the call
+  is gone from t=4, so `quietSince = 4` and the stop lands at **t=19**, not t=18. The shipped test
+  ticks to t=18 while asserting the recording is still running, then ticks t=19 for the stop
+  (`AutoCallRecorderTests.aScriptedCallRecordsOnceAndStopsWhenItEnds`); the policy's 3 s/15 s
+  constants are as planned.
+- **Task 2's `Settings.swift` line numbers were stale** (written before the fields existed):
+  `transcribeCallsAfterRecording` sits at line 360, `static var default` at ~407 and the decoding
+  at ~506. The suite name and the test names are as written.
+- **Task 6 renders the app list only while the switch is on** (like the Glossary section), and
+  **Add refuses a prefix already in the list** — sixteen rows would otherwise bury the rest of the
+  tab, and a duplicate prefix breaks the list's `Identifiable` identity. Both are now stated in
+  the spec's *Settings* section.
+- **Task 6's eyeball step could not be done by the executor** (no screen): `npm run
+  install-app:signed` was run and the app launched, but the panel, the Settings section and the
+  *Using the microphone now* block are reviewed by the operator — the smoke test's *Automatic call
+  recording* section covers exactly those steps.
+- **Task 7's smoke bullets are a new `## Automatic call recording` section** in `docs/SMOKE_TEST.md`,
+  placed after *Call recording*; the real bundle IDs for FaceTime, Safari and Telegram are still
+  unverified and stay the operator's reading during that run.

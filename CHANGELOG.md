@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Automatic call recording: with **Record calls automatically** on (menubar panel ▸ **Options**,
+  or Settings ▸ General ▸ Call recordings), Macomprendo starts recording once an app on its list
+  — Zoom, Teams, FaceTime, a browser call and more — has been using the microphone for three
+  seconds, and stops it fifteen seconds after the call ends. Off by default; the list is
+  editable, and *Using the microphone now* shows what to add while a call is running.
+
 ### Changed
 - The idle menu bar icon is now a heart, echoing the app icon, with a voice waveform cut out
   of it; a monochrome template for any menu bar appearance.

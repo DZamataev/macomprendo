@@ -1095,6 +1095,45 @@ Audio Recording).
       tracks finalise, play end to end in QuickTime without a gap, and the transcript covers the
       whole call.
 
+## Automatic call recording
+
+Detection reads Core Audio's process list once a second — locally, without touching the microphone
+and without a permission — and starts and stops a recording through the ordinary **Record Call**
+path. Off by default.
+
+- [ ] **The switch.** Menubar panel ▸ **Options** ▸ *Record calls automatically*, and the same
+      toggle in Settings ▸ General ▸ Call recordings: with it off, a call records nothing.
+- [ ] **Using the microphone now.** Start QuickTime ▸ New Audio Recording (or hold the microphone
+      in any app not on the list) with the switch on and open Settings ▸ General: the app appears
+      under *Using the microphone now* within a second, with its real name. **Add** moves it into
+      the list above and it leaves that block; a row's remove button takes it out again; **Restore
+      Default Apps** puts the built-in list back.
+- [ ] **A FaceTime call records itself.** Turn the switch on and call someone in FaceTime. About
+      three seconds in, the recording starts by itself with the HUD toast `Recording call —
+      FaceTime`; end the call and fifteen seconds later it stops with `Call ended — recording
+      stopped`. The transcript appears in Transcripts, and both its level rows have audio.
+      **While the call is running**, read the entry FaceTime shows under *Using the microphone
+      now*: the built-in row assumes `com.apple.FaceTime`. If that is not what holds the
+      microphone, press **Add**, note the real bundle ID here, and correct the spec's table.
+- [ ] **A Safari Google Meet call records itself.** Join a Meet in Safari with someone talking:
+      the browser row needs input and output at once, and Meet does both. Read Safari's bundle ID
+      under *Using the microphone now* during the call and check it against
+      `com.apple.WebKit.GPU`; correct as above if it differs.
+- [ ] **A Telegram call records itself.** Repeat with Telegram and Telegram Desktop, and read the
+      bundle ID that actually holds the microphone; correct `ru.keepcoder.Telegram` /
+      `org.telegram.desktop` if it is not the one.
+- [ ] **A short microphone blip starts nothing.** Hold the microphone for two seconds — Sound ▸
+      Input's level meter, or a voice note you cancel — with the switch on: no recording starts.
+- [ ] **Muting does not stop the recording.** Mute yourself in a running call for ten seconds: the
+      recording keeps going (the fifteen-second grace covers apps that release the microphone
+      while muted).
+- [ ] **A hand stop is respected.** Stop an automatic recording from the panel: it does not start
+      again for the rest of that call. A recording you started by hand is never stopped by the
+      feature, and a call after the first one has really ended records again.
+- [ ] **Quitting does not start a recording.** With a call running and the switch on, quit
+      Macomprendo from the panel: the running recording is finalised as usual and nothing new
+      starts on the way out.
+
 ## Transcript playback
 
 The bar under the segment list is `AVPlayer` glue plus SwiftUI, so none of it is reachable from a

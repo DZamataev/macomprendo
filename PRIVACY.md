@@ -25,6 +25,8 @@ Transcripts of files and calls are kept in a separate local SQLite database at `
 
 Record Call captures your microphone and everything your Mac plays, including the other people on the call. Each call is a folder in `~/Library/Application Support/Macomprendo/Recordings/`, or the folder you choose in Settings ▸ General, holding two `.m4a` files (your side and everyone else's, 48 kHz mono AAC) and a small `recording.json`. Recordings are kept until you delete them. Many places require the consent of everyone on a call before it is recorded; telling them is up to you.
 
+Automatic call recording is off by default. While it is on, once a second, the app asks Core Audio which processes are using audio — locally, without touching the microphone and without any permission — and starts a recording only when an app or browser from the list in Settings ▸ General is in a call. That list is kept in settings and is not sent anywhere.
+
 Glossary packs are plain text files in `~/Library/Application Support/Macomprendo/Vocabulary/`; your own glossary terms are kept in settings. Neither is sent anywhere.
 
 Your macOS account and, if enabled, FileVault protect these files. The databases store plaintext, and the app does not encrypt recordings. Macomprendo is not sandboxed, so any program running under your macOS account can read them. The app adds no protection beyond your account.
