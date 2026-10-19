@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-19
+
 ### Fixed
 - Local speech no longer goes silent for several seconds after a short foreign-language
   phrase or a price ("M4 Mac mini", "$599") in a longer text: speech is generated in short
