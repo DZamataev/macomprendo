@@ -14,7 +14,7 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
 
 ## Dictation (hotkey #1)
 
-- [ ] Launch the app for the first time — no Dock icon; a waveform icon appears in the
+- [ ] Launch the app for the first time — no Dock icon; a segmented heart icon appears in the
       menubar; the Welcome window opens.
 - [ ] Click "Allow microphone…" in onboarding — the macOS microphone prompt appears; after
       allowing, the step shows "Granted."
@@ -793,8 +793,8 @@ The `Release` workflow runs on every `vX.Y.Z` tag and publishes the release itse
       and `KeyboardShortcuts_KeyboardShortcuts.bundle`.
 - [ ] `find dist/Macomprendo.app/Contents/Resources/Icons -type f | wc -l` prints a number
       greater than zero. This is the actual proof the vendored Phosphor SVGs shipped inside the
-      app — the menubar icon is a hardcoded SF Symbol, and other missing icons degrade to SF
-      Symbol fallbacks instead of making the process crash.
+      app — the menubar heart uses its separate `StatusItem` resource folder, and missing
+      icons degrade to SF Symbol fallbacks instead of making the process crash.
 - [ ] `ls dist/Macomprendo.app/Contents/Frameworks` contains `whisper.framework` and
       `SherpaOnnxC.framework` — both are dynamically linked (confirm with
       `otool -L dist/Macomprendo.app/Contents/MacOS/Macomprendo | grep -E 'whisper|SherpaOnnxC'`),
@@ -858,9 +858,11 @@ prerequisites, installed in the login keychain.
       not a pass/fail the app itself reports, and a "yes, they look like Phosphor icons" here is
       the closest a human glance gets to confirming the resources loaded — it is not conclusive on
       its own (use the `find`/`wc -l` check in Build artifact for that). The status item is not
-      evidence either way: it is deliberately an SF Symbol template (`waveform` / `record.circle`)
-      drawn by `StatusItemController`, per CLAUDE.md invariant 12 — it never draws from this
-      bundle, with or without it present.
+      evidence either way: `StatusItemController` loads the custom heart from `StatusItem/`,
+      not `Icons/`, and uses `record.circle` during recording (AGENTS.md invariant 12).
+- [ ] **The status-item heart stays legible at 1× and 2×.** Check light/dark menu bars and
+      the highlighted button: a filled heart with three waveform bars cut out of it, the
+      bars still separate. Recording still shows `record.circle`.
 - [ ] **Dictation produces a transcript.** Press the dictation hotkey once, say a sentence, and
       confirm text is inserted. This is the only proof that the whisper xcframework
       (`whisper.framework`, dynamically linked — see ADR-0007) actually loaded and ran on this

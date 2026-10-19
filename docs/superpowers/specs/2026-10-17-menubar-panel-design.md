@@ -157,10 +157,10 @@ A compact secondary readout makes activity discoverable without reopening the pa
 
 | State | Symbol/title |
 |---|---|
-| Idle | Existing waveform template, no idle text |
+| Idle | Custom heart-with-waveform template (18 × 18 pt), no idle text |
 | Call recording | Existing record.circle template + elapsed recording clock |
-| File transcription only | Waveform template + integer percent, or an ellipsis if indeterminate |
-| Call transcription only | Waveform template + current speaker and processed clock; full pair in tooltip |
+| File transcription only | Heart template + integer percent, or an ellipsis if indeterminate |
+| Call transcription only | Heart template + current speaker and processed clock; full pair in tooltip |
 | Call recording + file transcription | Recording symbol + recording clock + secondary percent/ellipsis |
 | Call recording + another call's transcription | Recording symbol + recording clock + an activity marker; full speaker/position in tooltip and popover |
 
@@ -245,7 +245,12 @@ meter/timer ticks. In light/dark transitions, preserve hover, focus and selectio
   Level-meter and progress accents follow the system accent. Preserve contrast with
   non-blue accents and Increase Contrast; Reduce Transparency gets an opaque system
   background rather than unreadable text over the wallpaper.
-- The status-item SF Symbol image is a template. Let macOS choose its contrast: the
+- The status-item image is a template: the custom heart when idle, `record.circle` during
+  call recording. The heart is a black-only filled SVG with three waveform bars
+  (short–tall–short) knocked out of it.
+  Load it from `StatusItem/StatusItemHeart.svg` at 18 × 18 pt; fall back to `waveform` if
+  decoding fails. Keep it outside the sync-managed Phosphor directory.
+  Let macOS choose its contrast: the
   menu bar's wallpaper-derived appearance can differ from the popover's appearance.
   Do not color it manually based on the SwiftUI light/dark value.
 - Respect Reduce Motion; progress reflects values without decorative pulsing or fades.

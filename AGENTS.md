@@ -78,8 +78,8 @@ xcodebuild -project macos/Macomprendo.xcodeproj -scheme Macomprendo \
 12. **Icons come from `Icon(.case)`.** Never write `Image(systemName:)` in a view. To add
     an icon, add it to `macos/Sources/Macomprendo/Resources/Icons/icons.json`, run
     `npm run sync-icons`, add the `AppIcon` case and its `fallbackSymbol`, and commit the
-    SVG. The menubar status item is the one deliberate exception: it must be an SF Symbol
-    template image.
+    SVG. The menubar status item is the one deliberate exception: it must be a template
+    image — the app's own glyph when idle, an SF Symbol for recording or as a fallback.
 13. **Vendored xcframeworks are upgraded deliberately.** whisper.cpp and sherpa-onnx are
     binary targets: record their release artefact and checksum, re-run framework discovery,
     and verify local transcription after every upgrade.

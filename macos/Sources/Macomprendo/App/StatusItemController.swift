@@ -309,15 +309,27 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
         statusItem.length = ceil((button.image?.size.width ?? 0) + text + Self.slotMargin)
     }
 
+    private static let idleImage = makeIdleImage()
+
+    static func makeIdleImage(resourceURL: URL? = ResourceBundle.current.url(
+        forResource: "StatusItemHeart", withExtension: "svg", subdirectory: "StatusItem")
+    ) -> NSImage? {
+        let custom = resourceURL.flatMap { NSImage(contentsOf: $0) }
+        let image = custom?.isValid == true ? custom
+            : NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)
+        image?.size = NSSize(width: 18, height: 18)
+        image?.isTemplate = true
+        return image
+    }
+
     private func write(_ content: MenuPanelPresentation.StatusItemContent) {
         guard let button = statusItem.button else { return }
-        let name = switch content.symbol {
-        case .idle: "waveform"
-        case .recording: "record.circle"
+        let image = switch content.symbol {
+        case .idle: Self.idleImage
+        case .recording: NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
         }
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
-        // The one deliberate SF Symbol exception (invariant 12), always a template image so
-        // macOS picks its contrast against the menu bar's own wallpaper (spec §6).
+        // Both the custom idle glyph and recording symbol are templates (invariant 12), so
+        // macOS picks their contrast against the menu bar's own wallpaper (spec §6).
         image?.isTemplate = true
         button.image = image
         button.title = content.title

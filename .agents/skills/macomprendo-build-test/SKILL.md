@@ -71,7 +71,7 @@ itself. Its stable Developer ID signature preserves the existing Microphone and 
 grants across rebuilds. Do not run `npm run reset-permissions` as routine setup. Use it only when
 the test explicitly covers first-run permission prompts, denied access, or grant recovery.
 
-The app is `LSUIElement`, so it has no Dock icon and no window. Look for the waveform in the menu
+The app is `LSUIElement`, so it has no Dock icon and no window. Look for the segmented heart in the menu
 bar. Quit it from that menu before replacing the installation by hand.
 
 To reset its state: `defaults delete com.dzamataev.macomprendo`.

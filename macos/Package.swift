@@ -23,6 +23,7 @@ let package = Package(
             path: "Sources/Macomprendo",
             resources: [
                 .copy("Resources/Icons"),
+                .copy("Resources/StatusItem"),
                 .copy("Resources/Licenses"),
                 .copy("Resources/SpeechDetection"),
                 .copy("Resources/Vocabulary")

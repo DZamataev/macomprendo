@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- The idle menu bar icon is now a heart, echoing the app icon, with a voice waveform cut out
+  of it; a monochrome template for any menu bar appearance.
+
 ## [1.1.3] - 2026-10-19
 
 ### Fixed
