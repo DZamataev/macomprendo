@@ -183,6 +183,31 @@ import Testing
         #expect(plan.map(\.selection) == [LocalVoiceSelection(modelID: russian.id, speakerID: 0)])
     }
 
+    /// "Anthropic" is too short to detect, so only its script is known; the voice mapped to a
+    /// language of that script must still beat a default that merely can read it.
+    @Test func anUndetectedRunUsesTheVoiceMappedToALanguageOfItsScript() throws {
+        let english = ModelCatalog.model(id: "vits-piper-en_US-lessac-medium")!
+        let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
+        let kokoro = ModelCatalog.model(id: "kokoro-multi-lang-v1_1")!
+        var speech = settings(kokoro)
+        speech.localSegmentationEnabled = true
+        speech.localVoiceByLanguage = [
+            "en": LocalVoiceSelection(modelID: english.id, speakerID: 0),
+            "ru": LocalVoiceSelection(modelID: russian.id, speakerID: 0),
+        ]
+        let before = "Однако текущие данные по "
+        let after = " показывают признаки плато."
+
+        let plan = try SherpaTTSService.localVoicePlan(
+            text: before + "Anthropic" + after,
+            settings: speech,
+            available: [available(kokoro), available(english), available(russian)],
+            detector: ScriptedLanguageDetector([before: "ru", after: "ru"]))
+
+        #expect(plan.map(\.selection).contains(LocalVoiceSelection(modelID: english.id, speakerID: 0)))
+        #expect(!plan.map(\.selection).contains(LocalVoiceSelection(modelID: kokoro.id, speakerID: 0)))
+    }
+
     @Test func anUndetectedArabicRunDoesNotTreatChineseAsScriptCompatible() throws {
         let russian = ModelCatalog.model(id: "vits-piper-ru_RU-ruslan-medium")!
         let kokoro = ModelCatalog.model(id: "kokoro-multi-lang-v1_1")!
@@ -412,6 +437,49 @@ import Testing
         #expect(r.player.played.count == 2)
         r.player.finishCurrent()
         await r.service.drain()
+    }
+
+    /// A short chunk followed by a long one left silence while the long one was generated:
+    /// generation must keep going for the whole queue, not stay one chunk ahead.
+    @Test func generationRunsAheadOfPlaybackForTheWholeQueue() async {
+        let r = rig(chunkCharacterLimit: 6)
+        r.player.finishesImmediately = false
+        r.service.speak("One. Two. Six.", settings: settings(r.model))
+
+        for _ in 0..<100 {
+            if r.player.played.count == 1, await r.generator.requests.count == 3 { break }
+            await Task.yield()
+        }
+
+        #expect(r.player.played.count == 1)
+        #expect(await r.generator.requests.map(\.text) == ["One.", "Two.", "Six."])
+        for _ in 0..<3 {
+            r.player.finishCurrent()
+            await settle()
+        }
+        await r.service.drain()
+        #expect(r.player.played.count == 3)
+    }
+
+    /// Local generation runs slower than a few seconds per few hundred characters, so the queue
+    /// is cut into short pieces whatever the endpoint's request cap is.
+    @Test func localSpeechIsGeneratedInPiecesOfAtMost150Characters() async {
+        let model = ModelCatalog.all(kind: .tts).first { $0.id == "vits-piper-ru_RU-ruslan-medium" }!
+        let manager = StubModelManager()
+        manager.states[model.id] = .downloaded
+        manager.resolvedEngines[model.id] = model.engine
+        manager.resolvedDirectories[model.id] = URL(fileURLWithPath: "/tmp/\(model.id)", isDirectory: true)
+        let generator = FakeLocalSpeechGenerator()
+        let service = SherpaTTSService(modelManager: manager, generator: generator,
+                                       player: FakeAudioPlayer(), catalog: [model])
+        let sentence = "Каждая из этих моделей работает полностью оффлайн без облака и регистрации. "
+
+        service.speak(String(repeating: sentence, count: 6), settings: settings(model))
+        await service.drain()
+
+        let lengths = await generator.requests.map(\.text.count)
+        #expect(lengths.count > 2)
+        #expect(lengths.allSatisfy { $0 <= 150 })
     }
 
     @Test func speakingStateLastsUntilPlaybackFinishesByItself() async {

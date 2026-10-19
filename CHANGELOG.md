@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Local speech no longer goes silent for several seconds after a short foreign-language
+  phrase or a price ("M4 Mac mini", "$599") in a longer text: speech is generated in short
+  pieces, continuously ahead of playback.
+- A short foreign word inside local speech ("Anthropic" in Russian text) is read by the voice
+  chosen for its language in Settings ▸ Speech, not by the default voice.
+
 ## [1.1.2] - 2026-10-18
 
 ### Fixed
