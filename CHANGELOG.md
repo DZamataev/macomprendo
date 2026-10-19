@@ -12,6 +12,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   — Zoom, Teams, FaceTime, a browser call and more — has been using the microphone for three
   seconds, and stops it fifteen seconds after the call ends. Off by default; the list is
   editable, and *Using the microphone now* shows what to add while a call is running.
+  **All apps** (off by default) records a call from any app using the microphone and hides
+  the list.
 
 ### Changed
 - The idle menu bar icon is now a heart, echoing the app icon, with a voice waveform cut out

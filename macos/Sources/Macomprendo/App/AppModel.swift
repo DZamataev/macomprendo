@@ -163,7 +163,7 @@ final class AppModel: ObservableObject {
     lazy var autoCallRecorder = AutoCallRecorder(
         monitor: env.audioProcesses,
         recorder: callRecording,
-        apps: { [unowned self] in self.settings.autoRecordApps },
+        apps: { [unowned self] in self.autoRecordCandidates() },
         toast: { [hud] in hud.toast($0) })
     /// The About window's content, owned here so the view never constructs a service
     /// (invariant 1). Not actually deferred to first open: SwiftUI evaluates every `Scene`'s
@@ -562,13 +562,24 @@ final class AppModel: ObservableObject {
     /// Settings' *Using the microphone now* list: every process running input that no entry
     /// covers, once per bundle ID. Ours is the app's own dictation and call capture.
     func microphoneUsersNotListed() -> [CallApp] {
+        microphoneUsers().filter { user in
+            !settings.autoRecordApps.contains(where: { $0.matches(bundleID: user.bundleIDPrefix) })
+        }
+    }
+
+    /// The apps the auto-recorder watches: the list, or with *All apps* every app using the
+    /// microphone right now.
+    func autoRecordCandidates() -> [CallApp] {
+        settings.autoRecordAllApps ? microphoneUsers() : settings.autoRecordApps
+    }
+
+    private func microphoneUsers() -> [CallApp] {
         var seen = Set<String>()
         var users: [CallApp] = []
         for process in env.audioProcesses.snapshot()
         where process.isRunningInput
             && process.pid != ProcessInfo.processInfo.processIdentifier {
             guard let bundleID = process.bundleID, !bundleID.isEmpty,
-                  !settings.autoRecordApps.contains(where: { $0.matches(bundleID: bundleID) }),
                   seen.insert(bundleID).inserted else { continue }
             let name = NSRunningApplication(processIdentifier: process.pid)?.localizedName
             users.append(CallApp(name: name ?? bundleID, bundleIDPrefix: bundleID, kind: .app))

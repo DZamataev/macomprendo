@@ -74,6 +74,10 @@ transcript and "transcribe after Stop" behaviour. Only *who presses Start and St
 ### Settings
 
 - `autoRecordCalls: Bool`, default `false`.
+- `autoRecordAllApps: Bool`, default `false`. On, every app using the microphone (other than
+  Macomprendo) counts as an App-kind call app and the list is ignored; Settings then hides the
+  list, its adders and *Using the microphone now*, and shows only an *All apps* toggle under
+  *Record calls automatically*.
 - `autoRecordApps: [CallApp]`, default the built-in list below. Decoded with
   `decodeIfPresent`, like every other setting; a stored list replaces the default entirely, so
   a removed entry stays removed.

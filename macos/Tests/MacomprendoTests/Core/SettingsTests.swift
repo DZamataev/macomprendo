@@ -662,6 +662,10 @@ import Testing
         #expect(try Settings.migrate(json).autoRecordCalls == false)
         #expect(try Settings.migrate(json).autoRecordApps == CallApp.defaults)
         #expect(Settings.default.autoRecordCalls == false)
+        #expect(try Settings.migrate(json).autoRecordAllApps == false)
+        var allApps = Settings.default
+        allApps.autoRecordAllApps = true
+        #expect(try Settings.migrate(JSONEncoder().encode(allApps)).autoRecordAllApps)
 
         var settings = Settings.default
         settings.autoRecordCalls = true

@@ -1010,6 +1010,27 @@ import Testing
         #expect(users.first?.name == "com.example.voice")
     }
 
+    /// *All apps* ignores the list: any app using the microphone counts, listed or not.
+    @Test func allAppsMakesEveryMicrophoneUserACallApp() {
+        let monitor = FakeAudioProcessMonitor()
+        monitor.processes = [
+            AudioProcessActivity(pid: 424_243, bundleID: "com.example.voice",
+                                 isRunningInput: true, isRunningOutput: false),
+            AudioProcessActivity(pid: 424_241, bundleID: "us.zoom.xos",
+                                 isRunningInput: true, isRunningOutput: false),
+        ]
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(audioProcesses: monitor))
+        model.settings.autoRecordApps = []
+        #expect(model.autoRecordCandidates().isEmpty)
+
+        model.settings.autoRecordAllApps = true
+        let candidates = model.autoRecordCandidates()
+        #expect(candidates.map(\.bundleIDPrefix) == ["com.example.voice", "us.zoom.xos"])
+        #expect(CallApp.activeCall(in: monitor.processes, apps: candidates,
+                                   excludingPID: 1)?.bundleIDPrefix == "com.example.voice")
+    }
+
     /// The setting `didSet` never fires for the value loaded in `init`, so `start()` has to
     /// start the loop itself.
     @Test func theStoredSettingStartsTheAutoRecorderAtLaunch() async throws {

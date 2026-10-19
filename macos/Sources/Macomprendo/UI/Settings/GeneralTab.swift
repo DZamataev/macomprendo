@@ -89,7 +89,15 @@ struct GeneralTab: View {
                 // Like the Glossary section: the list only matters with the switch on, and it
                 // is long enough to bury the rest of the tab.
                 if model.settings.autoRecordCalls {
-                    callApps
+                    Toggle("All apps", isOn: $model.settings.autoRecordAllApps)
+                    Text("Any app using the microphone counts as a call, not only the apps "
+                         + "below.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !model.settings.autoRecordAllApps {
+                        callApps
+                    }
                 }
             }
             .task { await callRecordings.refreshSize() }

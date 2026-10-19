@@ -362,6 +362,8 @@ struct Settings: Codable, Sendable, Equatable {
     /// The list the automatic recorder watches. A stored list replaces the default entirely,
     /// so a removed entry stays removed.
     var autoRecordApps: [CallApp]
+    /// Any app using the microphone counts as a call; `autoRecordApps` is ignored.
+    var autoRecordAllApps: Bool
 
     static var `default`: Settings {
         Settings(
@@ -405,7 +407,8 @@ struct Settings: Codable, Sendable, Equatable {
             callRecordingsDirectory: nil,
             transcribeCallsAfterRecording: true,
             autoRecordCalls: false,
-            autoRecordApps: CallApp.defaults
+            autoRecordApps: CallApp.defaults,
+            autoRecordAllApps: false
         )
     }
 
@@ -507,5 +510,7 @@ extension Settings {
             ?? d.autoRecordCalls
         autoRecordApps = try c.decodeIfPresent([CallApp].self, forKey: .autoRecordApps)
             ?? d.autoRecordApps
+        autoRecordAllApps = try c.decodeIfPresent(Bool.self, forKey: .autoRecordAllApps)
+            ?? d.autoRecordAllApps
     }
 }
