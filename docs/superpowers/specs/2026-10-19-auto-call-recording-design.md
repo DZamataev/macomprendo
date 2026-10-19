@@ -116,6 +116,7 @@ transcript and "transcribe after Stop" behaviour. Only *who presses Start and St
 | Arc | `company.thebrowser.Browser` | Browser |
 | Microsoft Edge | `com.microsoft.edgemac` | Browser |
 | Firefox | `org.mozilla.firefox` | Browser |
+| Brave | `com.brave.Browser` | Browser |
 | Yandex Browser | `ru.yandex.desktop.yandex-browser` | Browser |
 
 `com.microsoft.teams` is a prefix of `com.microsoft.teams2` only textually; the `.`-boundary

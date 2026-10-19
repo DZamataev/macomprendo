@@ -40,6 +40,7 @@ struct CallApp: Codable, Sendable, Equatable, Identifiable {
         CallApp(name: "Arc", bundleIDPrefix: "company.thebrowser.Browser", kind: .browser),
         CallApp(name: "Microsoft Edge", bundleIDPrefix: "com.microsoft.edgemac", kind: .browser),
         CallApp(name: "Firefox", bundleIDPrefix: "org.mozilla.firefox", kind: .browser),
+        CallApp(name: "Brave", bundleIDPrefix: "com.brave.Browser", kind: .browser),
         CallApp(name: "Yandex Browser", bundleIDPrefix: "ru.yandex.desktop.yandex-browser",
                 kind: .browser),
     ]
