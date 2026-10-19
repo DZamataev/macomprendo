@@ -656,4 +656,29 @@ import Testing
         #expect(try Settings.migrate(JSONEncoder().encode(settings)).callRecordingsDirectory
                 == "/Users/test/Call Recordings")
     }
+
+    @Test func automaticCallRecordingIsOffWithTheDefaultAppsAndRoundTrips() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+        #expect(try Settings.migrate(json).autoRecordCalls == false)
+        #expect(try Settings.migrate(json).autoRecordApps == CallApp.defaults)
+        #expect(Settings.default.autoRecordCalls == false)
+
+        var settings = Settings.default
+        settings.autoRecordCalls = true
+        settings.autoRecordApps = [CallApp(name: "Zoom", bundleIDPrefix: "us.zoom.xos",
+                                           kind: .app)]
+
+        let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+        #expect(decoded.autoRecordCalls)
+        #expect(decoded.autoRecordApps == settings.autoRecordApps)
+    }
+
+    @Test func aStoredEmptyAppListStaysEmpty() throws {
+        var settings = Settings.default
+        settings.autoRecordApps = []
+
+        let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+
+        #expect(decoded.autoRecordApps.isEmpty)
+    }
 }

@@ -357,6 +357,11 @@ struct Settings: Codable, Sendable, Equatable {
     /// Whether a call is transcribed as soon as its recording stops. Off keeps the call for
     /// later — a busy Mac, no time, or another model first — waiting `incomplete` for Resume.
     var transcribeCallsAfterRecording: Bool
+    /// Whether a call from `autoRecordApps` starts and stops a recording by itself.
+    var autoRecordCalls: Bool
+    /// The list the automatic recorder watches. A stored list replaces the default entirely,
+    /// so a removed entry stays removed.
+    var autoRecordApps: [CallApp]
 
     static var `default`: Settings {
         Settings(
@@ -398,7 +403,9 @@ struct Settings: Codable, Sendable, Equatable {
             glossaryManualTerms: [],
             glossaryRecommendedPacksOffered: false,
             callRecordingsDirectory: nil,
-            transcribeCallsAfterRecording: true
+            transcribeCallsAfterRecording: true,
+            autoRecordCalls: false,
+            autoRecordApps: CallApp.defaults
         )
     }
 
@@ -496,5 +503,9 @@ extension Settings {
         transcribeCallsAfterRecording = try c.decodeIfPresent(
             Bool.self, forKey: .transcribeCallsAfterRecording)
             ?? d.transcribeCallsAfterRecording
+        autoRecordCalls = try c.decodeIfPresent(Bool.self, forKey: .autoRecordCalls)
+            ?? d.autoRecordCalls
+        autoRecordApps = try c.decodeIfPresent([CallApp].self, forKey: .autoRecordApps)
+            ?? d.autoRecordApps
     }
 }
