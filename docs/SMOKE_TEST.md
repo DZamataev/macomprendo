@@ -698,6 +698,10 @@ or the window server.
 - [ ] **Shortcuts are re-read on every opening.** Rebind "Refine selection" in Settings ▸
       Hotkeys with the panel closed, then open **Options**: the new shortcut appears beside its
       switch on that first opening. An action with no shortcut shows none — never "not set".
+- [ ] **Opening the running app again.** With Transcripts open behind another app, open
+      Macomprendo from Finder or Spotlight: Transcripts comes forward and the panel stays closed.
+      Open it again: the panel opens. With no window open, the first opening shows the panel.
+      With a call recording, a long clock (`MM:SS`) still leaves the item left of the notch.
 
 ## Menubar hotkey display, per-language voices and prompt language
 

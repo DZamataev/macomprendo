@@ -18,6 +18,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The menu bar item no longer keeps showing a call track's clock (e.g. `Others 1:21:01`)
   after the call transcript has finished.
 
+### Added
+- Opening Macomprendo again while it runs (Finder, Spotlight, Launchpad) brings its windows
+  forward, or opens the menu bar panel when there are none or they are already in front —
+  a way in when the menu bar item is hidden by the notch or a menu bar manager.
+
 ## [1.1.2] - 2026-10-18
 
 ### Fixed

@@ -13,15 +13,22 @@ enum AppRoot {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model: AppModel
     private let replyToTermination: @MainActor (Bool) -> Void
+    private let isAppActive: @MainActor () -> Bool
+    private let now: () -> Date
+    private var becameActiveAt: Date?
 
     override convenience init() {
         self.init(model: AppRoot.model,
                   replyToTermination: { NSApp.reply(toApplicationShouldTerminate: $0) })
     }
 
-    init(model: AppModel, replyToTermination: @escaping @MainActor (Bool) -> Void) {
+    init(model: AppModel, replyToTermination: @escaping @MainActor (Bool) -> Void,
+         isAppActive: @escaping @MainActor () -> Bool = { NSApp.isActive },
+         now: @escaping () -> Date = { Date() }) {
         self.model = model
         self.replyToTermination = replyToTermination
+        self.isAppActive = isAppActive
+        self.now = now
         super.init()
     }
 
@@ -42,6 +49,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// closing the last window (Settings) must leave the app running (spec §7).
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    /// Opening the running app again; `false` keeps AppKit from opening a window of its own.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        // The reopening click activates the app just before this arrives, so an activation
+        // that recent means the app was in the background a moment ago.
+        // shortcut: a 0.5 s window on activation order, revisit if a slow reopen is misread.
+        let justActivated = becameActiveAt.map { now().timeIntervalSince($0) < 0.5 } ?? false
+        model.reopen(wasActive: isAppActive() && !justActivated)
+        return false
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        becameActiveAt = now()
     }
 }
 

@@ -551,6 +551,17 @@ final class AppModel: ObservableObject {
         statusItem?.closePanel()
     }
 
+    /// Opening the running app again (Finder, Spotlight, Launchpad): windows that were not in
+    /// front come forward first; with none, or with them already in front, the menubar panel
+    /// opens — the way back to it when the status item is hidden.
+    func reopen(wasActive: Bool) {
+        if !wasActive, windowRaiser.hasEligibleWindows {
+            windowRaiser.raiseAll()
+        } else {
+            statusItem?.revealPanel()
+        }
+    }
+
     private static func localTranscriptionConfiguration(
         for settings: Settings
     ) -> LocalTranscriptionProviderCache.Configuration? {
