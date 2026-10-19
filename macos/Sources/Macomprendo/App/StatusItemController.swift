@@ -274,6 +274,8 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
     /// narrow margin each side. AppKit's own variable-length frames leave 23.2–23.8 pt here,
     /// which crowds a clock under the notch on a full menu bar.
     private static let slotMargin: CGFloat = 14
+    /// The call clock's pill is tighter still: it is the item most likely to meet the notch.
+    private static let recordingSlotMargin: CGFloat = 4
 
     /// The three publishers the title derives from. Deliberately not `$levels`: the meters
     /// tick at 10 Hz and would repaint the menu bar for nothing.
@@ -290,14 +292,15 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
         titleWriter.apply(MenuPanelPresentation.statusItem(recordingElapsed: elapsed,
                                                            transcription: transcription))
         reserveWidth(for: StatusItemTitleSample.widest(recordingElapsed: elapsed,
-                                                       transcription: transcription))
+                                                       transcription: transcription),
+                     margin: elapsed == nil ? Self.slotMargin : Self.recordingSlotMargin)
     }
 
     /// One width per title mode (spec §4): the item is sized for the widest title the mode
     /// can render, so no digit-count change inside it can resize the button and re-anchor
     /// the open popover. Re-measured only when the sample changes; idle keeps AppKit's own
     /// content sizing, which already fits an image-only item.
-    private func reserveWidth(for sample: String) {
+    private func reserveWidth(for sample: String, margin: CGFloat) {
         guard sample != reservedSample else { return }
         reservedSample = sample
         guard let button = statusItem.button else { return }
@@ -306,7 +309,7 @@ final class StatusItemController: NSObject, StatusItemHosting, NSPopoverDelegate
             return
         }
         let text = (sample as NSString).size(withAttributes: [.font: Self.titleFont]).width
-        statusItem.length = ceil((button.image?.size.width ?? 0) + text + Self.slotMargin)
+        statusItem.length = ceil((button.image?.size.width ?? 0) + text + margin)
     }
 
     private static let idleImage = makeIdleImage()
