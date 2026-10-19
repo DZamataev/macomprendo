@@ -11,6 +11,11 @@ struct GeneralTab: View {
     @State private var viewModel: GeneralTabModel?
     @State private var launchAtLoginError: String?
     @State private var isDeleteAudioConfirmationPresented = false
+    /// *Using the microphone now*, re-read once a second while the section is on screen.
+    @State private var microphoneUsers: [CallApp] = []
+    /// The manual Add row's own state: a bundle ID typed ahead of the app's first call.
+    @State private var newBundleID = ""
+    @State private var newCallAppKind: CallApp.Kind = .app
 
     var body: some View {
         Form {
@@ -72,6 +77,20 @@ struct GeneralTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Toggle("Record calls automatically", isOn: $model.settings.autoRecordCalls)
+                Text("Starts recording when a call app from the list below uses the microphone, "
+                     + "and stops when the call ends. Many places require everyone's consent "
+                     + "before a call is recorded; telling them is up to you.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                // Like the Glossary section: the list only matters with the switch on, and it
+                // is long enough to bury the rest of the tab.
+                if model.settings.autoRecordCalls {
+                    callApps
+                }
             }
             .task { await callRecordings.refreshSize() }
 
@@ -202,5 +221,102 @@ struct GeneralTab: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         callRecordings.choose(url)
+    }
+
+    // MARK: - Call apps
+
+    /// The list, *Using the microphone now* and the two adders. One stack rather than a row per
+    /// app, so the one-second poll attaches to a single view: a modifier on a `Group` is
+    /// distributed to its members and would start a poll per row.
+    private var callApps: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach($model.settings.autoRecordApps) { $app in
+                callAppRow($app)
+            }
+            if !microphoneUsers.isEmpty {
+                Text("Using the microphone now")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                ForEach(microphoneUsers) { app in
+                    microphoneUserRow(app)
+                }
+            }
+            manualCallAppRow
+            Button("Restore Default Apps") {
+                model.settings.autoRecordApps = CallApp.defaults
+            }
+        }
+        // Polls while the section is on screen — and is cancelled with the view when the
+        // switch goes off.
+        .task {
+            while !Task.isCancelled {
+                microphoneUsers = model.microphoneUsersNotListed()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private func callAppRow(_ app: Binding<CallApp>) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.wrappedValue.name)
+                Text(app.wrappedValue.bundleIDPrefix)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            kindPicker(app.kind)
+            Button {
+                model.settings.autoRecordApps.removeAll { $0.id == app.wrappedValue.id }
+            } label: {
+                Icon(.remove, size: 12)
+            }
+            .accessibilityLabel("Remove \(app.wrappedValue.name)")
+        }
+    }
+
+    private func microphoneUserRow(_ app: CallApp) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.name)
+                Text(app.bundleIDPrefix)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button("Add") { add(app) }
+        }
+    }
+
+    private var manualCallAppRow: some View {
+        HStack(spacing: 8) {
+            TextField("Bundle ID", text: $newBundleID)
+            kindPicker($newCallAppKind)
+            Button("Add") {
+                let bundleID = newBundleID.trimmingCharacters(in: .whitespaces)
+                add(CallApp(name: bundleID, bundleIDPrefix: bundleID, kind: newCallAppKind))
+                newBundleID = ""
+            }
+            .disabled(newBundleID.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+    }
+
+    private func kindPicker(_ kind: Binding<CallApp.Kind>) -> some View {
+        Picker("Kind", selection: kind) {
+            Text("App").tag(CallApp.Kind.app)
+            Text("Browser").tag(CallApp.Kind.browser)
+        }
+        .labelsHidden()
+        .frame(width: 100)
+    }
+
+    /// One entry per bundle ID — a duplicate would break the list's identity, and a row the
+    /// user just added must leave *Using the microphone now* at once, not a second later.
+    private func add(_ app: CallApp) {
+        guard !app.bundleIDPrefix.isEmpty,
+              !model.settings.autoRecordApps.contains(where: { $0.id == app.id })
+        else { return }
+        model.settings.autoRecordApps.append(app)
+        microphoneUsers.removeAll { $0.id == app.id }
     }
 }

@@ -977,6 +977,39 @@ import Testing
         #expect(!model.autoCallRecorder.isRunning)
     }
 
+    /// Settings' *Using the microphone now* list: every input process no entry covers, once per
+    /// bundle ID. Ours is the app's own dictation and call capture, and a listed app is already
+    /// the user's answer — neither belongs in the list.
+    @Test func microphoneUsersNotListedSkipsListedAppsAndOurselves() {
+        let monitor = FakeAudioProcessMonitor()
+        monitor.processes = [
+            AudioProcessActivity(pid: ProcessInfo.processInfo.processIdentifier,
+                                 bundleID: "com.dzamataev.macomprendo",
+                                 isRunningInput: true, isRunningOutput: true),
+            AudioProcessActivity(pid: 424_241, bundleID: "us.zoom.xos",
+                                 isRunningInput: true, isRunningOutput: false),
+            AudioProcessActivity(pid: 424_242, bundleID: "com.google.Chrome.helper",
+                                 isRunningInput: true, isRunningOutput: false),
+            AudioProcessActivity(pid: 424_243, bundleID: "com.example.voice",
+                                 isRunningInput: true, isRunningOutput: false),
+            AudioProcessActivity(pid: 424_244, bundleID: "com.example.voice",
+                                 isRunningInput: true, isRunningOutput: false),
+            AudioProcessActivity(pid: 424_245, bundleID: nil,
+                                 isRunningInput: true, isRunningOutput: false),
+            AudioProcessActivity(pid: 424_246, bundleID: "com.example.music",
+                                 isRunningInput: false, isRunningOutput: true),
+        ]
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(audioProcesses: monitor))
+
+        let users = model.microphoneUsersNotListed()
+
+        #expect(users.map(\.bundleIDPrefix) == ["com.example.voice"])
+        #expect(users.first?.kind == .app)
+        // No running app carries that bundle ID, so the name falls back to it.
+        #expect(users.first?.name == "com.example.voice")
+    }
+
     /// The setting `didSet` never fires for the value loaded in `init`, so `start()` has to
     /// start the loop itself.
     @Test func theStoredSettingStartsTheAutoRecorderAtLaunch() async throws {

@@ -557,6 +557,25 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - Automatic call recording
+
+    /// Settings' *Using the microphone now* list: every process running input that no entry
+    /// covers, once per bundle ID. Ours is the app's own dictation and call capture.
+    func microphoneUsersNotListed() -> [CallApp] {
+        var seen = Set<String>()
+        var users: [CallApp] = []
+        for process in env.audioProcesses.snapshot()
+        where process.isRunningInput
+            && process.pid != ProcessInfo.processInfo.processIdentifier {
+            guard let bundleID = process.bundleID, !bundleID.isEmpty,
+                  !settings.autoRecordApps.contains(where: { $0.matches(bundleID: bundleID) }),
+                  seen.insert(bundleID).inserted else { continue }
+            let name = NSRunningApplication(processIdentifier: process.pid)?.localizedName
+            users.append(CallApp(name: name ?? bundleID, bundleIDPrefix: bundleID, kind: .app))
+        }
+        return users
+    }
+
     // MARK: - Windows
 
     /// Show All Windows, from the environment so the panel reaches the same raiser the app

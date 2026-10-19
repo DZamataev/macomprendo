@@ -268,6 +268,10 @@ struct MenuPanelView: View {
                                isOn: $model.settings.transcribeCallsAfterRecording)
                     .help("When off, a stopped call waits in Transcripts until you press Resume.")
 
+                PanelSwitchRow(title: "Record calls automatically",
+                               isOn: $model.settings.autoRecordCalls)
+                    .help("Starts when a call app from the list in Settings ▸ General uses the microphone.")
+
                 PanelCaption(text: "Enable hotkeys")
                     .padding(.leading, PanelMetrics.textInset)
                     .padding(.top, 6)
