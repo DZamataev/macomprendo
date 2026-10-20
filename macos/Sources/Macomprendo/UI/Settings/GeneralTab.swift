@@ -79,7 +79,9 @@ struct GeneralTab: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 Toggle("Record calls automatically", isOn: $model.settings.autoRecordCalls)
-                Text("Starts recording when a call app from the list below uses the microphone, "
+                Text((model.settings.autoRecordAllApps
+                      ? "Starts recording when any app uses the microphone, "
+                      : "Starts recording when a call app from the list below uses the microphone, ")
                      + "and stops when the call ends. Many places require everyone's consent "
                      + "before a call is recorded; telling them is up to you.")
                     .font(.caption)
