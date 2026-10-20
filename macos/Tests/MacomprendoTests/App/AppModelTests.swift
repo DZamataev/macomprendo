@@ -115,7 +115,10 @@ import Testing
         model.settings.middleMouseAction = .dictate
         #expect(middleMouse.isEnabled)
         middleMouse.send(.down)
-        await waitFor("middle-mouse dictation to start") { model.dictation.state == .recording }
+        // The hold delay (`middleMouseHoldDelay`) eats into the default timeout.
+        await waitFor("middle-mouse dictation to start", timeout: .seconds(5)) {
+            model.dictation.state == .recording
+        }
 
         middleMouse.send(.up)
         await waitFor("middle-mouse dictation to stop") { model.dictation.state != .recording }
