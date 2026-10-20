@@ -92,8 +92,8 @@ struct GeneralTab: View {
                 // is long enough to bury the rest of the tab.
                 if model.settings.autoRecordCalls {
                     Toggle("All apps", isOn: $model.settings.autoRecordAllApps)
-                    Text("Any app using the microphone counts as a call, not only the apps "
-                         + "below.")
+                    Text("On, any app using the microphone counts as a call. Off, only the "
+                         + "apps in the list below do.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
