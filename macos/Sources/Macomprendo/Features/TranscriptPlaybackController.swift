@@ -63,13 +63,26 @@ final class TranscriptPlaybackController: ObservableObject {
         player.onFailed = { [weak self] error in self?.failed(with: error) }
     }
 
+    /// Why a call cannot play while it is still being recorded: its track files are growing,
+    /// and a player loaded now would stop at the length they had when it loaded.
+    static let stillRecordingReason = "the call is still being recorded; it plays after Stop"
+
     /// Opens `transcript`, or clears everything with `nil`. A transcript that is already open
     /// (the same id, loaded or loading) only has its timeline refreshed — a running job appends
     /// segments and the view re-opens the transcript as they land; anything else is a fresh
-    /// load, which stops whatever was playing.
-    func open(_ transcript: Transcript?) async {
+    /// load, which stops whatever was playing. A call still `recording` loads nothing and is
+    /// unavailable until it is opened again without the flag.
+    func open(_ transcript: Transcript?, recording: Bool = false) async {
         guard let transcript else {
             stop()
+            return
+        }
+        if recording {
+            stop()
+            self.transcript = transcript
+            timeline = PlaybackTimeline(segments: transcript.segments)
+            transcriptID = transcript.id
+            state = .unavailable(reason: Self.stillRecordingReason, recovery: nil)
             return
         }
         if transcript.id == transcriptID, isOpenOrLoading {

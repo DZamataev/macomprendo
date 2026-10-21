@@ -1148,11 +1148,16 @@ responsive.
       opens with `Call <date>` selected, and its badge reads *In progress*. Speak a phrase and
       pause: within a few seconds a `Me:` row appears, and the remote side's phrases arrive as
       `Others:` rows in the order they were spoken.
+- [ ] **It follows the bottom.** Scroll to the end of the live rows: each new row scrolls into view.
+      Scroll up a little: new rows land without moving the list. Scroll back down: it follows again.
+- [ ] **Playback waits for Stop.** While recording, the strip under the rows reads *Audio
+      unavailable — the call is still being recorded; it plays after Stop*, with no player bar.
 - [ ] **Dictation still answers.** During the call, dictate into another app: it returns without a
       noticeable delay, and the live rows keep landing.
 - [ ] **Stop finishes it.** Press **Stop Recording**: the progress row reads `Transcribing Me — …`,
       then the toast *Call transcript ready*; the transcript is *Complete*, shows its duration, and
-      holds no duplicated phrase at the moment of Stop.
+      holds no duplicated phrase at the moment of Stop. Without reopening it, the player bar
+      appears and plays the whole call.
 - [ ] **The other two modes stay quiet.** Repeat with **Manually** and **After recording**: no
       **Show Live Transcript** button and no live rows while recording, and Stop behaves as before.
 - [ ] **Quit mid-call, then Resume.** Quit Macomprendo during a live recording: on relaunch the

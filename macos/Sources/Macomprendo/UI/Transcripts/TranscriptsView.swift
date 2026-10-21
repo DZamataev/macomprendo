@@ -24,6 +24,13 @@ struct TranscriptsView: View {
     @State private var renameDraft = ""
     /// The segment whose timestamp is under the pointer, so it can underline like a link.
     @State private var hoveredSegment: Int?
+    /// The call transcript being recorded live right now, whose audio cannot play yet.
+    @State private var liveTranscriptID: Int64?
+
+    private func isRecordingLive(_ transcript: Transcript?) -> Bool {
+        transcript != nil && transcript?.id == liveTranscriptID
+    }
+
     /// The segment list sits at its bottom, so new text should scroll into view.
     @State private var pinnedToBottom = true
     /// Geometry read on every scroll tick: kept out of view state so a tick does not re-render.
@@ -63,10 +70,16 @@ struct TranscriptsView: View {
             await library.reload()
             // The window opens on whatever the list already had selected, which no change
             // event fires for.
-            await playback.open(library.selected)
+            await playback.open(library.selected, recording: isRecordingLive(library.selected))
         }
         .onChange(of: library.selected) { _, selected in
-            Task { await playback.open(selected) }
+            Task { await playback.open(selected, recording: isRecordingLive(selected)) }
+        }
+        // Read through `onReceive`, not observed: the recorder publishes its meters ten times a
+        // second, and the whole window would re-render with them.
+        .onReceive(model.callRecording.$liveTranscriptID.removeDuplicates()) { id in
+            liveTranscriptID = id
+            Task { await playback.open(library.selected, recording: isRecordingLive(library.selected)) }
         }
         .onChange(of: library.selected?.id) { _, _ in
             actionError = nil

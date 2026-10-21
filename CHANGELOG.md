@@ -13,6 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   call as it happens, so its text appears in Transcripts during the call; the panel's
   **Show Live Transcript** opens that transcript while the call is still running. Scrolled
   to the bottom, the transcript follows new text; scroll up to read back and it stays put.
+  Its audio player is off until the recording stops, then loads the finished tracks.
 
 ## [1.2.0] - 2026-10-20
 
