@@ -15,6 +15,8 @@ final class AutoCallRecorder {
 
     private var policy = AutoCallRecordPolicy()
     private var task: Task<Void, Never>?
+    /// The last audio summary logged; the detector logs a change, not every poll.
+    private var loggedSummary: String?
 
     init(monitor: any AudioProcessMonitoring,
          recorder: CallRecordingController,
@@ -52,17 +54,26 @@ final class AutoCallRecorder {
         task?.cancel()
         task = nil
         policy = AutoCallRecordPolicy()
+        loggedSummary = nil
     }
 
     /// One poll — the loop calls it; tests call it directly.
     func tick() {
-        let call = CallApp.activeCall(in: monitor.snapshot(), apps: apps(),
-                                      excludingPID: ownPID)
+        let processes = monitor.snapshot()
+        let apps = apps()
+        let summary = CallApp.audioSummary(of: processes, apps: apps, excludingPID: ownPID)
+        if summary != loggedSummary {
+            loggedSummary = summary
+            Log.app.notice("Call detector: \(summary, privacy: .public)")
+        }
+        let call = CallApp.activeCall(in: processes, apps: apps, excludingPID: ownPID)
         switch policy.observe(call, at: now(), recorderBusy: recorder.isRecording) {
         case .start(let app):
+            Log.app.notice("Call detector started a recording for \(app.name, privacy: .public)")
             recorder.toggle()
             toast("Recording call — \(app.name)")
         case .stop:
+            Log.app.notice("Call detector stopped its recording: the call ended")
             recorder.toggle()
             toast("Call ended — recording stopped")
         case nil:

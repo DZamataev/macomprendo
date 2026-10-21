@@ -1101,6 +1101,9 @@ Detection reads Core Audio's process list once a second — locally, without tou
 and without a permission — and starts and stops a recording through the ordinary **Record Call**
 path. Off by default.
 
+When a call is not picked up, `log show --last 1h --predicate 'subsystem == "com.dzamataev.macomprendo"' | grep "Call detector"`
+shows, change by change, which listed app had the microphone and output on, and each start and stop.
+
 - [ ] **The switch.** Menubar panel ▸ **Options** ▸ *Record calls automatically*, and the same
       toggle in Settings ▸ General ▸ Call recordings: with it off, a call records nothing.
 - [ ] **Using the microphone now.** Start QuickTime ▸ New Audio Recording (or hold the microphone

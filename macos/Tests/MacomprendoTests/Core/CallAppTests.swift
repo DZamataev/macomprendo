@@ -9,6 +9,22 @@ private func process(_ pid: pid_t, _ bundleID: String?, input: Bool = false,
 }
 
 @Suite struct CallAppTests {
+    @Test func theAudioSummaryNamesEachListedAppUsingAudio() {
+        let processes = [
+            process(10, "com.brave.Browser.helper", output: true),
+            process(11, "com.brave.Browser"),
+            process(12, "us.zoom.xos", input: true, output: true),
+            process(13, "com.spotify.client", output: true),
+            process(99, "us.zoom.xos", input: true),
+        ]
+
+        #expect(CallApp.audioSummary(of: processes, apps: CallApp.defaults, excludingPID: 99)
+                == "Zoom: microphone on, output on; Brave: microphone off, output on")
+        #expect(CallApp.audioSummary(of: [process(13, "com.spotify.client", output: true)],
+                                     apps: CallApp.defaults, excludingPID: 99)
+                == "no listed app is using audio")
+    }
+
     @Test func anAppUsingTheMicrophoneIsTheActiveCall() {
         let zoom = CallApp.defaults.first { $0.name == "Zoom" }!
         let processes = [process(10, "us.zoom.xos", input: true)]

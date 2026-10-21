@@ -54,11 +54,8 @@ struct CallApp: Codable, Sendable, Equatable, Identifiable {
     /// The first app in `apps` that is in a call, per the App / Browser rules.
     static func activeCall(in processes: [AudioProcessActivity], apps: [CallApp],
                            excludingPID: pid_t) -> CallApp? {
-        let candidates = processes.filter { $0.pid != excludingPID }
-        return apps.first { app in
-            let matching = candidates.filter { process in
-                process.bundleID.map(app.matches(bundleID:)) ?? false
-            }
+        apps.first { app in
+            let matching = app.processes(in: processes, excludingPID: excludingPID)
             switch app.kind {
             case .app:
                 return matching.contains(where: \.isRunningInput)
@@ -66,6 +63,27 @@ struct CallApp: Codable, Sendable, Equatable, Identifiable {
                 return matching.contains(where: \.isRunningInput)
                     && matching.contains(where: \.isRunningOutput)
             }
+        }
+    }
+
+    /// What each listed app is doing with audio, for the detector's log: app names and two
+    /// flags, nothing anyone said.
+    static func audioSummary(of processes: [AudioProcessActivity], apps: [CallApp],
+                             excludingPID: pid_t) -> String {
+        let lines = apps.compactMap { app -> String? in
+            let matching = app.processes(in: processes, excludingPID: excludingPID)
+            let input = matching.contains(where: \.isRunningInput)
+            let output = matching.contains(where: \.isRunningOutput)
+            guard input || output else { return nil }
+            return "\(app.name): microphone \(input ? "on" : "off"), output \(output ? "on" : "off")"
+        }
+        return lines.isEmpty ? "no listed app is using audio" : lines.joined(separator: "; ")
+    }
+
+    private func processes(in processes: [AudioProcessActivity],
+                           excludingPID: pid_t) -> [AudioProcessActivity] {
+        processes.filter { process in
+            process.pid != excludingPID && (process.bundleID.map(matches(bundleID:)) ?? false)
         }
     }
 }
