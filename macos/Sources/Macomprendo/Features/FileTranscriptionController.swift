@@ -476,16 +476,11 @@ import Foundation
                                          speaker: speaker)
 
                     case let .segment(segmentStart, segmentEnd, text):
-                        let normalised = settings.glossaryEnabled
-                            ? Normalizer.normalise(text, with: glossary)
-                            : NormalisationResult(text: text, rewrites: [])
                         guard let id = progress.transcriptID else { continue }
                         try await store.appendSegment(
-                            TranscriptSegment(start: segmentStart + timeShift,
-                                              end: segmentEnd + timeShift,
-                                              text: normalised.text,
-                                              rawText: normalised.rewrites.isEmpty ? nil : text,
-                                              speaker: speaker),
+                            .normalised(text: text, start: segmentStart + timeShift,
+                                        end: segmentEnd + timeShift, speaker: speaker,
+                                        settings: settings, glossary: glossary),
                             to: id)
                         progress.storedSegments += 1
                         transcriptsChanged()
@@ -554,5 +549,20 @@ import Foundation
         if error is CancellationError { return true }
         if let error = error as? MacomprendoError, error == .cancelled { return true }
         return false
+    }
+}
+
+extension TranscriptSegment {
+    /// A transcribed segment as it is stored: glossary-normalised when the glossary is on,
+    /// the provider's text kept as `rawText` only when a rewrite changed it.
+    static func normalised(text: String, start: TimeInterval, end: TimeInterval,
+                           speaker: TranscriptSpeaker?, settings: Settings,
+                           glossary: Glossary) -> TranscriptSegment {
+        let result = settings.glossaryEnabled
+            ? Normalizer.normalise(text, with: glossary)
+            : NormalisationResult(text: text, rewrites: [])
+        return TranscriptSegment(start: start, end: end, text: result.text,
+                                 rawText: result.rewrites.isEmpty ? nil : text,
+                                 speaker: speaker)
     }
 }
