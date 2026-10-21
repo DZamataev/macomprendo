@@ -91,4 +91,46 @@ import Testing
         #expect(TranscriptsView.deleteSourceTitle(for: .call)
                 == "Also move the call recording to the Trash")
     }
+
+    // MARK: - Sticking to the bottom of a growing transcript
+
+    @Test func aNewSegmentScrollsOnlyAPinnedViewOfTheSameTranscript() {
+        let before = TranscriptsView.SegmentTail(transcriptID: 1, count: 4)
+        let grown = TranscriptsView.SegmentTail(transcriptID: 1, count: 5)
+        #expect(TranscriptsView.followsNewSegments(from: before, to: grown, pinned: true))
+        #expect(!TranscriptsView.followsNewSegments(from: before, to: grown, pinned: false))
+        // Opening another transcript is not new text.
+        #expect(!TranscriptsView.followsNewSegments(
+            from: before, to: TranscriptsView.SegmentTail(transcriptID: 2, count: 9), pinned: true))
+        #expect(!TranscriptsView.followsNewSegments(from: grown, to: before, pinned: true))
+    }
+
+    @Test func scrollingDecidesThePinFromWhereTheBottomIs() {
+        let viewport: CGFloat = 400
+        let old = CGRect(x: 0, y: 0, width: 300, height: 1000)
+        // Scrolled to the end: the content's bottom sits at the viewport's bottom.
+        #expect(TranscriptsView.pinnedToBottom(
+            wasPinned: false, old: old, new: CGRect(x: 0, y: -600, width: 300, height: 1000),
+            viewportHeight: viewport))
+        // Scrolled up away from it.
+        #expect(!TranscriptsView.pinnedToBottom(
+            wasPinned: true, old: old, new: CGRect(x: 0, y: -300, width: 300, height: 1000),
+            viewportHeight: viewport))
+    }
+
+    @Test func growingContentKeepsThePinAsItWas() {
+        let viewport: CGFloat = 400
+        let atEnd = CGRect(x: 0, y: -600, width: 300, height: 1000)
+        let grown = CGRect(x: 0, y: -600, width: 300, height: 1040)
+        // A new row pushes the bottom out of view; that is the text growing, not the user
+        // scrolling away, so a pinned view stays pinned and an unpinned one stays put.
+        #expect(TranscriptsView.pinnedToBottom(wasPinned: true, old: atEnd, new: grown,
+                                               viewportHeight: viewport))
+        #expect(!TranscriptsView.pinnedToBottom(wasPinned: false, old: atEnd, new: grown,
+                                                viewportHeight: viewport))
+        // A short transcript that still fits is at its bottom however it got there.
+        #expect(TranscriptsView.pinnedToBottom(
+            wasPinned: false, old: CGRect(x: 0, y: 0, width: 300, height: 200),
+            new: CGRect(x: 0, y: 0, width: 300, height: 240), viewportHeight: viewport))
+    }
 }

@@ -24,6 +24,21 @@ struct TranscriptsView: View {
     @State private var renameDraft = ""
     /// The segment whose timestamp is under the pointer, so it can underline like a link.
     @State private var hoveredSegment: Int?
+    /// The segment list sits at its bottom, so new text should scroll into view.
+    @State private var pinnedToBottom = true
+    /// Geometry read on every scroll tick: kept out of view state so a tick does not re-render.
+    @State private var scrollMetrics = ScrollMetrics()
+    private static let scrollSpace = "transcriptSegments"
+    private static let bottomID = "transcriptBottom"
+
+    private final class ScrollMetrics {
+        var contentFrame: CGRect = .zero
+        var viewportHeight: CGFloat = 0
+    }
+
+    private func setPinned(_ pinned: Bool) {
+        if pinned != pinnedToBottom { pinnedToBottom = pinned }
+    }
     @FocusState private var isRenameFieldFocused: Bool
 
     var body: some View {
@@ -243,15 +258,41 @@ struct TranscriptsView: View {
                                 }
                             }
                         }
+                        Color.clear.frame(height: 0).id(Self.bottomID)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
+                    .background(GeometryReader { geometry in
+                        Color.clear.onChange(of: geometry.frame(in: .named(Self.scrollSpace)),
+                                             initial: true) { old, new in
+                            scrollMetrics.contentFrame = new
+                            setPinned(Self.pinnedToBottom(
+                                wasPinned: pinnedToBottom, old: old, new: new,
+                                viewportHeight: scrollMetrics.viewportHeight))
+                        }
+                    })
                 }
+                .coordinateSpace(name: Self.scrollSpace)
+                .background(GeometryReader { geometry in
+                    Color.clear.onChange(of: geometry.size.height, initial: true) { _, height in
+                        scrollMetrics.viewportHeight = height
+                        let frame = scrollMetrics.contentFrame
+                        setPinned(Self.pinnedToBottom(wasPinned: pinnedToBottom, old: frame,
+                                                      new: frame, viewportHeight: height))
+                    }
+                })
                 .background(ScrollWheelObserver { if playback.isFollowing { playback.isFollowing = false } })
                 .overlay(alignment: .bottomTrailing) { backToCurrent(proxy: proxy) }
                 .onChange(of: playback.activeSegmentIndex) { _, index in
                     guard playback.isFollowing, isPlaying, let index else { return }
                     follow(index, proxy: proxy)
+                }
+                .onChange(of: SegmentTail(transcriptID: transcript.id,
+                                          count: transcript.segments.count)) { old, new in
+                    // Playback following its marker owns the scroll position.
+                    guard Self.followsNewSegments(from: old, to: new, pinned: pinnedToBottom),
+                          !(isPlaying && playback.isFollowing) else { return }
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 }
             }
             playbackFooter(transcript)
@@ -646,6 +687,31 @@ struct TranscriptsView: View {
 
     // MARK: - Pure labels
 
+    /// Which transcript is open and how many segments it shows, so a growing transcript can be
+    /// told apart from opening another one.
+    struct SegmentTail: Equatable {
+        let transcriptID: Int64
+        let count: Int
+    }
+
+    /// A segment that lands in the open transcript scrolls it down only while the user sits at
+    /// the bottom; scrolled up, they are reading earlier text and the view stays put.
+    nonisolated static func followsNewSegments(from old: SegmentTail, to new: SegmentTail,
+                                               pinned: Bool) -> Bool {
+        pinned && old.transcriptID == new.transcriptID && new.count > old.count
+    }
+
+    /// Whether the view is stuck to the bottom after the content's frame (in the scroll view's
+    /// own space) moved from `old` to `new`. Only a scroll moves the content's top; a frame that
+    /// only grew is new text pushing the bottom out of view, and keeps the pin as it was.
+    nonisolated static func pinnedToBottom(wasPinned: Bool, old: CGRect, new: CGRect,
+                                           viewportHeight: CGFloat) -> Bool {
+        let bottomInView = new.maxY <= viewportHeight + 24
+        if abs(new.minY - old.minY) < 0.5, abs(new.height - old.height) >= 0.5 {
+            return wasPinned || bottomInView
+        }
+        return bottomInView
+    }
     /// What a change of the transcription state asks of the list. A job's row is created
     /// before its first segment, so the first `.running` state of a brand-new job may arrive
     /// before any `transcriptsChanged` reload has run: reload once so the row shows. A job

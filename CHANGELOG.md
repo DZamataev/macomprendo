@@ -11,7 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as a three-way choice — while recording, after recording (the default), or manually —
   in place of the *Transcribe calls after Stop* switch. **While recording** transcribes the
   call as it happens, so its text appears in Transcripts during the call; the panel's
-  **Show Live Transcript** opens that transcript while the call is still running.
+  **Show Live Transcript** opens that transcript while the call is still running. Scrolled
+  to the bottom, the transcript follows new text; scroll up to read back and it stays put.
 
 ## [1.2.0] - 2026-10-20
 
