@@ -187,6 +187,7 @@ Capture pushes every converted buffer, with its track and session-clock time, to
 writer. This stage has one capture handler per track feeding one `CallAudioSink`; the fan-out to
 an array of sinks does not exist yet. A later stage adds it, with a segmenter sink per track
 appending segments while recording; the capture, the files and the store do not change.
+Designed in `2026-10-21-live-call-transcription-design.md` (ADR-0020).
 
 ### Errors
 
