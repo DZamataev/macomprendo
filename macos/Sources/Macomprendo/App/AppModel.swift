@@ -391,6 +391,12 @@ final class AppModel: ObservableObject {
         dictation.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        // Readiness gates every transcription job, including one a call recorded with no
+        // window open starts: keep it fed from the models, not only while a view shows them.
+        modelsViewModel.$rows
+            .sink { [weak self] rows in self?.dictationTabModel.adopt(rows) }
+            .store(in: &cancellables)
+        Task { [weak self] in await self?.modelsViewModel.refresh() }
         // `callRecording` is deliberately not forwarded: its level meters tick every 100 ms, and
         // the whole menu observes this model, so forwarding rebuilt every menu item each tick —
         // the item under the pointer lost its highlight. The call rows observe it themselves.

@@ -57,6 +57,23 @@ import Testing
         #expect(recorder.preferredInputDeviceUIDs == ["MCHOSE-USB-0001", nil, "BuiltInMicrophoneDevice"])
     }
 
+    /// An automatic call recording stops with no window ever opened, and its transcription job
+    /// checks the model's readiness: that must come from the models on disk, not from whichever
+    /// view last copied their states in.
+    @Test func modelReadinessIsKnownAfterStartWithoutAnyWindow() async {
+        let models = StubModelManager()
+        models.states = ["large-v3-turbo": .downloaded]
+        let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),
+                             env: .fake(models: models))
+        model.settings.transcriptionSource = .local(modelID: "large-v3-turbo")
+
+        model.start()
+        await waitFor("the dictation model to read as ready") {
+            model.dictationTabModel.readiness == .ready
+        }
+        #expect(model.dictationTabModel.readiness == .ready)
+    }
+
     @Test func startAppliesRetentionAndPurgesOrphanedAudio() async {
         let historyStore = FakeDictationHistoryStore()
         let model = AppModel(store: InMemorySettingsStore(), keychain: InMemoryKeychainStore(),

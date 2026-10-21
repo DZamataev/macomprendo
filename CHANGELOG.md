@@ -15,6 +15,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to the bottom, the transcript follows new text; scroll up to read back and it stays put.
   Its player stays disabled until the recording stops, then loads the finished tracks.
 
+### Fixed
+- A call transcribed after Stop no longer fails with *This model has not been downloaded yet*
+  when no Macomprendo window had been opened since launch — as with an automatic recording.
+
 ## [1.2.0] - 2026-10-20
 
 ### Added
