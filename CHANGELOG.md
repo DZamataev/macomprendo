@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Settings ▸ General ▸ Call recordings and the menubar panel now offer **Transcribe calls**
+  as a three-way choice — while recording, after recording (the default), or manually —
+  in place of the *Transcribe calls after Stop* switch.
+
 ## [1.2.0] - 2026-10-20
 
 ### Added

@@ -315,7 +315,7 @@ final class CallRecordingController: ObservableObject {
                 // The row is there; the next launch's abandoned-job pass repairs its status.
                 remember(error)
             }
-        } else if settings().transcribeCallsAfterRecording {
+        } else if settings().callTranscription != .manual {
             transcribe(id)
         } else {
             do {

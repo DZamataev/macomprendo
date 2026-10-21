@@ -422,7 +422,7 @@ private func tempDirectory() throws -> URL {
     /// `incomplete` with a reason that says how to start it, and no job runs.
     @Test func withTranscriptionAfterStopOffTheRowWaitsAndNoJobStarts() async throws {
         let rig = try Rig()
-        rig.settings.value.transcribeCallsAfterRecording = false
+        rig.settings.value.callTranscription = .manual
         await startRecording(rig)
 
         await rig.controller.stop()

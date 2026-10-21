@@ -625,15 +625,34 @@ import Testing
         #expect(try Settings.migrate(json).callRecordingsDirectory == nil)
     }
 
-    @Test func callsAreTranscribedAfterStopByDefaultAndTheChoiceRoundTrips() throws {
+    @Test func callsAreTranscribedAfterRecordingByDefaultAndTheChoiceRoundTrips() throws {
         let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
-        #expect(try Settings.migrate(json).transcribeCallsAfterRecording == true)
-        #expect(Settings.default.transcribeCallsAfterRecording == true)
+        #expect(try Settings.migrate(json).callTranscription == .afterRecording)
+        #expect(Settings.default.callTranscription == .afterRecording)
 
         var settings = Settings.default
-        settings.transcribeCallsAfterRecording = false
-        #expect(try Settings.migrate(JSONEncoder().encode(settings)).transcribeCallsAfterRecording
-                == false)
+        settings.callTranscription = .whileRecording
+        #expect(try Settings.migrate(JSONEncoder().encode(settings)).callTranscription
+                == .whileRecording)
+    }
+
+    @Test func theOldAfterStopSwitchBecomesAMode() throws {
+        let on = Data(#"{"schemaVersion":2,"transcribeCallsAfterRecording":true}"#.utf8)
+        let off = Data(#"{"schemaVersion":2,"transcribeCallsAfterRecording":false}"#.utf8)
+        #expect(try Settings.migrate(on).callTranscription == .afterRecording)
+        #expect(try Settings.migrate(off).callTranscription == .manual)
+    }
+
+    @Test func theModeWinsOverTheOldSwitch() throws {
+        let json = Data(#"""
+            {"schemaVersion":2,"transcribeCallsAfterRecording":false,"callTranscription":"whileRecording"}
+            """#.utf8)
+        #expect(try Settings.migrate(json).callTranscription == .whileRecording)
+    }
+
+    @Test func theOldSwitchIsNotWrittenAgain() throws {
+        let text = String(decoding: try JSONEncoder().encode(Settings.default), as: UTF8.self)
+        #expect(!text.contains("transcribeCallsAfterRecording"))
     }
 
     @Test func theMicrophoneIsReleasedAfterRecordingByDefaultAndTheChoiceRoundTrips() throws {

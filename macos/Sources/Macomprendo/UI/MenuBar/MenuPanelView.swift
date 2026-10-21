@@ -264,9 +264,15 @@ struct MenuPanelView: View {
                 PanelSwitchRow(title: "Save dictation history",
                                isOn: $model.settings.dictationHistoryEnabled)
 
-                PanelSwitchRow(title: "Transcribe calls after Stop",
-                               isOn: $model.settings.transcribeCallsAfterRecording)
-                    .help("When off, a stopped call waits in Transcripts until you press Resume.")
+                VStack(alignment: .leading, spacing: 3) {
+                    PanelCaption(text: "Transcribe calls")
+                    PanelPopUpButton(items: CallTranscriptionMode.allCases.map {
+                                         .init(title: $0.title, value: $0) },
+                                     selection: $model.settings.callTranscription)
+                        .accessibilityLabel("Transcribe calls")
+                }
+                .padding(.leading, PanelMetrics.textInset)
+                .padding(.trailing, 6)
 
                 PanelSwitchRow(title: "Record calls automatically",
                                isOn: $model.settings.autoRecordCalls)

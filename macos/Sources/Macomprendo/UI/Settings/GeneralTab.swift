@@ -70,10 +70,12 @@ struct GeneralTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Toggle("Transcribe a call as soon as it stops",
-                       isOn: $model.settings.transcribeCallsAfterRecording)
-                Text("When off, a stopped call waits in Transcripts until you press Resume — "
-                     + "for a busy Mac, or to pick another model first.")
+                Picker("Transcribe calls", selection: $model.settings.callTranscription) {
+                    ForEach(CallTranscriptionMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                Text(Self.callTranscriptionCaption(model.settings.callTranscription))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -231,6 +233,18 @@ struct GeneralTab: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         callRecordings.choose(url)
+    }
+
+    private static func callTranscriptionCaption(_ mode: CallTranscriptionMode) -> String {
+        switch mode {
+        case .whileRecording:
+            "Text appears in Transcripts during the call. Uses the speech model throughout the call."
+        case .afterRecording:
+            "A call is transcribed as soon as it stops."
+        case .manual:
+            "A stopped call waits in Transcripts until you press Resume — "
+                + "for a busy Mac, or to pick another model first."
+        }
     }
 
     // MARK: - Call apps

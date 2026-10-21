@@ -3,6 +3,21 @@ import Foundation
 enum DictationMode: String, Codable, Sendable { case hold, toggle }
 enum InsertMethod: String, Codable, Sendable { case auto, paste, typing }
 
+/// When a recorded call is transcribed.
+enum CallTranscriptionMode: String, Codable, Sendable, CaseIterable {
+    case whileRecording
+    case afterRecording
+    case manual
+
+    var title: String {
+        switch self {
+        case .whileRecording: "While recording"
+        case .afterRecording: "After recording"
+        case .manual: "Manually"
+        }
+    }
+}
+
 enum LocalModelIdleTimeout: String, Codable, Sendable, CaseIterable {
     case immediately
     case fiveMinutes
@@ -354,9 +369,9 @@ struct Settings: Codable, Sendable, Equatable {
     /// Where call recordings are stored. `nil` uses `CallRecordingLayout.defaultDirectory`. A
     /// `String` rather than a `URL` so the persisted JSON stays readable and portable.
     var callRecordingsDirectory: String?
-    /// Whether a call is transcribed as soon as its recording stops. Off keeps the call for
-    /// later — a busy Mac, no time, or another model first — waiting `incomplete` for Resume.
-    var transcribeCallsAfterRecording: Bool
+    /// When a call is transcribed: live during the recording, as soon as it stops, or only on
+    /// Resume — the call then waits `incomplete`.
+    var callTranscription: CallTranscriptionMode
     /// Whether a call from `autoRecordApps` starts and stops a recording by itself.
     var autoRecordCalls: Bool
     /// The list the automatic recorder watches. A stored list replaces the default entirely,
@@ -405,7 +420,7 @@ struct Settings: Codable, Sendable, Equatable {
             glossaryManualTerms: [],
             glossaryRecommendedPacksOffered: false,
             callRecordingsDirectory: nil,
-            transcribeCallsAfterRecording: true,
+            callTranscription: .afterRecording,
             autoRecordCalls: false,
             autoRecordApps: CallApp.defaults,
             autoRecordAllApps: false
@@ -427,6 +442,11 @@ struct Settings: Codable, Sendable, Equatable {
 
     private struct SchemaProbe: Decodable {
         var schemaVersion: Int?
+    }
+
+    /// Keys read once to migrate an older settings file and never written again.
+    private enum LegacyCodingKeys: String, CodingKey {
+        case transcribeCallsAfterRecording
     }
 }
 
@@ -503,9 +523,11 @@ extension Settings {
             ?? d.glossaryRecommendedPacksOffered
         callRecordingsDirectory = try c.decodeIfPresent(String.self,
                                                         forKey: .callRecordingsDirectory)
-        transcribeCallsAfterRecording = try c.decodeIfPresent(
-            Bool.self, forKey: .transcribeCallsAfterRecording)
-            ?? d.transcribeCallsAfterRecording
+        callTranscription = try c.decodeIfPresent(CallTranscriptionMode.self, forKey: .callTranscription)
+            ?? decoder.container(keyedBy: LegacyCodingKeys.self)
+                .decodeIfPresent(Bool.self, forKey: .transcribeCallsAfterRecording)
+                .map { $0 ? .afterRecording : .manual }
+            ?? d.callTranscription
         autoRecordCalls = try c.decodeIfPresent(Bool.self, forKey: .autoRecordCalls)
             ?? d.autoRecordCalls
         autoRecordApps = try c.decodeIfPresent([CallApp].self, forKey: .autoRecordApps)
