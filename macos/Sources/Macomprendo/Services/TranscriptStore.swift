@@ -14,6 +14,8 @@ protocol TranscriptStoring: Sendable {
     func setSourceBookmark(_ bookmark: Data?, for id: Int64) async throws
     /// Renames the row. The caller trims and rejects a blank title.
     func setTitle(_ title: String, for id: Int64) async throws
+    /// A call transcribed live has its row before its length is known; Stop writes it.
+    func setDuration(_ duration: TimeInterval, for id: Int64) async throws
     /// Every transcript, newest first.
     func headers() async throws -> [TranscriptHeader]
     func transcript(id: Int64) async throws -> Transcript?
@@ -114,6 +116,16 @@ actor SQLiteTranscriptStore: TranscriptStoring {
         let statement = try prepare("UPDATE transcripts SET title = ?1 WHERE id = ?2", on: db)
         defer { sqlite3_finalize(statement) }
         try bind(title, 1, statement, db)
+        try check(sqlite3_bind_int64(statement, 2, id), on: db)
+        try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)
+        try requireOneChange(id, on: db)
+    }
+
+    func setDuration(_ duration: TimeInterval, for id: Int64) throws {
+        let db = try connection()
+        let statement = try prepare("UPDATE transcripts SET duration_s = ?1 WHERE id = ?2", on: db)
+        defer { sqlite3_finalize(statement) }
+        try check(sqlite3_bind_double(statement, 1, duration), on: db)
         try check(sqlite3_bind_int64(statement, 2, id), on: db)
         try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)
         try requireOneChange(id, on: db)

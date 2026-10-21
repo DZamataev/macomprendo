@@ -125,6 +125,21 @@ import Testing
         }
     }
 
+    @Test func aDurationCanBeSetAndMissingRowsAreAnError() async throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let id = try await store.create(sourceKind: .call, title: "Call 2026-10-21 12:00",
+                                        sourceBookmark: nil, duration: nil, run: run, at: .now)
+
+        try await store.setDuration(754.5, for: id)
+        #expect(try await store.transcript(id: id)?.header.duration == 754.5)
+        #expect(try await store.headers().first?.duration == 754.5)
+
+        await #expect(throws: MacomprendoError.transcriptStore("no transcript has identifier 42")) {
+            try await store.setDuration(1, for: 42)
+        }
+    }
+
     @Test func deletingATranscriptDeletesItsSegments() async throws {
         let (store, directory) = makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }

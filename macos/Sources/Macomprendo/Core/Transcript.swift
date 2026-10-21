@@ -54,6 +54,11 @@ extension TranscriptHeader {
         TranscriptHeader(id: id, createdAt: createdAt, sourceKind: sourceKind, title: title,
                          duration: duration, status: status, statusReason: statusReason)
     }
+
+    func withDuration(_ duration: TimeInterval?) -> TranscriptHeader {
+        TranscriptHeader(id: id, createdAt: createdAt, sourceKind: sourceKind, title: title,
+                         duration: duration, status: status, statusReason: statusReason)
+    }
 }
 
 /// A transcript as the list shows it, without its segments.

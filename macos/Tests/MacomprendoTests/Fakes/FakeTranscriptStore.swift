@@ -95,6 +95,16 @@ actor FakeTranscriptStore: TranscriptStoring {
                                      summary: transcript.summary, segments: transcript.segments)
     }
 
+    func setDuration(_ duration: TimeInterval, for id: Int64) throws {
+        guard let transcript = transcripts[id] else {
+            throw MacomprendoError.transcriptStore("no transcript has identifier \(id)")
+        }
+        transcripts[id] = Transcript(header: transcript.header.withDuration(duration),
+                                     run: transcript.run,
+                                     sourceBookmark: transcript.sourceBookmark,
+                                     summary: transcript.summary, segments: transcript.segments)
+    }
+
     func setSummary(_ summary: String?, for id: Int64) throws {
         guard let transcript = transcripts[id] else {
             throw MacomprendoError.transcriptStore("no transcript has identifier \(id)")
