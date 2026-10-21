@@ -51,6 +51,20 @@ import Testing
         #expect(feed.startOffset == nil)
     }
 
+    @Test func consumeAfterFinishDoesNoWork() async throws {
+        let feed = LiveTrackFeed(sessionStart: Self.sessionStart)
+        feed.finish()
+
+        feed.consume(Self.capture(seconds: 1), at: Self.sessionStart)
+
+        // No timeline work either: a dead feed must not place audio on the session clock.
+        #expect(feed.startOffset == nil)
+        #expect(feed.isFinished)
+        var chunks: [[Float]] = []
+        for try await chunk in feed.audio.chunks { chunks.append(chunk) }
+        #expect(chunks.isEmpty)
+    }
+
     @Test func finishEndsTheStreamAndLaterAudioIsDropped() async throws {
         let feed = LiveTrackFeed(sessionStart: Self.sessionStart)
         feed.consume(Self.capture(seconds: 1), at: Self.sessionStart)

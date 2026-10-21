@@ -254,7 +254,10 @@ final class CallRecordingController: ObservableObject {
             transcriptsChanged()
         } catch {
             // No row, no live text: the call is still recorded and transcribed after Stop.
-            Log.app.error("Live call transcription could not create its transcript")
+            Log.app.error("""
+                Live call transcription could not create its transcript \
+                (\(String(describing: type(of: error)), privacy: .public))
+                """)
             meFeed.finish()
             othersFeed.finish()
             mode = .afterRecording

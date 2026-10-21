@@ -28,6 +28,9 @@ final class LiveCallTranscriber {
     func start(_ feed: LiveTrackFeed, speaker: TranscriptSpeaker) {
         let pipeline = pipeline()
         let task = Task { [store, transcriptID, settings, glossary, transcriptsChanged] in
+            // This run is the feed's only consumer: whether it stops, fails or is cancelled, the
+            // capture must stop buffering audio for it.
+            defer { feed.finish() }
             do {
                 for try await event in pipeline.run(feed.audio,
                                                     joinGap: SpeechSpanAssembler.callJoinGap) {
@@ -44,7 +47,10 @@ final class LiveCallTranscriber {
             } catch is CancellationError {
             } catch MacomprendoError.cancelled {
             } catch {
-                Log.app.error("Live transcription of a call track stopped; Stop catches it up")
+                Log.app.error("""
+                    Live transcription of a call track stopped for \(speaker.rawValue, privacy: .public) \
+                    (\(String(describing: type(of: error)), privacy: .public)); Stop catches the track up
+                    """)
             }
         }
         runs.append((pipeline, task))

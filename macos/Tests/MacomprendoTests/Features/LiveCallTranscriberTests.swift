@@ -83,6 +83,28 @@ import Testing
         #expect(await store.snapshot(id)?.segments.map(\.speaker) == [.others])
     }
 
+    @Test func aFailedTrackFinishesItsOwnFeed() async throws {
+        let store = FakeTranscriptStore()
+        let id = try await makeRow(store)
+        let failing = FakeTranscriptionProvider()
+        failing.result = .failure(MacomprendoError.transcriptStore("boom"))
+        let live = LiveCallTranscriber(
+            transcriptID: id, store: store, pipeline: pipelines([failing]),
+            settings: .default, glossary: Glossary(), transcriptsChanged: {})
+        let me = LiveTrackFeed(sessionStart: Self.sessionStart)
+        live.start(me, speaker: .me)
+        me.consume(Self.oneSecond, at: Self.sessionStart)
+
+        // Nobody else calls `finish()`: the run that owned the feed must, or the capture handler
+        // keeps buffering audio no one reads for the rest of the call. The provider's failure is
+        // retried twice with a one-second delay first.
+        await waitFor("the failed run to finish its feed", timeout: .seconds(5)) { me.isFinished }
+        let offset = try #require(me.startOffset)
+        me.consume(Self.oneSecond, at: Self.sessionStart + 1)
+        #expect(me.startOffset == offset)
+        await live.stop()
+    }
+
     @Test func stopReturnsWithTheFeedsStillOpenAndNothingIsAppendedAfter() async throws {
         let store = FakeTranscriptStore()
         let id = try await makeRow(store)
