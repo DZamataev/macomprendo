@@ -15,30 +15,21 @@ struct CallTranscriptionStep: Equatable, Sendable {
 
 /// What a `Resume` of a call transcript still has to transcribe.
 enum CallTranscriptionPlan {
-    /// The tracks in order Me, Others; a track with no `startOffset` never produced audio and
-    /// is skipped. The last track with stored segments resumes from the end of its last
-    /// segment (track-local, so the file's own offset comes back off); any track after it runs
-    /// from 0, and the tracks before it are done — Me having no segments there simply means it
-    /// was heard to hold no speech.
+    /// The tracks in order Me, Others; a track with no `startOffset` never produced audio and is
+    /// skipped. Each track resumes from the end of its own last stored segment (track-local, so the
+    /// file's own offset comes back off), or from 0 without one — live transcription stores both
+    /// tracks at once, so no track is done because another has segments (ADR-0020).
     static func steps(manifest: CallRecordingManifest,
                       stored: [TranscriptSegment]) -> [CallTranscriptionStep] {
-        let tracks = [TranscriptSpeaker.me, .others].compactMap { speaker in
-            manifest.track(speaker).flatMap { track in
-                track.startOffset.map { (speaker, track.file, $0) }
+        [TranscriptSpeaker.me, .others].compactMap { speaker in
+            guard let track = manifest.track(speaker), let offset = track.startOffset else {
+                return nil
             }
-        }
-        let resuming = tracks.lastIndex { speaker, _, _ in
-            stored.contains { $0.speaker == speaker }
-        }
-        return tracks.enumerated().compactMap { index, track in
-            let (speaker, file, offset) = track
-            if let resuming, index < resuming { return nil }
+            let lastEnd = stored.filter { $0.speaker == speaker }.map(\.end).max()
             // A stored end before the track's own offset would ask for a negative start; it
             // cannot mean anything but "from the beginning".
-            let from: TimeInterval = index == resuming
-                ? max(0, (stored.last { $0.speaker == speaker }?.end ?? 0) - offset)
-                : 0
-            return CallTranscriptionStep(speaker: speaker, file: file, offset: offset, from: from)
+            return CallTranscriptionStep(speaker: speaker, file: track.file, offset: offset,
+                                         from: max(0, (lastEnd ?? offset) - offset))
         }
     }
 }

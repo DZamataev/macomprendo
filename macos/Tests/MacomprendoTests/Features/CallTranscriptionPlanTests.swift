@@ -44,12 +44,23 @@ import Testing
                           Self.step(.others, offset: 0.5, from: 0)])
     }
 
-    @Test func tracksBeforeTheLastStoredOneAreDone() {
-        // Others having segments means Me was transcribed — with no speech. Me is not redone.
+    @Test func aTrackWithoutSegmentsRunsFromZeroEvenBeforeAStoredOne() {
+        // Live transcription stores both sides at once: Others having segments says nothing about Me.
         let steps = CallTranscriptionPlan.steps(
             manifest: Self.manifest(me: 0.2, others: 0.5),
             stored: [Self.segment(end: 50.0, speaker: .others)])
-        #expect(steps == [Self.step(.others, offset: 0.5, from: 49.5)])
+        #expect(steps == [Self.step(.me, offset: 0.2, from: 0),
+                          Self.step(.others, offset: 0.5, from: 49.5)])
+    }
+
+    @Test func bothTracksWithSegmentsResumeEachFromItsOwnEnd() {
+        let steps = CallTranscriptionPlan.steps(
+            manifest: Self.manifest(me: 0.2, others: 0.5),
+            stored: [Self.segment(end: 30.0, speaker: .me),
+                     Self.segment(end: 41.0, speaker: .others),
+                     Self.segment(end: 45.0, speaker: .me)])
+        #expect(steps == [Self.step(.me, offset: 0.2, from: 44.8),
+                          Self.step(.others, offset: 0.5, from: 40.5)])
     }
 
     @Test func aTrackWithoutAnOffsetIsSkipped() {
