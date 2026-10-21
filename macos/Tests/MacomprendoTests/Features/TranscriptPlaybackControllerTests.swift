@@ -51,15 +51,14 @@ struct TranscriptPlaybackControllerTests {
 
     // MARK: - Resolving the source
 
-    @Test func aCallStillRecordingIsUnavailableUntilItStops() async throws {
+    @Test func aCallStillRecordingWaitsForStopBeforeLoading() async throws {
         let folder = try callFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let (controller, player) = make()
         let call = transcript(kind: .call, bookmarkPath: folder.path)
 
         await controller.open(call, recording: true)
-        #expect(controller.state == .unavailable(
-            reason: TranscriptPlaybackController.stillRecordingReason, recovery: nil))
+        #expect(controller.state == .recording)
         #expect(player.loaded.isEmpty)
         #expect(controller.transcriptID == 1)
 
@@ -82,8 +81,7 @@ struct TranscriptPlaybackControllerTests {
         await controller.open(call, recording: true)
 
         #expect(player.unloadCount > unloadsBefore)
-        #expect(controller.state == .unavailable(
-            reason: TranscriptPlaybackController.stillRecordingReason, recovery: nil))
+        #expect(controller.state == .recording)
     }
 
     @Test func aFileTranscriptLoadsItsSourceFile() async {

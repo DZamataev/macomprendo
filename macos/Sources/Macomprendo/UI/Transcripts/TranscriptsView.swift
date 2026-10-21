@@ -487,7 +487,7 @@ struct TranscriptsView: View {
     /// mid-playback failure shows its strip under the bar until the next **Play**.
     @ViewBuilder private func playbackFooter(_ transcript: Transcript) -> some View {
         switch playback.state {
-        case .loading, .ready:
+        case .loading, .ready, .recording:
             Divider()
             TranscriptPlayerBar(playback: playback, transcript: transcript)
             if let failure = playback.failure {

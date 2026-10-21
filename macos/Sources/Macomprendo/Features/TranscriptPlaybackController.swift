@@ -19,6 +19,9 @@ final class TranscriptPlaybackController: ObservableObject {
         case idle
         case loading
         case unavailable(reason: String, recovery: Recovery?)
+        /// A call still being recorded: its tracks are growing, and a player loaded now would
+        /// stop at the length they had when it loaded. The bar shows, disabled, until Stop.
+        case recording
         case ready(position: TimeInterval, duration: TimeInterval, isPlaying: Bool)
     }
 
@@ -63,10 +66,6 @@ final class TranscriptPlaybackController: ObservableObject {
         player.onFailed = { [weak self] error in self?.failed(with: error) }
     }
 
-    /// Why a call cannot play while it is still being recorded: its track files are growing,
-    /// and a player loaded now would stop at the length they had when it loaded.
-    static let stillRecordingReason = "the call is still being recorded; it plays after Stop"
-
     /// Opens `transcript`, or clears everything with `nil`. A transcript that is already open
     /// (the same id, loaded or loading) only has its timeline refreshed — a running job appends
     /// segments and the view re-opens the transcript as they land; anything else is a fresh
@@ -82,7 +81,7 @@ final class TranscriptPlaybackController: ObservableObject {
             self.transcript = transcript
             timeline = PlaybackTimeline(segments: transcript.segments)
             transcriptID = transcript.id
-            state = .unavailable(reason: Self.stillRecordingReason, recovery: nil)
+            state = .recording
             return
         }
         if transcript.id == transcriptID, isOpenOrLoading {
@@ -303,7 +302,7 @@ final class TranscriptPlaybackController: ObservableObject {
     private var isOpenOrLoading: Bool {
         switch state {
         case .ready, .loading: true
-        case .idle, .unavailable: false
+        case .idle, .unavailable, .recording: false
         }
     }
 

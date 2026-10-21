@@ -1150,8 +1150,8 @@ responsive.
       `Others:` rows in the order they were spoken.
 - [ ] **It follows the bottom.** Scroll to the end of the live rows: each new row scrolls into view.
       Scroll up a little: new rows land without moving the list. Scroll back down: it follows again.
-- [ ] **Playback waits for Stop.** While recording, the strip under the rows reads *Audio
-      unavailable — the call is still being recorded; it plays after Stop*, with no player bar.
+- [ ] **Playback waits for Stop.** While recording, the player bar under the rows is shown
+      greyed out and none of its controls respond.
 - [ ] **Dictation still answers.** During the call, dictate into another app: it returns without a
       noticeable delay, and the live rows keep landing.
 - [ ] **Stop finishes it.** Press **Stop Recording**: the progress row reads `Transcribing Me — …`,

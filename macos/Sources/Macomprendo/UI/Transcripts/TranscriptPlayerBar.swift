@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// The bar is a thin rendering of `TranscriptPlaybackController`: it holds only the position of
 /// an in-progress drag, so the slider follows the pointer while the player seeks once, on
-/// release. Shown while `state` is `.loading` (controls disabled) or `.ready`.
+/// release. Shown while `state` is `.loading` or `.recording` (controls disabled) or `.ready`.
 struct TranscriptPlayerBar: View {
     @ObservedObject var playback: TranscriptPlaybackController
     let transcript: Transcript
