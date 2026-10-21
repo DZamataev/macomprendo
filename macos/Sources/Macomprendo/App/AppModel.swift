@@ -115,12 +115,7 @@ final class AppModel: ObservableObject {
         store: env.transcriptStore,
         bookmarks: env.fileBookmarks,
         folders: env.callRecordingFolders,
-        pipeline: { [unowned self] in
-            LongAudioPipeline(decoder: env.mediaDecoder,
-                              segmenter: env.speechSegmenter,
-                              transcriber: self.backgroundTranscriberProvider,
-                              language: self.settings.transcriptionLanguage)
-        },
+        pipeline: { [unowned self] in self.longAudioPipeline() },
         settings: { [unowned self] in self.settings },
         glossary: { [unowned self] in self.glossary },
         readiness: { [unowned self] in self.dictationTabModel.readiness },
@@ -154,6 +149,13 @@ final class AppModel: ObservableObject {
         store: env.transcriptStore,
         bookmarks: env.fileBookmarks,
         settings: { [unowned self] in self.settings },
+        liveTranscriber: { [unowned self] id in
+            LiveCallTranscriber(
+                transcriptID: id, store: env.transcriptStore,
+                pipeline: { [unowned self] in self.longAudioPipeline() },
+                settings: self.settings, glossary: self.glossary,
+                transcriptsChanged: { [weak self] in Task { await self?.transcriptLibrary.reload() } })
+        },
         transcribe: { [unowned self] id in self.fileTranscription.resume(transcriptID: id) },
         transcriptsChanged: { [weak self] in
             Task { await self?.transcriptLibrary.reload() }
@@ -621,6 +623,14 @@ final class AppModel: ObservableObject {
             source: settings.transcriptionSource,
             whisper: WhisperOptions(threads: settings.whisperThreads,
                                     translate: settings.whisperTranslate))
+    }
+
+    /// One pipeline per run: each value carries its own completion box, so two live tracks must
+    /// never share one.
+    private func longAudioPipeline() -> LongAudioPipeline {
+        LongAudioPipeline(decoder: env.mediaDecoder, segmenter: env.speechSegmenter,
+                          transcriber: backgroundTranscriberProvider,
+                          language: settings.transcriptionLanguage)
     }
 
     private func persist() {

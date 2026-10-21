@@ -153,7 +153,7 @@ final class TranscriptLibraryController: ObservableObject {
     }
 
     /// A transcript a job is still writing cannot be deleted: its source would go to the Trash
-    /// under the running job. (A call has no row at all until its recording stops.)
+    /// under the running job. (A call recorded live has its row, in progress, from Start.)
     nonisolated static func canDelete(_ header: TranscriptHeader) -> Bool {
         header.status != .inProgress
     }

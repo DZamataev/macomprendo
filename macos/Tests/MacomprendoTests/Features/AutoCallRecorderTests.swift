@@ -32,6 +32,16 @@ private let autoCallZoom = CallApp(name: "Zoom", bundleIDPrefix: "us.zoom.xos", 
                 bookmarks: FakeFileBookmarks(),
                 settings: { settings.value },
                 tick: .milliseconds(1),
+                liveTranscriber: { id in
+                    LiveCallTranscriber(transcriptID: id, store: FakeTranscriptStore(),
+                                        pipeline: { LongAudioPipeline(
+                                            decoder: ScriptedMediaDecoder(),
+                                            segmenter: ScriptedSegmenter(),
+                                            transcriber: { FakeTranscriptionProvider() },
+                                            language: nil) },
+                                        settings: .default, glossary: Glossary(),
+                                        transcriptsChanged: {})
+                },
                 transcribe: { _ in })
             recorder = AutoCallRecorder(
                 monitor: monitor,

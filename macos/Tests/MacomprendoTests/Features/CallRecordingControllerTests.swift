@@ -177,6 +177,22 @@ private func tempDirectory() throws -> URL {
                 return GatedFinishWriter(product, gate: finishGate)
             }
 
+            let liveSegment = SpeechSegment(start: 0,
+                                            samples: [Float](repeating: 0.1,
+                                                             count: AVAssetMediaDecoder.sampleRate),
+                                            sampleRate: AVAssetMediaDecoder.sampleRate)
+            let live: @MainActor (Int64) -> LiveCallTranscriber = { id in
+                LiveCallTranscriber(
+                    transcriptID: id, store: storeCreateFailure,
+                    pipeline: {
+                        LongAudioPipeline(decoder: ScriptedMediaDecoder(),
+                                          segmenter: ScriptedSegmenter(acceptScript: [[liveSegment]]),
+                                          transcriber: { FakeTranscriptionProvider() }, language: nil)
+                    },
+                    settings: settings.value, glossary: Glossary(),
+                    transcriptsChanged: { changes.value += 1 })
+            }
+
             controller = CallRecordingController(
                 microphone: microphone,
                 systemAudio: systemAudio,
@@ -189,6 +205,7 @@ private func tempDirectory() throws -> URL {
                 clock: { clockValue.value },
                 now: { nowValue.value },
                 tick: tick,
+                liveTranscriber: live,
                 transcribe: { id in transcribes.value.append(id) },
                 transcriptsChanged: { changes.value += 1 })
 
@@ -661,6 +678,87 @@ private func tempDirectory() throws -> URL {
         await rig.controller.stop()
 
         #expect(rig.controller.elapsed == 0)
+    }
+
+    // MARK: - Live transcription
+
+    /// The row exists before the recording does: `inProgress`, no duration yet, and every
+    /// segment the capture yields lands in it.
+    @Test func whileRecordingCreatesTheRowAtStartAndFillsItFromTheCapture() async throws {
+        let rig = try Rig()
+        rig.settings.value.callTranscription = .whileRecording
+        await startRecording(rig)
+
+        let row = await rig.store.snapshot(1)
+        #expect(row?.header.sourceKind == .call)
+        #expect(row?.header.status == .inProgress)
+        #expect(row?.header.duration == nil)
+        #expect(row?.sourceBookmark == Data(rig.folder.path.utf8))
+        #expect(rig.controller.liveTranscriptID == 1)
+
+        rig.microphone.emit(CallAudioChunk(
+            samples: [Float](repeating: 0.5, count: Int(AssetCallTrackWriter.sampleRate)),
+            time: CallTestTime.sessionStart + 0.25))
+        // One change for the row at Start, one for the segment.
+        await waitFor("the live Me segment to be stored") { rig.changes.value == 2 }
+        let segment = try #require(await rig.store.snapshot(1)?.segments.first)
+        #expect(segment.speaker == .me)
+        #expect(segment.start == 0.25)
+        await rig.controller.stop()
+    }
+
+    @Test func whileRecordingStopSetsTheDurationAndCatchesUpTheSameRow() async throws {
+        let rig = try Rig()
+        rig.settings.value.callTranscription = .whileRecording
+        await startRecording(rig)
+        rig.nowValue.value = rig.nowValue.value.addingTimeInterval(5)
+
+        await rig.controller.stop()
+
+        #expect(rig.transcribes.value == [1])
+        #expect(await rig.store.snapshot(1)?.header.duration == 5)
+        #expect(await rig.store.snapshot(2) == nil)
+        #expect(try CallRecordingManifest.read(from: rig.folder).status == .finished)
+        #expect(rig.controller.liveTranscriptID == nil)
+        #expect(rig.controller.state == .idle)
+    }
+
+    @Test func whileRecordingQuitLeavesTheRowIncompleteWithoutCatchUp() async throws {
+        let rig = try Rig()
+        rig.settings.value.callTranscription = .whileRecording
+        await startRecording(rig)
+
+        await rig.controller.shutdown()
+
+        let row = await rig.store.snapshot(1)
+        #expect(row?.header.status == .incomplete)
+        #expect(row?.header.statusReason == TranscriptLibraryController.abandonedJobReason)
+        #expect(rig.transcribes.value.isEmpty)
+    }
+
+    @Test func whileRecordingWithoutARowAtStartRecordsAndTranscribesAfterStop() async throws {
+        let rig = try Rig(createFailure: .transcriptStore("full"))
+        rig.settings.value.callTranscription = .whileRecording
+        await startRecording(rig)
+        #expect(rig.controller.liveTranscriptID == nil)
+
+        await rig.controller.stop()
+
+        #expect(rig.transcribes.value.count == 1)
+        #expect(rig.controller.state == .idle)
+    }
+
+    @Test func theModeIsReadAtStart() async throws {
+        let rig = try Rig()
+        rig.settings.value.callTranscription = .manual
+        await startRecording(rig)
+        rig.settings.value.callTranscription = .afterRecording
+
+        await rig.controller.stop()
+
+        #expect(rig.transcribes.value.isEmpty)
+        #expect(await rig.store.snapshot(1)?.header.statusReason
+                == CallRecordingController.notTranscribedYetReason)
     }
 
     // MARK: - Hotkey handling

@@ -10,12 +10,13 @@ struct CallLevels: Equatable, Sendable {
 /// two track writers through one session clock, the `recording.json` a later launch recovers
 /// from, and the transcript row the transcription job takes over.
 ///
-/// Capture handlers run on an audio thread and do exactly two things — store a level in a
-/// lock-guarded box and enqueue the samples in the writer's own queue. Everything else happens
-/// on the main actor: a ticker copies the box into `levels` and `elapsed`, and one in-flight
-/// task runs the start and stop flows. `CallAudioCapturing.start(_:)`'s rule that the handler
-/// must never call back into the capture holds by construction: the handler captures nothing
-/// but the writer and the box, never this controller.
+/// Capture handlers run on an audio thread and do exactly three things — store a level in a
+/// lock-guarded box, enqueue the samples in the writer's own queue and, while recording live, in
+/// the track's feed. Everything else happens on the main actor: a ticker copies the box into
+/// `levels` and `elapsed`, and one in-flight task runs the start and stop flows.
+/// `CallAudioCapturing.start(_:)`'s rule that the handler must never call back into the capture
+/// holds by construction: the handler captures nothing but the writer, the feed and the box,
+/// never this controller.
 @MainActor
 final class CallRecordingController: ObservableObject {
     enum State: Equatable {
@@ -53,6 +54,7 @@ final class CallRecordingController: ObservableObject {
     private let clock: @Sendable () -> TimeInterval
     private let now: () -> Date
     private let tick: Duration
+    private let makeLiveTranscriber: @MainActor (Int64) -> LiveCallTranscriber
     private let transcribe: @MainActor (Int64) -> Void
     private let transcriptsChanged: @MainActor () -> Void
 
@@ -62,6 +64,13 @@ final class CallRecordingController: ObservableObject {
     private var manifest: CallRecordingManifest?
     private var meWriter: (any CallTrackWriting)?
     private var othersWriter: (any CallTrackWriting)?
+    /// The transcript row being filled live; `nil` unless this recording runs `whileRecording`.
+    @Published private(set) var liveTranscriptID: Int64?
+    /// Read once at Start: a change during the recording is for the next one.
+    private var mode: CallTranscriptionMode = .afterRecording
+    private var meFeed: LiveTrackFeed?
+    private var othersFeed: LiveTrackFeed?
+    private var live: LiveCallTranscriber?
     private var startedAt: Date?
     /// The running session's levels; replaced at every start so a chunk from a stopped capture
     /// cannot reach the next recording's meter.
@@ -86,6 +95,7 @@ final class CallRecordingController: ObservableObject {
          clock: @escaping @Sendable () -> TimeInterval = HostClock.now,
          now: @escaping () -> Date = Date.init,
          tick: Duration = .milliseconds(100),
+         liveTranscriber: @escaping @MainActor (Int64) -> LiveCallTranscriber,
          transcribe: @escaping @MainActor (Int64) -> Void,
          transcriptsChanged: @escaping @MainActor () -> Void = {}) {
         self.microphone = microphone
@@ -99,6 +109,7 @@ final class CallRecordingController: ObservableObject {
         self.clock = clock
         self.now = now
         self.tick = tick
+        self.makeLiveTranscriber = liveTranscriber
         self.transcribe = transcribe
         self.transcriptsChanged = transcriptsChanged
     }
@@ -182,6 +193,11 @@ final class CallRecordingController: ObservableObject {
         }
 
         let sessionStart = clock()
+        mode = settings().callTranscription
+        if mode == .whileRecording {
+            meFeed = LiveTrackFeed(sessionStart: sessionStart)
+            othersFeed = LiveTrackFeed(sessionStart: sessionStart)
+        }
         let box = CallLevelBox()
         do {
             let manifest = CallRecordingManifest(startedAt: startedAt,
@@ -197,13 +213,17 @@ final class CallRecordingController: ObservableObject {
                                               failureHandler())
             self.othersWriter = othersWriter
             levelBox = box
-            try microphone.start(handler(writer: meWriter, speaker: .me, box: box))
-            try systemAudio.start(handler(writer: othersWriter, speaker: .others, box: box))
+            try microphone.start(handler(writer: meWriter, feed: meFeed, speaker: .me, box: box))
+            try systemAudio.start(handler(writer: othersWriter, feed: othersFeed,
+                                          speaker: .others, box: box))
         } catch {
             await abortStart(error, folder: folder)
             return
         }
 
+        if mode == .whileRecording {
+            await startLive(folder: folder, startedAt: startedAt)
+        }
         self.folder = folder
         self.startedAt = startedAt
         state = .recording(startedAt: startedAt)
@@ -213,11 +233,43 @@ final class CallRecordingController: ObservableObject {
         }
     }
 
+    /// The row and the two live runs, made while still `.starting` so a stop arriving now waits
+    /// as `pendingStop` and never runs alongside them.
+    private func startLive(folder: URL, startedAt: Date) async {
+        guard let meFeed, let othersFeed else { return }
+        do {
+            let id = try await store.create(
+                sourceKind: .call,
+                title: CallRecordingLayout.transcriptTitle(startedAt: startedAt),
+                sourceBookmark: try? bookmarks.bookmark(for: folder),
+                duration: nil,
+                run: TranscriptionRun.from(settings().transcriptionSource,
+                                           language: settings().transcriptionLanguage),
+                at: now())
+            let live = makeLiveTranscriber(id)
+            live.start(meFeed, speaker: .me)
+            live.start(othersFeed, speaker: .others)
+            self.live = live
+            liveTranscriptID = id
+            transcriptsChanged()
+        } catch {
+            // No row, no live text: the call is still recorded and transcribed after Stop.
+            Log.app.error("Live call transcription could not create its transcript")
+            meFeed.finish()
+            othersFeed.finish()
+            mode = .afterRecording
+        }
+    }
+
     /// A start that fails after the folder exists: close the writers, take the folder away
     /// again, and report. Nothing has been recorded, so no transcript is created.
     private func abortStart(_ error: Error, folder: URL) async {
         microphone.stop()
         systemAudio.stop()
+        // Nothing consumes a feed yet, and its stream has no `onTermination`: finish both or
+        // the buffers the capture would still push into stay alive for the process.
+        meFeed?.finish()
+        othersFeed?.finish()
         try? await meWriter?.finish()
         try? await othersWriter?.finish()
         folders.remove(folder)
@@ -262,6 +314,11 @@ final class CallRecordingController: ObservableObject {
         elapsed = duration
         microphone.stop()
         systemAudio.stop()
+        // Finish the feeds before stopping the runs, and stop the runs before the writers: the
+        // live segment in flight is abandoned, and catch-up re-reads that audio from the files.
+        meFeed?.finish()
+        othersFeed?.finish()
+        await live?.stop()
         do { try await meWriter.finish() } catch { remember(error) }
         do { try await othersWriter.finish() } catch { remember(error) }
 
@@ -278,20 +335,26 @@ final class CallRecordingController: ObservableObject {
         // `create` that fails, or a crash in this window, would leave the folder finished with no
         // transcript pointing at it, and nothing ever sweeps for those.
         let id: Int64
-        do {
-            id = try await store.create(
-                sourceKind: .call,
-                title: CallRecordingLayout.transcriptTitle(startedAt: startedAt),
-                sourceBookmark: try? bookmarks.bookmark(for: folder),
-                duration: duration,
-                run: TranscriptionRun.from(settings().transcriptionSource,
-                                           language: settings().transcriptionLanguage),
-                at: now())
-        } catch {
-            // The manifest is still `recording` on disk, so launch recovery picks the recording
-            // up: the row is what is missing, not the audio.
-            endStop(error)
-            return
+        if let liveID = liveTranscriptID {
+            // The row has been there since Start: only its duration is still missing.
+            id = liveID
+            do { try await store.setDuration(duration, for: id) } catch { remember(error) }
+        } else {
+            do {
+                id = try await store.create(
+                    sourceKind: .call,
+                    title: CallRecordingLayout.transcriptTitle(startedAt: startedAt),
+                    sourceBookmark: try? bookmarks.bookmark(for: folder),
+                    duration: duration,
+                    run: TranscriptionRun.from(settings().transcriptionSource,
+                                               language: settings().transcriptionLanguage),
+                    at: now())
+            } catch {
+                // The manifest is still `recording` on disk, so launch recovery picks the recording
+                // up: the row is what is missing, not the audio.
+                endStop(error)
+                return
+            }
         }
 
         manifest.status = .finished
@@ -315,7 +378,7 @@ final class CallRecordingController: ObservableObject {
                 // The row is there; the next launch's abandoned-job pass repairs its status.
                 remember(error)
             }
-        } else if settings().callTranscription != .manual {
+        } else if mode != .manual {
             transcribe(id)
         } else {
             do {
@@ -364,6 +427,11 @@ final class CallRecordingController: ObservableObject {
         levelBox = CallLevelBox()
         meWriter = nil
         othersWriter = nil
+        meFeed = nil
+        othersFeed = nil
+        live = nil
+        liveTranscriptID = nil
+        mode = .afterRecording
         folder = nil
         manifest = nil
         startedAt = nil
@@ -373,13 +441,15 @@ final class CallRecordingController: ObservableObject {
 
     // MARK: - Capture plumbing
 
-    /// The closure the capture delivers on. Audio thread: the box and the writer's own queue
-    /// only — it never touches this controller, which the capture's lock forbids.
-    private func handler(writer: any CallTrackWriting, speaker: TranscriptSpeaker,
+    /// The closure the capture delivers on. Audio thread: the box, the writer's own queue and the
+    /// live feed's queue only — it never touches this controller, which the capture's lock forbids.
+    private func handler(writer: any CallTrackWriting, feed: LiveTrackFeed?,
+                         speaker: TranscriptSpeaker,
                          box: CallLevelBox) -> @Sendable (CallAudioChunk) -> Void {
         { chunk in
             box.store(AudioMath.level(fromRMS: AudioMath.rms(chunk.samples)), for: speaker)
             writer.consume(chunk.samples, at: chunk.time)
+            feed?.consume(chunk.samples, at: chunk.time)
         }
     }
 
