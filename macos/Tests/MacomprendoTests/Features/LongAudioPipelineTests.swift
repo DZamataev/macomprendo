@@ -102,6 +102,30 @@ import Testing
 
     // MARK: - Tests
 
+    @Test func anAlreadyOpenStreamRunsLikeAFileWithoutTheDecoder() async throws {
+        let decoder = ScriptedMediaDecoder()
+        let segmenter = ScriptedSegmenter(acceptScript: [[Self.segment(at: 0)], [Self.segment(at: 1)]])
+        let provider = FakeTranscriptionProvider()
+        let chunks = AsyncThrowingStream<[Float], Error> { continuation in
+            continuation.yield(Self.second())
+            continuation.yield(Self.second())
+            continuation.finish()
+        }
+
+        let events = try await collect(
+            make(decoder: decoder, segmenter: segmenter, transcriber: { provider })
+                .run(DecodedAudio(duration: 0, startOffset: 0, chunks: chunks)))
+
+        #expect(events == [
+            .opened(duration: 0),
+            .segment(start: 0, end: 1, text: "hello"),
+            .position(1),
+            .segment(start: 1, end: 2, text: "hello"),
+            .position(2),
+        ])
+        #expect(decoder.requests.isEmpty)
+    }
+
     @Test func emitsOpenedSegmentsAndPositionsInOrder() async throws {
         let decoder = ScriptedMediaDecoder(duration: 10, chunks: [Self.second(), Self.second()])
         let segmenter = ScriptedSegmenter(acceptScript: [[Self.segment(at: 0)], [Self.segment(at: 1)]])

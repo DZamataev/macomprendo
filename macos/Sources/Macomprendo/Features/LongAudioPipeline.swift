@@ -72,10 +72,23 @@ struct LongAudioPipeline: Sendable {
     func run(_ url: URL, from start: TimeInterval,
              joinGap: TimeInterval = SpeechSpanAssembler.joinGap)
         -> AsyncThrowingStream<LongAudioEvent, Error> {
+        run(opening: { [decoder] in try await decoder.open(url, from: start) }, joinGap: joinGap)
+    }
+
+    /// The same run over audio that is already open — a call track's live feed (ADR-0020).
+    func run(_ audio: DecodedAudio,
+             joinGap: TimeInterval = SpeechSpanAssembler.joinGap)
+        -> AsyncThrowingStream<LongAudioEvent, Error> {
+        run(opening: { audio }, joinGap: joinGap)
+    }
+
+    private func run(opening open: @escaping @Sendable () async throws -> DecodedAudio,
+                     joinGap: TimeInterval)
+        -> AsyncThrowingStream<LongAudioEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let decoded = try await decoder.open(url, from: start)
+                    let decoded = try await open()
                     continuation.yield(.opened(duration: decoded.duration))
                     // Sessions are not Sendable and keep state between chunks, so the session is
                     // built here, inside the one task that drives the stream.
