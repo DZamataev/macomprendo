@@ -9,6 +9,8 @@ import SwiftUI
 /// this subtree only — never the rows around it.
 struct CallRecordingPanelSection: View {
     @ObservedObject var controller: CallRecordingController
+    /// Opens the live row's transcript; the panel knows nothing about windows.
+    var showLiveTranscript: (Int64) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -76,6 +78,20 @@ struct CallRecordingPanelSection: View {
 
             meterRow("Me", level: controller.levels.me)
             meterRow("Others", level: controller.levels.others)
+
+            // Last, so a button that appears never moves a row under the pointer (spec §6).
+            if let id = controller.liveTranscriptID {
+                Button {
+                    showLiveTranscript(id)
+                } label: {
+                    HStack(spacing: 6) {
+                        Icon(.folder, size: 14)
+                        Text("Show Live Transcript")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
         }
     }
 

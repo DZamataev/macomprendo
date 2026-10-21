@@ -34,7 +34,8 @@ struct MenuPanelView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 10)
 
-            CallRecordingPanelSection(controller: model.callRecording)
+            CallRecordingPanelSection(controller: model.callRecording,
+                                      showLiveTranscript: showLiveTranscript)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)
 
@@ -217,6 +218,15 @@ struct MenuPanelView: View {
 
     private func openTranscripts() {
         routeAfterClosing { openWindow(id: WindowID.transcripts) }
+    }
+
+    /// The window's `.task` reloads and re-reads the open transcript but never clears it, so
+    /// selecting after opening stands.
+    private func showLiveTranscript(_ id: Int64) {
+        routeAfterClosing {
+            openWindow(id: WindowID.transcripts)
+            Task { await model.transcriptLibrary.select(id) }
+        }
     }
 
     private func openHistoryWindow() {

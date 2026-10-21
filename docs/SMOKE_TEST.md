@@ -1134,6 +1134,31 @@ path. Off by default.
       Macomprendo from the panel: the running recording is finalised as usual and nothing new
       starts on the way out.
 
+## Live call transcription
+
+Settings ▸ General ▸ **Transcribe calls**: **While recording**; a local model selected. The
+live pass runs both tracks' pipelines on the background priority, so the panel and dictation stay
+responsive.
+
+- [ ] **The panel offers the live transcript.** Start a call that plays through the speakers (a
+      video call, or a podcast plus speaking) and press **Record Call**: the panel shows **Show
+      Live Transcript** under the two level rows. Nothing moves when it appears — Stop and both
+      rows stay where they were.
+- [ ] **It opens the live row.** Press **Show Live Transcript**: the panel closes, Transcripts
+      opens with `Call <date>` selected, and its badge reads *In progress*. Speak a phrase and
+      pause: within a few seconds a `Me:` row appears, and the remote side's phrases arrive as
+      `Others:` rows in the order they were spoken.
+- [ ] **Dictation still answers.** During the call, dictate into another app: it returns without a
+      noticeable delay, and the live rows keep landing.
+- [ ] **Stop finishes it.** Press **Stop Recording**: the progress row reads `Transcribing Me — …`,
+      then the toast *Call transcript ready*; the transcript is *Complete*, shows its duration, and
+      holds no duplicated phrase at the moment of Stop.
+- [ ] **The other two modes stay quiet.** Repeat with **Manually** and **After recording**: no
+      **Show Live Transcript** button and no live rows while recording, and Stop behaves as before.
+- [ ] **Quit mid-call, then Resume.** Quit Macomprendo during a live recording: on relaunch the
+      call is *Incomplete*, and **Resume** finishes it without duplicating the rows the live pass
+      had already written.
+
 ## Transcript playback
 
 The bar under the segment list is `AVPlayer` glue plus SwiftUI, so none of it is reachable from a
