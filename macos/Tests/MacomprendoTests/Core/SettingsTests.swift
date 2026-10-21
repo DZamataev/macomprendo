@@ -650,6 +650,20 @@ import Testing
         #expect(try Settings.migrate(json).callTranscription == .whileRecording)
     }
 
+    @Test func anUnknownModeFallsBackWithoutLosingTheDocument() throws {
+        let unknown = Data(#"""
+            {"schemaVersion":2,"dictationMode":"toggle","callTranscription":"someFutureMode"}
+            """#.utf8)
+        let settings = try Settings.migrate(unknown)
+        #expect(settings.callTranscription == .afterRecording)
+        #expect(settings.dictationMode == .toggle)
+
+        let withOldSwitch = Data(#"""
+            {"schemaVersion":2,"transcribeCallsAfterRecording":false,"callTranscription":"someFutureMode"}
+            """#.utf8)
+        #expect(try Settings.migrate(withOldSwitch).callTranscription == .manual)
+    }
+
     @Test func theOldSwitchIsNotWrittenAgain() throws {
         let text = String(decoding: try JSONEncoder().encode(Settings.default), as: UTF8.self)
         #expect(!text.contains("transcribeCallsAfterRecording"))

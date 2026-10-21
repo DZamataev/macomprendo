@@ -269,6 +269,7 @@ struct MenuPanelView: View {
                     PanelPopUpButton(items: CallTranscriptionMode.allCases.map {
                                          .init(title: $0.title, value: $0) },
                                      selection: $model.settings.callTranscription)
+                        .help("When Manually, a stopped call waits in Transcripts until you press Resume.")
                         .accessibilityLabel("Transcribe calls")
                 }
                 .padding(.leading, PanelMetrics.textInset)

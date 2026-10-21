@@ -523,7 +523,10 @@ extension Settings {
             ?? d.glossaryRecommendedPacksOffered
         callRecordingsDirectory = try c.decodeIfPresent(String.self,
                                                         forKey: .callRecordingsDirectory)
-        callTranscription = try c.decodeIfPresent(CallTranscriptionMode.self, forKey: .callTranscription)
+        // Decoded as a raw String, not as the enum: an unknown value must fall back to the
+        // legacy switch or the default rather than throw away the whole document.
+        callTranscription = try CallTranscriptionMode(
+            rawValue: c.decodeIfPresent(String.self, forKey: .callTranscription) ?? "")
             ?? decoder.container(keyedBy: LegacyCodingKeys.self)
                 .decodeIfPresent(Bool.self, forKey: .transcribeCallsAfterRecording)
                 .map { $0 ? .afterRecording : .manual }
