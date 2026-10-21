@@ -42,6 +42,7 @@ final class LiveCallTranscriber {
                     transcriptsChanged()
                 }
             } catch is CancellationError {
+            } catch MacomprendoError.cancelled {
             } catch {
                 Log.app.error("Live transcription of a call track stopped; Stop catches it up")
             }
