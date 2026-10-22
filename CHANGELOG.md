@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-22
+
 ### Changed
 - **Insert “OK”** now fires on a middle click, not on a short dictation: with middle-click
   dictation in hold mode, a click released before recording starts inserts “OK” when a text
