@@ -83,14 +83,11 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
   panel's right edge; the translation caption names Refine & Summarize and its tooltip explains it.
 - [ ] Menubar panel ▸ Options: switch "Dictate" off, press the hotkey — nothing happens;
       switching it back on restores it.
-- [ ] **Very short dictation.** In Settings ▸ General, enable **Insert “OK” for a very short
-      dictation**, then press and release the Dictate hotkey in under half a second — `OK` is
-      inserted without waiting for speech recognition, and **no HUD appears at any point** —
-      not even a flash. Hold the key (and, separately, the middle mouse button in hold mode) for
-      about two seconds: the recording HUD appears roughly half a second after the press (about
-      1.1 s for the middle button, which starts recording only after 0.6 s), its timer already
-      past 0:00. Disable it and verify the same short recording follows the
-      normal transcription path, with the recording HUD appearing immediately.
+- [ ] **“OK” on a middle click.** In Settings ▸ General, enable **Insert “OK” on a middle
+      click in a text field**; in Hotkeys, set the middle button to Dictate in hold mode. Focus a
+      text field (TextEdit, a browser input) and click the middle button — `OK` is inserted, no
+      HUD appears and the microphone is never opened. Click with focus outside a text field —
+      nothing is inserted. A Dictate hotkey tap transcribes as usual and shows its HUD at once.
 - [ ] **Trailing space.** In Settings ▸ General, enable “Add a space after dictated text”,
       dictate `hello` into TextEdit, and verify the insertion is `hello ` (with one trailing
       space). In Dictate & Refine, insert the Original text and verify it also ends in one space;
@@ -151,9 +148,6 @@ only real hardware can produce that, so none of this is reachable from unit test
       has taken it, and Dictation History gains no new row.
 - [ ] **Unmute and dictate again** — the warning never appears, the transcript is inserted, and
       history records it as usual.
-- [ ] **A deliberate short tap is unaffected.** With Settings ▸ General ▸ "Insert “OK” for a
-      very short dictation" on and the microphone still muted, tap the hotkey for well under half
-      a second — `OK` is inserted and the HUD shows the success, not the silence error.
 - [ ] **Switching the input device mid-recording neither crashes nor loses the recording.**
       Start a dictation on one microphone (a silent one — e.g. a wireless headset whose dongle
       is plugged in but whose headset is off — reproduces the original crash), and while the

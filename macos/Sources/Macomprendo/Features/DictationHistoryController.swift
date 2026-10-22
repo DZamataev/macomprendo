@@ -100,9 +100,7 @@ final class DictationHistoryController: ObservableObject {
     func saveRecording(_ pcm: [Float], for entry: DictationHistoryEntry?) async -> MacomprendoError? {
         guard isEnabled(), shouldSaveRecording(), let encoder, let entry else { return nil }
         // An empty buffer is not a failure: a dictation too short to hold audio has nothing
-        // to save and lost nothing. (`DictationController`'s `shortDictationInsertsOK` path
-        // writes no row at all, so it stops at `entry` above and never reaches this.)
-        // The encoder rightly refuses it, so stop before asking: its refusal would otherwise
+        // to save and lost nothing. The encoder rightly refuses it, so stop before asking: its refusal would otherwise
         // reach the HUD as "Saving the recording failed", an error the user cannot act on.
         guard !pcm.isEmpty else { return nil }
         let filename = "\(entry.id).m4a"

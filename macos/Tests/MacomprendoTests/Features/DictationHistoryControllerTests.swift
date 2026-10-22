@@ -181,8 +181,8 @@ import Testing
                 || message.localizedCaseInsensitiveContains("could not be removed"))
     }
 
-    // Nothing to save is not a failure. A very short dictation — the `shortDictationInsertsOK`
-    // branch above all — stops the recorder with an empty buffer, and the encoder rightly
+    // Nothing to save is not a failure. A very short dictation stops the recorder with an
+    // empty buffer, and the encoder rightly
     // rejects that, but there is nothing to tell the user: no recording was lost.
     @Test func anEmptyRecordingIsSkippedSilentlyRatherThanReportedAsAFailure() async {
         let store = FakeDictationHistoryStore()

@@ -9,25 +9,44 @@ protocol SelectedTextReading: Sendable {
 protocol AXReading: Sendable {
     /// `kAXSelectedTextAttribute` of the system-wide focused element, or nil when unavailable.
     func focusedSelectedText() -> String?
+    /// Whether the system-wide focused element is a text input the user could type into.
+    func focusedElementAcceptsText() -> Bool
 }
 
 struct SystemAXReader: AXReading {
-    func focusedSelectedText() -> String? {
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString,
-                                            &focusedRef) == .success,
-              let focusedRef, CFGetTypeID(focusedRef) == AXUIElementGetTypeID()
-        else { return nil }
+    func focusedElementAcceptsText() -> Bool {
+        guard let element = focusedElement() else { return false }
+        var roleRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef) == .success,
+           let role = roleRef as? String,
+           [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role) {
+            return true
+        }
+        // Web contenteditables and custom editors report other roles but a settable value.
+        var settable = DarwinBoolean(false)
+        return AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success
+            && settable.boolValue
+    }
 
-        // Safe: the CFTypeID check above proves this is an AXUIElement.
-        let element = focusedRef as! AXUIElement
+    func focusedSelectedText() -> String? {
+        guard let element = focusedElement() else { return nil }
         var selectedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXSelectedTextAttribute as CFString,
                                             &selectedRef) == .success,
               let text = selectedRef as? String
         else { return nil }
         return text
+    }
+
+    private func focusedElement() -> AXUIElement? {
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString,
+                                            &focusedRef) == .success,
+              let focusedRef, CFGetTypeID(focusedRef) == AXUIElementGetTypeID()
+        else { return nil }
+        // Safe: the CFTypeID check above proves this is an AXUIElement.
+        return (focusedRef as! AXUIElement)
     }
 }
 

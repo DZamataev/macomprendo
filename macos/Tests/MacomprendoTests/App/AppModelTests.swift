@@ -197,6 +197,33 @@ import Testing
         #expect(model.dictation.state == .idle)
     }
 
+    /// A middle click released before dictation starts inserts "OK" — only into a text input,
+    /// and only with the setting on. It never opens the microphone.
+    @Test(arguments: [(true, true, ["OK"]), (true, false, []), (false, true, [])])
+    func aShortMiddleClickInsertsOKIntoAFocusedTextInput(settingOn: Bool, focusInText: Bool,
+                                                         expected: [String]) async {
+        let middleMouse = FakeMiddleMouseMonitor()
+        let recorder = FakeAudioRecorder()
+        let inserter = FakeTextInserter()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(middleMouse: middleMouse, recorder: recorder,
+                                        inserter: inserter,
+                                        ax: ScriptedAXReader(text: nil, acceptsText: focusInText)))
+        model.settings.middleMouseMode = .hold
+        model.settings.middleMouseAction = .dictate
+        model.settings.shortDictationInsertsOK = settingOn
+        model.settings.appendSpaceAfterDictation = false
+        model.start()
+
+        middleMouse.send(.down)
+        try? await Task.sleep(for: .milliseconds(100))
+        middleMouse.send(.up)
+        try? await Task.sleep(for: AppModel.middleMouseHoldDelay + .milliseconds(200))
+        #expect(inserter.inserted.map(\.text) == expected)
+        #expect(recorder.startCount == 0)
+    }
+
     @Test func middleMouseToggleModeIsIndependentFromHotkeyMode() async {
         let middleMouse = FakeMiddleMouseMonitor()
         let recorder = FakeAudioRecorder()

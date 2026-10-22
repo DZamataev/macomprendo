@@ -155,9 +155,9 @@ struct GeneralTab: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Toggle("Insert “OK” for a very short dictation",
+                Toggle("Insert “OK” on a middle click in a text field",
                        isOn: $model.settings.shortDictationInsertsOK)
-                Text("Recordings shorter than half a second skip speech recognition and insert “OK”.")
+                Text("With middle-click dictation in hold mode, a click released before recording starts inserts “OK” into the focused text field.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

@@ -473,9 +473,24 @@ final class AppModel: ObservableObject {
                 // Released inside the window: a plain click, so the microphone was never opened.
                 pending.cancel()
                 middleMouseHoldTask = nil
+                if settings.shortDictationInsertsOK, env.ax.focusedElementAcceptsText() {
+                    insertOK()
+                }
                 return
             }
             route(.keyUp(action), mode: mode)
+        }
+    }
+
+    private func insertOK() {
+        let text = settings.appendSpaceAfterDictation ? "OK " : "OK"
+        let method = settings.insertMethod
+        Task { [env, hud] in
+            do {
+                try await env.inserter.insert(text, into: nil, method: method)
+            } catch {
+                hud.show(.error(ErrorText.describe(error)))
+            }
         }
     }
 

@@ -3,7 +3,9 @@ import Foundation
 
 struct ScriptedAXReader: AXReading {
     var text: String?
+    var acceptsText = false
     func focusedSelectedText() -> String? { text }
+    func focusedElementAcceptsText() -> Bool { acceptsText }
 }
 
 /// Returns a different response on each call — one instance per `AXSelectedTextService`,
@@ -15,6 +17,8 @@ final class CountingAXReader: AXReading, @unchecked Sendable {
     private let responses: [String?]
 
     init(responses: [String?]) { self.responses = responses }
+
+    func focusedElementAcceptsText() -> Bool { false }
 
     func focusedSelectedText() -> String? {
         lock.withLock {
