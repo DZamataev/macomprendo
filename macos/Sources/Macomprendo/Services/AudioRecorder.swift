@@ -215,6 +215,11 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     /// Never taken by the tap block and never acquired while `lock` is held, so the two
     /// cannot deadlock.
     private let engineLock = NSLock()
+    /// Where every engine call runs. Core Audio can block for good — a Bluetooth headset
+    /// switching modes once froze the whole app inside `start()` on the main thread — so no
+    /// caller ever waits on the engine synchronously: the main thread and the engine's own
+    /// notification queue only enqueue.
+    private let engineQueue = DispatchQueue(label: "com.dzamataev.macomprendo.recorder-engine")
     /// Whether this recorder has a tap on the input bus. Tracked here rather than read off
     /// `engine.isRunning`: after a device change the engine stops itself but keeps the tap,
     /// and installing a second one raises an Objective-C exception that crashes the app.
@@ -285,7 +290,9 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     /// Applies immediately: a recording in progress moves to the newly chosen device.
     func setPreferredInputDevice(uid: String?) {
         lock.withLock { preferredUID = uid }
-        engineLock.withLock { _ = restartOnResolvedDeviceLocked(force: false) }
+        engineQueue.async { [self] in
+            engineLock.withLock { _ = restartOnResolvedDeviceLocked(force: false) }
+        }
     }
 
     func setReleasesInputWhenStopped(_ releases: Bool) {
@@ -295,11 +302,25 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     var holdsInput: Bool { lock.withLock { inputOpen && !recording } }
 
     func releaseInput() {
-        engineLock.withLock {
-            guard holdsInput else { return }
-            removeTapLocked()
-            engine.release()
-            lock.withLock { inputOpen = false }
+        engineQueue.async { [self] in
+            engineLock.withLock {
+                guard holdsInput else { return }
+                removeTapLocked()
+                engine.release()
+                lock.withLock { inputOpen = false }
+            }
+        }
+    }
+
+    /// Waits until everything enqueued so far has run. Tests only: production callers never
+    /// wait on the engine.
+    func drainEngineQueue() {
+        engineQueue.sync {}
+    }
+
+    private func onEngineQueue<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            engineQueue.async { continuation.resume(with: Result(catching: work)) }
         }
     }
 
@@ -331,7 +352,11 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
                                        excluding: excluded)
     }
 
-    func start() throws {
+    func start() async throws {
+        try await onEngineQueue { try self.startBlocking() }
+    }
+
+    func startBlocking() throws {
         // Guard against a second start() while already recording: AVAudioEngine's
         // installTap(onBus:) traps if a tap is installed twice on the same bus, so this
         // must be checked before any engine work below.
@@ -417,13 +442,19 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     }
 
     /// The engine stopped itself because its device changed under it, tap still attached.
+    /// Arrives on the engine's notification queue, which a stuck engine call may be waiting
+    /// on — so this only enqueues, never waits for `engineLock`.
     private func engineConfigurationChanged() {
-        engineLock.withLock { _ = restartOnResolvedDeviceLocked(force: true) }
+        engineQueue.async { [self] in
+            engineLock.withLock { _ = restartOnResolvedDeviceLocked(force: true) }
+        }
     }
 
     /// A device appeared or went away, or the system default moved.
     private func inputDevicesChanged() {
-        engineLock.withLock { _ = restartOnResolvedDeviceLocked(force: false) }
+        engineQueue.async { [self] in
+            engineLock.withLock { _ = restartOnResolvedDeviceLocked(force: false) }
+        }
     }
 
     /// Keeps a recording in progress on the device it should be using. The audio captured so
@@ -485,7 +516,11 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
         }
     }
 
-    func stop() -> [Float] {
+    func stop() async -> [Float] {
+        (try? await onEngineQueue { self.stopBlocking() }) ?? []
+    }
+
+    func stopBlocking() -> [Float] {
         let captured: [Float] = lock.withLock {
             recording = false
             let collected = samples

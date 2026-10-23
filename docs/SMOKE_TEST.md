@@ -150,6 +150,12 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
 - [ ] Dictate with no text field focused, then open the menubar panel ▸ **Copy Last
       Transcript** and paste: the dictated text arrives.
 
+## Bluetooth headset mode switch (hotkey #1)
+
+- [ ] With Bluetooth headphones as the default input and output (music playing), dictate
+      several times in a row, including right after connecting them. The menubar popover
+      opens and scrolling works throughout, even if a recording is slow to start.
+
 ## Silent capture (hotkey #1)
 
 A dead or hijacked input device delivers buffers of digital zeros while recording carries on;

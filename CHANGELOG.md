@@ -15,6 +15,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   audio while recording** (both off by default), for Dictate and Dictate & Refine, with a
   sound output device and volume.
 
+### Fixed
+- The app no longer freezes — menubar, popover and scrolling — when Core Audio stalls while
+  a dictation starts, as it can when a Bluetooth headset switches modes. Audio engine work
+  now runs off the main thread, and the engine's configuration-change notification no
+  longer waits for it.
+
 ## [1.3.1] - 2026-10-22
 
 ### Changed

@@ -23,6 +23,10 @@ final class FakeAudioInputEngine: AudioInputEngine, @unchecked Sendable {
     private var tap: ((AVAudioPCMBuffer) -> Void)?
 
     var startError: Error?
+    /// When set, `start()` waits on it — a Core Audio call that never comes back.
+    var startGate: DispatchSemaphore?
+    /// Whether the last `start()` ran on the main thread.
+    private(set) var startedOnMainThread: Bool?
     var onConfigurationChange: (@Sendable () -> Void)?
     /// The hardware format each device reports once selected.
     var deviceFormats: [AudioDeviceID: AVAudioFormat] = [:]
@@ -71,6 +75,8 @@ final class FakeAudioInputEngine: AudioInputEngine, @unchecked Sendable {
     func prepare() {}
 
     func start() throws {
+        startedOnMainThread = Thread.isMainThread
+        startGate?.wait()
         if let startError { throw startError }
         lock.withLock { _isRunning = true }
     }
