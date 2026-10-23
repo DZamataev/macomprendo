@@ -6,8 +6,10 @@ import Testing
     /// Every test hands the recorder fakes for both the engine and the device list, so no
     /// test touches Core Audio.
     private func make(_ engine: FakeAudioInputEngine = FakeAudioInputEngine(),
-                      devices: FakeAudioInputDevices = FakeAudioInputDevices()) -> AVAudioEngineRecorder {
-        AVAudioEngineRecorder(maxDuration: 5, engine: engine, devices: devices)
+                      devices: FakeAudioInputDevices = FakeAudioInputDevices(),
+                      startTimeout: TimeInterval = 5) -> AVAudioEngineRecorder {
+        AVAudioEngineRecorder(maxDuration: 5, engine: engine, devices: devices,
+                              startTimeout: startTimeout)
     }
 
     /// Polls until `condition` holds: device-list changes reach the recorder through an
@@ -74,6 +76,37 @@ import Testing
         gate.signal()
         recorder.drainEngineQueue()
         _ = recorder.stopBlocking()
+    }
+
+    /// A Core Audio call that never returns must fail the dictation visibly, not leave it
+    /// starting forever with the microphone open and no HUD.
+    @Test func aStartThatNeverReturnsFailsInsteadOfHanging() async {
+        let engine = FakeAudioInputEngine()
+        let gate = DispatchSemaphore(value: 0)
+        engine.startGate = gate
+        let recorder = make(engine, startTimeout: 0.1)
+
+        await #expect(throws: MacomprendoError.self) { try await recorder.start() }
+
+        // Core Audio comes back later: the abandoned start must not keep the microphone.
+        gate.signal()
+        recorder.drainEngineQueue()
+        #expect(recorder.isRecording == false)
+        #expect(engine.hasTap == false)
+    }
+
+    @Test func stoppingReturnsTheAudioWithoutWaitingForTheEngine() async throws {
+        let engine = FakeAudioInputEngine()
+        let recorder = make(engine)
+        try await recorder.start()
+        engine.deliver(level: 0.5, frames: 4_800)
+        let gate = DispatchSemaphore(value: 0)
+        engine.releaseGate = gate
+
+        #expect(await recorder.stop().isEmpty == false)
+        gate.signal()
+        recorder.drainEngineQueue()
+        #expect(engine.releaseCount == 1)
     }
 
     @Test func targetSampleRateIs16kHz() {

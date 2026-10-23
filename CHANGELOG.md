@@ -19,7 +19,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The app no longer freezes — menubar, popover and scrolling — when Core Audio stalls while
   a dictation starts, as it can when a Bluetooth headset switches modes. Audio engine work
   now runs off the main thread, and the engine's configuration-change notification no
-  longer waits for it.
+  longer waits for it. A microphone that does not respond within 3 seconds now fails the
+  dictation with an error instead of leaving it starting forever with the microphone open.
 
 ## [1.3.1] - 2026-10-22
 

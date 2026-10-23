@@ -154,7 +154,8 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
 
 - [ ] With Bluetooth headphones as the default input and output (music playing), dictate
       several times in a row, including right after connecting them. The menubar popover
-      opens and scrolling works throughout, even if a recording is slow to start.
+      opens and scrolling works throughout, even if a recording is slow to start. A start
+      that hangs shows "The microphone did not respond…" within about 3 seconds.
 
 ## Silent capture (hotkey #1)
 

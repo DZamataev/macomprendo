@@ -25,6 +25,8 @@ final class FakeAudioInputEngine: AudioInputEngine, @unchecked Sendable {
     var startError: Error?
     /// When set, `start()` waits on it — a Core Audio call that never comes back.
     var startGate: DispatchSemaphore?
+    /// When set, `release()` waits on it — an engine teardown stuck in Core Audio.
+    var releaseGate: DispatchSemaphore?
     /// Whether the last `start()` ran on the main thread.
     private(set) var startedOnMainThread: Bool?
     var onConfigurationChange: (@Sendable () -> Void)?
@@ -87,6 +89,7 @@ final class FakeAudioInputEngine: AudioInputEngine, @unchecked Sendable {
     var releaseCount: Int { lock.withLock { _releaseCount } }
 
     func release() {
+        releaseGate?.wait()
         lock.withLock {
             _isRunning = false
             _releaseCount += 1

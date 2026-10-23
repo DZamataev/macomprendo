@@ -220,6 +220,9 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     /// caller ever waits on the engine synchronously: the main thread and the engine's own
     /// notification queue only enqueue.
     private let engineQueue = DispatchQueue(label: "com.dzamataev.macomprendo.recorder-engine")
+    /// How long `start()` waits for Core Audio before failing the recording. Long enough for a
+    /// Bluetooth headset's switch into call mode, which normally lands within a second.
+    private let startTimeout: TimeInterval
     /// Whether this recorder has a tap on the input bus. Tracked here rather than read off
     /// `engine.isRunning`: after a device change the engine stops itself but keeps the tap,
     /// and installing a second one raises an Objective-C exception that crashes the app.
@@ -253,8 +256,10 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
 
     init(maxDuration: TimeInterval = 300,
          engine: any AudioInputEngine = AVAudioInputEngine(),
-         devices: any AudioInputDeviceListing = CoreAudioInputDevices()) {
+         devices: any AudioInputDeviceListing = CoreAudioInputDevices(),
+         startTimeout: TimeInterval = 3) {
         self.engine = engine
+        self.startTimeout = startTimeout
         self.devices = devices
         maxSamples = Int(maxDuration * AVAudioEngineRecorder.targetSampleRate)
         activeMaxSamples = maxSamples
@@ -318,11 +323,7 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
         engineQueue.sync {}
     }
 
-    private func onEngineQueue<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            engineQueue.async { continuation.resume(with: Result(catching: work)) }
-        }
-    }
+
 
     /// The device a recording should use: the preferred one while it is connected, otherwise
     /// the system default. Devices in `excluding` — found silent during this recording — are
@@ -353,7 +354,24 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     }
 
     func start() async throws {
-        try await onEngineQueue { try self.startBlocking() }
+        let outcome = OneShot()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            engineQueue.async { [self] in
+                let result = Result { try startBlocking() }
+                if outcome.claim() {
+                    continuation.resume(with: result)
+                } else if case .success = result {
+                    // The caller already gave up on this start; it must not keep the microphone.
+                    _ = stopBlocking()
+                }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + startTimeout) { [startTimeout] in
+                guard outcome.claim() else { return }
+                Log.audio.error("The audio engine did not start within \(startTimeout, privacy: .public) s")
+                continuation.resume(throwing: MacomprendoError.audio(
+                    "The microphone did not respond — macOS may still be switching the audio device."))
+            }
+        }
     }
 
     func startBlocking() throws {
@@ -516,18 +534,26 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
         }
     }
 
+    /// Returns the audio at once; the engine teardown, which Core Audio can stall, is queued.
     func stop() async -> [Float] {
-        (try? await onEngineQueue { self.stopBlocking() }) ?? []
+        let captured = takeSamples()
+        engineQueue.async { [self] in stopEngine() }
+        return captured
     }
 
     func stopBlocking() -> [Float] {
+        let captured = takeSamples()
+        stopEngine()
+        return captured
+    }
+
+    private func takeSamples() -> [Float] {
         let captured: [Float] = lock.withLock {
             recording = false
             let collected = samples
             samples = []
             return collected
         }
-        stopEngine()
         Log.audio.info("Recording stopped, \(captured.count, privacy: .public) samples")
         return captured
     }
@@ -654,5 +680,18 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
         let scale = 1 / Float(channels)
         for frame in 0..<frames { mixed[frame] *= scale }
         return mixed
+    }
+}
+
+/// Lets exactly one of two racing parties — a finished start or its timeout — act.
+private final class OneShot: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    func claim() -> Bool {
+        lock.withLock {
+            defer { claimed = true }
+            return !claimed
+        }
     }
 }
