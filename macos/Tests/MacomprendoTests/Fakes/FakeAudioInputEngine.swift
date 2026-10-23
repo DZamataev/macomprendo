@@ -39,7 +39,9 @@ final class FakeAudioInputEngine: AudioInputEngine, @unchecked Sendable {
     var tapFormats: [AVAudioFormat] { lock.withLock { _tapFormats } }
     /// Every device the recorder pointed the input node at, in call order.
     var selectedDevices: [AudioDeviceID] { lock.withLock { _selectedDevices } }
+    /// The device bound explicitly; `nil` while the engine follows the system default.
     var currentInputDevice: AudioDeviceID? { lock.withLock { _currentInputDevice } }
+    var followsSystemDefault: Bool { currentInputDevice == nil }
     var hasTap: Bool { lock.withLock { tap != nil } }
     /// The installed tap block. Calling it directly replays a buffer that was already in
     /// flight on the audio thread when a capture's `stop()` removed the tap — the case
@@ -93,6 +95,7 @@ final class FakeAudioInputEngine: AudioInputEngine, @unchecked Sendable {
         lock.withLock {
             _isRunning = false
             _releaseCount += 1
+            _currentInputDevice = nil  // a fresh engine follows the system default
         }
     }
 

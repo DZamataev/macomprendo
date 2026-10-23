@@ -156,6 +156,8 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
       several times in a row, including right after connecting them. The menubar popover
       opens and scrolling works throughout, even if a recording is slow to start. A start
       that hangs shows "The microphone did not respond…" within about 3 seconds.
+- [ ] With Microphone set to System default, switch the default input in the Sound menu
+      mid-recording: the recording continues on the new device and transcribes both parts.
 
 ## Silent capture (hotkey #1)
 

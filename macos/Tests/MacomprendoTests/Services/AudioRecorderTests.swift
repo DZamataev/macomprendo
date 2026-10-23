@@ -236,7 +236,28 @@ import Testing
         let devices = FakeAudioInputDevices([.builtIn, .mchose], defaultUID: AudioInputDevice.mchose.uid)
         let recorder = make(engine, devices: devices)
         try recorder.startBlocking()
-        #expect(engine.currentInputDevice == AudioInputDevice.mchose.id)
+        // Never bound explicitly: binding the default moves the input unit out of the
+        // engine's own aggregate, and Core Audio then hangs (open-wispr #59).
+        #expect(engine.followsSystemDefault)
+        #expect(engine.selectedDevices.isEmpty)
+        _ = recorder.stopBlocking()
+    }
+
+    @Test func goingBackToTheDefaultDropsTheExplicitBinding() throws {
+        let engine = FakeAudioInputEngine()
+        let devices = FakeAudioInputDevices([.builtIn, .mchose], defaultUID: AudioInputDevice.mchose.uid)
+        let recorder = make(engine, devices: devices)
+        recorder.setReleasesInputWhenStopped(false)
+        recorder.setPreferredInputDevice(uid: AudioInputDevice.builtIn.uid)
+        try recorder.startBlocking()
+        _ = recorder.stopBlocking()
+        #expect(engine.currentInputDevice == AudioInputDevice.builtIn.id)
+
+        recorder.setPreferredInputDevice(uid: nil)
+        recorder.drainEngineQueue()
+        try recorder.startBlocking()
+        #expect(engine.followsSystemDefault)
+        #expect(engine.selectedDevices == [AudioInputDevice.builtIn.id])
         _ = recorder.stopBlocking()
     }
 
@@ -260,7 +281,7 @@ import Testing
         let recorder = make(engine, devices: devices)
         recorder.setPreferredInputDevice(uid: AudioInputDevice.mchose.uid)
         try recorder.startBlocking()
-        #expect(engine.currentInputDevice == AudioInputDevice.builtIn.id)
+        #expect(engine.followsSystemDefault)
         _ = recorder.stopBlocking()
 
         devices.devices = [.builtIn, .mchose]
@@ -271,8 +292,10 @@ import Testing
 
     @Test func theDeviceIsNotReselectedWhenItIsAlreadyCurrent() throws {
         let engine = FakeAudioInputEngine()
-        let devices = FakeAudioInputDevices([.builtIn], defaultUID: AudioInputDevice.builtIn.uid)
+        let devices = FakeAudioInputDevices([.builtIn, .mchose], defaultUID: AudioInputDevice.mchose.uid)
         let recorder = make(engine, devices: devices)
+        recorder.setReleasesInputWhenStopped(false)
+        recorder.setPreferredInputDevice(uid: AudioInputDevice.builtIn.uid)
         try recorder.startBlocking()
         _ = recorder.stopBlocking()
         try recorder.startBlocking()
@@ -292,7 +315,7 @@ import Testing
         engine.loseCurrentDevice()
         recorder.drainEngineQueue()
 
-        #expect(engine.currentInputDevice == AudioInputDevice.builtIn.id)
+        #expect(engine.followsSystemDefault)
         #expect(engine.isRunning)
         #expect(engine.doubleTapInstalls == 0)
         engine.deliver(level: 0.25, frames: 4_800)
@@ -306,13 +329,18 @@ import Testing
         let devices = FakeAudioInputDevices([.builtIn, .mchose], defaultUID: AudioInputDevice.mchose.uid)
         let recorder = make(engine, devices: devices)
         try recorder.startBlocking()
-        #expect(engine.currentInputDevice == AudioInputDevice.mchose.id)
+        #expect(engine.followsSystemDefault)
 
+        // Unbound, the engine moves to the new default by itself and posts a configuration
+        // change; the recorder only restarts it.
         devices.defaultUID = AudioInputDevice.builtIn.uid
         devices.emitChange()
+        engine.switchInputDevice(to: FakeAudioInputEngine.monoFormat(44_100))
+        recorder.drainEngineQueue()
 
-        #expect(await eventually { engine.currentInputDevice == AudioInputDevice.builtIn.id })
-        #expect(engine.isRunning)
+        #expect(await eventually { engine.isRunning })
+        #expect(engine.followsSystemDefault)
+        #expect(engine.selectedDevices.isEmpty)
         #expect(engine.doubleTapInstalls == 0)
         _ = recorder.stopBlocking()
         #expect(engine.hasTap == false)
@@ -395,7 +423,7 @@ import Testing
         recorder.setPreferredInputDevice(uid: AudioInputDevice.mchose.uid)
         try recorder.startBlocking()
         feed(engine, level: 0, seconds: 2.5)
-        #expect(await eventually { engine.currentInputDevice == AudioInputDevice.builtIn.id })
+        #expect(await eventually { engine.followsSystemDefault })
         _ = recorder.stopBlocking()
     }
 
@@ -408,7 +436,7 @@ import Testing
         try recorder.startBlocking()
         feed(engine, level: 0.0005, seconds: 4)
         try await Task.sleep(for: .milliseconds(50))
-        #expect(engine.selectedDevices == [AudioInputDevice.mchose.id])
+        #expect(engine.selectedDevices.isEmpty)
         _ = recorder.stopBlocking()
     }
 
@@ -421,7 +449,7 @@ import Testing
         feed(engine, level: 0.3, seconds: 0.1)
         feed(engine, level: 0, seconds: 1.5)
         try await Task.sleep(for: .milliseconds(50))
-        #expect(engine.selectedDevices == [AudioInputDevice.mchose.id])
+        #expect(engine.selectedDevices.isEmpty)
         _ = recorder.stopBlocking()
     }
 
@@ -454,7 +482,7 @@ import Testing
         _ = recorder.stopBlocking()
 
         try recorder.startBlocking()
-        #expect(engine.currentInputDevice == AudioInputDevice.mchose.id)
+        #expect(engine.followsSystemDefault)
         _ = recorder.stopBlocking()
     }
 
@@ -470,7 +498,7 @@ import Testing
         #expect(await eventually { engine.currentInputDevice == AudioInputDevice.builtIn.id })
         feed(engine, level: 0, seconds: 5)
         try await Task.sleep(for: .milliseconds(50))
-        #expect(engine.selectedDevices == [AudioInputDevice.mchose.id, AudioInputDevice.builtIn.id])
+        #expect(engine.selectedDevices == [AudioInputDevice.builtIn.id])
         #expect(log.all.count == 1)
         _ = recorder.stopBlocking()
     }
@@ -483,7 +511,7 @@ import Testing
         try recorder.startBlocking()
         feed(engine, level: 0, seconds: 3)
         try await Task.sleep(for: .milliseconds(50))
-        #expect(engine.selectedDevices == [AudioInputDevice.mchose.id])
+        #expect(engine.selectedDevices.isEmpty)
         #expect(engine.isRunning)
         #expect(log.all.isEmpty)
         _ = recorder.stopBlocking()

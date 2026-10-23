@@ -21,6 +21,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now runs off the main thread, and the engine's configuration-change notification no
   longer waits for it. A microphone that does not respond within 3 seconds now fails the
   dictation with an error instead of leaving it starting forever with the microphone open.
+  The system default microphone is no longer bound explicitly, which is what let Core Audio
+  hang in the first place; only a microphone chosen in Settings is.
 
 ## [1.3.1] - 2026-10-22
 

@@ -178,10 +178,9 @@ final class AVAudioInputEngine: AudioInputEngine, @unchecked Sendable {
 /// chosen one is not connected — through `AVAudioEngine`, and converts it to 16 kHz mono
 /// Float32, the format whisper.cpp and the OpenAI audio endpoint expect.
 ///
-/// The input node is always bound to a device explicitly rather than left to follow the
-/// system default by itself, so the same code path serves both cases, and a device that
-/// appears, disappears or becomes the default mid-recording moves the recording with it
-/// instead of leaving it stranded on a dead device.
+/// A chosen device is bound explicitly; the system default is left to the engine, which
+/// follows it by itself. A device that appears, disappears or becomes the default
+/// mid-recording moves the recording with it instead of leaving it stranded on a dead device.
 ///
 /// A device that delivers nothing but digital silence for `deadDeviceSeconds` — a wireless
 /// headset's dongle with the headset switched off is the typical case — is abandoned for
@@ -227,6 +226,10 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     /// `engine.isRunning`: after a device change the engine stops itself but keeps the tap,
     /// and installing a second one raises an Objective-C exception that crashes the app.
     private var tapInstalled = false
+    /// Whether this recorder pointed the input node at a device itself. The system default is
+    /// never bound: binding it moves the input unit out of the engine's own aggregate, and
+    /// Core Audio can then spin forever (open-wispr #59). Guarded by `engineLock`.
+    private var boundExplicitly = false
 
     private var samples: [Float] = []
     private var maxSamples: Int
@@ -311,7 +314,7 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
             engineLock.withLock {
                 guard holdsInput else { return }
                 removeTapLocked()
-                engine.release()
+                releaseEngineLocked()
                 lock.withLock { inputOpen = false }
             }
         }
@@ -421,9 +424,13 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     /// `engineLock` held and the engine stopped. A device that refuses is logged and the node
     /// keeps whatever it had; the caller's format check decides whether that is usable.
     private func bindLocked(_ device: AudioInputDevice) {
-        if device.id != engine.currentInputDevice {
+        if isSystemDefault(device) {
+            // A fresh engine follows the default; only dropping the engine undoes a binding.
+            if boundExplicitly { releaseEngineLocked() }
+        } else if !isOnLocked(device) {
             do {
                 try engine.setInputDevice(device.id)
+                boundExplicitly = true
             } catch {
                 Log.audio.error("Could not bind the input device: \(error.localizedDescription, privacy: .public)")
                 return
@@ -487,7 +494,7 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
     private func restartOnResolvedDeviceLocked(force: Bool) -> Bool {
         guard isRecording else { return false }
         let device = resolvedDevice()
-        let needsSwitch = device.map { $0.id != engine.currentInputDevice } ?? false
+        let needsSwitch = device.map { !isOnLocked($0) } ?? false
         // A configuration change that arrives with the engine already running again was
         // caused by the recorder's own restart; there is nothing left to do.
         guard needsSwitch || (force && !engine.isRunning) else { return false }
@@ -649,12 +656,29 @@ final class AVAudioEngineRecorder: AudioRecording, @unchecked Sendable {
         engineLock.withLock {
             removeTapLocked()
             if lock.withLock({ releasesInputWhenStopped }) {
-                engine.release()
+                releaseEngineLocked()
                 lock.withLock { inputOpen = false }
             } else if engine.isRunning {
                 engine.stop()
             }
         }
+    }
+
+    /// Must be called with `engineLock` held.
+    private func releaseEngineLocked() {
+        engine.release()
+        boundExplicitly = false
+    }
+
+    private func isSystemDefault(_ device: AudioInputDevice) -> Bool {
+        devices.defaultInputDevice()?.uid == device.uid
+    }
+
+    /// Whether the input node is already on `device`. Must be called with `engineLock` held.
+    private func isOnLocked(_ device: AudioInputDevice) -> Bool {
+        isSystemDefault(device)
+            ? !boundExplicitly
+            : boundExplicitly && engine.currentInputDevice == device.id
     }
 
     /// Must be called with `engineLock` held.
