@@ -174,6 +174,12 @@ struct MenuPanelView: View {
             PanelCommandRow(icon: .fileAudio, title: "Transcribe File…") { transcribeFile() }
             PanelCommandRow(icon: .folder, title: "Transcripts…") { openTranscripts() }
             PanelCommandRow(icon: .history, title: "Dictation History…") { openHistoryWindow() }
+            if model.dictation.lastTranscript != nil {
+                PanelCommandRow(icon: .copy, title: "Copy Last Transcript") {
+                    model.closeMenuPanel()
+                    model.dictation.copyLastTranscript()
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 2)

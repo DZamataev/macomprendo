@@ -19,6 +19,8 @@ struct AudioInputDevice: Equatable, Hashable, Sendable, Identifiable {
 protocol AudioInputDeviceListing: AnyObject, Sendable {
     func inputDevices() -> [AudioInputDevice]
     func defaultInputDevice() -> AudioInputDevice?
+    /// Devices with at least one output channel, for the recording sounds' picker.
+    func outputDevices() -> [AudioInputDevice]
     /// A fresh stream per caller. Yields once per change; carries no payload, so a consumer
     /// re-reads the lists it cares about.
     func changes() -> AsyncStream<Void>
@@ -74,13 +76,17 @@ final class CoreAudioInputDevices: AudioInputDeviceListing, @unchecked Sendable 
     }
 
     func inputDevices() -> [AudioInputDevice] {
-        let system = AudioObjectID(kAudioObjectSystemObject)
-        var address = Self.address(kAudioHardwarePropertyDevices)
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else { return [] }
-        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &ids) == noErr else { return [] }
-        return ids.compactMap(Self.inputDevice)
+        Self.allDeviceIDs().compactMap(Self.inputDevice)
+    }
+
+    func outputDevices() -> [AudioInputDevice] {
+        Self.allDeviceIDs().compactMap { id in
+            guard Self.channelCount(id, scope: kAudioObjectPropertyScopeOutput) > 0,
+                  let uid = Self.string(id, kAudioDevicePropertyDeviceUID),
+                  !uid.hasPrefix("CADefaultDeviceAggregate"),
+                  let name = Self.string(id, kAudioObjectPropertyName) else { return nil }
+            return AudioInputDevice(id: id, uid: uid, name: name)
+        }
     }
 
     func defaultInputDevice() -> AudioInputDevice? {
@@ -93,10 +99,20 @@ final class CoreAudioInputDevices: AudioInputDeviceListing, @unchecked Sendable 
         return Self.inputDevice(id)
     }
 
+    private static func allDeviceIDs() -> [AudioDeviceID] {
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        var address = address(kAudioHardwarePropertyDevices)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else { return [] }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids
+    }
+
     /// `nil` for a device with no input channels (speakers, most displays) and for the
     /// private aggregate devices apps create for themselves, which must not be offered.
     private static func inputDevice(_ id: AudioDeviceID) -> AudioInputDevice? {
-        guard inputChannelCount(id) > 0,
+        guard channelCount(id, scope: kAudioObjectPropertyScopeInput) > 0,
               let uid = string(id, kAudioDevicePropertyDeviceUID),
               !uid.hasPrefix("CADefaultDeviceAggregate"),
               let name = string(id, kAudioObjectPropertyName) else { return nil }
@@ -112,9 +128,9 @@ final class CoreAudioInputDevices: AudioInputDeviceListing, @unchecked Sendable 
         return value
     }
 
-    private static func inputChannelCount(_ id: AudioDeviceID) -> Int {
+    private static func channelCount(_ id: AudioDeviceID, scope: AudioObjectPropertyScope) -> Int {
         var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration,
-                                                 mScope: kAudioObjectPropertyScopeInput,
+                                                 mScope: scope,
                                                  mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &size) == noErr, size > 0 else { return 0 }

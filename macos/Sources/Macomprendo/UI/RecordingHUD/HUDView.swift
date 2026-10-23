@@ -1,3 +1,4 @@
+import KeyboardShortcuts
 import SwiftUI
 
 struct HUDView: View {
@@ -24,6 +25,11 @@ struct HUDView: View {
             )
     }
 
+    nonisolated static func recordingHint(cancelShortcut: String?) -> String {
+        guard let cancelShortcut else { return "Release to transcribe" }
+        return "Release to transcribe · \(cancelShortcut) cancels"
+    }
+
     @ViewBuilder
     private var content: some View {
         switch controller.state {
@@ -38,7 +44,8 @@ struct HUDView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                Text("Release to transcribe · Esc cancels")
+                Text(Self.recordingHint(
+                    cancelShortcut: KeyboardShortcuts.getShortcut(for: .cancelDictation)?.description))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

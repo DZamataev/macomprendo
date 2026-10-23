@@ -14,6 +14,8 @@ enum DictationState: Equatable, Sendable {
 @MainActor
 final class DictationController: ObservableObject {
     @Published private(set) var state: DictationState = .idle
+    /// The latest transcript, kept so the menubar can copy it when the paste went nowhere.
+    @Published private(set) var lastTranscript: String?
 
     private let recorder: any AudioRecording
     private let transcriberProvider: @Sendable () async throws -> any TranscriptionProvider
@@ -28,6 +30,7 @@ final class DictationController: ObservableObject {
     /// Shows what normalisation changed, after the corrected text reached the user's document.
     /// Optional, as `HUDController`'s presenter is, so tests that do not care omit it.
     private let reviewPresenter: (any CorrectionReviewPresenting)?
+    private let cues: (any RecordingCueing)?
     /// The glossary in force, read at the moment a transcript is accepted so a pack enabled
     /// mid-recording applies to it. Asked for only while `glossaryEnabled` is on, so a user
     /// who never turned the glossary on never pays for building one.
@@ -88,6 +91,7 @@ final class DictationController: ObservableObject {
          escapeMonitor: any EscapeMonitoring,
          history: DictationHistoryController? = nil,
          reviewPresenter: (any CorrectionReviewPresenting)? = nil,
+         cues: (any RecordingCueing)? = nil,
          glossary: @escaping @MainActor () -> Glossary = { Glossary() },
          now: @escaping @MainActor () -> Date = Date.init) {
         self.recorder = recorder
@@ -101,6 +105,7 @@ final class DictationController: ObservableObject {
         self.escapeMonitor = escapeMonitor
         self.history = history
         self.reviewPresenter = reviewPresenter
+        self.cues = cues
         self.glossary = glossary
         self.now = now
         escapeMonitor.onEscape = { [weak self] in self?.cancel() }
@@ -165,10 +170,17 @@ final class DictationController: ObservableObject {
         target = nil
         escapeMonitor.stop()
         if wasRecording {
+            cues?.restoreOutput()
             let recorder = self.recorder
             pendingStopTask = Task { _ = await recorder.stop() }
         }
         hud.toast("Cancelled")
+    }
+
+    func copyLastTranscript() {
+        guard let lastTranscript else { return }
+        pasteboard.writeString(lastTranscript)
+        hud.toast("Copied to clipboard")
     }
 
     // MARK: - Steps
@@ -215,6 +227,10 @@ final class DictationController: ObservableObject {
         await pendingStopTask?.value
         guard !Task.isCancelled else { return }
         pendingStopTask = nil
+        if settings().playRecordingSounds {
+            await cues?.playStartSound(settings())
+            guard !Task.isCancelled else { return }
+        }
         target = tracker.capture()
         stoppedAtLimit = false
         do {
@@ -223,6 +239,8 @@ final class DictationController: ObservableObject {
             fail(error)
             return
         }
+        // A cancel during the start already ran its restore; muting now would stick.
+        if settings().muteWhileRecording, !Task.isCancelled { cues?.muteOutput() }
         startedAt = now()
         silentSince = nil
         fallback = nil
@@ -248,6 +266,8 @@ final class DictationController: ObservableObject {
     private func finish(reachedLimit: Bool = false) {
         guard state == .recording else { return }
         stoppedAtLimit = reachedLimit
+        cues?.restoreOutput()
+        if settings().playRecordingSounds { cues?.playStopSound(settings()) }
         state = .transcribing
         hud.show(.transcribing)
         activeTask = Task { [weak self] in await self?.transcribeAndInsert() }
@@ -289,6 +309,7 @@ final class DictationController: ObservableObject {
                 ? Normalizer.normalise(text, with: glossary())
                 : NormalisationResult(text: text, rewrites: [])
             let corrected = normalisation.text
+            lastTranscript = corrected
 
             let historyResult: DictationHistoryController.AppendResult = if let history {
                 // `rawText` holds the model's own words only when they differ from what was

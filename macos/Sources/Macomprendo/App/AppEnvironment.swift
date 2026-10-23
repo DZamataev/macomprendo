@@ -53,6 +53,7 @@ struct AppEnvironment {
     var urlOpener: any URLOpening
     var launchAtLogin: any LaunchAtLoginManaging
     var escapeMonitor: any EscapeMonitoring
+    var recordingCues: any RecordingCueing
     var keySimulator: any KeySimulating
     var ax: any AXReading
     var speech: any SpeechSynthesizing
@@ -133,6 +134,7 @@ struct AppEnvironment {
             urlOpener: NSWorkspaceURLOpener(),
             launchAtLogin: SMAppServiceLaunchAtLogin(),
             escapeMonitor: GlobalEscapeMonitor(),
+            recordingCues: SystemRecordingCues(),
             keySimulator: keySimulator,
             ax: SystemAXReader(),
             speech: SpeechRouter(

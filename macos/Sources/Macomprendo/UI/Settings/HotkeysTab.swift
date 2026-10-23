@@ -13,6 +13,7 @@ struct HotkeysTab: View {
                 KeyboardShortcuts.Recorder("Summarize selection", name: .summarize)
                 KeyboardShortcuts.Recorder("Refine selection", name: .refineSelection)
                 KeyboardShortcuts.Recorder("Record Call", name: .recordCall)
+                KeyboardShortcuts.Recorder("Cancel dictation", name: .cancelDictation)
 
                 Picker("Dictation behaviour", selection: $model.settings.dictationMode) {
                     Text("Hold to talk").tag(DictationMode.hold)
@@ -22,7 +23,7 @@ struct HotkeysTab: View {
             } header: {
                 Text("Keyboard")
             } footer: {
-                Text("Switch individual hotkeys off in the menubar menu.")
+                Text("Switch individual hotkeys off in the menubar menu. Cancel dictation (Esc by default) works only while Dictate records or transcribes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

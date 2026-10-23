@@ -1,6 +1,18 @@
 import SwiftUI
 
 struct GeneralTab: View {
+    /// "System default" first, then each output; a chosen device that is unplugged stays listed
+    /// so the picker never silently shows a different choice.
+    nonisolated static func soundOutputOptions(_ devices: [AudioInputDevice],
+                                               selected: String?) -> [MicrophoneOption] {
+        var options = [MicrophoneOption(uid: nil, title: "System default")]
+            + devices.map { MicrophoneOption(uid: $0.uid, title: $0.name) }
+        if let selected, !devices.contains(where: { $0.uid == selected }) {
+            options.append(MicrophoneOption(uid: selected, title: "Disconnected device"))
+        }
+        return options
+    }
+
     @EnvironmentObject private var model: AppModel
     @ObservedObject var savedAudio: SavedAudioModel
     /// Observed so a recording saved while this screen is open redraws the size readout.
@@ -165,6 +177,25 @@ struct GeneralTab: View {
                 Text("Dictate and original Dictate & Refine insertion get the space. History and refined text are unchanged.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle("Play a sound when recording starts and stops", isOn: $model.settings.playRecordingSounds)
+                Group {
+                    Picker("Sound output", selection: $model.settings.recordingSoundsOutputUID) {
+                        ForEach(Self.soundOutputOptions(model.env.audioInputDevices.outputDevices(),
+                                                        selected: model.settings.recordingSoundsOutputUID)) {
+                            Text($0.title).tag($0.uid)
+                        }
+                    }
+                    // Previewed on release, not on every tick of the drag.
+                    Slider(value: $model.settings.recordingSoundsVolume, in: 0...1) {
+                        Text("Sound volume")
+                    } onEditingChanged: { editing in
+                        guard !editing else { return }
+                        Task { await model.env.recordingCues.playStartSound(model.settings) }
+                    }
+                }
+                .disabled(!model.settings.playRecordingSounds)
+                Toggle("Mute system audio while recording", isOn: $model.settings.muteWhileRecording)
             }
 
             Section("Local models") {

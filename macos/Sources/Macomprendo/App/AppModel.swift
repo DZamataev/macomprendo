@@ -309,6 +309,7 @@ final class AppModel: ObservableObject {
                                         escapeMonitor: env.escapeMonitor,
                                         history: history,
                                         reviewPresenter: env.reviewPresenter,
+                                        cues: env.recordingCues,
                                         glossary: { [glossaryBox] in glossaryBox.glossary })
 
         env.recorder.setMaximumDuration(TimeInterval(loaded.maximumRecordingSeconds))
@@ -525,6 +526,7 @@ final class AppModel: ObservableObject {
         // Stop polling first: a tick that saw the recorder idle after the stop below would
         // start a fresh recording while the process is quitting.
         autoCallRecorder.stop()
+        env.recordingCues.restoreOutput()
         await callRecording.shutdown()
         await fileTranscription.shutdown()
         switch dictation.state {

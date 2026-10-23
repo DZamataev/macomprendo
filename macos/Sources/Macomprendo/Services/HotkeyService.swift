@@ -72,6 +72,9 @@ extension KeyboardShortcuts.Name {
     /// No default: a hotkey that starts a global recording is chosen deliberately, as with
     /// Refine selection.
     static let recordCall = Self("recordCall")
+    /// Cancels a dictation. Registered only while one runs, so it never steals the key from
+    /// other apps.
+    static let cancelDictation = Self("cancelDictation", default: .init(.escape))
 
     static func forAction(_ action: HotkeyAction) -> Self {
         switch action {

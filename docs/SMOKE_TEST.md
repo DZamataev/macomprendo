@@ -134,6 +134,22 @@ the app and run `npm run reset-permissions`. Add `--dry-run` to inspect the rese
 - [ ] Settings ▸ General: toggle "Launch at login" on, check System Settings ▸ General ▸ Login
       Items — Macomprendo is listed; toggling it off removes it.
 
+## Recording cues and Copy Last Transcript (hotkey #1)
+
+- [ ] Settings ▸ Hotkeys ▸ Cancel dictation shows Esc by default. While idle, Esc still
+      reaches the focused app; during a recording it cancels with "Cancelled", including with
+      Settings frontmost. Rebind it to ⌃X: the HUD hint says "⌃X cancels" and Esc no longer
+      cancels. Clear it: the hint drops the cancel part.
+- [ ] Turn on **Play a sound when recording starts and stops**: a tick plays before recording
+      starts (and is not transcribed), a pop when it stops. Pick another **Sound output**: the
+      sounds play there; unplug it: they fall back to the system output. Move **Sound volume**
+      down: on release the start sound plays at the new volume, and dictation's sounds match it.
+- [ ] Turn on **Mute system audio while recording** with music playing: it mutes during the
+      recording and resumes on stop, on Esc, and on quitting mid-recording. With the output
+      already muted beforehand, it stays muted afterwards.
+- [ ] Dictate with no text field focused, then open the menubar panel ▸ **Copy Last
+      Transcript** and paste: the dictated text arrives.
+
 ## Silent capture (hotkey #1)
 
 A dead or hijacked input device delivers buffers of digital zeros while recording carries on;

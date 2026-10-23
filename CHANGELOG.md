@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Copy Last Transcript** in the menubar panel copies the latest dictation, for when the
+  paste missed the text field.
+- **Cancel dictation** shortcut in Settings ▸ Hotkeys, Esc by default; it is active only
+  while Dictate records or transcribes, and the recording HUD names the bound key.
+- Settings ▸ General: **Play a sound when recording starts and stops** and **Mute system
+  audio while recording** (both off by default), for Dictate and Dictate & Refine, with a
+  sound output device and volume.
+
 ## [1.3.1] - 2026-10-22
 
 ### Changed

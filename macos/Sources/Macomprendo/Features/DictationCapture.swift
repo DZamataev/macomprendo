@@ -34,6 +34,8 @@ import Foundation
     /// The glossary in force, read at the same moment, so a pack enabled mid-recording
     /// applies to the transcript that recording produced.
     private let glossary: @MainActor () -> Glossary
+    private let cues: (any RecordingCueing)?
+    private let settings: @MainActor () -> Settings
     private var task: Task<Void, Never>?
     private var pendingStopTask: Task<Void, Never>?
     private var generation = 0
@@ -47,7 +49,9 @@ import Foundation
          source: @escaping @MainActor () -> TranscriptionSource,
          history: DictationHistoryController,
          isGlossaryEnabled: @escaping @MainActor () -> Bool = { false },
-         glossary: @escaping @MainActor () -> Glossary = { Glossary() }) {
+         glossary: @escaping @MainActor () -> Glossary = { Glossary() },
+         cues: (any RecordingCueing)? = nil,
+         settings: @escaping @MainActor () -> Settings = { .default }) {
         self.recorder = recorder
         self.transcriberProvider = transcriberProvider
         self.permissions = permissions
@@ -57,6 +61,8 @@ import Foundation
         self.source = source
         self.isGlossaryEnabled = isGlossaryEnabled
         self.glossary = glossary
+        self.cues = cues
+        self.settings = settings
         let fallbacks = recorder.inputFallbacks()
         fallbackTask = Task { [weak self] in
             for await fallback in fallbacks {
@@ -93,6 +99,7 @@ import Foundation
         generation += 1
         task?.cancel()
         task = nil
+        cues?.restoreOutput()
         let previousStopTask = pendingStopTask
         let recorder = self.recorder
         pendingStopTask = Task {
@@ -131,8 +138,14 @@ import Foundation
                 await pendingStopTask?.value
                 guard self.generation == generation, !Task.isCancelled else { return }
                 self.pendingStopTask = nil
+                if self.settings().playRecordingSounds {
+                    await self.cues?.playStartSound(self.settings())
+                    guard self.generation == generation, !Task.isCancelled else { return }
+                }
                 try await self.recorder.start()
                 guard self.generation == generation, !Task.isCancelled else { return }
+                // A key-up during the start already ran the restore; muting now would stick.
+                if self.state == .recording, self.settings().muteWhileRecording { self.cues?.muteOutput() }
             } catch {
                 guard self.generation == generation else { return }
                 self.setState(.idle)
@@ -144,6 +157,8 @@ import Foundation
     private func finishRecording() {
         guard state == .recording else { return }
         let generation = generation
+        cues?.restoreOutput()
+        if settings().playRecordingSounds { cues?.playStopSound(settings()) }
         setState(.transcribing)
         let previous = task
         task = Task { [weak self] in

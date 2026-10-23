@@ -141,7 +141,9 @@ extension TextFeatures {
             source: { model.settings.transcriptionSource },
             history: history,
             isGlossaryEnabled: { model.settings.glossaryEnabled },
-            glossary: { [unowned model] in model.glossary })
+            glossary: { [unowned model] in model.glossary },
+            cues: env.recordingCues,
+            settings: { model.settings })
 
         let refine = RefineController(
             capture: capture,

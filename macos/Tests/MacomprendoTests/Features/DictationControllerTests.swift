@@ -19,6 +19,7 @@ import Testing
         let history: DictationHistoryController
         let encoder: FakeDictationAudioEncoder
         let reviewPresenter: FakeCorrectionReviewPresenter
+        let cues: FakeRecordingCues
         /// How many times the controller asked for the glossary. Zero proves the master
         /// switch is read before anything is built or matched.
         let glossaryRequests: Box<Int>
@@ -72,6 +73,7 @@ import Testing
                                                   })
         if let transcript { transcriber.result = .success(transcript) }
         let reviewPresenter = FakeCorrectionReviewPresenter()
+        let cues = FakeRecordingCues()
 
         let controller = DictationController(
             recorder: recorder,
@@ -85,6 +87,7 @@ import Testing
             escapeMonitor: escapeMonitor,
             history: history,
             reviewPresenter: reviewPresenter,
+            cues: cues,
             glossary: {
                 glossaryRequests.value += 1
                 return glossary
@@ -94,7 +97,7 @@ import Testing
                        inserter: inserter, tracker: tracker, permissions: permissions,
                        hud: hud, pasteboard: pasteboard, settings: settings, escapeMonitor: escapeMonitor,
                        historyStore: historyStore, history: history, encoder: encoder,
-                       reviewPresenter: reviewPresenter,
+                       reviewPresenter: reviewPresenter, cues: cues,
                        glossaryRequests: glossaryRequests, clock: clock)
     }
 
@@ -103,6 +106,49 @@ import Testing
         await h.controller.activeTask?.value
         h.controller.handle(.keyUp(.dictate))
         await h.controller.activeTask?.value
+    }
+
+    // MARK: - Last transcript and recording cues
+
+    @Test func lastTranscriptIsCopiedEvenWhenTheInsertMissed() async {
+        let h = makeHarness(transcript: "hello there")
+        #expect(h.controller.lastTranscript == nil)
+        h.inserter.error = MacomprendoError.insertFailed
+        await recordAndFinish(h)
+        h.pasteboard.writeString("something else")
+
+        h.controller.copyLastTranscript()
+
+        #expect(h.controller.lastTranscript == "hello there")
+        #expect(h.pasteboard.readString() == "hello there")
+    }
+
+    @Test func cuesAreSilentWhileTheirSettingsAreOff() async {
+        let h = makeHarness(transcript: "hi")
+        await recordAndFinish(h)
+        #expect(h.cues.events.allSatisfy { $0 == "restore" })
+    }
+
+    @Test func cuesPlayAroundTheRecordingAndRestoreTheOutput() async {
+        let h = makeHarness(transcript: "hi")
+        h.settings.value.playRecordingSounds = true
+        h.settings.value.muteWhileRecording = true
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        #expect(h.cues.events == ["startSound", "mute"])
+
+        h.controller.handle(.keyUp(.dictate))
+        await h.controller.activeTask?.value
+        #expect(h.cues.events == ["startSound", "mute", "restore", "stopSound"])
+    }
+
+    @Test func cancellingARecordingRestoresTheOutput() async {
+        let h = makeHarness(transcript: "hi")
+        h.settings.value.muteWhileRecording = true
+        h.controller.handle(.keyDown(.dictate))
+        await h.controller.activeTask?.value
+        h.controller.cancel()
+        #expect(h.cues.events == ["mute", "restore"])
     }
 
     // MARK: - Dictation history

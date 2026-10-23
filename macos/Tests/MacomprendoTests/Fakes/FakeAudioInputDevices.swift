@@ -27,6 +27,8 @@ final class FakeAudioInputDevices: AudioInputDeviceListing, @unchecked Sendable 
 
     func inputDevices() -> [AudioInputDevice] { devices }
 
+    func outputDevices() -> [AudioInputDevice] { [] }
+
     func defaultInputDevice() -> AudioInputDevice? {
         lock.withLock { _devices.first { $0.uid == _defaultUID } }
     }

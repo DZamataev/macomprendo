@@ -9,6 +9,11 @@ import Testing
         #expect(HUDView.captionText(for: .transcribing, caption: "Large v3 Turbo") == "Large v3 Turbo")
     }
 
+    @Test func theRecordingHintNamesTheBoundCancelShortcut() {
+        #expect(HUDView.recordingHint(cancelShortcut: "⎋") == "Release to transcribe · ⎋ cancels")
+        #expect(HUDView.recordingHint(cancelShortcut: nil) == "Release to transcribe")
+    }
+
     @Test func hidesTheModelCaptionWhileSpeaking() {
         // .speaking is text-to-speech; naming a transcription model there would mislead.
         #expect(HUDView.captionText(for: .speaking(hint: "Esc stops"), caption: "Large v3 Turbo") == nil)

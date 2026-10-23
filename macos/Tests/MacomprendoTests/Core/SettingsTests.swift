@@ -44,6 +44,30 @@ import Testing
     #expect(try Settings.migrate(JSONEncoder().encode(settings)).appendSpaceAfterDictation)
 }
 
+@Test func recordingCueSettingsDefaultOffAndRoundTrip() throws {
+    #expect(Settings.default.playRecordingSounds == false)
+    #expect(Settings.default.muteWhileRecording == false)
+
+    var settings = Settings.default
+    settings.playRecordingSounds = true
+    settings.muteWhileRecording = true
+    let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+    #expect(decoded.playRecordingSounds)
+    #expect(decoded.muteWhileRecording)
+}
+
+@Test func recordingSoundOutputDefaultsToTheSystemAtFullVolumeAndRoundTrips() throws {
+    #expect(Settings.default.recordingSoundsOutputUID == nil)
+    #expect(Settings.default.recordingSoundsVolume == 1)
+
+    var settings = Settings.default
+    settings.recordingSoundsOutputUID = "usb-speakers"
+    settings.recordingSoundsVolume = 0.25
+    let decoded = try Settings.migrate(JSONEncoder().encode(settings))
+    #expect(decoded.recordingSoundsOutputUID == "usb-speakers")
+    #expect(decoded.recordingSoundsVolume == 0.25)
+}
+
 @Test func preferredInputDeviceDefaultsToTheSystemDefaultAndRoundTrips() throws {
     #expect(Settings.default.preferredInputDeviceUID == nil)
 

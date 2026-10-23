@@ -23,7 +23,9 @@ import Testing
                       source: TranscriptionSource = .local(modelID: "large-v3-turbo"),
                       glossaryEnabled: Bool = false,
                       glossary: Glossary = Glossary(),
-                      glossaryRequests: Box<Int>? = nil)
+                      glossaryRequests: Box<Int>? = nil,
+                      cues: FakeRecordingCues? = nil,
+                      cueSettings: Settings = .default)
         -> DictationCapture {
         let capture = DictationCapture(
             recorder: recorder,
@@ -37,10 +39,32 @@ import Testing
             glossary: {
                 if let glossaryRequests { glossaryRequests.value += 1 }
                 return glossary
-            })
+            },
+            cues: cues,
+            settings: { cueSettings })
         capture.onTranscript = { [weak self] in self?.transcripts.append($0) }
         capture.onError = { [weak self] in self?.errors.append($0) }
         return capture
+    }
+
+    @Test func cuesPlayAroundTheRecordingAndCancelRestoresTheOutput() async {
+        var settings = Settings.default
+        settings.playRecordingSounds = true
+        settings.muteWhileRecording = true
+        let cues = FakeRecordingCues()
+        let capture = make(mode: .hold, cues: cues, cueSettings: settings)
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        #expect(cues.events == ["startSound", "mute"])
+        capture.handle(.keyUp(.dictateAndRefine))
+        await capture.drain()
+        #expect(cues.events == ["startSound", "mute", "restore", "stopSound"])
+
+        capture.handle(.keyDown(.dictateAndRefine))
+        await capture.drain()
+        capture.cancel()
+        #expect(cues.events.suffix(3) == ["startSound", "mute", "restore"])
     }
 
     @Test func holdModeRecordsOnKeyDownAndTranscribesOnKeyUp() async {

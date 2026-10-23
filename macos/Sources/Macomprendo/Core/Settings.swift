@@ -317,6 +317,15 @@ struct Settings: Codable, Sendable, Equatable {
     var shortDictationInsertsOK: Bool
     /// Adds one separating space after direct Dictate insertion; history keeps the raw transcript.
     var appendSpaceAfterDictation: Bool
+    /// Plays a sound when a dictation recording starts and stops.
+    var playRecordingSounds: Bool
+    /// Mutes the system output for the length of a dictation recording.
+    var muteWhileRecording: Bool
+    /// The device the recording sounds play on, by Core Audio UID. `nil` follows the system
+    /// default output.
+    var recordingSoundsOutputUID: String?
+    /// The recording sounds' volume, 0...1.
+    var recordingSoundsVolume: Double
     /// nil disables middle-mouse triggering; a value selects one existing action.
     var middleMouseAction: MiddleMouseAction?
     /// Hold/toggle semantics for a middle-mouse dictation action, independent from hotkeys.
@@ -396,6 +405,10 @@ struct Settings: Codable, Sendable, Equatable {
             releaseMicrophoneAfterRecording: true,
             shortDictationInsertsOK: false,
             appendSpaceAfterDictation: false,
+            playRecordingSounds: false,
+            muteWhileRecording: false,
+            recordingSoundsOutputUID: nil,
+            recordingSoundsVolume: 1,
             middleMouseAction: nil,
             middleMouseMode: .hold,
             transcriptionSource: .local(modelID: "large-v3-turbo"),
@@ -486,6 +499,13 @@ extension Settings {
             ?? d.shortDictationInsertsOK
         appendSpaceAfterDictation = try c.decodeIfPresent(Bool.self, forKey: .appendSpaceAfterDictation)
             ?? d.appendSpaceAfterDictation
+        playRecordingSounds = try c.decodeIfPresent(Bool.self, forKey: .playRecordingSounds)
+            ?? d.playRecordingSounds
+        muteWhileRecording = try c.decodeIfPresent(Bool.self, forKey: .muteWhileRecording)
+            ?? d.muteWhileRecording
+        recordingSoundsOutputUID = try c.decodeIfPresent(String.self, forKey: .recordingSoundsOutputUID)
+        recordingSoundsVolume = min(max(try c.decodeIfPresent(Double.self, forKey: .recordingSoundsVolume)
+            ?? d.recordingSoundsVolume, 0), 1)
         middleMouseAction = try c.decodeIfPresent(MiddleMouseAction.self, forKey: .middleMouseAction)
             ?? d.middleMouseAction
         middleMouseMode = try c.decodeIfPresent(DictationMode.self, forKey: .middleMouseMode)
