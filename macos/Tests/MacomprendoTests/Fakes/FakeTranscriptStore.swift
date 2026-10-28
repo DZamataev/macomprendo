@@ -168,6 +168,8 @@ actor FakeTranscriptStore: TranscriptStoring {
     var failNextReplace: MacomprendoError?
     private(set) var replaceCount = 0
 
+    func setFailNextReplace(_ error: MacomprendoError?) { failNextReplace = error }
+
     func replaceSegments(of id: Int64, speaker: TranscriptSpeaker,
                          with segments: [TranscriptSegment]) throws {
         if let error = failNextReplace {

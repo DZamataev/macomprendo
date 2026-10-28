@@ -44,6 +44,9 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case sourceNotMovedToTrash(String)
     /// A finished call's `.srt` could not be written into its recording folder.
     case callSubtitlesNotSaved(String)
+    /// A finished call's other participants could not be told apart; its far side stays
+    /// labelled `Others`.
+    case speakersNotIdentified(String)
     /// A transcript's notes file exists but cannot be read as text.
     case notesUnreadable(String)
     /// A transcript's notes could not be written (or an emptied notes file removed).
@@ -124,6 +127,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Can't play this transcript's audio: \(reason)."
         case .callSubtitlesNotSaved(let reason):
             return "The call's subtitles could not be saved (\(reason)). The transcript is ready."
+        case .speakersNotIdentified(let reason):
+            return "The other speakers could not be told apart (\(reason)). The transcript is ready, labelled Others."
         case .notesUnreadable(let reason):
             return "The notes file could not be read (\(reason))."
         case .notesNotSaved(let reason):
@@ -207,6 +212,8 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "If the file or the recording folder moved, choose it again with Choose File… or Choose Folder…."
         case .callSubtitlesNotSaved:
             return "Check that the recording folder still exists and the disk has free space, or use Export ▸ Subtitles (.srt)."
+        case .speakersNotIdentified:
+            return "Download the speaker models again in Settings ▸ General ▸ Call recordings, then choose Transcribe Again."
         case .notesUnreadable:
             return "Open the .notes.txt file in a text editor and save it as plain UTF-8 text. Macomprendo will not change it until then."
         case .notesNotMovedToTrash:

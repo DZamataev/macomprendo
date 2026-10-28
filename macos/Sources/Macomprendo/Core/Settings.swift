@@ -384,6 +384,9 @@ struct Settings: Codable, Sendable, Equatable {
     /// Whether a call whose transcript completes gets `<folder name>.srt` in its recording
     /// folder, rewritten on every completion.
     var saveCallSubtitles: Bool
+    /// Whether a finished call's far side is split by voice into `Speaker 1`, `Speaker 2`, …
+    /// Needs the speaker models; without them calls finish labelled `Others`.
+    var identifyCallSpeakers: Bool
     /// Whether a call from `autoRecordApps` starts and stops a recording by itself.
     var autoRecordCalls: Bool
     /// The list the automatic recorder watches. A stored list replaces the default entirely,
@@ -438,6 +441,7 @@ struct Settings: Codable, Sendable, Equatable {
             callRecordingsDirectory: nil,
             callTranscription: .afterRecording,
             saveCallSubtitles: true,
+            identifyCallSpeakers: true,
             autoRecordCalls: false,
             autoRecordApps: CallApp.defaults,
             autoRecordAllApps: false
@@ -557,6 +561,8 @@ extension Settings {
             ?? d.callTranscription
         saveCallSubtitles = try c.decodeIfPresent(Bool.self, forKey: .saveCallSubtitles)
             ?? d.saveCallSubtitles
+        identifyCallSpeakers = try c.decodeIfPresent(Bool.self, forKey: .identifyCallSpeakers)
+            ?? d.identifyCallSpeakers
         autoRecordCalls = try c.decodeIfPresent(Bool.self, forKey: .autoRecordCalls)
             ?? d.autoRecordCalls
         autoRecordApps = try c.decodeIfPresent([CallApp].self, forKey: .autoRecordApps)

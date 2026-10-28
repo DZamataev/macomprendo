@@ -89,6 +89,16 @@ enum MenuPanelPresentation {
                 detail: TranscriptProgressText.clockText(position: position, duration: duration),
                 progress: progress,
                 isFailure: false)
+
+        case let .identifyingSpeakers(transcriptID, title):
+            // Diarization reports no progress anyone could read as a clock or a percent.
+            return TranscriptionActivity(
+                transcriptID: transcriptID,
+                title: title,
+                caption: "Identifying speakers…",
+                detail: nil,
+                progress: .indeterminate,
+                isFailure: false)
         }
     }
 
@@ -138,6 +148,9 @@ enum MenuPanelPresentation {
                 lines.append("Transcribing file — \(readable)")
             }
         }
+        if case .identifyingSpeakers = transcription {
+            lines.append("Identifying call speakers…")
+        }
 
         let symbol: StatusItemContent.Symbol = recordingElapsed == nil ? .idle : .recording
         let title: String
@@ -151,6 +164,10 @@ enum MenuPanelPresentation {
                 + (speaker == nil
                     ? (filePercent(position: position, duration: duration).map { "\($0)%" } ?? "…")
                     : "…")
+        case (nil, .identifyingSpeakers):
+            title = "…"
+        case let (clock?, .identifyingSpeakers):
+            title = "\(TranscriptExporter.clock(clock)) · …"
         case let (clock?, _):
             title = TranscriptExporter.clock(clock)
         case (nil, _):

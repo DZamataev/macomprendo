@@ -71,6 +71,10 @@ import Testing
         #expect(TranscriptsView.listEffect(for: state, headers: []) == .reload)
         #expect(TranscriptsView.listEffect(for: state, headers: [header(id: 7)]) == .none)
         #expect(TranscriptsView.listEffect(for: state, headers: [header(id: 8)]) == .reload)
+        let identifying = FileTranscriptionController.State.identifyingSpeakers(transcriptID: 7,
+                                                                                 title: "Call")
+        #expect(TranscriptsView.listEffect(for: identifying, headers: [header(id: 7)]) == .none)
+        #expect(TranscriptsView.listEffect(for: identifying, headers: []) == .reload)
     }
 
     @Test func aFinishedJobIsReloadedAndSelected() {

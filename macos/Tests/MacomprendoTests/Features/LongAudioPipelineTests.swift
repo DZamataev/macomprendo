@@ -212,6 +212,39 @@ import Testing
         #expect(presence.measured == 0)
     }
 
+    // MARK: - Given segments
+
+    @Test func givenSegmentsAreTranscribedInOrderWithoutTheDecoderOrTheSegmenter() async throws {
+        let decoder = ScriptedMediaDecoder()
+        let segmenter = ScriptedSegmenter()
+        let provider = FakeTranscriptionProvider()
+        let events = try await collect(
+            make(decoder: decoder, segmenter: segmenter, transcriber: { provider })
+                .run(segments: [Self.segment(at: 2), Self.segment(at: 5)], duration: 9))
+        #expect(events == [
+            .opened(duration: 9),
+            .segment(start: 2, end: 3, text: "hello"),
+            .position(3),
+            .segment(start: 5, end: 6, text: "hello"),
+            .position(6),
+        ])
+        #expect(decoder.requests.isEmpty)
+        #expect(segmenter.sessionJoinGaps.isEmpty)
+    }
+
+    @Test func givenSegmentsPassTheSamePhantomGate() async throws {
+        let provider = DetectingProvider([Self.said("Да.", "ru"), Self.said("*Sigh*", "en")])
+        let samples = [Float](repeating: 0.1, count: 16_000)
+        let events = try await collect(
+            make(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                 transcriber: { provider }, language: nil,
+                 speechPresence: ScriptedSpeechPresence([0.7, 0]))
+                .run(segments: [SpeechSegment(start: 0, samples: samples, sampleRate: 16_000),
+                                SpeechSegment(start: 4, samples: samples, sampleRate: 16_000)],
+                     duration: 5))
+        #expect(texts(events) == ["Да."])
+    }
+
     // MARK: - Tests
 
     @Test func anAlreadyOpenStreamRunsLikeAFileWithoutTheDecoder() async throws {

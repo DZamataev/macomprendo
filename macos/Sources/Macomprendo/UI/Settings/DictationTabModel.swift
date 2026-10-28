@@ -256,7 +256,7 @@ final class DictationTabModel: ObservableObject {
             "whisper.cpp — \(model.displayName)"
         case .sherpaOfflineASR:
             "sherpa-onnx — \(model.displayName)"
-        case .sherpaVits, .sherpaKokoro:
+        case .sherpaVits, .sherpaKokoro, .sherpaDiarization:
             model.displayName
         }
     }

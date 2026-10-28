@@ -19,11 +19,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are saved as you type in `<recording name>.notes.txt` — inside a call's recording folder, next
   to the source file for a file transcript — included in the Markdown export, sent to
   **Summarize** along with the transcript, and moved to the Trash with the source.
+- **Speakers on calls.** When a call's transcript is finished, the far side is split by voice into
+  **Speaker 1**, **Speaker 2**, … — in Transcripts, every export and the saved `.srt` — instead of
+  one `Others`. Settings ▸ General ▸ Call recordings ▸ **Tell the other speakers apart**, on by
+  default, downloads the 46 MB speaker models it needs; without them calls read `Others` as before.
+  It runs after Stop, so the live text stays `Others` until then.
 - Settings ▸ General: **Play a sound when recording starts and stops** and **Mute system
   audio while recording** (both off by default), for Dictate and Dictate & Refine, with a
   sound output device and volume.
 
 ### Fixed
+- File and call transcripts no longer fill with words nobody said on a quiet microphone — `*Sigh*`,
+  `you`, `und`, `- No, no, no.` — when the transcription language is Auto. A short real reply
+  whose language was misheard («угу» as `Mm-hmm`) is transcribed again in the conversation's
+  language.
 - The app no longer freezes — menubar, popover and scrolling — when Core Audio stalls while
   a dictation starts, as it can when a Bluetooth headset switches modes. Audio engine work
   now runs off the main thread, and the engine's configuration-change notification no

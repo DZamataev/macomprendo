@@ -724,6 +724,16 @@ import Testing
         #expect(try Settings.migrate(JSONEncoder().encode(settings)).saveCallSubtitles == false)
     }
 
+    @Test func callSpeakersAreToldApartByDefaultAndTheChoiceRoundTrips() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+        #expect(try Settings.migrate(json).identifyCallSpeakers)
+        #expect(Settings.default.identifyCallSpeakers)
+
+        var settings = Settings.default
+        settings.identifyCallSpeakers = false
+        #expect(try Settings.migrate(JSONEncoder().encode(settings)).identifyCallSpeakers == false)
+    }
+
     @Test func automaticCallRecordingIsOffWithTheDefaultAppsAndRoundTrips() throws {
         let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
         #expect(try Settings.migrate(json).autoRecordCalls == false)

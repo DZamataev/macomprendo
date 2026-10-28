@@ -37,6 +37,7 @@ import Testing
     .transcriptPlaybackUnavailable("x"),
     .sourceNotMovedToTrash("x"),
     .callSubtitlesNotSaved("the disk is full"),
+    .speakersNotIdentified("diarization produced no result"),
     .notesUnreadable("the file is not UTF-8 text"),
     .notesNotSaved("the folder no longer exists"),
     .notesNotMovedToTrash("x")

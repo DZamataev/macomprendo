@@ -97,6 +97,27 @@ import Testing
         #expect(others?.progress == .indeterminate)
     }
 
+    @Test func identifyingSpeakersIsAnIndeterminateCardWithoutAClock() {
+        let card = MenuPanelPresentation.transcriptionActivity(
+            .identifyingSpeakers(transcriptID: 7, title: "Call"))
+        #expect(card == MenuPanelPresentation.TranscriptionActivity(
+            transcriptID: 7,
+            title: "Call",
+            caption: "Identifying speakers…",
+            detail: nil,
+            progress: .indeterminate,
+            isFailure: false))
+    }
+
+    @Test func identifyingSpeakersShowsAnEllipsisAndSaysSoInTheTooltip() {
+        let alone = statusItem(nil, .identifyingSpeakers(transcriptID: 7, title: "Call"))
+        #expect(alone.title == "…")
+        #expect(alone.tooltip == "Macomprendo\nIdentifying call speakers…")
+        let recording = statusItem(12, .identifyingSpeakers(transcriptID: 7, title: "Call"))
+        #expect(recording.symbol == .recording)
+        #expect(recording.title == "00:12 · …")
+    }
+
     @Test func aFailureIsReportedWithItsMessageAndNoRow() {
         let withoutRow = MenuPanelPresentation.transcriptionActivity(
             .failed(message: "No speech found.", transcriptID: nil))

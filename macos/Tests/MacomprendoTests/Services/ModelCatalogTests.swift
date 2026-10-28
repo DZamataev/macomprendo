@@ -14,9 +14,28 @@ import Testing
     @Test func allByKindPartitionsTheCatalog() {
         let asr = ModelCatalog.all(kind: .asr)
         let tts = ModelCatalog.all(kind: .tts)
+        let speakers = ModelCatalog.all(kind: .speakers)
         #expect(asr.count == 14)
         #expect(tts.count == 8)
-        #expect(asr.count + tts.count == ModelCatalog.all.count)
+        #expect(speakers.count == 1)
+        #expect(asr.count + tts.count + speakers.count == ModelCatalog.all.count)
+    }
+
+    @Test func theSpeakerModelsArePyannoteSegmentationAndERes2NetEmbeddings() throws {
+        let model = try #require(ModelCatalog.model(id: ModelCatalog.speakerDiarizationID))
+        #expect(model.engine == .sherpaDiarization)
+        #expect(model.kind == .speakers)
+        let segmentation = try #require(model.file(.segmentation))
+        let embedding = try #require(model.file(.speakerEmbedding))
+        #expect(segmentation.sha256
+                == "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079")
+        #expect(segmentation.sizeBytes == 5992913)
+        #expect(embedding.sha256
+                == "1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b")
+        #expect(embedding.sizeBytes == 39593761)
+        // Distinct local names: both upstreams call their file something generic.
+        #expect(segmentation.fileName != embedding.fileName)
+        #expect(model.files.count == 2)
     }
 
     @Test func everyCatalogEntryPinsAChecksumForEveryFile() throws {
@@ -241,6 +260,9 @@ import Testing
                 #expect(roles == ctc || roles == transducer, "\(model.id) is not a sherpa file set")
             case .sherpaVits, .sherpaKokoro:
                 #expect(roles == [.archive], "\(model.id) is not an archived TTS model")
+            case .sherpaDiarization:
+                #expect(roles == [.segmentation, .speakerEmbedding],
+                        "\(model.id) is not a diarization file set")
             }
         }
     }

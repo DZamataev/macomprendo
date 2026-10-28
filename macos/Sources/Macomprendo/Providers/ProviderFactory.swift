@@ -48,9 +48,10 @@ struct ProviderFactory: Sendable {
                 return WhisperCppTranscriber(modelURL: modelURL, options: whisper)
             case .sherpaOfflineASR:
                 return try SherpaOfflineTranscriber(files: resolved.files)
-            case .sherpaVits, .sherpaKokoro:
+            case .sherpaVits, .sherpaKokoro, .sherpaDiarization:
                 // Transcription settings only offer `.asr` entries. Treat a stale or hand-edited
-                // TTS id as unavailable rather than opening it with the wrong runtime.
+                // TTS or diarization id as unavailable rather than opening it with the wrong
+                // runtime.
                 throw MacomprendoError.modelMissing(modelID)
             }
 

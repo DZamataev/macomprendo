@@ -16,6 +16,8 @@ import Foundation
         case idle
         case running(transcriptID: Int64, title: String, position: TimeInterval,
                      duration: TimeInterval, speaker: TranscriptSpeaker?)
+        /// A finished call's far side is being split by voice and transcribed again by turn.
+        case identifyingSpeakers(transcriptID: Int64, title: String)
         case finished(transcriptID: Int64)
         case failed(message: String, transcriptID: Int64?)
     }
@@ -39,6 +41,11 @@ import Foundation
     private let folders: any CallRecordingFolderManaging
     /// Where a finished call's `.srt` is written (`TranscriptSidecars.subtitlesURL`).
     private let sidecars: any TranscriptSidecarFiling
+    /// Tells a finished call's other participants apart (spec
+    /// `2026-10-28-phantom-gate-and-call-speakers`).
+    private let diarizer: any SpeakerDiarizing
+    /// Reads a call's whole Others track for the diarizer.
+    private let trackDecoder: any MediaAudioDecoding
     private let pipeline: @MainActor () -> LongAudioPipeline
     private let settings: @MainActor () -> Settings
     private let glossary: @MainActor () -> Glossary
@@ -64,6 +71,8 @@ import Foundation
          bookmarks: any FileBookmarking,
          folders: any CallRecordingFolderManaging,
          sidecars: any TranscriptSidecarFiling,
+         diarizer: any SpeakerDiarizing,
+         trackDecoder: any MediaAudioDecoding,
          pipeline: @escaping @MainActor () -> LongAudioPipeline,
          settings: @escaping @MainActor () -> Settings,
          glossary: @escaping @MainActor () -> Glossary,
@@ -76,6 +85,8 @@ import Foundation
         self.bookmarks = bookmarks
         self.folders = folders
         self.sidecars = sidecars
+        self.diarizer = diarizer
+        self.trackDecoder = trackDecoder
         self.pipeline = pipeline
         self.settings = settings
         self.glossary = glossary
@@ -413,12 +424,15 @@ import Foundation
                 fail(ErrorText.describe(MacomprendoError.noSpeechFound), transcriptID: nil,
                      generation: generation)
             } else {
+                let speakersWarning = try await identifySpeakers(
+                    of: resuming.id, title: title, folder: folder, steps: steps,
+                    generation: generation, settings: currentSettings, glossary: currentGlossary)
                 try await store.setStatus(.complete, reason: nil, for: resuming.id)
                 let warning = await saveSubtitles(of: resuming.id, in: folder,
                                                   settings: currentSettings)
                 if generation == self.generation {
                     state = .finished(transcriptID: resuming.id)
-                    callFinished(resuming.id, title, warning)
+                    callFinished(resuming.id, title, warning ?? speakersWarning)
                 }
             }
         } catch {
@@ -428,6 +442,92 @@ import Foundation
         // has landed: settling must not be held up by a provider call still in flight.
         if let interrupted {
             await finish(interrupted)
+        }
+    }
+
+    /// How much of the track around a voice's turn its segment takes: the spike's padding, so a
+    /// word clipped at a turn's edge is still heard whole.
+    static let turnPadding: TimeInterval = 0.2
+
+    /// Splits a finished call's Others track by voice: the whole track is decoded, diarized,
+    /// its turns planned and transcribed again — phantom gate included — and the new segments
+    /// replace the track's old ones in one store write. Skipped (returning `nil`) when the
+    /// setting is off, the call has no Others track or it stored nothing, or the models are not
+    /// downloaded. Any failure but cancellation keeps the old text and returns the warning the
+    /// call-finished report shows; cancellation propagates, so the row is left `incomplete` and
+    /// **Resume** redoes the step.
+    private func identifySpeakers(of id: Int64, title: String, folder: URL,
+                                  steps: [CallTranscriptionStep], generation: Int,
+                                  settings: Settings, glossary: Glossary) async throws -> String? {
+        guard settings.identifyCallSpeakers,
+              let step = steps.first(where: { $0.speaker == .others }),
+              try await store.transcript(id: id)?.segments
+                  .contains(where: { $0.speaker == .others }) == true,
+              await diarizer.isReady()
+        else { return nil }
+        try Task.checkCancellation()
+        if generation == self.generation {
+            state = .identifyingSpeakers(transcriptID: id, title: title)
+        }
+        let pipeline = pipeline()
+        do {
+            let rate = AVAssetMediaDecoder.sampleRate
+            var samples: [Float] = []
+            let decoded = try await trackDecoder.open(folder.appendingPathComponent(step.file),
+                                                      from: 0)
+            for try await chunk in decoded.chunks {
+                try Task.checkCancellation()
+                samples += chunk
+            }
+            let turns = try await diarizer.diarize(samples, sampleRate: rate)
+            try Task.checkCancellation()
+            let plan = SpeakerTurnPlanner.plan(turns)
+            guard !plan.isEmpty else { return nil }
+            let duration = Double(samples.count) / Double(rate)
+            var voices: [TimeInterval: Int] = [:]
+            let segments = plan.compactMap { turn -> SpeechSegment? in
+                let first = max(0, Int(((turn.start - Self.turnPadding) * Double(rate)).rounded()))
+                let last = min(samples.count,
+                               Int(((turn.end + Self.turnPadding) * Double(rate)).rounded()))
+                guard last > first else { return nil }
+                let segment = SpeechSegment(start: Double(first) / Double(rate),
+                                            samples: Array(samples[first..<last]),
+                                            sampleRate: rate)
+                voices[segment.start] = turn.voice
+                return segment
+            }
+            samples = []
+            var replacement: [TranscriptSegment] = []
+            try await withTaskCancellationHandler(operation: {
+                for try await event in pipeline.run(segments: segments, duration: duration) {
+                    try Task.checkCancellation()
+                    guard case let .segment(start, end, text) = event else { continue }
+                    replacement.append(.normalised(
+                        text: text, start: start + step.offset, end: end + step.offset,
+                        speaker: .others, voice: voices[start], settings: settings,
+                        glossary: glossary))
+                }
+            }, onCancel: {
+                pipeline.stop()
+            })
+            try Task.checkCancellation()
+            await finish(pipeline)
+            // A pass that heard nothing must not wipe a far side the first pass heard.
+            guard !replacement.isEmpty else { return nil }
+            try await store.replaceSegments(of: id, speaker: .others, with: replacement)
+            transcriptsChanged()
+            return nil
+        } catch {
+            await finish(pipeline)
+            if Self.isCancellation(error) || Task.isCancelled { throw error }
+            Log.app.error("""
+                A finished call's speakers could not be told apart \
+                (\(String(describing: type(of: error)), privacy: .public))
+                """)
+            let failure = error as? MacomprendoError
+            if case .speakersNotIdentified = failure { return ErrorText.describe(error) }
+            return ErrorText.describe(MacomprendoError.speakersNotIdentified(
+                failure?.errorDescription ?? "the track could not be read"))
         }
     }
 
@@ -583,13 +683,13 @@ extension TranscriptSegment {
     /// A transcribed segment as it is stored: glossary-normalised when the glossary is on,
     /// the provider's text kept as `rawText` only when a rewrite changed it.
     static func normalised(text: String, start: TimeInterval, end: TimeInterval,
-                           speaker: TranscriptSpeaker?, settings: Settings,
+                           speaker: TranscriptSpeaker?, voice: Int? = nil, settings: Settings,
                            glossary: Glossary) -> TranscriptSegment {
         let result = settings.glossaryEnabled
             ? Normalizer.normalise(text, with: glossary)
             : NormalisationResult(text: text, rewrites: [])
         return TranscriptSegment(start: start, end: end, text: result.text,
                                  rawText: result.rewrites.isEmpty ? nil : text,
-                                 speaker: speaker)
+                                 speaker: speaker, voice: voice)
     }
 }

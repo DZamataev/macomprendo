@@ -6,7 +6,8 @@ struct SettingsView: View {
             GeneralTab(savedAudio: AppRoot.model.savedAudioModel,
                        history: AppRoot.model.history,
                        microphone: AppRoot.model.microphonePickerModel,
-                       callRecordings: AppRoot.model.callRecordingsModel)
+                       callRecordings: AppRoot.model.callRecordingsModel,
+                       speakerModels: AppRoot.model.speakerModelsViewModel)
                 .tabItem { Label { Text("General") } icon: { Icon(.settings, size: 16) } }
             HotkeysTab()
                 .tabItem { Label { Text("Hotkeys") } icon: { Icon(.hotkeys, size: 16) } }

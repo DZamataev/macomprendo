@@ -110,7 +110,7 @@ below come from that spike and are this design's evidence.
   (invariant 16 lists only what ships inside the app); the licences are named in the settings
   caption instead.
 - **Clustering:** distance threshold 1.2, `min_duration_on` 0.3 s, `min_duration_off` 0.5 s,
-  threads `max(1, cores − 2)`.
+  at most 4 threads — more are slower (51 minutes: 250 s on 2, 207–259 s on 4, 354 s on 12).
 
 ## 4. Not in scope
 

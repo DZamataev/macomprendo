@@ -25,6 +25,9 @@ import Testing
         let calls: Box<[CallFinished]>
         let createdAt: Date
         let sidecars: FakeTranscriptSidecars
+        let diarizer: ScriptedDiarizer
+        /// Decodes a call's whole Others track for diarization.
+        let trackDecoder: ScriptedMediaDecoder
     }
 
     /// One pipeline per `pipeline()` call, for tests where a second job supersedes a first.
@@ -61,7 +64,9 @@ import Testing
                          folders: FakeCallRecordingFolders = FakeCallRecordingFolders(),
                          readiness: @escaping @MainActor () -> BackendReadiness = { .ready },
                          glossary: @escaping @MainActor () -> Glossary = { Glossary() },
-                         pipelines: PipelineScript? = nil) -> Rig {
+                         pipelines: PipelineScript? = nil,
+                         diarizer: ScriptedDiarizer = ScriptedDiarizer(ready: false),
+                         trackDecoder: ScriptedMediaDecoder = ScriptedMediaDecoder()) -> Rig {
         let store = FakeTranscriptStore()
         let settings = SettingsHolder()
         let changes = Box(0)
@@ -72,6 +77,8 @@ import Testing
             bookmarks: bookmarks,
             folders: folders,
             sidecars: sidecars,
+            diarizer: diarizer,
+            trackDecoder: trackDecoder,
             pipeline: {
                 if let pipelines { return pipelines.next() }
                 return Self.pipeline(decoder: decoder, segmenter: segmenter, provider: provider)
@@ -86,7 +93,8 @@ import Testing
             })
         return Rig(controller: controller, store: store, decoder: decoder,
                    segmenter: segmenter, provider: provider, settings: settings,
-                   changes: changes, calls: calls, createdAt: Self.fixedNow, sidecars: sidecars)
+                   changes: changes, calls: calls, createdAt: Self.fixedNow, sidecars: sidecars,
+                   diarizer: diarizer, trackDecoder: trackDecoder)
     }
 
     // MARK: - A fresh job
@@ -1142,6 +1150,210 @@ import Testing
         #expect(rig.calls.value == [CallFinished(
             transcriptID: id, title: Self.callTitle,
             warning: ErrorText.describe(MacomprendoError.callSubtitlesNotSaved("the disk is full")))])
+    }
+
+    // MARK: - Call speakers
+
+    /// Both tracks' pipelines, then the one that transcribes the Others track by voice.
+    private func diarizedCallPipelines(provider: FakeTranscriptionProvider = FakeTranscriptionProvider())
+        -> PipelineScript {
+        PipelineScript([
+            Self.pipeline(decoder: ScriptedMediaDecoder(duration: 60, chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]]),
+                          provider: FakeTranscriptionProvider()),
+            Self.pipeline(decoder: ScriptedMediaDecoder(duration: 60, chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0, seconds: 3)]]),
+                          provider: FakeTranscriptionProvider()),
+            Self.pipeline(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          provider: provider)])
+    }
+
+    /// Four seconds of Others track and two voices in it.
+    private func twoVoices(gate: AsyncGate? = nil, failure: Error? = nil) -> ScriptedDiarizer {
+        ScriptedDiarizer(turns: [SpeakerTurn(start: 0, end: 1, speaker: 4),
+                                 SpeakerTurn(start: 2, end: 3, speaker: 9)],
+                         failure: failure, gate: gate)
+    }
+
+    private func fourSecondTrack() -> ScriptedMediaDecoder {
+        ScriptedMediaDecoder(duration: 4, chunks: [Self.chunk(seconds: 2), Self.chunk(seconds: 2)])
+    }
+
+    @Test func aFinishedCallTellsItsOtherSpeakersApart() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let diarizer = twoVoices()
+        let track = fourSecondTrack()
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: diarizedCallPipelines(), diarizer: diarizer,
+                          trackDecoder: track)
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .finished(transcriptID: id))
+        #expect(track.requests == [.init(url: trackURL(folder, .others), start: 0)])
+        #expect(diarizer.sampleCounts == [4 * 16_000])
+        let stored = try #require(await rig.store.snapshot(id))
+        #expect(stored.header.status == .complete)
+        // Each voice's turn, padded by 0.2 s inside the track, on the call's clock.
+        let milliseconds = stored.segments.map {
+            [Int(($0.start * 1000).rounded()), Int(($0.end * 1000).rounded())]
+        }
+        #expect(milliseconds == [[200, 1200], [500, 1700], [2300, 3700]])
+        #expect(stored.segments.map(\.speakerLabel) == ["Me", "Speaker 1", "Speaker 2"])
+        #expect(stored.segments.map(\.text) == ["hello", "hello", "hello"])
+        let srt = try #require(rig.sidecars.contents(TranscriptSidecars.subtitlesURL(callFolder: folder)))
+        #expect(srt.contains("Speaker 1: hello"))
+        #expect(srt.contains("Speaker 2: hello"))
+        #expect(!srt.contains("Others:"))
+        #expect(rig.calls.value == [CallFinished(transcriptID: id, title: Self.callTitle)])
+    }
+
+    @Test func speakersAreNotToldApartWhenTurnedOff() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let diarizer = twoVoices()
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: diarizedCallPipelines(), diarizer: diarizer,
+                          trackDecoder: fourSecondTrack())
+        rig.settings.value.identifyCallSpeakers = false
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(diarizer.sampleCounts.isEmpty)
+        #expect(rig.trackDecoder.requests.isEmpty)
+        #expect(await rig.store.snapshot(id)?.segments.map(\.voice) == [nil, nil])
+    }
+
+    @Test func speakersAreNotToldApartWithoutTheModels() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let diarizer = twoVoices()
+        diarizer.ready = false
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: diarizedCallPipelines(), diarizer: diarizer,
+                          trackDecoder: fourSecondTrack())
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        // Nothing decoded for nothing: the missing models are known before the track is read.
+        #expect(rig.trackDecoder.requests.isEmpty)
+        #expect(await rig.store.snapshot(id)?.header.status == .complete)
+        #expect(rig.calls.value == [CallFinished(transcriptID: id, title: Self.callTitle)])
+    }
+
+    @Test func aCallWhoseOthersSaidNothingIsNotDiarized() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let diarizer = twoVoices()
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([
+                              Self.pipeline(decoder: ScriptedMediaDecoder(duration: 60, chunks: [Self.chunk(seconds: 1)]),
+                                            segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]]),
+                                            provider: FakeTranscriptionProvider()),
+                              Self.pipeline(decoder: ScriptedMediaDecoder(duration: 60, chunks: [Self.chunk(seconds: 1)]),
+                                            segmenter: ScriptedSegmenter(),
+                                            provider: FakeTranscriptionProvider())]),
+                          diarizer: diarizer, trackDecoder: fourSecondTrack())
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(diarizer.sampleCounts.isEmpty)
+        #expect(await rig.store.snapshot(id)?.header.status == .complete)
+    }
+
+    @Test func aDiarizationFailureCompletesTheCallLabelledOthersAndSaysSo() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let failure = MacomprendoError.speakersNotIdentified("diarization produced no result")
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: diarizedCallPipelines(),
+                          diarizer: twoVoices(failure: failure),
+                          trackDecoder: fourSecondTrack())
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .finished(transcriptID: id))
+        let stored = try #require(await rig.store.snapshot(id))
+        #expect(stored.header.status == .complete)
+        #expect(stored.segments.map(\.speakerLabel) == ["Me", "Others"])
+        #expect(rig.calls.value == [CallFinished(transcriptID: id, title: Self.callTitle,
+                                                 warning: ErrorText.describe(failure))])
+        let srt = rig.sidecars.contents(TranscriptSidecars.subtitlesURL(callFolder: folder))
+        #expect(srt?.contains("Others: hello") == true)
+    }
+
+    @Test func aRetranscriptionThatHearsNothingKeepsTheOldOthersText() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let silent = FakeTranscriptionProvider()
+        silent.result = .success("")
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: diarizedCallPipelines(provider: silent),
+                          diarizer: twoVoices(), trackDecoder: fourSecondTrack())
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        let stored = try #require(await rig.store.snapshot(id))
+        #expect(stored.header.status == .complete)
+        #expect(stored.segments.map(\.speakerLabel) == ["Me", "Others"])
+        #expect(await rig.store.replaceCount == 0)
+    }
+
+    @Test func aStoreFailureWhileReplacingKeepsTheOldOthersText() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: diarizedCallPipelines(), diarizer: twoVoices(),
+                          trackDecoder: fourSecondTrack())
+        await rig.store.setFailNextReplace(.transcriptStore("disk I/O error"))
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        let stored = try #require(await rig.store.snapshot(id))
+        #expect(stored.header.status == .complete)
+        #expect(stored.segments.map(\.speakerLabel) == ["Me", "Others"])
+        #expect(rig.calls.value.first?.warning != nil)
+    }
+
+    @Test func cancellingWhileSpeakersAreIdentifiedLeavesTheCallToResume() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let gate = AsyncGate()
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: diarizedCallPipelines(), diarizer: twoVoices(gate: gate),
+                          trackDecoder: fourSecondTrack())
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while rig.controller.state != .identifyingSpeakers(transcriptID: id, title: Self.callTitle),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(rig.controller.state == .identifyingSpeakers(transcriptID: id, title: Self.callTitle))
+        rig.controller.cancel()
+        gate.open()
+        await rig.controller.drain()
+
+        let stored = try #require(await rig.store.snapshot(id))
+        #expect(stored.header.status == .incomplete)
+        #expect(stored.segments.map(\.speakerLabel) == ["Me", "Others"])
+        #expect(rig.calls.value.isEmpty)
     }
 
     @Test func aCallWithoutSpeechSavesNoSubtitles() async throws {

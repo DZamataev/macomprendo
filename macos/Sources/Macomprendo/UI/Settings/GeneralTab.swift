@@ -20,6 +20,8 @@ struct GeneralTab: View {
     @ObservedObject var history: DictationHistoryController
     @ObservedObject var microphone: MicrophonePickerModel
     @ObservedObject var callRecordings: CallRecordingsSettingsModel
+    /// The speaker models **Tell the other speakers apart** needs.
+    @ObservedObject var speakerModels: ModelsViewModel
     @State private var viewModel: GeneralTabModel?
     @State private var launchAtLoginError: String?
     @State private var isDeleteAudioConfirmationPresented = false
@@ -101,6 +103,26 @@ struct GeneralTab: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                Toggle("Tell the other speakers apart", isOn: $model.settings.identifyCallSpeakers)
+                if model.settings.identifyCallSpeakers {
+                    ForEach(speakerModels.rows) { row in
+                        HStack {
+                            Text("Speaker models · "
+                                 + ModelsViewModel.sizeText(row.model.totalSizeBytes))
+                            Spacer()
+                            speakerModelState(row.id, row.state)
+                        }
+                    }
+                }
+                Text("When a call's transcript is finished, the far side is split by voice into "
+                     + "Speaker 1, Speaker 2, … and transcribed again by turn; until then, and "
+                     + "without the speaker models, it reads Others. Fast exchanges are often "
+                     + "misattributed. Models: pyannote segmentation (MIT) and 3D-Speaker "
+                     + "ERes2Net (Apache-2.0).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Toggle("Record calls automatically", isOn: $model.settings.autoRecordCalls)
                 Text((model.settings.autoRecordAllApps
                       ? "Starts recording when any app uses the microphone, "
@@ -125,7 +147,10 @@ struct GeneralTab: View {
                     }
                 }
             }
-            .task { await callRecordings.refreshSize() }
+            .task {
+                await callRecordings.refreshSize()
+                await speakerModels.refresh()
+            }
 
             Section("Dictation") {
                 Picker("Insert text by", selection: $model.settings.insertMethod) {
@@ -382,5 +407,31 @@ struct GeneralTab: View {
         else { return }
         model.settings.autoRecordApps.append(app)
         microphoneUsers.removeAll { $0.id == app.id }
+    }
+
+    @ViewBuilder
+    private func speakerModelState(_ id: String, _ state: ModelState) -> some View {
+        switch state {
+        case .notDownloaded:
+            Button("Download") { speakerModels.download(id) }
+        case .downloading(let fraction):
+            HStack(spacing: 8) {
+                ProgressView(value: fraction).frame(width: 90)
+                Button("Cancel") { speakerModels.cancelDownload(id) }
+            }
+        case .downloaded:
+            HStack(spacing: 8) {
+                Label { Text("Downloaded") } icon: { Icon(.success, size: 14) }
+                    .foregroundStyle(.green)
+                Button("Delete", role: .destructive) { Task { await speakerModels.delete(id) } }
+            }
+        case .failed(let message):
+            HStack(spacing: 8) {
+                Label { Text(message) } icon: { Icon(.warning, size: 14) }
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                Button("Retry") { speakerModels.download(id) }
+            }
+        }
     }
 }

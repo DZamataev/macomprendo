@@ -218,6 +218,15 @@ Not yet:
 
 - `.srt` cues are as long as segments, up to 35 s. Shorter cues would need the recogniser's word
   timestamps, which `TranscriptionProvider` does not return.
+- **The phantom gate.** whisper with automatic language writes `*Sigh*`, `you` or `und` over a
+  breath — in a language nobody speaks. `TranscriptionProvider.recognise` returns the detected
+  language (whisper.cpp only; everything else reports `nil` and is never gated), and
+  `LongAudioPipeline.emit` passes each segment through `PhantomGate`: a segment in another language
+  than its run's `LanguageTally` leader is dropped when a fresh Silero detector
+  (`SpeechPresenceMeasuring`) finds under 10 % speech in it, decoded again in the run's language
+  when it is real speech up to 5 s long, and kept when longer. A run whose language the user fixed
+  is never gated, and no phrase list is consulted (spec
+  `2026-10-28-phantom-gate-and-call-speakers`).
 - whisper can still hallucinate; the trailing-credit case is guarded — a span is split only above
   35 s, so a tail of padding and music never becomes a segment of its own — and the benchmark gym
   reports known phantom phrases per model (the 2026-10-14 interview run: none, where whisper
@@ -298,6 +307,20 @@ meters. Settings ▸ General gains a **Call recordings** section and
 Settings ▸ Hotkeys **Record Call**; the Transcripts window labels a call segment `[00:12:04] Me: text`,
 offers **Show in Finder**, and exports with the speaker prefix. Call recording requires
 **macOS 14.2**, the first release with process taps.
+
+**Call speakers (ADR-0021).** Once every track of a call is transcribed — after Stop, Resume or
+Transcribe Again, never live — `FileTranscriptionController` decodes the whole Others track and
+hands it to `SpeakerDiarizing` (`SherpaSpeakerDiarizer`: pyannote segmentation 3.0, 3D-Speaker
+ERes2Net base, fast clustering at distance 1.2, models from the catalog's `.speakers` kind).
+`SpeakerTurnPlanner` (pure) merges one voice's turns across pauses under 0.8 s, caps a stretch at
+30 s and numbers voices by first appearance; each stretch, padded by 0.2 s, is transcribed through
+`LongAudioPipeline.run(segments:duration:)` — phantom gate included — and the results replace the
+track's segments with their `voice` in one `replaceSegments` transaction before the row is
+`complete` and its `.srt` written. `TranscriptSegment.speakerLabel` prints `Speaker N` for a voice,
+so every export and the Transcripts window follow. Off, without the models or after a failure the
+call completes labelled `Others`; a failure is the call-finished toast's warning. Cancellation
+leaves the row `incomplete`, so Resume redoes the step. The state reads
+`identifyingSpeakers(transcriptID:title:)` meanwhile.
 
 ## Rules
 

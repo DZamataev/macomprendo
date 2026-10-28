@@ -1,7 +1,7 @@
 import Foundation
 
-/// Whether a model transcribes speech or produces it.
-enum ModelKind: String, Sendable, CaseIterable { case asr, tts }
+/// Whether a model transcribes speech, produces it, or tells speakers apart.
+enum ModelKind: String, Sendable, CaseIterable { case asr, tts, speakers }
 
 /// Which local runtime opens a model. Named for the runtime, not for the task, because one
 /// runtime (sherpa-onnx) serves both kinds.
@@ -10,11 +10,13 @@ enum LocalEngine: String, Codable, Sendable, CaseIterable {
     case sherpaOfflineASR
     case sherpaVits
     case sherpaKokoro
+    case sherpaDiarization
 
     var kind: ModelKind {
         switch self {
         case .whisperCpp, .sherpaOfflineASR: .asr
         case .sherpaVits, .sherpaKokoro: .tts
+        case .sherpaDiarization: .speakers
         }
     }
 }
@@ -29,6 +31,10 @@ enum ModelFileRole: String, Sendable, CaseIterable {
     case joiner
     case tokens
     case archive
+    /// Speaker diarization: where voices change (pyannote segmentation).
+    case segmentation
+    /// Speaker diarization: what a voice sounds like (speaker embedding extractor).
+    case speakerEmbedding
 }
 
 /// One file belonging to a model.
@@ -141,7 +147,11 @@ enum ModelCatalog {
     static let defaultID = "large-v3-turbo"
     static let lightweightID = "base"
 
-    static let all: [LocalModel] = whisper + gigaAM + parakeet + localTTS
+    /// The pair of models that tells a call's other participants apart (spec
+    /// `2026-10-28-phantom-gate-and-call-speakers`).
+    static let speakerDiarizationID = "speaker-diarization"
+
+    static let all: [LocalModel] = whisper + gigaAM + parakeet + localTTS + speakerDiarization
 
     static func model(id: String) -> LocalModel? {
         all.first { $0.id == id }
@@ -336,6 +346,34 @@ enum ModelCatalog {
                     Benchmark(language: "en", dataset: "FLEURS", metric: "WER %", value: 4.85, comparedTo: [:])
                 ],
                 sourceURL: parakeetSource
+            )
+        )
+    ]
+
+    // MARK: - Speaker diarization
+
+    private static let diarizationSource = URL(string: "https://k2-fsa.github.io/sherpa/onnx/speaker-diarization/index.html")!
+    private static let pyannoteBase = "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main"
+    private static let speakerEmbeddingBase = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models"
+
+    /// Chosen by measurement on a recorded five-person call: ERes2Net base agreed with the
+    /// named speakers on 84 % of words, the other published extractors on 54–80 %.
+    private static let speakerDiarization: [LocalModel] = [
+        LocalModel(
+            id: speakerDiarizationID,
+            displayName: "Speaker diarization",
+            engine: .sherpaDiarization,
+            languages: nil,
+            files: [
+                ModelFile(role: .segmentation, fileName: "pyannote-segmentation-3.0.onnx", sizeBytes: 5992913, sha256: "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079", downloadURL: URL(string: "\(pyannoteBase)/model.onnx")!),
+                ModelFile(role: .speakerEmbedding, fileName: "3dspeaker-eres2net-base-16k.onnx", sizeBytes: 39593761, sha256: "1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b", downloadURL: URL(string: "\(speakerEmbeddingBase)/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx")!)
+            ],
+            brief: ModelBrief(
+                summary: "pyannote segmentation 3.0 finds where the voice changes; 3D-Speaker's ERes2Net base tells the voices apart.",
+                strengths: ["Works on any language", "Runs on the CPU after the call"],
+                limitations: ["Fast exchanges between speakers are often misattributed", "pyannote weights under MIT, 3D-Speaker weights under Apache-2.0"],
+                benchmarks: [],
+                sourceURL: diarizationSource
             )
         )
     ]

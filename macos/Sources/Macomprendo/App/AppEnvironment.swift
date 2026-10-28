@@ -73,6 +73,8 @@ struct AppEnvironment {
     var speechSegmenter: any SpeechSegmenting
     /// How much of a segment is speech, for the long-audio phantom gate.
     var speechPresence: any SpeechPresenceMeasuring
+    /// Tells a finished call's other participants apart.
+    var speakerDiarizer: any SpeakerDiarizing
     var fileBookmarks: any FileBookmarking
     /// One lane for every caller of the local speech model, so an interactive dictation
     /// overtakes the file segments already waiting behind it.
@@ -160,6 +162,7 @@ struct AppEnvironment {
             mediaDecoder: AVAssetMediaDecoder(),
             speechSegmenter: SherpaSileroSegmenter(),
             speechPresence: SherpaSileroSegmenter(),
+            speakerDiarizer: SherpaSpeakerDiarizer(models: models),
             fileBookmarks: FoundationFileBookmarks(),
             transcriptionLane: TranscriptionLane(),
             callMicrophone: EngineCallMicrophoneCapture(engine: AVAudioInputEngine(),

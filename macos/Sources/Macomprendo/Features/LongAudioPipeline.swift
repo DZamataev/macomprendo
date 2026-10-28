@@ -86,6 +86,35 @@ struct LongAudioPipeline: Sendable {
         run(opening: { audio }, joinGap: joinGap)
     }
 
+    /// A run over speech already cut — a call's Others track split by voice. No decoder and no
+    /// segmenter: each segment, timed from the start of its audio, goes through the same
+    /// transcription, retries and phantom gate as a file's, followed by its end as the position.
+    func run(segments: [SpeechSegment], duration: TimeInterval)
+        -> AsyncThrowingStream<LongAudioEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    continuation.yield(.opened(duration: duration))
+                    var provider: (any TranscriptionProvider)?
+                    var tally = LanguageTally()
+                    for segment in segments {
+                        try Task.checkCancellation()
+                        if provider == nil { provider = try await transcriber() }
+                        guard let provider else { continue }
+                        try await emit(segment, from: provider, offset: 0, tally: &tally,
+                                       into: continuation)
+                        continuation.yield(.position(segment.end))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            completion.current = task
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     private func run(opening open: @escaping @Sendable () async throws -> DecodedAudio,
                      joinGap: TimeInterval)
         -> AsyncThrowingStream<LongAudioEvent, Error> {

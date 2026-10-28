@@ -78,6 +78,9 @@ final class AppModel: ObservableObject {
     /// screen lists exactly one kind and `ModelsViewModel` filters at construction.
     lazy var ttsModelsViewModel = ModelsViewModel(models: env.models,
                                                   catalog: ModelCatalog.all(kind: .tts))
+    /// The speaker models the General tab's Call recordings section downloads.
+    lazy var speakerModelsViewModel = ModelsViewModel(models: env.models,
+                                                      catalog: ModelCatalog.all(kind: .speakers))
     lazy var dictationTabModel = DictationTabModel(holder: self)
     /// The Dictation tab's Glossary section. Constructed here so the view never builds a
     /// service, and handed the rebuild callback so an edit reaches dictation immediately.
@@ -116,6 +119,8 @@ final class AppModel: ObservableObject {
         bookmarks: env.fileBookmarks,
         folders: env.callRecordingFolders,
         sidecars: env.transcriptSidecars,
+        diarizer: env.speakerDiarizer,
+        trackDecoder: env.mediaDecoder,
         pipeline: { [unowned self] in self.longAudioPipeline() },
         settings: { [unowned self] in self.settings },
         glossary: { [unowned self] in self.glossary },

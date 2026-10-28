@@ -1215,6 +1215,37 @@ editors are SwiftUI glue over `TranscriptNotesController`, which the unit tests 
 - [ ] **Delete with the source.** Delete a file transcript with **Also move the source file and its
       notes to the Trash** checked: both the file and its `.notes.txt` are in the Trash.
 
+## Phantom gate and call speakers
+
+Spec: `docs/superpowers/specs/2026-10-28-phantom-gate-and-call-speakers-design.md`. The decisions
+are unit-tested; this covers the native glue — whisper's language id, the Silero speech share and
+sherpa's diarization — on real audio.
+
+- [ ] **No phantoms on a quiet microphone.** With Dictation ▸ language **Auto**, record a call in
+      which you mostly listen, breathing near the microphone. The transcript has no `Me:` cues of
+      `*Sigh*`, `you`, `und` or other foreign words you did not say; your own short replies («угу»,
+      «да») are there in your language.
+- [ ] **Speaker models download.** Settings ▸ General ▸ Call recordings ▸ **Tell the other speakers
+      apart** is on; its **Speaker models · 46 MB** row downloads and then reads **Downloaded**.
+- [ ] **A call with several people.** Record a call with at least three other participants. While
+      it records the far side reads `Others`; after Stop the window shows **Identifying speakers**
+      and the menubar panel **Identifying speakers…**, then the far side reads `Speaker 1`,
+      `Speaker 2`, … in the window, in the saved `.srt` and in every export. A two-person stretch
+      is attributed to the right voice; fast back-and-forth may not be.
+- [ ] **Without the models.** Delete the speaker models and record a short call: it finishes as
+      before, labelled `Others`, with the usual “Call transcript ready” toast.
+- [ ] **Cancel and Resume.** During **Identifying speakers**, press **Cancel**: the row is
+      **Incomplete** and still reads `Others`. **Resume** finishes it with speakers told apart.
+- [ ] **Opt-in end-to-end run.** On a *copy* of a recording folder (it writes the `.srt` there):
+
+```bash
+MACOMPRENDO_CALL_FOLDER=<copy of a recording folder> \
+swift test --package-path macos --filter CallSpeakersRecordingTests
+```
+
+      It runs Resume with every real component on a temporary database, downloads the speaker
+      models if they are missing, and prints the segment and voice counts and the wall time.
+
 ## Transcript playback
 
 The bar under the segment list is `AVPlayer` glue plus SwiftUI, so none of it is reachable from a

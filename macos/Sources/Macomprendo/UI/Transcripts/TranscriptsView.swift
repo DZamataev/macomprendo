@@ -271,6 +271,10 @@ struct TranscriptsView: View {
                 progressRow(position: position, duration: duration, speaker: speaker)
                 Divider()
             }
+            if case let .identifyingSpeakers(id, _) = transcription.state, id == transcript.id {
+                progressRow(Self.identifyingSpeakersText)
+                Divider()
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
@@ -436,10 +440,14 @@ struct TranscriptsView: View {
 
     private func progressRow(position: TimeInterval, duration: TimeInterval,
                              speaker: TranscriptSpeaker? = nil) -> some View {
+        progressRow(Self.progressText(position: position, duration: duration, speaker: speaker))
+    }
+
+    private func progressRow(_ text: String) -> some View {
         HStack(spacing: 8) {
             ProgressView()
                 .controlSize(.small)
-            Text(Self.progressText(position: position, duration: duration, speaker: speaker))
+            Text(text)
             Spacer()
             Button("Cancel") { transcription.cancel() }
         }
@@ -818,7 +826,8 @@ struct TranscriptsView: View {
     nonisolated static func listEffect(for state: FileTranscriptionController.State,
                                        headers: [TranscriptHeader]) -> ListEffect {
         switch state {
-        case let .running(transcriptID, _, _, _, _):
+        case let .running(transcriptID, _, _, _, _),
+             let .identifyingSpeakers(transcriptID, _):
             return headers.contains { $0.id == transcriptID } ? .none : .reload
         case let .finished(transcriptID):
             return .reloadAndSelect(transcriptID)
@@ -826,6 +835,11 @@ struct TranscriptsView: View {
             return .reload
         }
     }
+
+    /// What the transcript shows while its call's far side is split by voice: the existing
+    /// text stays readable below it, labelled `Others` until the step lands.
+    nonisolated static let identifyingSpeakersText =
+        "Identifying speakers — the text below is relabelled when this finishes"
 
     /// `Transcribing — 12:40 / 58:03`; a call job's two tracks name their speaker:
     /// `Transcribing Me — 12:40 / 58:03`. The wording itself lives in
