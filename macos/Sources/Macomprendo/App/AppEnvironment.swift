@@ -71,6 +71,8 @@ struct AppEnvironment {
     var transcriptStore: any TranscriptStoring
     var mediaDecoder: any MediaAudioDecoding
     var speechSegmenter: any SpeechSegmenting
+    /// How much of a segment is speech, for the long-audio phantom gate.
+    var speechPresence: any SpeechPresenceMeasuring
     var fileBookmarks: any FileBookmarking
     /// One lane for every caller of the local speech model, so an interactive dictation
     /// overtakes the file segments already waiting behind it.
@@ -157,6 +159,7 @@ struct AppEnvironment {
                     .appendingPathComponent("transcripts.sqlite3")),
             mediaDecoder: AVAssetMediaDecoder(),
             speechSegmenter: SherpaSileroSegmenter(),
+            speechPresence: SherpaSileroSegmenter(),
             fileBookmarks: FoundationFileBookmarks(),
             transcriptionLane: TranscriptionLane(),
             callMicrophone: EngineCallMicrophoneCapture(engine: AVAudioInputEngine(),

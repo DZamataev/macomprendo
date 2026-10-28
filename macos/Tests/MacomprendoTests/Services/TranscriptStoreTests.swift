@@ -232,13 +232,73 @@ import Testing
         #expect(segments.map(\.speaker) == [.me, .others])
     }
 
-    @Test func aFreshDatabaseIsAtVersionTwo() async throws {
+    @Test func voiceRoundTrips() async throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let id = try await store.create(sourceKind: .call, title: "Call", sourceBookmark: nil,
+                                        duration: 10, run: run, at: Date())
+        try await store.appendSegment(
+            TranscriptSegment(start: 0, end: 1, text: "a", speaker: .others, voice: 2), to: id)
+        try await store.appendSegment(
+            TranscriptSegment(start: 1, end: 2, text: "b", speaker: .others), to: id)
+
+        let segments = try #require(try await store.transcript(id: id)?.segments)
+        #expect(segments.map(\.voice) == [2, nil])
+    }
+
+    @Test func replacingOneSideKeepsTheOtherAndTheRow() async throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let id = try await store.create(sourceKind: .call, title: "Call", sourceBookmark: nil,
+                                        duration: 10, run: run, at: Date())
+        try await store.appendSegment(
+            TranscriptSegment(start: 0, end: 4, text: "joined", speaker: .others), to: id)
+        try await store.appendSegment(
+            TranscriptSegment(start: 1, end: 2, text: "mine", speaker: .me), to: id)
+
+        try await store.replaceSegments(of: id, speaker: .others, with: [
+            TranscriptSegment(start: 0, end: 2, text: "one", speaker: .others, voice: 1),
+            TranscriptSegment(start: 2, end: 4, text: "two", speaker: .others, voice: 2)])
+
+        let segments = try #require(try await store.transcript(id: id)?.segments)
+        #expect(segments.map(\.text) == ["one", "mine", "two"])
+        #expect(segments.map(\.voice) == [1, nil, 2])
+    }
+
+    @Test func replacingSegmentsOfAMissingTranscriptIsAnError() async throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        await #expect(throws: MacomprendoError.transcriptStore("no transcript has identifier 9")) {
+            try await store.replaceSegments(of: 9, speaker: .others, with: [])
+        }
+    }
+
+    @Test func aFreshDatabaseIsAtVersionThree() async throws {
         let (store, directory) = makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("t.sqlite3")
         _ = try await store.headers()
 
-        #expect(try userVersion(of: url) == 2)
+        #expect(try userVersion(of: url) == 3)
+    }
+
+    @Test func versionTwoDatabaseMigrates() async throws {
+        let (_, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("t.sqlite3")
+        try makeVersionOneDatabase(at: url)
+        try addSpeakerColumnAsVersionTwo(at: url)
+
+        let store = SQLiteTranscriptStore(databaseURL: url)
+        let header = try #require(try await store.headers().first)
+        #expect(try await store.transcript(id: header.id)?.segments.map(\.voice) == [nil])
+
+        try await store.appendSegment(
+            TranscriptSegment(start: 5, end: 6, text: "c", speaker: .others, voice: 1),
+            to: header.id)
+
+        #expect(try await store.transcript(id: header.id)?.segments.last?.voice == 1)
+        #expect(try userVersion(of: url) == 3)
     }
 
     @Test func versionOneDatabaseMigrates() async throws {
@@ -257,10 +317,10 @@ import Testing
             TranscriptSegment(start: 5, end: 6, text: "c", speaker: .me), to: header.id)
 
         #expect(try await store.transcript(id: header.id)?.segments.last?.speaker == .me)
-        #expect(try userVersion(of: url) == 2)
+        #expect(try userVersion(of: url) == 3)
     }
 
-    @Test func reopeningVersionTwoKeepsData() async throws {
+    @Test func reopeningTheCurrentVersionKeepsData() async throws {
         let (store, directory) = makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("t.sqlite3")
@@ -273,7 +333,7 @@ import Testing
         let segments = try #require(try await reopened.transcript(id: id)?.segments)
 
         #expect(segments.map(\.speaker) == [.me])
-        #expect(try userVersion(of: url) == 2)
+        #expect(try userVersion(of: url) == 3)
     }
 
     @Test func aDatabaseFromANewerVersionIsRefused() async throws {
@@ -281,7 +341,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("t.sqlite3")
         try makeVersionOneDatabase(at: url)
-        try setUserVersion(3, of: url)
+        try setUserVersion(4, of: url)
 
         let store = SQLiteTranscriptStore(databaseURL: url)
         await #expect(throws: MacomprendoError.transcriptStore(
@@ -383,6 +443,25 @@ import Testing
             INSERT INTO transcript_segments (transcript_id, start_s, end_s, text)
                 VALUES (1, 0, 1, 'old');
             PRAGMA user_version = 1;
+            """, nil, nil, nil) == SQLITE_OK else {
+            throw MacomprendoError.transcriptStore(String(cString: sqlite3_errmsg(database)))
+        }
+    }
+
+    /// Turns the version 1 database into the one schema version 2 shipped: the speaker column,
+    /// no voice column.
+    private func addSpeakerColumnAsVersionTwo(at databaseURL: URL) throws {
+        var database: OpaquePointer?
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+        guard sqlite3_open_v2(databaseURL.path, &database, flags, nil) == SQLITE_OK,
+              let database else {
+            throw MacomprendoError.transcriptStore("cannot open")
+        }
+        defer { sqlite3_close_v2(database) }
+        guard sqlite3_exec(database, """
+            ALTER TABLE transcript_segments
+                ADD COLUMN speaker TEXT CHECK(speaker IN ('me', 'others'));
+            PRAGMA user_version = 2;
             """, nil, nil, nil) == SQLITE_OK else {
             throw MacomprendoError.transcriptStore(String(cString: sqlite3_errmsg(database)))
         }

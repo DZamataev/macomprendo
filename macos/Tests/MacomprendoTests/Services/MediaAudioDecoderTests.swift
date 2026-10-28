@@ -120,6 +120,42 @@ import Testing
         #expect(segments.isEmpty)
     }
 
+    @Test func silenceHasNoSpeechShare() throws {
+        #expect(try SherpaSileroSegmenter().speechFraction(
+            of: Array(repeating: 0, count: 16_000 * 3), sampleRate: 16_000) == 0)
+        #expect(try SherpaSileroSegmenter().speechFraction(of: [], sampleRate: 16_000) == 0)
+    }
+
+    @Test func measuringNeedsTheModelAndSixteenKilohertz() {
+        let missing = SherpaSileroSegmenter(modelURL: URL(fileURLWithPath: "/nonexistent.onnx"))
+        #expect(throws: MacomprendoError.speechDetector("silero_vad.onnx is not in the app bundle")) {
+            _ = try missing.speechFraction(of: [0, 0], sampleRate: 16_000)
+        }
+        #expect(throws: MacomprendoError.speechDetector("speech detection needs 16 kHz audio")) {
+            _ = try SherpaSileroSegmenter().speechFraction(of: [0, 0], sampleRate: 44_100)
+        }
+    }
+
+    @Test(.enabled(if: FileManager.default.isExecutableFile(atPath: "/usr/bin/say")))
+    func spokenWordsHaveASubstantialSpeechShare() async throws {
+        let aiff = FileManager.default.temporaryDirectory
+            .appendingPathComponent("presence-\(UUID().uuidString).aiff")
+        defer { try? FileManager.default.removeItem(at: aiff) }
+        let say = Process()
+        say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        say.arguments = ["-o", aiff.path, "This is a short sentence for the speech detector."]
+        try say.run()
+        say.waitUntilExit()
+        try #require(say.terminationStatus == 0)
+        var speech: [Float] = []
+        for try await chunk in try await AVAssetMediaDecoder().open(aiff, from: 0).chunks {
+            speech += chunk
+        }
+        let share = try SherpaSileroSegmenter().speechFraction(of: speech, sampleRate: 16_000)
+        #expect(share > PhantomGate.speechFloor * 3)
+        #expect(share <= 1)
+    }
+
     @Test(.enabled(if: FileManager.default.isExecutableFile(atPath: "/usr/bin/say")))
     func spokenWordsBetweenSilencesYieldTimedSegments() async throws {
         let aiff = FileManager.default.temporaryDirectory

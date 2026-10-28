@@ -22,11 +22,59 @@ import Testing
                       segmenter: ScriptedSegmenter,
                       transcriber: @escaping @Sendable () async throws -> any TranscriptionProvider,
                       language: String? = "en",
+                      speechPresence: (any SpeechPresenceMeasuring)? = nil,
                       retryDelay: Duration = .seconds(1),
                       sleep: @escaping @Sendable (Duration) async throws -> Void = { _ in })
         -> LongAudioPipeline {
         LongAudioPipeline(decoder: decoder, segmenter: segmenter, transcriber: transcriber,
-                          language: language, retryDelay: retryDelay, sleep: sleep)
+                          language: language, speechPresence: speechPresence,
+                          retryDelay: retryDelay, sleep: sleep)
+    }
+
+    /// A provider that detects a scripted language per call, as whisper.cpp does with `auto`,
+    /// and records the language each call was asked for.
+    private final class DetectingProvider: TranscriptionProvider, @unchecked Sendable {
+        private let lock = NSLock()
+        private var script: [RecognisedSpeech]
+        private var _asked: [String?] = []
+        init(_ script: [RecognisedSpeech]) { self.script = script }
+        var asked: [String?] { lock.withLock { _asked } }
+
+        func transcribe(_ pcm: [Float], sampleRate: Int, language: String?) async throws -> String {
+            try await recognise(pcm, sampleRate: sampleRate, language: language).text
+        }
+
+        func recognise(_ pcm: [Float], sampleRate: Int, language: String?) async throws
+            -> RecognisedSpeech {
+            lock.withLock {
+                _asked.append(language)
+                return script.isEmpty ? RecognisedSpeech(text: "", language: nil)
+                                      : script.removeFirst()
+            }
+        }
+    }
+
+    private static func said(_ text: String, _ language: String?) -> RecognisedSpeech {
+        RecognisedSpeech(text: text, language: language)
+    }
+
+    /// Segments one second apart, `seconds` long each, all from one `accept`.
+    private func gated(_ provider: DetectingProvider, presence: ScriptedSpeechPresence,
+                       count: Int, language: String? = nil, seconds: TimeInterval = 1)
+        async throws -> [LongAudioEvent] {
+        let samples = [Float](repeating: 0.1, count: Int(seconds * 16_000))
+        let segments = (0..<count).map {
+            SpeechSegment(start: TimeInterval($0) * 10, samples: samples, sampleRate: 16_000)
+        }
+        let decoder = ScriptedMediaDecoder(duration: 60, chunks: [Self.second()])
+        let segmenter = ScriptedSegmenter(acceptScript: [segments])
+        return try await collect(
+            make(decoder: decoder, segmenter: segmenter, transcriber: { provider },
+                 language: language, speechPresence: presence).run(Self.url, from: 0))
+    }
+
+    private func texts(_ events: [LongAudioEvent]) -> [String] {
+        events.compactMap { if case let .segment(_, _, text) = $0 { text } else { nil } }
     }
 
     private func collect(_ stream: AsyncThrowingStream<LongAudioEvent, Error>) async throws
@@ -98,6 +146,70 @@ import Testing
             }
             return DecodedAudio(duration: 10, startOffset: start, chunks: stream)
         }
+    }
+
+    // MARK: - Phantom gate
+
+    @Test func aPhantomInAnotherLanguageOverSilenceIsNotEmitted() async throws {
+        let provider = DetectingProvider([Self.said("Привет всем.", "ru"),
+                                          Self.said("*Sigh*", "en"),
+                                          Self.said("Пока.", "ru")])
+        let presence = ScriptedSpeechPresence([0.7, 0])
+        let events = try await gated(provider, presence: presence, count: 3)
+        #expect(texts(events) == ["Привет всем.", "Пока."])
+        // The first segment, before any language was known, and the mismatch; a segment in the
+        // transcript's language is never measured.
+        #expect(presence.measured == 2)
+    }
+
+    @Test func shortSpeechInAWrongLanguageIsDecodedAgainInTheTranscriptsLanguage() async throws {
+        let provider = DetectingProvider([Self.said("Привет.", "ru"),
+                                          Self.said("On sobie nie nienka.", "pl"),
+                                          Self.said("Он сегодня нянька.", "ru")])
+        let events = try await gated(provider, presence: ScriptedSpeechPresence([0.7, 0.55]),
+                                     count: 2)
+        #expect(texts(events) == ["Привет.", "Он сегодня нянька."])
+        #expect(provider.asked == [nil, nil, "ru"])
+    }
+
+    @Test func aRedecodeThatHearsNothingDropsTheSegment() async throws {
+        let provider = DetectingProvider([Self.said("Привет.", "ru"), Self.said("Mm.", "en"),
+                                          Self.said("", "ru")])
+        let events = try await gated(provider, presence: ScriptedSpeechPresence([0.7, 0.3]),
+                                     count: 2)
+        #expect(texts(events) == ["Привет."])
+    }
+
+    @Test func aLongStretchInAnotherLanguageIsKept() async throws {
+        let provider = DetectingProvider([Self.said("Привет.", "ru"),
+                                          Self.said("Let me say this in English.", "en")])
+        let events = try await gated(provider, presence: ScriptedSpeechPresence([0.7, 0.8]), count: 2,
+                                     seconds: 6)
+        #expect(texts(events) == ["Привет.", "Let me say this in English."])
+        #expect(provider.asked == [nil, nil])
+    }
+
+    @Test func aPhantomBeforeAnyLanguageIsKnownIsDroppedOnlyOverSilence() async throws {
+        let provider = DetectingProvider([Self.said("you", "en"), Self.said("Привет.", "ru")])
+        let events = try await gated(provider, presence: ScriptedSpeechPresence([0, 0.7]),
+                                     count: 2)
+        #expect(texts(events) == ["Привет."])
+    }
+
+    @Test func aRunWithAChosenLanguageIsNeverGated() async throws {
+        let provider = DetectingProvider([Self.said("Hi.", "en"), Self.said("*Sigh*", "de")])
+        let presence = ScriptedSpeechPresence([0])
+        let events = try await gated(provider, presence: presence, count: 2, language: "en")
+        #expect(texts(events) == ["Hi.", "*Sigh*"])
+        #expect(presence.measured == 0)
+    }
+
+    @Test func aProviderThatReportsNoLanguageIsNeverGated() async throws {
+        let provider = DetectingProvider([Self.said("one", nil), Self.said("two", nil)])
+        let presence = ScriptedSpeechPresence([0])
+        let events = try await gated(provider, presence: presence, count: 2)
+        #expect(texts(events) == ["one", "two"])
+        #expect(presence.measured == 0)
     }
 
     // MARK: - Tests

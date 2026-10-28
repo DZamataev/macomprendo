@@ -43,6 +43,8 @@ struct LongAudioPipeline: Sendable {
     private let segmenter: any SpeechSegmenting
     private let transcriber: @Sendable () async throws -> any TranscriptionProvider
     private let language: String?
+    /// Measures speech share for the phantom gate; `nil` turns the gate off.
+    private let speechPresence: (any SpeechPresenceMeasuring)?
     private let retryDelay: Duration
     private let sleep: @Sendable (Duration) async throws -> Void
     private let completion = CompletionBox()
@@ -51,12 +53,14 @@ struct LongAudioPipeline: Sendable {
          segmenter: any SpeechSegmenting,
          transcriber: @escaping @Sendable () async throws -> any TranscriptionProvider,
          language: String?,
+         speechPresence: (any SpeechPresenceMeasuring)? = nil,
          retryDelay: Duration = .seconds(1),
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.decoder = decoder
         self.segmenter = segmenter
         self.transcriber = transcriber
         self.language = language
+        self.speechPresence = speechPresence
         self.retryDelay = retryDelay
         self.sleep = sleep
     }
@@ -95,6 +99,9 @@ struct LongAudioPipeline: Sendable {
                     let session = try segmenter.makeSession(joinGap: joinGap)
                     // Obtained once per run, on first use: a file with no speech never builds one.
                     var provider: (any TranscriptionProvider)?
+                    // The run's language so far, for the phantom gate: each track and each
+                    // Resume starts its own count.
+                    var tally = LanguageTally()
                     let offset = decoded.startOffset
                     let rate = Double(AVAssetMediaDecoder.sampleRate)
                     var decodedSeconds: TimeInterval = 0
@@ -108,7 +115,7 @@ struct LongAudioPipeline: Sendable {
                             if provider == nil { provider = try await transcriber() }
                             guard let provider else { continue }
                             try await emit(segment, from: provider, offset: offset,
-                                           into: continuation)
+                                           tally: &tally, into: continuation)
                         }
                         continuation.yield(.position(offset + decodedSeconds))
                     }
@@ -119,7 +126,8 @@ struct LongAudioPipeline: Sendable {
                         try Task.checkCancellation()
                         if provider == nil { provider = try await transcriber() }
                         guard let provider else { continue }
-                        try await emit(segment, from: provider, offset: offset, into: continuation)
+                        try await emit(segment, from: provider, offset: offset, tally: &tally,
+                                       into: continuation)
                     }
                     continuation.finish()
                 } catch {
@@ -149,30 +157,57 @@ struct LongAudioPipeline: Sendable {
     }
 
     /// Transcribes one segment and yields it, timed from the start of the file. An empty result
-    /// (after trimming) is dropped: the provider heard nothing worth keeping.
+    /// (after trimming) is dropped: the provider heard nothing worth keeping. So is a phantom —
+    /// text in another language over no speech — and a short stretch in a wrongly guessed
+    /// language is decoded again in the run's own (`PhantomGate`). A language the user chose
+    /// is never second-guessed.
     private func emit(_ segment: SpeechSegment,
                       from provider: any TranscriptionProvider,
                       offset: TimeInterval,
+                      tally: inout LanguageTally,
                       into continuation: AsyncThrowingStream<LongAudioEvent, Error>.Continuation)
         async throws {
-        let text = try await transcribe(segment.samples, with: provider)
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        let speech = try await recognise(segment.samples, with: provider, language: language)
+        var text = speech.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        var kept = speech.language
+        if language == nil, let speechPresence {
+            let verdict = try PhantomGate.verdict(
+                detected: speech.language, expected: tally.leader, duration: segment.duration,
+                speechFraction: {
+                    try speechPresence.speechFraction(of: segment.samples,
+                                                      sampleRate: segment.sampleRate)
+                })
+            switch verdict {
+            case .keep:
+                break
+            case .drop:
+                Log.providers.debug("Phantom gate dropped a segment detected as \(speech.language ?? "-", privacy: .public)")
+                return
+            case let .redecode(expected):
+                let again = try await recognise(segment.samples, with: provider,
+                                                language: expected)
+                text = again.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return }
+                kept = expected
+            }
+        }
+        tally.add(kept, seconds: segment.duration)
         continuation.yield(.segment(start: offset + segment.start,
                                     end: offset + segment.end,
-                                    text: trimmed))
+                                    text: text))
     }
 
-    /// One segment's text, retried on a transient failure. Cancellation is never retried: it is
-    /// the consumer giving up, not the provider stumbling.
-    private func transcribe(_ samples: [Float],
-                            with provider: any TranscriptionProvider) async throws -> String {
+    /// One segment's text and detected language, retried on a transient failure. Cancellation is
+    /// never retried: it is the consumer giving up, not the provider stumbling.
+    private func recognise(_ samples: [Float], with provider: any TranscriptionProvider,
+                           language: String?) async throws -> RecognisedSpeech {
         var attempt = 1
         while true {
             do {
-                return try await provider.transcribe(samples,
-                                                     sampleRate: AVAssetMediaDecoder.sampleRate,
-                                                     language: language)
+                return try await provider.recognise(samples,
+                                                    sampleRate: AVAssetMediaDecoder.sampleRate,
+                                                    language: language)
             } catch {
                 guard attempt < Self.attempts, Self.isRetryable(error) else { throw error }
                 try await sleep(retryDelay)

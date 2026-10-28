@@ -164,6 +164,30 @@ actor FakeTranscriptStore: TranscriptStoring {
         transcripts[id] = transcript.withoutSegments
     }
 
+    /// Armed by a test to make the next `replaceSegments` throw once, leaving the row as it was.
+    var failNextReplace: MacomprendoError?
+    private(set) var replaceCount = 0
+
+    func replaceSegments(of id: Int64, speaker: TranscriptSpeaker,
+                         with segments: [TranscriptSegment]) throws {
+        if let error = failNextReplace {
+            failNextReplace = nil
+            throw error
+        }
+        guard let transcript = transcripts[id] else {
+            throw MacomprendoError.transcriptStore("no transcript has identifier \(id)")
+        }
+        replaceCount += 1
+        // Ordered by start like the SQLite store's read, stable for equal starts.
+        let kept = transcript.segments.filter { $0.speaker != speaker } + segments
+        let ordered = kept.enumerated().sorted {
+            ($0.element.start, $0.offset) < ($1.element.start, $1.offset)
+        }.map(\.element)
+        transcripts[id] = Transcript(header: transcript.header, run: transcript.run,
+                                     sourceBookmark: transcript.sourceBookmark,
+                                     summary: transcript.summary, segments: ordered)
+    }
+
     func delete(id: Int64) async {
         if let gate = deleteGate {
             deleteGate = nil

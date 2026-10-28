@@ -145,6 +145,30 @@ extension Transcript {
         #expect(t.plainText == "Me: Hi\nOthers: Hello")
     }
 
+    @Test func aDiarizedOthersSegmentIsLabelledByItsVoice() {
+        let t = Transcript.fixture(segments: [
+            TranscriptSegment(start: 0, end: 1, text: "Hi", speaker: .me),
+            TranscriptSegment(start: 1, end: 2, text: "Hello", speaker: .others, voice: 2),
+            TranscriptSegment(start: 2, end: 3, text: "Yes", speaker: .others)])
+        #expect(t.plainText == "Me: Hi\nSpeaker 2: Hello\nOthers: Yes")
+    }
+
+    @Test func aVoiceOnAMeSegmentIsIgnored() {
+        // Only the far side is diarized; a stray voice on Me must not relabel the user.
+        let segment = TranscriptSegment(start: 0, end: 1, text: "Hi", speaker: .me, voice: 1)
+        #expect(segment.speakerLabel == "Me")
+        #expect(TranscriptSegment(start: 0, end: 1, text: "Hi").speakerLabel == nil)
+    }
+
+    @Test func everyFormatPrintsTheVoiceLabel() {
+        let t = Transcript.fixture(segments: [
+            TranscriptSegment(start: 1, end: 2, text: "Hello", speaker: .others, voice: 3)])
+        #expect(TranscriptExporter.render(t, as: .subRip)
+                == "1\n00:00:01,000 --> 00:00:02,000\nSpeaker 3: Hello\n")
+        #expect(TranscriptExporter.render(t, as: .markdown).contains("**[00:01] Speaker 3:** Hello"))
+        #expect(TranscriptExporter.render(t, as: .plainText) == "Speaker 3: Hello\n")
+    }
+
     @Test func plainTextWithoutSpeakersIsUnchanged() {
         let t = Transcript.fixture(segments: [TranscriptSegment(start: 0, end: 1, text: "Hi")])
         #expect(t.plainText == "Hi")

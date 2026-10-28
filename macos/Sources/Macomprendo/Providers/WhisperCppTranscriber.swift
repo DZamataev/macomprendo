@@ -52,6 +52,14 @@ struct WhisperParams: Sendable, Equatable {
         )
     }
 
+    /// The language worth reporting after a run: whisper's detection when it was asked to
+    /// detect, `nil` when the caller fixed the language (that is no detection) or whisper
+    /// produced none.
+    static func reportedLanguage(requested: String, detected: String?) -> String? {
+        guard requested == "auto", let detected, !detected.isEmpty else { return nil }
+        return detected
+    }
+
     /// Automatic leaves two cores for the UI and the audio thread. An explicit count is
     /// clamped at both ends: `Settings` is JSON a user can export, edit and re-import, so a
     /// nonsense value must not reach `whisper_full_params.n_threads`.
@@ -104,13 +112,18 @@ actor WhisperCppTranscriber: TranscriptionProvider {
     }
 
     func transcribe(_ pcm: [Float], sampleRate: Int, language: String?) async throws -> String {
+        try await recognise(pcm, sampleRate: sampleRate, language: language).text
+    }
+
+    func recognise(_ pcm: [Float], sampleRate: Int, language: String?) async throws
+        -> RecognisedSpeech {
         guard sampleRate == 16_000 else {
             // whisper.cpp does no resampling; another rate silently produces garbage.
             throw MacomprendoError.audio(
                 "whisper.cpp requires 16 kHz mono audio, got \(sampleRate) Hz"
             )
         }
-        guard !pcm.isEmpty else { return "" }
+        guard !pcm.isEmpty else { return RecognisedSpeech(text: "", language: nil) }
 
         let context = try loadedContext()
         let settings = WhisperParams.make(
@@ -147,7 +160,11 @@ actor WhisperCppTranscriber: TranscriptionProvider {
             guard let text = whisper_full_get_segment_text(context, index) else { continue }
             segments.append(String(cString: text))
         }
-        return WhisperTextAssembler.join(segments)
+        let detected = whisper_lang_str(whisper_full_lang_id(context)).map { String(cString: $0) }
+        return RecognisedSpeech(
+            text: WhisperTextAssembler.join(segments),
+            language: WhisperParams.reportedLanguage(requested: settings.language,
+                                                     detected: detected))
     }
 
     /// Frees the native context now instead of waiting for this transcriber to be deallocated.

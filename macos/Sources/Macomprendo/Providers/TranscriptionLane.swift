@@ -107,4 +107,12 @@ struct LaneTranscriptionProvider: TranscriptionProvider {
             try await base.transcribe(pcm, sampleRate: sampleRate, language: language)
         }
     }
+
+    func recognise(_ pcm: [Float], sampleRate: Int, language: String?) async throws
+        -> RecognisedSpeech {
+        let base = self.base
+        return try await lane.run(priority) {
+            try await base.recognise(pcm, sampleRate: sampleRate, language: language)
+        }
+    }
 }

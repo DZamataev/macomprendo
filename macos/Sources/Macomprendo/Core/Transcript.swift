@@ -38,14 +38,27 @@ struct TranscriptSegment: Sendable, Equatable {
     let rawText: String?
     /// The call recording side this came from, or `nil` for every non-call transcript.
     let speaker: TranscriptSpeaker?
+    /// Which of the other participants spoke an `.others` segment of a call whose far side was
+    /// told apart by voice: 1-based, numbered by first appearance. `nil` everywhere else.
+    let voice: Int?
 
     init(start: TimeInterval, end: TimeInterval, text: String, rawText: String? = nil,
-         speaker: TranscriptSpeaker? = nil) {
+         speaker: TranscriptSpeaker? = nil, voice: Int? = nil) {
         self.start = start
         self.end = end
         self.text = text
         self.rawText = rawText
         self.speaker = speaker
+        self.voice = voice
+    }
+
+    /// What a transcript prints before the text: `Speaker 2` for a voice on the far side, else
+    /// the side's own label (`Me`, `Others`), `nil` for a segment of no call. Only `.others`
+    /// is ever told apart, so a voice on `Me` does not relabel the user.
+    var speakerLabel: String? {
+        guard let speaker else { return nil }
+        if speaker == .others, let voice { return "Speaker \(voice)" }
+        return speaker.label
     }
 }
 
@@ -90,7 +103,7 @@ struct Transcript: Sendable, Equatable {
     /// Segment texts, one per line, without timestamps. A call recording's two sides are
     /// prefixed with their speaker so the interleaved lines still read as a conversation.
     var plainText: String {
-        segments.map { s in s.speaker.map { "\($0.label): \(s.text)" } ?? s.text }
+        segments.map { s in s.speakerLabel.map { "\($0): \(s.text)" } ?? s.text }
             .joined(separator: "\n")
     }
 

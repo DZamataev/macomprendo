@@ -673,7 +673,8 @@ final class AppModel: ObservableObject {
     private func longAudioPipeline() -> LongAudioPipeline {
         LongAudioPipeline(decoder: env.mediaDecoder, segmenter: env.speechSegmenter,
                           transcriber: backgroundTranscriberProvider,
-                          language: settings.transcriptionLanguage)
+                          language: settings.transcriptionLanguage,
+                          speechPresence: env.speechPresence)
     }
 
     private func persist() {

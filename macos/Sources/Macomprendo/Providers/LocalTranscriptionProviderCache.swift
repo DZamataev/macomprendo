@@ -29,11 +29,17 @@ final class LocalTranscriptionProviderCache {
         let generation: Int
 
         func transcribe(_ pcm: [Float], sampleRate: Int, language: String?) async throws -> String {
+            try await recognise(pcm, sampleRate: sampleRate, language: language).text
+        }
+
+        func recognise(_ pcm: [Float], sampleRate: Int, language: String?) async throws
+            -> RecognisedSpeech {
             await cache.beginUsing(generation)
             do {
-                let text = try await provider.transcribe(pcm, sampleRate: sampleRate, language: language)
+                let speech = try await provider.recognise(pcm, sampleRate: sampleRate,
+                                                          language: language)
                 await cache.finishUsing(generation)
-                return text
+                return speech
             } catch {
                 await cache.finishUsing(generation)
                 throw error

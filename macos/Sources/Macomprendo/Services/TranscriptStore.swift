@@ -22,6 +22,10 @@ protocol TranscriptStoring: Sendable {
     func delete(id: Int64) async throws
     /// Drops every segment of the row and keeps the row: **Transcribe Again** refills it.
     func removeSegments(of id: Int64) async throws
+    /// Swaps one side of a call for new segments in one transaction: the old ones stay if
+    /// anything fails. Telling the far side apart by voice rewrites `.others` this way.
+    func replaceSegments(of id: Int64, speaker: TranscriptSpeaker,
+                         with segments: [TranscriptSegment]) async throws
     /// Turns every `inProgress` transcript into `incomplete`. Called once at launch, when no
     /// job can be running, so any `inProgress` row belongs to a job the app did not finish.
     func markAbandonedJobs(reason: String) async throws
@@ -64,9 +68,36 @@ actor SQLiteTranscriptStore: TranscriptStoring {
         // Match `FakeTranscriptStore`: a missing transcript is reported by name, not as the raw
         // foreign-key failure SQLite would raise.
         try requireExistingTranscript(id, on: db)
+        try insert(segment, into: id, on: db)
+    }
+
+    func replaceSegments(of id: Int64, speaker: TranscriptSpeaker,
+                         with segments: [TranscriptSegment]) throws {
+        let db = try connection()
+        try requireExistingTranscript(id, on: db)
+        try execute("BEGIN", on: db)
+        do {
+            let statement = try prepare(
+                "DELETE FROM transcript_segments WHERE transcript_id = ?1 AND speaker = ?2",
+                on: db)
+            defer { sqlite3_finalize(statement) }
+            try check(sqlite3_bind_int64(statement, 1, id), on: db)
+            try bind(speaker.rawValue, 2, statement, db)
+            try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)
+            for segment in segments { try insert(segment, into: id, on: db) }
+            try execute("COMMIT", on: db)
+        } catch {
+            try? execute("ROLLBACK", on: db)
+            throw error
+        }
+    }
+
+    private func insert(_ segment: TranscriptSegment, into id: Int64,
+                        on db: OpaquePointer) throws {
         let statement = try prepare("""
-            INSERT INTO transcript_segments (transcript_id, start_s, end_s, text, raw_text, speaker)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            INSERT INTO transcript_segments
+                (transcript_id, start_s, end_s, text, raw_text, speaker, voice)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             """, on: db)
         defer { sqlite3_finalize(statement) }
         try check(sqlite3_bind_int64(statement, 1, id), on: db)
@@ -75,6 +106,11 @@ actor SQLiteTranscriptStore: TranscriptStoring {
         try bind(segment.text, 4, statement, db)
         try bind(segment.rawText, 5, statement, db)
         try bind(segment.speaker?.rawValue, 6, statement, db)
+        if let voice = segment.voice {
+            try check(sqlite3_bind_int64(statement, 7, Int64(voice)), on: db)
+        } else {
+            try check(sqlite3_bind_null(statement, 7), on: db)
+        }
         try check(sqlite3_step(statement), expected: SQLITE_DONE, on: db)
     }
 
@@ -218,7 +254,7 @@ actor SQLiteTranscriptStore: TranscriptStoring {
 
     private func segments(of id: Int64, on db: OpaquePointer) throws -> [TranscriptSegment] {
         let statement = try prepare("""
-            SELECT start_s, end_s, text, raw_text, speaker FROM transcript_segments
+            SELECT start_s, end_s, text, raw_text, speaker, voice FROM transcript_segments
             WHERE transcript_id = ?1 ORDER BY start_s, id
             """, on: db)
         defer { sqlite3_finalize(statement) }
@@ -233,7 +269,9 @@ actor SQLiteTranscriptStore: TranscriptStoring {
                                             text: text(statement, 2) ?? "",
                                             rawText: text(statement, 3),
                                             speaker: text(statement, 4)
-                                                .flatMap(TranscriptSpeaker.init(rawValue:))))
+                                                .flatMap(TranscriptSpeaker.init(rawValue:)),
+                                            voice: sqlite3_column_type(statement, 5) == SQLITE_NULL
+                                                ? nil : Int(sqlite3_column_int64(statement, 5))))
         }
         return result
     }
@@ -283,7 +321,8 @@ actor SQLiteTranscriptStore: TranscriptStoring {
                     end_s REAL NOT NULL,
                     text TEXT NOT NULL,
                     raw_text TEXT,
-                    speaker TEXT CHECK(speaker IN ('me', 'others'))
+                    speaker TEXT CHECK(speaker IN ('me', 'others')),
+                    voice INTEGER
                 );
                 CREATE INDEX IF NOT EXISTS transcript_segments_by_start
                     ON transcript_segments (transcript_id, start_s);
@@ -297,23 +336,32 @@ actor SQLiteTranscriptStore: TranscriptStoring {
         return opened
     }
 
-    /// Brings a database up to schema version 2. A fresh file (0) already carries the speaker
-    /// column from the DDL above and needs only the version stamped; a version 1 file gets the
-    /// column added — its existing rows read as speakerless — then the version. The add and the
-    /// stamp share one transaction so a crash cannot leave a half-migrated file.
+    /// Brings a database up to schema version 3. A fresh file (0) already carries the speaker
+    /// and voice columns from the DDL above and needs only the version stamped; a version 1 file
+    /// gets both columns added, a version 2 file the voice column — existing rows read as
+    /// speakerless and voiceless — then the version. Each add and its stamp share one
+    /// transaction so a crash cannot leave a half-migrated file.
     private func migrateSchema(on db: OpaquePointer) throws {
         switch try userVersion(on: db) {
         case 0:
-            try execute("PRAGMA user_version = 2", on: db)
+            try execute("PRAGMA user_version = 3", on: db)
         case 1:
             try execute("""
                 BEGIN;
                 ALTER TABLE transcript_segments
                     ADD COLUMN speaker TEXT CHECK(speaker IN ('me', 'others'));
-                PRAGMA user_version = 2;
+                ALTER TABLE transcript_segments ADD COLUMN voice INTEGER;
+                PRAGMA user_version = 3;
                 COMMIT;
                 """, on: db)
         case 2:
+            try execute("""
+                BEGIN;
+                ALTER TABLE transcript_segments ADD COLUMN voice INTEGER;
+                PRAGMA user_version = 3;
+                COMMIT;
+                """, on: db)
+        case 3:
             break
         default:
             throw MacomprendoError.transcriptStore(

@@ -71,6 +71,11 @@ final class CreateFailingTranscriptStore: TranscriptStoring, @unchecked Sendable
         try await inner.removeSegments(of: id)
     }
 
+    func replaceSegments(of id: Int64, speaker: TranscriptSpeaker,
+                         with segments: [TranscriptSegment]) async throws {
+        try await inner.replaceSegments(of: id, speaker: speaker, with: segments)
+    }
+
     func delete(id: Int64) async throws {
         try await inner.delete(id: id)
     }

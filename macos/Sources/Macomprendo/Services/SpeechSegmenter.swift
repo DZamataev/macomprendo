@@ -19,9 +19,15 @@ protocol SpeechSegmentingSession: AnyObject {
     func finish() -> [SpeechSegment]
 }
 
+/// How much of a stretch of audio is speech, judged afresh — not by the stream it was cut from.
+protocol SpeechPresenceMeasuring: Sendable {
+    /// The share of `samples` (0…1) a fresh detector calls speech.
+    func speechFraction(of samples: [Float], sampleRate: Int) throws -> Double
+}
+
 /// Silero VAD through the vendored sherpa-onnx C API, with the model bundled in
-/// `Resources/SpeechDetection` (ADR-0015).
-struct SherpaSileroSegmenter: SpeechSegmenting {
+/// `Resources/SpeechDetection` (ADR-0015). It also measures speech share for the phantom gate.
+struct SherpaSileroSegmenter: SpeechSegmenting, SpeechPresenceMeasuring {
     static let sampleRate = 16_000
 
     private let modelURL: URL?
@@ -38,6 +44,40 @@ struct SherpaSileroSegmenter: SpeechSegmenting {
         }
         return try SherpaSileroSession(modelPath: modelURL.path, joinGap: joinGap)
     }
+
+    /// A fresh detector with the sessions' own settings, fed the samples in window-sized steps
+    /// and flushed: the detected regions' samples over all samples. The spike measured 0 on
+    /// every phantom and at least 0.22 on every real segment this way.
+    func speechFraction(of samples: [Float], sampleRate: Int) throws -> Double {
+        guard !samples.isEmpty else { return 0 }
+        guard sampleRate == Self.sampleRate else {
+            throw MacomprendoError.speechDetector("speech detection needs 16 kHz audio")
+        }
+        guard let modelURL, FileManager.default.fileExists(atPath: modelURL.path) else {
+            throw MacomprendoError.speechDetector("silero_vad.onnx is not in the app bundle")
+        }
+        let detector = try SherpaSileroSession.makeDetector(modelPath: modelURL.path)
+        defer { SherpaOnnxDestroyVoiceActivityDetector(detector) }
+        let window = SpeechSpanAssembler.detectorWindowSize
+        samples.withUnsafeBufferPointer { buffer in
+            var index = 0
+            while index < buffer.count {
+                let count = min(window, buffer.count - index)
+                SherpaOnnxVoiceActivityDetectorAcceptWaveform(detector, buffer.baseAddress! + index,
+                                                             Int32(count))
+                index += count
+            }
+        }
+        SherpaOnnxVoiceActivityDetectorFlush(detector)
+        var speech = 0
+        while SherpaOnnxVoiceActivityDetectorEmpty(detector) == 0 {
+            guard let front = SherpaOnnxVoiceActivityDetectorFront(detector) else { break }
+            speech += Int(front.pointee.n)
+            SherpaOnnxDestroySpeechSegment(front)
+            SherpaOnnxVoiceActivityDetectorPop(detector)
+        }
+        return min(1, Double(speech) / Double(samples.count))
+    }
 }
 
 /// One recording's detector — and one `SpeechSpanAssembler` that turns its regions into padded,
@@ -49,6 +89,12 @@ private final class SherpaSileroSession: SpeechSegmentingSession {
     private let rate = SherpaSileroSegmenter.sampleRate
 
     init(modelPath: String, joinGap: TimeInterval) throws {
+        detector = try Self.makeDetector(modelPath: modelPath)
+        assembler = SpeechSpanAssembler(sampleRate: rate, joinGap: joinGap)
+    }
+
+    /// The detector every session — and every speech-share measurement — runs.
+    static func makeDetector(modelPath: String) throws -> OpaquePointer {
         var config = SherpaOnnxVadModelConfig()
         let created: OpaquePointer? = modelPath.withCString { model in
             "cpu".withCString { provider in
@@ -74,8 +120,7 @@ private final class SherpaSileroSession: SpeechSegmentingSession {
         guard let created else {
             throw MacomprendoError.speechDetector("sherpa-onnx rejected the model")
         }
-        detector = created
-        assembler = SpeechSpanAssembler(sampleRate: rate, joinGap: joinGap)
+        return created
     }
 
     deinit {
