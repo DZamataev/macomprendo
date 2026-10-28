@@ -37,6 +37,8 @@ import Foundation
     /// The recording folders, for the one file-system question a call job asks — whether a
     /// planned track file is there — so this controller never touches the file system itself.
     private let folders: any CallRecordingFolderManaging
+    /// Where a finished call's `.srt` is written (`TranscriptSidecars.subtitlesURL`).
+    private let sidecars: any TranscriptSidecarFiling
     private let pipeline: @MainActor () -> LongAudioPipeline
     private let settings: @MainActor () -> Settings
     private let glossary: @MainActor () -> Glossary
@@ -44,8 +46,10 @@ import Foundation
     private let now: () -> Date
     private let transcriptsChanged: @MainActor () -> Void
     /// Reports a finished call transcript — both tracks landed and the row is `complete`, so
-    /// the two cannot be told apart by the row alone. File jobs never call it.
-    private let callFinished: @MainActor (_ transcriptID: Int64, _ title: String) -> Void
+    /// the two cannot be told apart by the row alone. File jobs never call it. `warning` says
+    /// why the call's subtitles were not saved; `nil` when they were or are turned off.
+    private let callFinished: @MainActor (_ transcriptID: Int64, _ title: String,
+                                          _ warning: String?) -> Void
 
     private var jobTask: Task<Void, Never>?
     /// Bumped whenever a new job supersedes the running one. A job writes `state` only while its
@@ -59,16 +63,19 @@ import Foundation
     init(store: any TranscriptStoring,
          bookmarks: any FileBookmarking,
          folders: any CallRecordingFolderManaging,
+         sidecars: any TranscriptSidecarFiling,
          pipeline: @escaping @MainActor () -> LongAudioPipeline,
          settings: @escaping @MainActor () -> Settings,
          glossary: @escaping @MainActor () -> Glossary,
          readiness: @escaping @MainActor () -> BackendReadiness,
          now: @escaping () -> Date = Date.init,
          transcriptsChanged: @escaping @MainActor () -> Void = {},
-         callFinished: @escaping @MainActor (_ transcriptID: Int64, _ title: String) -> Void = { _, _ in }) {
+         callFinished: @escaping @MainActor (_ transcriptID: Int64, _ title: String,
+                                             _ warning: String?) -> Void = { _, _, _ in }) {
         self.store = store
         self.bookmarks = bookmarks
         self.folders = folders
+        self.sidecars = sidecars
         self.pipeline = pipeline
         self.settings = settings
         self.glossary = glossary
@@ -407,9 +414,11 @@ import Foundation
                      generation: generation)
             } else {
                 try await store.setStatus(.complete, reason: nil, for: resuming.id)
+                let warning = await saveSubtitles(of: resuming.id, in: folder,
+                                                  settings: currentSettings)
                 if generation == self.generation {
                     state = .finished(transcriptID: resuming.id)
-                    callFinished(resuming.id, title)
+                    callFinished(resuming.id, title, warning)
                 }
             }
         } catch {
@@ -419,6 +428,24 @@ import Foundation
         // has landed: settling must not be held up by a provider call still in flight.
         if let interrupted {
             await finish(interrupted)
+        }
+    }
+
+    /// Writes a completed call's `.srt` into its recording folder, rendered from the row as
+    /// stored — the job's starting snapshot lacks the segments it just added, and the store
+    /// orders both tracks on the call's clock. Runs after the row is `complete` and catches its
+    /// own failures: subtitles that cannot be written must not undo a finished transcript.
+    /// Returns the failure's text for the call-finished report, else `nil`.
+    private func saveSubtitles(of id: Int64, in folder: URL, settings: Settings) async -> String? {
+        guard settings.saveCallSubtitles else { return nil }
+        do {
+            guard let completed = try await store.transcript(id: id) else { return nil }
+            try sidecars.writeSubtitles(TranscriptExporter.render(completed, as: .subRip),
+                                        at: TranscriptSidecars.subtitlesURL(callFolder: folder))
+            return nil
+        } catch {
+            Log.app.error("A finished call's subtitles could not be saved")
+            return ErrorText.describe(error)
         }
     }
 

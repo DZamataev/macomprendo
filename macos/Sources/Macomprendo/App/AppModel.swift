@@ -115,6 +115,7 @@ final class AppModel: ObservableObject {
         store: env.transcriptStore,
         bookmarks: env.fileBookmarks,
         folders: env.callRecordingFolders,
+        sidecars: env.transcriptSidecars,
         pipeline: { [unowned self] in self.longAudioPipeline() },
         settings: { [unowned self] in self.settings },
         glossary: { [unowned self] in self.glossary },
@@ -122,17 +123,22 @@ final class AppModel: ObservableObject {
         transcriptsChanged: { [weak self] in
             Task { await self?.transcriptLibrary.reload() }
         },
-        callFinished: { [weak self] _, _ in
+        callFinished: { [weak self] _, _, warning in
             // A finished call transcript reports itself: the Transcripts window is not opened
             // for it. Longer than a dictation's toast — the user may not be looking at the
-            // screen when the job lands.
-            self?.hud.toast("Call transcript ready", duration: 3)
+            // screen when the job lands. Subtitles that could not be saved replace the
+            // "ready" toast, whose own text says the transcript is ready.
+            self?.hud.toast(warning ?? "Call transcript ready", duration: warning == nil ? 3 : 6)
         })
     lazy var transcriptLibrary = TranscriptLibraryController(store: env.transcriptStore,
                                                              pasteboard: env.pasteboard,
                                                              bookmarks: env.fileBookmarks,
                                                              revealer: env.fileRevealer,
-                                                             trash: env.fileTrash)
+                                                             trash: env.fileTrash,
+                                                             notes: transcriptNotes)
+    /// Every transcript's notes drafts — one coordinator for the Transcripts window and the
+    /// menubar panel's call notes, so both edit one draft per file.
+    lazy var transcriptNotes = TranscriptNotesController(files: env.transcriptSidecars)
     lazy var transcriptPlayback = TranscriptPlaybackController(player: env.transcriptAudioPlayer,
                                                                bookmarks: env.fileBookmarks,
                                                                folders: env.callRecordingFolders,
@@ -407,6 +413,16 @@ final class AppModel: ObservableObject {
                 if case .recording = state { self?.transcriptPlayback.stop() }
             }
             .store(in: &cancellables)
+        // A call's notes are saved the moment its recording stops, by any route — the panel,
+        // the hotkey, the automatic recorder, sleep or quit — rather than when the panel's
+        // editor next closes, which may be never.
+        callRecording.$recordingFolder
+            .scan((previous: URL?.none, current: URL?.none)) { ($0.current, $1) }
+            .sink { [weak self] change in
+                guard let previous = change.previous, previous != change.current else { return }
+                self?.transcriptNotes.flush(TranscriptSidecars.notesURL(callFolder: previous))
+            }
+            .store(in: &cancellables)
         // System sleep stops the recording exactly as Stop does: the recording is finalised and
         // its transcription job starts immediately, not on the next launch.
         NSWorkspace.shared.notificationCenter
@@ -526,6 +542,10 @@ final class AppModel: ObservableObject {
         // Stop polling first: a tick that saw the recorder idle after the stop below would
         // start a fresh recording while the process is quitting.
         autoCallRecorder.stop()
+        // Unsaved notes first: nothing below can lose them, but a hang below would.
+        if !transcriptNotes.flushAll().isEmpty {
+            Log.app.error("Some transcript notes could not be saved before quitting")
+        }
         env.recordingCues.restoreOutput()
         await callRecording.shutdown()
         await fileTranscription.shutdown()

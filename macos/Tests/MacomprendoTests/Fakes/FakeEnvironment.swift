@@ -45,7 +45,8 @@ extension AppEnvironment {
                      systemAudio: any CallAudioCapturing = ScriptedCallCapture(),
                      callRecordingFolders: any CallRecordingFolderManaging = FakeCallRecordingFolders(),
                      callTrackWriter: @escaping CallTrackWriterFactory = { _, _, _ in FakeCallTrackWriter() },
-                     transcriptionLane: TranscriptionLane = TranscriptionLane()) -> AppEnvironment {
+                     transcriptionLane: TranscriptionLane = TranscriptionLane(),
+                     transcriptSidecars: any TranscriptSidecarFiling = FakeTranscriptSidecars()) -> AppEnvironment {
         AppEnvironment(hotkeys: hotkeys,
                        middleMouse: middleMouse,
                        recorder: recorder,
@@ -89,6 +90,7 @@ extension AppEnvironment {
                        audioProcesses: audioProcesses,
                        systemAudio: systemAudio,
                        callRecordingFolders: callRecordingFolders,
-                       callTrackWriter: callTrackWriter)
+                       callTrackWriter: callTrackWriter,
+                       transcriptSidecars: transcriptSidecars)
     }
 }

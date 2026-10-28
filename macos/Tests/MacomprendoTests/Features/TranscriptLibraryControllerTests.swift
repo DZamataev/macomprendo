@@ -12,10 +12,13 @@ import Testing
                                 pasteboard: FakePasteboard = FakePasteboard(),
                                 bookmarks: FakeFileBookmarks = FakeFileBookmarks(),
                                 revealer: FakeFileRevealer = FakeFileRevealer(),
-                                trash: FakeFileTrash = FakeFileTrash())
+                                trash: FakeFileTrash = FakeFileTrash(),
+                                notes: TranscriptNotesController? = nil)
         -> TranscriptLibraryController {
         TranscriptLibraryController(store: store, pasteboard: pasteboard,
-                                    bookmarks: bookmarks, revealer: revealer, trash: trash)
+                                    bookmarks: bookmarks, revealer: revealer, trash: trash,
+                                    notes: notes ?? TranscriptNotesController(
+                                        files: FakeTranscriptSidecars(), sleep: { _ in }))
     }
 
     /// Stores one transcript and returns its id. `status` defaults to `complete`, the state a
@@ -285,16 +288,180 @@ import Testing
 
         let selected = try #require(controller.selected)
         for format in TranscriptExportFormat.allCases {
-            #expect(controller.exportText(format) == TranscriptExporter.render(selected, as: format))
+            #expect(try controller.exportText(format) == TranscriptExporter.render(selected, as: format))
         }
-        #expect(controller.exportText(.plainText) == "One.\nTwo.\n")
+        #expect(try controller.exportText(.plainText) == "One.\nTwo.\n")
     }
 
-    @Test func exportWithNothingSelectedIsNil() {
+    @Test func exportWithNothingSelectedIsNil() throws {
         let controller = makeController()
 
-        #expect(controller.exportText(.plainText) == nil)
-        #expect(controller.exportText(.subRip) == nil)
+        #expect(try controller.exportText(.plainText) == nil)
+        #expect(try controller.exportText(.subRip) == nil)
+    }
+
+    // MARK: - Notes
+
+    private func notesRig(kind: TranscriptSourceKind = .file, path: String = "/files/talk.m4a",
+                          trash: FakeFileTrash = FakeFileTrash(),
+                          bookmarks: FakeFileBookmarks = FakeFileBookmarks()) async throws
+        -> (TranscriptLibraryController, TranscriptNotesController, FakeTranscriptSidecars,
+            FakeTranscriptStore, Int64) {
+        let store = FakeTranscriptStore()
+        let id = await store.create(sourceKind: kind, title: "talk", sourceBookmark: Data(path.utf8),
+                                    duration: 12, run: run, at: date)
+        for segment in twoSegments { try await store.appendSegment(segment, to: id) }
+        try await store.setStatus(.complete, reason: nil, for: id)
+        let files = FakeTranscriptSidecars()
+        let notes = TranscriptNotesController(files: files, sleep: { _ in })
+        let controller = makeController(store: store, bookmarks: bookmarks, trash: trash,
+                                        notes: notes)
+        await controller.reload()
+        await controller.select(id)
+        return (controller, notes, files, store, id)
+    }
+
+    @Test func theNotesOfAFileSitNextToItsSourceAndACallsInItsFolder() async throws {
+        let (file, _, _, _, _) = try await notesRig()
+        #expect(file.notesURL(for: file.selected)?.path == "/files/talk.notes.txt")
+        let (call, _, _, _, _) = try await notesRig(kind: .call, path: "/rec/rec A")
+        #expect(call.notesURL(for: call.selected)?.path == "/rec/rec A/rec A.notes.txt")
+    }
+
+    @Test func aSourceThatCannotBeFoundHasNoNotes() async throws {
+        let (controller, _, _, _, _) = try await notesRig(
+            bookmarks: FakeFileBookmarks(missing: ["/files/talk.m4a"]))
+        #expect(controller.notesURL(for: controller.selected) == nil)
+    }
+
+    @Test func theMarkdownExportAndSummarizeCarryTheCurrentNotes() async throws {
+        let (controller, notes, files, _, _) = try await notesRig()
+        let url = URL(fileURLWithPath: "/files/talk.notes.txt")
+        files.put("on disk", at: url)
+        let selected = try #require(controller.selected)
+
+        #expect(try controller.exportText(.markdown)
+                == TranscriptExporter.render(selected, as: .markdown, notes: "on disk"))
+        #expect(try controller.summaryText()
+                == TranscriptExporter.summaryInput(selected, notes: "on disk"))
+
+        notes.load(url)
+        notes.edit("unsaved draft", for: url)
+        #expect(try controller.exportText(.markdown)?.contains("unsaved draft") == true)
+        #expect(try controller.exportText(.plainText) == "One.\nTwo.\n")
+    }
+
+    @Test func unreadableNotesFailTheMarkdownExportButNotTheOthers() async throws {
+        let (controller, _, files, _, _) = try await notesRig()
+        files.readFailures = ["/files/talk.notes.txt"]
+        #expect(throws: MacomprendoError.self) { try controller.exportText(.markdown) }
+        #expect(throws: MacomprendoError.self) { try controller.summaryText() }
+        #expect(try controller.exportText(.subRip) != nil)
+    }
+
+    @Test func deletingOnlyTheRowSavesThePendingNotesAndKeepsThem() async throws {
+        let trash = FakeFileTrash()
+        let (controller, notes, files, _, id) = try await notesRig(trash: trash)
+        let url = URL(fileURLWithPath: "/files/talk.notes.txt")
+        notes.load(url)
+        notes.edit("keep me", for: url)
+
+        await controller.delete(id, movingSourceToTrash: false)
+
+        #expect(files.contents(url) == "keep me")
+        #expect(trash.trashed.isEmpty)
+        #expect(controller.headers.isEmpty)
+    }
+
+    @Test func deletingAFileWithItsSourceTrashesItsNotesToo() async throws {
+        let trash = FakeFileTrash()
+        let (controller, notes, files, _, id) = try await notesRig(trash: trash)
+        let url = URL(fileURLWithPath: "/files/talk.notes.txt")
+        files.put("links", at: url)
+        notes.load(url)
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        #expect(trash.trashed == [URL(fileURLWithPath: "/files/talk.m4a"), url])
+        #expect(notes.state(for: url) == nil)
+        #expect(controller.error == nil)
+    }
+
+    @Test func aFileWithoutNotesTrashesOnlyItsSource() async throws {
+        let trash = FakeFileTrash()
+        let (controller, _, _, _, id) = try await notesRig(trash: trash)
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        #expect(trash.trashed == [URL(fileURLWithPath: "/files/talk.m4a")])
+    }
+
+    @Test func aCallsNotesGoWithItsFolder() async throws {
+        let trash = FakeFileTrash()
+        let (controller, notes, files, _, id) = try await notesRig(kind: .call, path: "/rec/rec A",
+                                                                   trash: trash)
+        let url = URL(fileURLWithPath: "/rec/rec A/rec A.notes.txt")
+        files.put("links", at: url)
+        notes.load(url)
+        notes.edit("links and more", for: url)
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        // Flushed into the folder before the folder went to the Trash.
+        #expect(files.contents(url) == "links and more")
+        #expect(trash.trashed == [URL(fileURLWithPath: "/rec/rec A")])
+        #expect(notes.state(for: url) == nil)
+    }
+
+    @Test func notesTheTrashRefusesStillDeleteTheTranscriptWithAWarning() async throws {
+        let trash = TrashRefusing(path: "/files/talk.notes.txt")
+        let (controller, _, files, _, id) = try await notesRig(trash: trash)
+        let url = URL(fileURLWithPath: "/files/talk.notes.txt")
+        files.put("links", at: url)
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        #expect(controller.headers.isEmpty)
+        #expect(trash.trashed == [URL(fileURLWithPath: "/files/talk.m4a")])
+        #expect(controller.error == ErrorText.describe(MacomprendoError.notesNotMovedToTrash(
+            CocoaError(.fileWriteNoPermission).localizedDescription)))
+    }
+
+    /// Notes that cannot be saved stop the deletion before anything moves: the draft is the
+    /// only copy of what was typed, and discarding it with the source would lose it silently.
+    @Test(arguments: [true, false])
+    func unsavableNotesKeepTheTranscriptAndTheirDraft(movingSource: Bool) async throws {
+        let trash = FakeFileTrash()
+        let (controller, notes, files, _, id) = try await notesRig(trash: trash)
+        let url = URL(fileURLWithPath: "/files/talk.notes.txt")
+        files.put("saved earlier", at: url)
+        notes.load(url)
+        notes.edit("unsaved important notes", for: url)
+        files.saveFailures = [url.path]
+
+        await controller.delete(id, movingSourceToTrash: movingSource)
+
+        #expect(controller.headers.map(\.id) == [id])
+        #expect(trash.trashed.isEmpty)
+        #expect(notes.text(for: url) == "unsaved important notes")
+        #expect(notes.state(for: url) == .dirty)
+        #expect(controller.error == ErrorText.describe(
+            MacomprendoError.notesNotSaved("the folder no longer exists")))
+    }
+
+    @Test func aSourceTheTrashRefusesKeepsTheNotesAndTheirDraft() async throws {
+        let trash = FakeFileTrash()
+        trash.failure = CocoaError(.fileWriteNoPermission)
+        let (controller, notes, files, _, id) = try await notesRig(trash: trash)
+        let url = URL(fileURLWithPath: "/files/talk.notes.txt")
+        notes.load(url)
+        notes.edit("draft", for: url)
+
+        await controller.delete(id, movingSourceToTrash: true)
+
+        #expect(controller.headers.map(\.id) == [id])
+        #expect(files.contents(url) == "draft")
+        #expect(notes.text(for: url) == "draft")
     }
 
     // MARK: - Launch maintenance
@@ -718,4 +885,16 @@ extension FakeTranscriptStore {
     /// Arms the next `delete(id:)` to suspend on `gate`, before it commits the removal. The
     /// property is actor-isolated, so a test cannot assign it from outside the actor.
     func gateNextDelete(on gate: AsyncGate) { deleteGate = gate }
+}
+
+
+/// Refuses to trash one path and records the rest, like a locked notes file next to a source the
+/// Trash accepts.
+@MainActor private final class TrashRefusing: FakeFileTrash {
+    let path: String
+    init(path: String) { self.path = path }
+    override func moveToTrash(_ url: URL) throws {
+        if url.path == path { throw CocoaError(.fileWriteNoPermission) }
+        try super.moveToTrash(url)
+    }
 }

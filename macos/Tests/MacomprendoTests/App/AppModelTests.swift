@@ -843,6 +843,46 @@ import Testing
         #expect(microphone.stopCount == 1)
     }
 
+    /// Notes typed in the panel during a call are saved the moment the call stops — whichever
+    /// route stops it — not when the panel's editor next closes.
+    @Test func aCallsNotesAreSavedWhenItsRecordingStops() async throws {
+        let root = try callRecordingDirectory()
+        let folders = FakeCallRecordingFolders(realDirectoryRoot: root)
+        let sidecars = FakeTranscriptSidecars()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(callRecordingFolders: folders,
+                                        transcriptSidecars: sidecars))
+        model.settings.callRecordingsDirectory = root.path
+        model.start()
+        model.route(.keyDown(.recordCall))
+        await model.callRecording.drain()
+        let folder = try #require(model.callRecording.recordingFolder)
+        let url = TranscriptSidecars.notesURL(callFolder: folder)
+        model.transcriptNotes.load(url)
+        model.transcriptNotes.edit("https://meet.example/agenda", for: url)
+        #expect(sidecars.contents(url) == nil)
+
+        model.route(.keyDown(.recordCall))
+        await model.callRecording.drain()
+
+        #expect(sidecars.contents(url) == "https://meet.example/agenda")
+    }
+
+    @Test func quittingSavesUnsavedNotes() async {
+        let sidecars = FakeTranscriptSidecars()
+        let model = AppModel(store: InMemorySettingsStore(),
+                             keychain: InMemoryKeychainStore(),
+                             env: .fake(transcriptSidecars: sidecars))
+        let url = URL(fileURLWithPath: "/files/talk.notes.txt")
+        model.transcriptNotes.load(url)
+        model.transcriptNotes.edit("draft", for: url)
+
+        await model.shutdown()
+
+        #expect(sidecars.contents(url) == "draft")
+    }
+
     /// The call recorder runs its own `AVAudioEngine` but follows the same microphone choice
     /// as dictation: applied when routing starts, and on every change of the setting.
     @Test func theCallMicrophoneFollowsThePreferredInputDevice() throws {

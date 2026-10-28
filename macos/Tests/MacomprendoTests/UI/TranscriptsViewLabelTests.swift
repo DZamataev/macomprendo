@@ -87,7 +87,7 @@ import Testing
     /// The delete confirmation names what its checkbox sends to the Trash.
     @Test func theDeleteCheckboxNamesTheSource() {
         #expect(TranscriptsView.deleteSourceTitle(for: .file)
-                == "Also move the source file to the Trash")
+                == "Also move the source file and its notes to the Trash")
         #expect(TranscriptsView.deleteSourceTitle(for: .call)
                 == "Also move the call recording to the Trash")
     }

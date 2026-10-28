@@ -11,6 +11,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paste missed the text field.
 - **Cancel dictation** shortcut in Settings ▸ Hotkeys, Esc by default; it is active only
   while Dictate records or transcribes, and the recording HUD names the bound key.
+- A finished call transcript is saved as subtitles, `rec <date>.srt`, in its recording folder
+  next to the two tracks, and saved again after **Resume** or **Transcribe Again**. Settings ▸
+  General ▸ Call recordings ▸ **Save subtitles (.srt) in the recording folder**, on by default.
+- **Notes** for every transcript: a popover in Transcripts, and an inline editor in the menubar
+  panel while a call is being recorded, for links from the call's chat and anything else. They
+  are saved as you type in `<recording name>.notes.txt` — inside a call's recording folder, next
+  to the source file for a file transcript — included in the Markdown export, sent to
+  **Summarize** along with the transcript, and moved to the Trash with the source.
 - Settings ▸ General: **Play a sound when recording starts and stops** and **Mute system
   audio while recording** (both off by default), for Dictate and Dictate & Refine, with a
   sound output device and volume.

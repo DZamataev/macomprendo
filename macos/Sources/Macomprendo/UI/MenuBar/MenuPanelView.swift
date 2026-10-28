@@ -35,6 +35,7 @@ struct MenuPanelView: View {
                 .padding(.bottom, 10)
 
             CallRecordingPanelSection(controller: model.callRecording,
+                                      notes: model.transcriptNotes,
                                       showLiveTranscript: showLiveTranscript)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)

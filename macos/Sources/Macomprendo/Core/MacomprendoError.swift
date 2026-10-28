@@ -42,6 +42,14 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
     case transcriptPlaybackUnavailable(String)
     /// Deleting a transcript together with its source, the source would not go to the Trash.
     case sourceNotMovedToTrash(String)
+    /// A finished call's `.srt` could not be written into its recording folder.
+    case callSubtitlesNotSaved(String)
+    /// A transcript's notes file exists but cannot be read as text.
+    case notesUnreadable(String)
+    /// A transcript's notes could not be written (or an emptied notes file removed).
+    case notesNotSaved(String)
+    /// The transcript and its source were deleted, but the notes file stayed where it was.
+    case notesNotMovedToTrash(String)
     case cancelled
 
     var errorDescription: String? {
@@ -114,6 +122,14 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "The source could not be moved to the Trash (\(reason)). The transcript was kept."
         case .transcriptPlaybackUnavailable(let reason):
             return "Can't play this transcript's audio: \(reason)."
+        case .callSubtitlesNotSaved(let reason):
+            return "The call's subtitles could not be saved (\(reason)). The transcript is ready."
+        case .notesUnreadable(let reason):
+            return "The notes file could not be read (\(reason))."
+        case .notesNotSaved(let reason):
+            return "The notes could not be saved (\(reason))."
+        case .notesNotMovedToTrash(let reason):
+            return "The transcript and its source were moved to the Trash, but the notes file could not be (\(reason))."
         case .cancelled:
             return "Cancelled."
         }
@@ -189,6 +205,14 @@ enum MacomprendoError: Error, LocalizedError, Equatable, Sendable {
             return "Delete the transcript without its source, or move the file to the Trash yourself."
         case .transcriptPlaybackUnavailable:
             return "If the file or the recording folder moved, choose it again with Choose File… or Choose Folder…."
+        case .callSubtitlesNotSaved:
+            return "Check that the recording folder still exists and the disk has free space, or use Export ▸ Subtitles (.srt)."
+        case .notesUnreadable:
+            return "Open the .notes.txt file in a text editor and save it as plain UTF-8 text. Macomprendo will not change it until then."
+        case .notesNotMovedToTrash:
+            return "Move the .notes.txt file next to the source to the Trash yourself."
+        case .notesNotSaved:
+            return "Check that the recording folder or the source file's folder still exists and can be written. Your text is kept while the window stays open."
         case .cancelled:
             return nil
         }

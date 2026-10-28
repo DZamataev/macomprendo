@@ -36,5 +36,7 @@
   { "name": "shield-check", "weight": "regular" },
   { "name": "info", "weight": "regular" },
   { "name": "power", "weight": "regular" },
-  { "name": "caret-right", "weight": "regular" }
+  { "name": "caret-right", "weight": "regular" },
+  { "name": "notepad", "weight": "regular" },
+  { "name": "notepad", "weight": "fill" }
 ]

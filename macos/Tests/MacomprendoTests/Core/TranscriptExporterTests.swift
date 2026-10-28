@@ -82,6 +82,42 @@ import Testing
         #expect(TranscriptExporter.clock(3600) == "1:00:00")
     }
 
+    @Test func markdownCarriesNotesBetweenSummaryAndTranscript() {
+        let text = TranscriptExporter.render(transcript(segments: two, summary: "Short."),
+                                             as: .markdown,
+                                             notes: "https://example.com/doc\nAgenda: Q4\n")
+        #expect(text.contains(
+            "## Summary\n\nShort.\n\n## Notes\n\nhttps://example.com/doc\nAgenda: Q4\n\n## Transcript\n"))
+    }
+
+    @Test func blankNotesLeaveEveryFormatUnchanged() {
+        let t = transcript(segments: two, summary: "Short.")
+        for format in TranscriptExportFormat.allCases {
+            #expect(TranscriptExporter.render(t, as: format, notes: "  \n")
+                    == TranscriptExporter.render(t, as: format))
+        }
+    }
+
+    @Test func notesNeverReachThePlainTextOrSubRipExports() {
+        let t = transcript(segments: two)
+        #expect(TranscriptExporter.render(t, as: .plainText, notes: "secret link")
+                == TranscriptExporter.render(t, as: .plainText))
+        #expect(TranscriptExporter.render(t, as: .subRip, notes: "secret link")
+                == TranscriptExporter.render(t, as: .subRip))
+    }
+
+    @Test func summaryInputIsThePlainTextWithoutNotes() {
+        let t = transcript(segments: two)
+        #expect(TranscriptExporter.summaryInput(t, notes: "") == t.plainText)
+        #expect(TranscriptExporter.summaryInput(t, notes: " \n ") == t.plainText)
+    }
+
+    @Test func summaryInputPrependsLabelledNotes() {
+        let t = transcript(segments: two)
+        #expect(TranscriptExporter.summaryInput(t, notes: "Links:\nhttps://a.b\n")
+                == "Notes:\nLinks:\nhttps://a.b\n\nTranscript:\n" + t.plainText)
+    }
+
     @Test func everyFormatHasItsExtension() {
         #expect(TranscriptExportFormat.allCases.map(\.fileExtension) == ["txt", "srt", "md"])
     }

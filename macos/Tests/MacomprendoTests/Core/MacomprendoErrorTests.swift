@@ -35,7 +35,11 @@ import Testing
     .callRecordingWriteFailed("the disk is full"),
     .callRecordingUnavailable,
     .transcriptPlaybackUnavailable("x"),
-    .sourceNotMovedToTrash("x")
+    .sourceNotMovedToTrash("x"),
+    .callSubtitlesNotSaved("the disk is full"),
+    .notesUnreadable("the file is not UTF-8 text"),
+    .notesNotSaved("the folder no longer exists"),
+    .notesNotMovedToTrash("x")
 ])
 func everyErrorHasDescriptionAndRecovery(error: MacomprendoError) {
     #expect(error.errorDescription?.isEmpty == false)

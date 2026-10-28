@@ -268,6 +268,20 @@ private func tempDirectory() throws -> URL {
         #expect(rig.folders.removed.isEmpty)
     }
 
+    /// The folder is published while recording, so the panel's notes editor knows where the
+    /// call's notes go, and cleared on Stop, so `AppModel` can flush them.
+    @Test func theRecordingFolderIsPublishedUntilStop() async throws {
+        let rig = try Rig()
+        #expect(rig.controller.recordingFolder == nil)
+        await startRecording(rig)
+        let folder = try #require(rig.folders.folders.first)
+        #expect(rig.controller.recordingFolder == folder)
+
+        await rig.controller.stop()
+
+        #expect(rig.controller.recordingFolder == nil)
+    }
+
     @Test func aNilSettingUsesTheDefaultRecordingsDirectory() async throws {
         let rig = try Rig()
 

@@ -714,6 +714,16 @@ import Testing
                 == "/Users/test/Call Recordings")
     }
 
+    @Test func callSubtitlesAreSavedByDefaultAndTheChoiceRoundTrips() throws {
+        let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
+        #expect(try Settings.migrate(json).saveCallSubtitles)
+        #expect(Settings.default.saveCallSubtitles)
+
+        var settings = Settings.default
+        settings.saveCallSubtitles = false
+        #expect(try Settings.migrate(JSONEncoder().encode(settings)).saveCallSubtitles == false)
+    }
+
     @Test func automaticCallRecordingIsOffWithTheDefaultAppsAndRoundTrips() throws {
         let json = Data(#"{"schemaVersion":2,"dictationMode":"hold"}"#.utf8)
         #expect(try Settings.migrate(json).autoRecordCalls == false)

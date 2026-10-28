@@ -381,6 +381,9 @@ struct Settings: Codable, Sendable, Equatable {
     /// When a call is transcribed: live during the recording, as soon as it stops, or only on
     /// Resume — the call then waits `incomplete`.
     var callTranscription: CallTranscriptionMode
+    /// Whether a call whose transcript completes gets `<folder name>.srt` in its recording
+    /// folder, rewritten on every completion.
+    var saveCallSubtitles: Bool
     /// Whether a call from `autoRecordApps` starts and stops a recording by itself.
     var autoRecordCalls: Bool
     /// The list the automatic recorder watches. A stored list replaces the default entirely,
@@ -434,6 +437,7 @@ struct Settings: Codable, Sendable, Equatable {
             glossaryRecommendedPacksOffered: false,
             callRecordingsDirectory: nil,
             callTranscription: .afterRecording,
+            saveCallSubtitles: true,
             autoRecordCalls: false,
             autoRecordApps: CallApp.defaults,
             autoRecordAllApps: false
@@ -551,6 +555,8 @@ extension Settings {
                 .decodeIfPresent(Bool.self, forKey: .transcribeCallsAfterRecording)
                 .map { $0 ? .afterRecording : .manual }
             ?? d.callTranscription
+        saveCallSubtitles = try c.decodeIfPresent(Bool.self, forKey: .saveCallSubtitles)
+            ?? d.saveCallSubtitles
         autoRecordCalls = try c.decodeIfPresent(Bool.self, forKey: .autoRecordCalls)
             ?? d.autoRecordCalls
         autoRecordApps = try c.decodeIfPresent([CallApp].self, forKey: .autoRecordApps)

@@ -42,6 +42,8 @@ enum AppIcon: String, CaseIterable {
     case info = "info"
     case power = "power"
     case disclosure = "caret-right"
+    case notes = "notepad"
+    case notesFill = "notepad-fill"
 
     /// Shown when the SVG resource is missing, so the UI degrades instead of going blank.
     var fallbackSymbol: String {
@@ -83,6 +85,8 @@ enum AppIcon: String, CaseIterable {
         case .info: return "info.circle"
         case .power: return "power"
         case .disclosure: return "chevron.right"
+        case .notes: return "note.text"
+        case .notesFill: return "note.text"
         }
     }
 

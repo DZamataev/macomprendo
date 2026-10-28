@@ -32,6 +32,8 @@ final class TranscriptLibraryController: ObservableObject {
     private let bookmarks: any FileBookmarking
     private let revealer: any FileRevealing
     private let trash: any FileTrashing
+    /// The notes drafts, shared with the menubar panel's editor.
+    let notes: TranscriptNotesController
 
     /// Guards the list: bumped when `reload()` starts and when a `delete()` completes. A
     /// `reload()` writes `headers` only while the value it started with is still current, so a
@@ -55,12 +57,13 @@ final class TranscriptLibraryController: ObservableObject {
 
     init(store: any TranscriptStoring, pasteboard: any PasteboardProtocol,
          bookmarks: any FileBookmarking, revealer: any FileRevealing,
-         trash: any FileTrashing) {
+         trash: any FileTrashing, notes: TranscriptNotesController) {
         self.store = store
         self.pasteboard = pasteboard
         self.bookmarks = bookmarks
         self.revealer = revealer
         self.trash = trash
+        self.notes = notes
     }
 
     /// Loads the list, newest first, and re-reads the open transcript so a segment a running
@@ -163,12 +166,40 @@ final class TranscriptLibraryController: ObservableObject {
     /// recording folder — goes to the Trash first, where it can still be put back. A source that
     /// is already gone is no reason to keep the transcript; one the Trash refuses is: the row
     /// stays and the failure says why, so nothing is half-deleted.
+    ///
+    /// The transcript's notes are saved first in every case, so no outcome loses an unsaved
+    /// draft; notes that cannot be saved keep the transcript, its source and the draft. A file transcript's notes file follows its source to the Trash; one the Trash
+    /// refuses still lets the transcript go, with a warning left in `error`. A call's notes are
+    /// inside the folder that went. Once the source moved, the notes entry is retired so a late
+    /// editor close cannot recreate the file.
     func delete(_ id: Int64, movingSourceToTrash: Bool = false) async {
         if let header = headers.first(where: { $0.id == id }), !Self.canDelete(header) { return }
+        let transcript: Transcript?
+        do {
+            transcript = try await store.transcript(id: id)
+        } catch {
+            // Without the row its source is unknown: trashing must not go ahead blind. A
+            // row-only delete still can.
+            guard !movingSourceToTrash else {
+                self.error = ErrorText.describe(error)
+                return
+            }
+            transcript = nil
+        }
+        let source = transcript?.sourceBookmark.flatMap { try? bookmarks.resolve($0) }
+        let notesURL = transcript.flatMap { transcript in
+            source.map { TranscriptSidecars.notesURL(kind: transcript.header.sourceKind, source: $0) }
+        }
+        // Unsaved notes that cannot be written stop the deletion before anything moves: the
+        // draft is the only copy of what was typed.
+        if let notesURL, let failure = notes.flush(notesURL) {
+            self.error = failure
+            return
+        }
+        var warning: String?
         if movingSourceToTrash {
             do {
-                if let bookmark = try await store.transcript(id: id)?.sourceBookmark,
-                   let source = try? bookmarks.resolve(bookmark) {
+                if let source {
                     try trash.moveToTrash(source)
                 }
             } catch let error as MacomprendoError {
@@ -178,6 +209,17 @@ final class TranscriptLibraryController: ObservableObject {
                 self.error = ErrorText.describe(
                     MacomprendoError.sourceNotMovedToTrash(error.localizedDescription))
                 return
+            }
+            if let notesURL {
+                if transcript?.header.sourceKind == .file, notes.fileExists(notesURL) {
+                    do {
+                        try trash.moveToTrash(notesURL)
+                    } catch {
+                        warning = ErrorText.describe(
+                            MacomprendoError.notesNotMovedToTrash(error.localizedDescription))
+                    }
+                }
+                notes.discard(notesURL)
             }
         }
         do {
@@ -194,7 +236,7 @@ final class TranscriptLibraryController: ObservableObject {
         let clearsSelection = selected?.id == id
         let cancelsPendingSelect = pendingSelectionID == id
         if clearsSelection { selected = nil }
-        error = nil
+        error = warning
         // Any read that started before this deletion can no longer re-add the row.
         listToken += 1
         // Only cancelling the in-flight `select` for this row invalidates a selection read: that
@@ -214,10 +256,32 @@ final class TranscriptLibraryController: ObservableObject {
         pasteboard.writeString(selected.plainText)
     }
 
-    /// The open transcript rendered in `format`, or `nil` when nothing is open.
-    func exportText(_ format: TranscriptExportFormat) -> String? {
+    /// The open transcript rendered in `format`, or `nil` when nothing is open. Only Markdown
+    /// reads the notes — the unsaved draft, else the file — and throws `notesUnreadable` when
+    /// they cannot be read; plain text and SubRip never touch them.
+    func exportText(_ format: TranscriptExportFormat) throws -> String? {
         guard let selected else { return nil }
-        return TranscriptExporter.render(selected, as: format)
+        guard format == .markdown else { return TranscriptExporter.render(selected, as: format) }
+        return TranscriptExporter.render(selected, as: format, notes: try currentNotes(of: selected))
+    }
+
+    /// What **Summarize** sends for the open transcript: its text with its notes in front.
+    func summaryText() throws -> String? {
+        guard let selected else { return nil }
+        return TranscriptExporter.summaryInput(selected, notes: try currentNotes(of: selected))
+    }
+
+    /// Where `transcript`'s notes live, resolved from its bookmark each time so a relinked
+    /// source is followed; `nil` when the source cannot be found.
+    func notesURL(for transcript: Transcript?) -> URL? {
+        guard let transcript, let bookmark = transcript.sourceBookmark,
+              let source = try? bookmarks.resolve(bookmark) else { return nil }
+        return TranscriptSidecars.notesURL(kind: transcript.header.sourceKind, source: source)
+    }
+
+    private func currentNotes(of transcript: Transcript) throws -> String {
+        guard let url = notesURL(for: transcript) else { return "" }
+        return try notes.currentText(for: url)
     }
 
     /// Shows the open call transcript's recording folder in Finder. The folder's bookmark is

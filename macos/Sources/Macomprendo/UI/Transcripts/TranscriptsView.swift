@@ -13,6 +13,8 @@ struct TranscriptsView: View {
     @ObservedObject var library: TranscriptLibraryController
     @ObservedObject var transcription: FileTranscriptionController
     @ObservedObject var playback: TranscriptPlaybackController
+    /// Observed for the Notes button's filled icon; the editor observes it on its own.
+    @ObservedObject var notes: TranscriptNotesController
 
     /// The transcript **Transcribe Again** was asked for, while its confirmation is up.
     @State private var transcribeAgainID: Int64?
@@ -26,6 +28,11 @@ struct TranscriptsView: View {
     @State private var hoveredSegment: Int?
     /// The call transcript being recorded live right now, whose audio cannot play yet.
     @State private var liveTranscriptID: Int64?
+    /// Whether the open transcript's Notes popover is shown.
+    @State private var isNotesPresented = false
+    /// Where the open transcript's notes live, resolved from its bookmark when the selection
+    /// changes rather than on every render (a render can be one typed character).
+    @State private var notesURL: URL?
 
     private func isRecordingLive(_ transcript: Transcript?) -> Bool {
         transcript != nil && transcript?.id == liveTranscriptID
@@ -71,9 +78,14 @@ struct TranscriptsView: View {
             // The window opens on whatever the list already had selected, which no change
             // event fires for.
             await playback.open(library.selected, recording: isRecordingLive(library.selected))
+            loadNotes(of: library.selected)
         }
-        .onChange(of: library.selected) { _, selected in
+        .onChange(of: library.selected) { old, selected in
             Task { await playback.open(selected, recording: isRecordingLive(selected)) }
+            // A segment landing re-publishes the same transcript; only a different one closes
+            // the popover and re-reads the notes for the button's icon.
+            if old?.id != selected?.id { isNotesPresented = false }
+            loadNotes(of: selected)
         }
         // Read through `onReceive`, not observed: the recorder publishes its meters ten times a
         // second, and the whole window would re-render with them.
@@ -347,9 +359,10 @@ struct TranscriptsView: View {
 
             exportMenu
 
+            notesButton(transcript)
+
             Button {
-                model.textFeatures?.summarize.start(text: transcript.plainText,
-                                                    canReplaceSelection: false)
+                summarize()
             } label: {
                 Label { Text("Summarize") } icon: { Icon(.summarize, size: 14) }
             }
@@ -636,12 +649,78 @@ struct TranscriptsView: View {
         }
     }
 
+    // MARK: - Notes
+
+    /// **Notes**: a popover editing the notes file next to the recording. The icon is filled
+    /// when there are notes; a source that cannot be found has nowhere to keep them.
+    @ViewBuilder
+    private func notesButton(_ transcript: Transcript) -> some View {
+        let url = notesURL
+        Button {
+            openNotes(transcript)
+        } label: {
+            Label { Text("Notes") } icon: {
+                Icon(url.map(notes.hasNotes) == true ? .notesFill : .notes, size: 14)
+            }
+        }
+        .help("Notes kept next to the recording, such as links from the call's chat")
+        .fixedSize()
+        .popover(isPresented: $isNotesPresented, arrowEdge: .bottom) {
+            if let url {
+                TranscriptNotesEditor(notes: notes, url: url)
+                    .id(url)
+                    .frame(width: 380)
+                    .padding(12)
+            }
+        }
+    }
+
+    /// Resolves the target again on every opening — a source moved in Finder since the
+    /// selection last published must not leave the editor writing next to its old place — and
+    /// says why when the recording or source cannot be found.
+    private func openNotes(_ transcript: Transcript) {
+        if isNotesPresented {
+            isNotesPresented = false
+            return
+        }
+        loadNotes(of: transcript)
+        guard notesURL != nil else {
+            actionError = ErrorText.describe(transcript.header.sourceKind == .call
+                                             ? MacomprendoError.callRecordingUnavailable
+                                             : MacomprendoError.sourceFileUnavailable)
+            return
+        }
+        actionError = nil
+        isNotesPresented = true
+    }
+
+    private func loadNotes(of transcript: Transcript?) {
+        let url = library.notesURL(for: transcript)
+        if url != notesURL { notesURL = url }
+        if let url { notes.load(url) }
+    }
+
+    private func summarize() {
+        do {
+            guard let text = try library.summaryText() else { return }
+            actionError = nil
+            model.textFeatures?.summarize.start(text: text, canReplaceSelection: false)
+        } catch {
+            actionError = ErrorText.describe(error)
+        }
+    }
+
     // MARK: - Export
 
     private func export(_ format: TranscriptExportFormat) {
-        guard let text = library.exportText(format), let transcript = library.selected else {
+        let rendered: String?
+        do {
+            rendered = try library.exportText(format)
+        } catch {
+            actionError = ErrorText.describe(error)
             return
         }
+        guard let text = rendered, let transcript = library.selected else { return }
         let panel = NSSavePanel()
         if let type = UTType(filenameExtension: format.fileExtension) {
             panel.allowedContentTypes = [type]
@@ -693,7 +772,7 @@ struct TranscriptsView: View {
 
     nonisolated static func deleteSourceTitle(for kind: TranscriptSourceKind) -> String {
         switch kind {
-        case .file: "Also move the source file to the Trash"
+        case .file: "Also move the source file and its notes to the Trash"
         case .call: "Also move the call recording to the Trash"
         }
     }

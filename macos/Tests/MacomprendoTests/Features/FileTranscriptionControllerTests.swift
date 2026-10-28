@@ -8,6 +8,8 @@ import Testing
     private struct CallFinished: Equatable {
         let transcriptID: Int64
         let title: String
+        /// Why the finished call's subtitles were not saved, else nil.
+        var warning: String? = nil
     }
 
     private struct Rig {
@@ -22,6 +24,7 @@ import Testing
         /// Every `callFinished` the controller reported: the id and title of a completed call.
         let calls: Box<[CallFinished]>
         let createdAt: Date
+        let sidecars: FakeTranscriptSidecars
     }
 
     /// One pipeline per `pipeline()` call, for tests where a second job supersedes a first.
@@ -63,10 +66,12 @@ import Testing
         let settings = SettingsHolder()
         let changes = Box(0)
         let calls = Box<[CallFinished]>([])
+        let sidecars = FakeTranscriptSidecars()
         let controller = FileTranscriptionController(
             store: store,
             bookmarks: bookmarks,
             folders: folders,
+            sidecars: sidecars,
             pipeline: {
                 if let pipelines { return pipelines.next() }
                 return Self.pipeline(decoder: decoder, segmenter: segmenter, provider: provider)
@@ -76,12 +81,12 @@ import Testing
             readiness: readiness,
             now: { Self.fixedNow },
             transcriptsChanged: { changes.value += 1 },
-            callFinished: { id, title in
-                calls.value.append(CallFinished(transcriptID: id, title: title))
+            callFinished: { id, title, warning in
+                calls.value.append(CallFinished(transcriptID: id, title: title, warning: warning))
             })
         return Rig(controller: controller, store: store, decoder: decoder,
                    segmenter: segmenter, provider: provider, settings: settings,
-                   changes: changes, calls: calls, createdAt: Self.fixedNow)
+                   changes: changes, calls: calls, createdAt: Self.fixedNow, sidecars: sidecars)
     }
 
     // MARK: - A fresh job
@@ -1031,6 +1036,146 @@ import Testing
         #expect(stored?.header.status == .complete)
     }
 
+    // MARK: - Call subtitles
+
+    /// Two pipelines, each turning one second of its track into "hello".
+    private func twoTrackPipelines() -> PipelineScript {
+        PipelineScript([
+            Self.pipeline(decoder: ScriptedMediaDecoder(duration: 60, chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]]),
+                          provider: FakeTranscriptionProvider()),
+            Self.pipeline(decoder: ScriptedMediaDecoder(duration: 60, chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]]),
+                          provider: FakeTranscriptionProvider())])
+    }
+
+    @Test func aCompletedCallSavesItsSubtitlesInTheRecordingFolder() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: twoTrackPipelines())
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        let stored = try #require(await rig.store.snapshot(id))
+        #expect(stored.header.status == .complete)
+        let srt = rig.sidecars.contents(TranscriptSidecars.subtitlesURL(callFolder: folder))
+        #expect(srt == TranscriptExporter.render(stored, as: .subRip))
+        #expect(srt?.contains("Me: hello") == true)
+        #expect(srt?.contains("Others: hello") == true)
+        #expect(rig.calls.value == [CallFinished(transcriptID: id, title: Self.callTitle)])
+    }
+
+    /// The subtitles are rendered from the stored row, not from the job's starting snapshot:
+    /// a Resume's earlier segments and its new ones all land in the file.
+    @Test func aResumedCallsSubtitlesCarryEveryStoredSegment() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: twoTrackPipelines())
+        let id = try await makeCallRow(in: rig, folder: folder, segments: [
+            TranscriptSegment(start: 11, end: 12, text: "earlier", speaker: .me),
+        ])
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        let srt = try #require(rig.sidecars.contents(
+            TranscriptSidecars.subtitlesURL(callFolder: folder)))
+        #expect(srt.contains("Me: earlier"))
+        #expect(srt.components(separatedBy: " --> ").count - 1 == 3)
+    }
+
+    @Test func transcribingACallAgainRewritesItsSubtitles() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: twoTrackPipelines())
+        let id = try await makeCallRow(in: rig, folder: folder, segments: [
+            TranscriptSegment(start: 0.2, end: 30, text: "old me", speaker: .me),
+        ])
+        try await rig.store.setStatus(.complete, reason: nil, for: id)
+        let url = TranscriptSidecars.subtitlesURL(callFolder: folder)
+        rig.sidecars.put("1\nstale\n", at: url)
+
+        rig.controller.transcribeAgain(transcriptID: id)
+        await rig.controller.drain()
+
+        let srt = try #require(rig.sidecars.contents(url))
+        #expect(!srt.contains("stale"))
+        #expect(!srt.contains("old me"))
+        #expect(srt.contains("Me: hello"))
+    }
+
+    @Test func callSubtitlesAreNotSavedWhenTurnedOff() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: twoTrackPipelines())
+        rig.settings.value.saveCallSubtitles = false
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(await rig.store.snapshot(id)?.header.status == .complete)
+        #expect(rig.sidecars.contents(TranscriptSidecars.subtitlesURL(callFolder: folder)) == nil)
+    }
+
+    /// A subtitles file that cannot be written is no reason to undo a finished transcript: the
+    /// row stays `complete`, the state finished, and the call-finished report says why.
+    @Test func aSubtitlesFailureKeepsTheCallCompleteAndIsReported() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: twoTrackPipelines())
+        rig.sidecars.subtitleFailures = [TranscriptSidecars.subtitlesURL(callFolder: folder).path]
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(rig.controller.state == .finished(transcriptID: id))
+        #expect(await rig.store.snapshot(id)?.header.status == .complete)
+        #expect(rig.calls.value == [CallFinished(
+            transcriptID: id, title: Self.callTitle,
+            warning: ErrorText.describe(MacomprendoError.callSubtitlesNotSaved("the disk is full")))])
+    }
+
+    @Test func aCallWithoutSpeechSavesNoSubtitles() async throws {
+        let folder = try makeRecordingFolder(me: 0.2, others: 0.5)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
+                          pipelines: PipelineScript([
+                              Self.pipeline(decoder: ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                                            segmenter: ScriptedSegmenter(),
+                                            provider: FakeTranscriptionProvider()),
+                              Self.pipeline(decoder: ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                                            segmenter: ScriptedSegmenter(),
+                                            provider: FakeTranscriptionProvider())]))
+        let id = try await makeCallRow(in: rig, folder: folder)
+
+        rig.controller.resume(transcriptID: id)
+        await rig.controller.drain()
+
+        #expect(await rig.store.snapshot(id) == nil)
+        #expect(rig.sidecars.contents(TranscriptSidecars.subtitlesURL(callFolder: folder)) == nil)
+    }
+
+    @Test func aFileTranscriptSavesNoSubtitles() async {
+        let rig = makeRig(decoder: ScriptedMediaDecoder(duration: 10, chunks: [Self.chunk(seconds: 1)]),
+                          segmenter: ScriptedSegmenter(acceptScript: [[Self.segment(start: 0)]]))
+
+        rig.controller.transcribe(fileAt: Self.fileURL)
+        await rig.controller.drain()
+
+        #expect(await rig.store.snapshot(1)?.header.status == .complete)
+        #expect(rig.sidecars.contents(URL(fileURLWithPath: "/files/podcast.srt")) == nil)
+        #expect(rig.sidecars.savedNotes.isEmpty)
+    }
+
     @Test func aCallResumeWithAnUnresolvableBookmarkOffersTheFolder() async throws {
         let missing = "/Volumes/gone/rec 2026-10-15 16-42-07"
         let rig = makeRig(decoder: ScriptedMediaDecoder(), segmenter: ScriptedSegmenter(),
@@ -1196,6 +1341,7 @@ import Testing
         gate.open()
         await rig.controller.drain()
 
+        #expect(rig.sidecars.contents(TranscriptSidecars.subtitlesURL(callFolder: folder)) == nil)
         #expect(rig.controller.state == .idle)
         let stored = await rig.store.snapshot(id)
         #expect(stored?.header.status == .incomplete)

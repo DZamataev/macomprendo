@@ -108,7 +108,8 @@ struct MacomprendoApp: App {
         Window("Transcripts", id: WindowID.transcripts) {
             TranscriptsView(library: model.transcriptLibrary,
                             transcription: model.fileTranscription,
-                            playback: model.transcriptPlayback)
+                            playback: model.transcriptPlayback,
+                            notes: model.transcriptNotes)
                 .environmentObject(model)
                 .onAppear { model.dockIcon.open(.transcripts) }
                 .onDisappear {

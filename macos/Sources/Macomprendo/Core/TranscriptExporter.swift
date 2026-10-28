@@ -27,12 +27,23 @@ enum TranscriptExportFormat: String, Sendable, CaseIterable, Identifiable {
 /// Renders a transcript for export. Pure, so every format is unit-tested without a file.
 enum TranscriptExporter {
 
-    static func render(_ transcript: Transcript, as format: TranscriptExportFormat) -> String {
+    /// `notes` reach the Markdown export only, as a `## Notes` section; blank notes leave every
+    /// format byte-for-byte as it was without them.
+    static func render(_ transcript: Transcript, as format: TranscriptExportFormat,
+                       notes: String = "") -> String {
         switch format {
         case .plainText: plainText(transcript)
         case .subRip: subRip(transcript)
-        case .markdown: markdown(transcript)
+        case .markdown: markdown(transcript, notes: notes)
         }
+    }
+
+    /// What **Summarize** sends: the transcript's plain text, preceded by its notes when there
+    /// are any, each under a label so the model can tell context from conversation.
+    static func summaryInput(_ transcript: Transcript, notes: String) -> String {
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return transcript.plainText }
+        return "Notes:\n\(trimmed)\n\nTranscript:\n\(transcript.plainText)"
     }
 
     /// `12:03` below an hour, `1:02:03` from an hour on — what the transcript rows show.
@@ -75,7 +86,7 @@ enum TranscriptExporter {
         segment.speaker.map { "\($0.label): " } ?? ""
     }
 
-    private static func markdown(_ transcript: Transcript) -> String {
+    private static func markdown(_ transcript: Transcript, notes: String) -> String {
         let header = transcript.header
         var metadata = [header.createdAt.formatted(date: .abbreviated, time: .shortened)]
         if let duration = header.duration { metadata.append(clock(duration)) }
@@ -84,6 +95,10 @@ enum TranscriptExporter {
         var lines = ["# \(header.title)", "", metadata.joined(separator: " · "), ""]
         if let summary = transcript.summary, !summary.isEmpty {
             lines += ["## Summary", "", summary, ""]
+        }
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedNotes.isEmpty {
+            lines += ["## Notes", "", trimmedNotes, ""]
         }
         lines += ["## Transcript", ""]
         // A blank line per segment: Markdown folds adjacent lines into one paragraph.

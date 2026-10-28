@@ -84,6 +84,8 @@ struct AppEnvironment {
     var systemAudio: any CallAudioCapturing
     var callRecordingFolders: any CallRecordingFolderManaging
     var callTrackWriter: CallTrackWriterFactory
+    /// A transcript's notes file and a call's subtitles, next to the recording.
+    var transcriptSidecars: any TranscriptSidecarFiling
 
     @MainActor
     static func live() -> AppEnvironment {
@@ -162,6 +164,7 @@ struct AppEnvironment {
             audioProcesses: CoreAudioProcessMonitor(),
             systemAudio: ProcessTapSystemAudioCapture(),
             callRecordingFolders: FileSystemCallRecordingFolders(),
-            callTrackWriter: AssetCallTrackWriter.factory)
+            callTrackWriter: AssetCallTrackWriter.factory,
+            transcriptSidecars: FileSystemTranscriptSidecars())
     }
 }

@@ -60,7 +60,12 @@ final class CallRecordingController: ObservableObject {
 
     private var activeTask: Task<Void, Never>?
     private var tickerTask: Task<Void, Never>?
-    private var folder: URL?
+    private var folder: URL? {
+        didSet { if recordingFolder != folder { recordingFolder = folder } }
+    }
+    /// The folder of the recording under way, `nil` otherwise: where the menubar panel's notes
+    /// editor writes, and — on its change back to `nil` — when `AppModel` flushes those notes.
+    @Published private(set) var recordingFolder: URL?
     private var manifest: CallRecordingManifest?
     private var meWriter: (any CallTrackWriting)?
     private var othersWriter: (any CallTrackWriting)?

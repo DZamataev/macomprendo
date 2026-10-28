@@ -1186,6 +1186,35 @@ responsive.
       call is *Incomplete*, and **Resume** finishes it without duplicating the rows the live pass
       had already written.
 
+## Call subtitles and transcript notes
+
+Spec: `docs/superpowers/specs/2026-10-28-call-subtitles-and-transcript-notes-design.md`. The
+editors are SwiftUI glue over `TranscriptNotesController`, which the unit tests cover.
+
+- [ ] **Subtitles land with the call.** Settings ▸ General ▸ Call recordings: **Save subtitles
+      (.srt) in the recording folder** is on. Record a short call and let it transcribe: the
+      recording folder holds `rec <date>.srt` next to the two tracks, its cues read `Me:` /
+      `Others:` in spoken order, and QuickTime plays a track with it as subtitles.
+- [ ] **Again rewrites them.** **Transcribe Again** on that call: the `.srt` is rewritten (its
+      modification time changes). Turn the setting off and record another call: no `.srt`.
+- [ ] **A file transcript gets none.** Transcribe a dropped audio file: no `.srt` appears next to it.
+- [ ] **Notes during the call.** Start recording; the panel's call block ends with **Notes**.
+      Press it, paste a link, switch to the chat app (the panel closes), reopen the panel and
+      **Notes**: the link is still there. Typing keeps focus while the level meters move.
+- [ ] **Notes are a file.** Stop the call: `rec <date>.notes.txt` is in the recording folder with
+      the text. In Transcripts, the call's **Notes** button shows the filled icon; its popover shows
+      the same text. Edit the file in TextEdit, close and reopen the popover: the edit shows.
+- [ ] **File transcripts too.** Open a file transcript's **Notes**, type, close: `<name>.notes.txt`
+      sits next to the source. Clear the text: the file goes away.
+- [ ] **Notes follow a moved source.** With a file transcript open, move its source to another
+      folder in Finder, then open **Notes** and type: `<name>.notes.txt` appears in the new folder.
+      With the source in the Trash, **Notes** says the original file can no longer be found.
+- [ ] **Export and Summarize.** Export ▸ Markdown holds a `## Notes` section before
+      `## Transcript`; Plain text and Subtitles do not. **Summarize** with notes mentions their
+      content.
+- [ ] **Delete with the source.** Delete a file transcript with **Also move the source file and its
+      notes to the Trash** checked: both the file and its `.notes.txt` are in the Trash.
+
 ## Transcript playback
 
 The bar under the segment list is `AVPlayer` glue plus SwiftUI, so none of it is reachable from a

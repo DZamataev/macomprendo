@@ -9,8 +9,15 @@ import SwiftUI
 /// this subtree only — never the rows around it.
 struct CallRecordingPanelSection: View {
     @ObservedObject var controller: CallRecordingController
+    /// The call's notes drafts. Not observed here: the editor observes it, so typing never
+    /// re-renders the meters' subtree and a meter tick never rebuilds the editor.
+    let notes: TranscriptNotesController
     /// Opens the live row's transcript; the panel knows nothing about windows.
     var showLiveTranscript: (Int64) -> Void = { _ in }
+    /// Whether the call's notes editor is open. Inline rather than a popover: the panel closes
+    /// on any click in another of our windows, which a child popover is (spec §2). Reset with
+    /// the rest of the panel's state on every opening.
+    @State private var isNotesExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -91,6 +98,35 @@ struct CallRecordingPanelSection: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+            }
+
+            if let folder = controller.recordingFolder {
+                notesGroup(TranscriptSidecars.notesURL(callFolder: folder))
+            }
+        }
+    }
+
+    /// **Notes** while recording: links from the call's chat go straight into the notes file
+    /// in the recording folder. Last in the block, so opening it moves nothing under the
+    /// pointer (spec §6).
+    private func notesGroup(_ url: URL) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                isNotesExpanded.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Icon(.notes, size: 14)
+                    Text(isNotesExpanded ? "Hide Notes" : "Notes")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .help("Notes for this call, kept next to the recording")
+
+            if isNotesExpanded {
+                TranscriptNotesEditor(notes: notes, url: url, minHeight: 90)
+                    .id(url)
+                    .frame(maxHeight: 160)
             }
         }
     }

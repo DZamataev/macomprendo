@@ -92,6 +92,15 @@ struct GeneralTab: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                Toggle("Save subtitles (.srt) in the recording folder",
+                       isOn: $model.settings.saveCallSubtitles)
+                Text("When a call's transcript is finished, its subtitles are saved next to the "
+                     + "two tracks under the folder's name, and saved again after Resume or "
+                     + "Transcribe Again.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Toggle("Record calls automatically", isOn: $model.settings.autoRecordCalls)
                 Text((model.settings.autoRecordAllApps
                       ? "Starts recording when any app uses the microphone, "
