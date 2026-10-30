@@ -45,10 +45,10 @@ enum SpeakerTurnPlanner {
         let length = run.end - run.start
         let pieces = max(1, Int((length / maximumDuration).rounded(.up)))
         let step = length / Double(pieces)
-        return (0..<pieces).map { index in
-            PlannedTurn(start: run.start + Double(index) * step,
-                        end: index == pieces - 1 ? run.end : run.start + Double(index + 1) * step,
-                        voice: run.voice)
+        return (0..<pieces).map { (index: Int) -> PlannedTurn in
+            let start: Double = run.start + Double(index) * step
+            let end: Double = index == pieces - 1 ? run.end : start + step
+            return PlannedTurn(start: start, end: end, voice: run.voice)
         }
     }
 }
