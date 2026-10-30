@@ -8,7 +8,7 @@ import {
   findAuditSetupProblems, findReleasePublishProblems, findUnpinnedNodeJobs,
   findSecretsInJobConditions, findSigningTeardownProblems, findUngatedSigningSteps,
   findJobEnvContextProblems, findDraftClearingProblems,
-  findSigningGateProblems, findReleaseAssetReconciliationProblems,
+  findSigningGateProblems, findReleaseAssetReconciliationProblems, pinnedXcodeVersions,
 } from '../lib/workflows.mjs';
 import { WORKFLOWS_DIR, PACKAGE_JSON } from '../lib/paths.mjs';
 
@@ -333,6 +333,38 @@ test('the release workflow validates and launches the app extracted from the pub
   assert.match(publishCommand, /gh release create[^]*"\$ZIP" "\$\{ZIP\}\.sha256"/);
 });
 
+test('pinnedXcodeVersions flags a macOS job that takes the image default Xcode', () => {
+  const floating = parseWorkflow([
+    'jobs:',
+    '  macos:',
+    '    runs-on: macos-26',
+    '    steps:',
+    '      - run: xcodebuild -version',
+    '  site:',
+    '    runs-on: ubuntu-latest',
+    '    steps:',
+    '      - run: true',
+  ].join('\n'), { name: 'ci.yml' });
+  const { versions, problems } = pinnedXcodeVersions(floating, { name: 'ci' });
+  assert.deepEqual(versions, []);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /ci:macos.*DEVELOPER_DIR/);
+});
+
+test('pinnedXcodeVersions reads the version a macOS job pins', () => {
+  const pinned = parseWorkflow([
+    'jobs:',
+    '  macos:',
+    '    runs-on: macos-26',
+    '    env:',
+    '      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer',
+    '    steps:',
+    '      - run: xcodebuild -version',
+  ].join('\n'), { name: 'ci.yml' });
+  assert.deepEqual(pinnedXcodeVersions(pinned, { name: 'ci' }),
+    { versions: ['26.6'], problems: [] });
+});
+
 test('every job that runs npm pins its Node version', async () => {
   const names = (await fs.readdir(WORKFLOWS_DIR)).filter((f) => f.endsWith('.yml'));
   const problems = [];
@@ -341,6 +373,28 @@ test('every job that runs npm pins its Node version', async () => {
     problems.push(...findUnpinnedNodeJobs(document, { name: path.basename(name, '.yml') }));
   }
   assert.deepEqual(problems, []);
+});
+
+// The app is built with Xcode 26 locally; an older CI compiler once timed out type-checking
+// code the local one accepted, and the v1.4.0 release shipped without a build.
+test('every macOS job pins the same Xcode 26 on a macos-26 runner', async () => {
+  const names = (await fs.readdir(WORKFLOWS_DIR)).filter((f) => f.endsWith('.yml'));
+  const versions = new Set();
+  const problems = [];
+  for (const name of names) {
+    const { document } = await workflow(name);
+    const found = pinnedXcodeVersions(document, { name: path.basename(name, '.yml') });
+    found.versions.forEach((version) => versions.add(version));
+    problems.push(...found.problems);
+    for (const [jobName, job] of Object.entries(document.jobs ?? {})) {
+      if (String(job?.['runs-on']).startsWith('macos') && job['runs-on'] !== 'macos-26') {
+        problems.push(`${name}:${jobName} runs on ${job['runs-on']}, not macos-26`);
+      }
+    }
+  }
+  assert.deepEqual(problems, []);
+  assert.equal(versions.size, 1, `macOS jobs pin different Xcodes: ${[...versions]}`);
+  assert.match([...versions][0], /^26(\.|$)/);
 });
 
 // --- optional signed release path -------------------------------------------

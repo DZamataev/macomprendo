@@ -143,6 +143,30 @@ export function findUnpinnedNodeJobs(workflow, { name }) {
   return problems;
 }
 
+const XCODE_DEVELOPER_DIR = /^\/Applications\/Xcode_(\d+(?:\.\d+)*)\.app\/Contents\/Developer$/;
+
+/**
+ * A macOS runner image ships several Xcodes and its default moves with the image, so every
+ * macOS job pins one through a job-level `DEVELOPER_DIR`. Returns the pinned versions and a
+ * problem for each macOS job that leaves the choice to the image.
+ */
+export function pinnedXcodeVersions(workflow, { name }) {
+  const versions = [];
+  const problems = [];
+  for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+    if (!String(job?.['runs-on'] ?? '').startsWith('macos')) continue;
+    const match = XCODE_DEVELOPER_DIR.exec(String(job?.env?.DEVELOPER_DIR ?? ''));
+    if (match) {
+      versions.push(match[1]);
+    } else {
+      problems.push(`${name}:${jobName} does not pin Xcode with a job-level DEVELOPER_DIR `
+        + '(/Applications/Xcode_<version>.app/Contents/Developer); it would build with '
+        + "whatever the runner image's default is.");
+    }
+  }
+  return { versions, problems };
+}
+
 /**
  * `secrets` is not an allowed context in `jobs.<id>.if` — GitHub rejects the whole workflow
  * with "Unrecognized named-value: 'secrets'", so this mistake takes CI down entirely rather

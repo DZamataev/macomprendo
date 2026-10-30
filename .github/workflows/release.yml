@@ -49,13 +49,15 @@ jobs:
 
   verify-and-build:
     name: Verify, build and publish
-    runs-on: macos-15
+    runs-on: macos-26
     needs: check-signing-secrets
     # Needed by `gh release create`. Scoped to this job rather than the workflow.
     permissions:
       contents: write
     env:
       SIGNING_AVAILABLE: ${{ needs.check-signing-secrets.outputs.available }}
+      # Same Xcode as ci.yml and the maintainer's machine; the image default moves.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
 
     steps:
       # fetch-depth: 0 — `npm run audit` scans the whole Git history with Gitleaks.

@@ -133,6 +133,10 @@ network round trip to Apple, with a default 60-minute wait.
 - **Spell the test command `node --test scripts/__tests__/*.test.mjs`** (shell-expanded glob).
   A quoted `'…/**/*.test.mjs'` is taken literally before Node 21; a bare `scripts/__tests__`
   directory is resolved as a module on Node 22. Only the shell glob works on 20, 22 and 26.
+- **Every macOS job runs on `macos-26` with a job-level `DEVELOPER_DIR` pinning the Xcode the
+  maintainer builds with.** The image default moves, and `release.mjs` only builds locally: on
+  `macos-15` Xcode 16.4 timed out type-checking code Xcode 26 accepted, so v1.4.0 published
+  without a build. Bump the pin in both workflows when the local Xcode changes.
 - **Every job that runs npm must use `actions/setup-node`.** The ubuntu and macOS runner
   images preinstall different Node majors, so an unpinned job silently runs a different
   version from its sibling — that is how the same command passed in one job and failed in
