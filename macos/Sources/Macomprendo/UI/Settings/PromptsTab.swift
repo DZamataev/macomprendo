@@ -105,6 +105,17 @@ import SwiftUI
         lastError = nil
     }
 
+    /// What the preset list writes. A click in the empty space below the rows deselects, which
+    /// would leave the editor with nothing to edit; keep the current preset instead, and
+    /// republish so the list re-reads the selection and highlights that row again.
+    func listSelectionChanged(_ id: UUID?) {
+        guard let id else {
+            objectWillChange.send()
+            return
+        }
+        select(id)
+    }
+
     func save() {
         guard let draft else { return }
         holder.settings.updatePreset(draft)
@@ -307,7 +318,8 @@ struct PromptsTab: View {
 
     private var presetList: some View {
         VStack(spacing: 6) {
-            List(selection: Binding(get: { model.selectedID }, set: { model.select($0) })) {
+            List(selection: Binding(get: { model.selectedID },
+                                    set: { model.listSelectionChanged($0) })) {
                 ForEach(model.presets) { preset in
                     HStack {
                         Text(preset.name)
@@ -347,20 +359,22 @@ struct PromptsTab: View {
     }
 
     @ViewBuilder private var editor: some View {
-        if let draft = Binding($model.draft) {
+        // Not `Binding($model.draft)`: that force-unwraps, and the fields re-read it while the
+        // list's selection change is still being flushed, before this branch is re-evaluated.
+        if let shown = model.draft {
             VStack(alignment: .leading, spacing: 8) {
-                TextField("Name", text: draft.name)
+                TextField("Name", text: draftField(\.name, shown: shown))
                     .onSubmit { model.save() }
 
                 Text("System prompt").font(.caption).foregroundStyle(.secondary)
-                TextEditor(text: draft.systemPrompt)
+                TextEditor(text: draftField(\.systemPrompt, shown: shown))
                     .frame(height: 70)
                     .border(.separator)
 
                 Text("User template — must contain {text}; may use {instruction}, "
                      + "{chosen_language} (the target above) and {language} (the Mac's language)")
                     .font(.caption).foregroundStyle(.secondary)
-                TextEditor(text: draft.userTemplate)
+                TextEditor(text: draftField(\.userTemplate, shown: shown))
                     .frame(height: 110)
                     .border(.separator)
 
@@ -393,6 +407,14 @@ struct PromptsTab: View {
         } else {
             Text("Select a preset.").foregroundStyle(.secondary)
         }
+    }
+
+    /// One editor field of the draft. Reads fall back to the preset the editor was built for
+    /// when the draft has already gone, and writes to a missing draft are dropped.
+    private func draftField(_ field: WritableKeyPath<PromptPreset, String>,
+                            shown: PromptPreset) -> Binding<String> {
+        Binding(get: { (model.draft ?? shown)[keyPath: field] },
+                set: { model.draft?[keyPath: field] = $0 })
     }
 
     private var endpointBinding: Binding<UUID?> {

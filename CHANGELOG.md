@@ -29,6 +29,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sound output device and volume.
 
 ### Fixed
+- Clicking the empty space below the presets in Settings ▸ Refine & Summarize no longer crashes
+  the app; the selected preset stays open in the editor.
 - File and call transcripts no longer fill with words nobody said on a quiet microphone — `*Sigh*`,
   `you`, `und`, `- No, no, no.` — when the transcription language is Auto. A short real reply
   whose language was misheard («угу» as `Mm-hmm`) is transcribed again in the conversation's

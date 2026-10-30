@@ -31,6 +31,29 @@ import Testing
         #expect(model.selectedID == FactoryPresets.presetID(role: .brief, language: .english))
     }
 
+    /// Clicking the empty space below the rows makes `List(selection:)` write nil. Clearing the
+    /// draft then traps the editor's force-unwrapped `Binding($model.draft)` mid-update (1.3.1).
+    @Test func clickingEmptyListSpaceKeepsTheSelectedPresetInTheEditor() {
+        let (model, _, _) = make()
+        model.kind = .summarize
+        let selected = model.selectedID
+        var republished = 0
+        let observation = model.objectWillChange.sink { republished += 1 }
+        model.listSelectionChanged(nil)
+        observation.cancel()
+        #expect(model.selectedID == selected)
+        #expect(model.draft?.id == selected)
+        #expect(republished > 0, "the list must re-read the selection to re-highlight the row")
+    }
+
+    @Test func choosingAnotherRowInTheListSelectsIt() {
+        let (model, _, _) = make()
+        let other = FactoryPresets.presetID(role: .formal, language: .english)
+        model.listSelectionChanged(other)
+        #expect(model.selectedID == other)
+        #expect(model.draft?.id == other)
+    }
+
     @Test func editingTheDraftAndSavingWritesThrough() {
         let (model, holder, _) = make()
         model.draft?.name = "Tidy up"
