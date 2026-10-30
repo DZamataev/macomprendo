@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-30
+
 ### Added
 - **Copy Last Transcript** in the menubar panel copies the latest dictation, for when the
   paste missed the text field.
